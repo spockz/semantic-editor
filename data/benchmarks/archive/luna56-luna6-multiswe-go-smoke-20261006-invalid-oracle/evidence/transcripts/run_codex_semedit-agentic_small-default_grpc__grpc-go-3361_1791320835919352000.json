@@ -1,0 +1,399 @@
+[
+  {
+    "number": 1,
+    "classification": "task",
+    "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+    "started_at": "2026-10-06T23:07:16.147599+02:00",
+    "finished_at": "2026-10-06T23:08:15.643922+02:00",
+    "resume_id": "01a1130a-c853-71d0-a54a-d576d164bffa",
+    "provider_exit": "codex exit code 0",
+    "raw_events": [
+      {
+        "type": "thread.started",
+        "thread_id": "01a1130a-c853-71d0-a54a-d576d164bffa"
+      },
+      {
+        "type": "turn.started"
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_0",
+          "type": "agent_message",
+          "text": "I’ll trace the DNS resolver and round-robin error handling around the reported 1.26 regression, then make the smallest fix that restores the expected refresh behavior."
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -100 \u0026\u0026 git status --short \u0026\u0026 git log -1 --oneline\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -100 \u0026\u0026 git status --short \u0026\u0026 git log -1 --oneline\"",
+          "aggregated_output": "2026-10-06 23:07:20.829 xcodebuild[15822:151138148]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-10-06 23:07:20.914 xcodebuild[15822:151138147] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\n?? .scratch/\n648cf9b0 advancedtls: use grpc 1.27.0 and small fixes (#3360)\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_2",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"cat go.mod \u0026\u0026 sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,240p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|ReportError|connection refused|re-resolv|MinTimeBetweenResolutions|Refresh\\\" resolver internal balancer\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_2",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"cat go.mod \u0026\u0026 sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,240p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|ReportError|connection refused|re-resolv|MinTimeBetweenResolutions|Refresh\\\" resolver internal balancer\"",
+          "aggregated_output": "module google.golang.org/grpc\n\ngo 1.11\n\nrequire (\n\tgithub.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473\n\tgithub.com/envoyproxy/protoc-gen-validate v0.1.0\n\tgithub.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\n\tgithub.com/golang/mock v1.1.1\n\tgithub.com/golang/protobuf v1.3.3\n\tgithub.com/google/go-cmp v0.2.0\n\tgolang.org/x/net v0.0.0-20190311183353-d8887717615a\n\tgolang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be\n\tgolang.org/x/sys v0.0.0-20190215142949-d0b11bdaac8a\n\tgoogle.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\n)\n/*\n *\n * Copyright 2018 gRPC authors.\n *\n * Licensed under the Apache License, Version 2.0 (the \"License\");\n * you may not use this file except in compliance with the License.\n * You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing, software\n * distributed under the License is distributed on an \"AS IS\" BASIS,\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n * See the License for the specific language governing permissions and\n * limitations under the License.\n *\n */\n\n// Package dns implements a dns resolver to be installed as the default resolver\n// in grpc.\npackage dns\n\nimport (\n\t\"context\"\n\t\"encoding/json\"\n\t\"errors\"\n\t\"fmt\"\n\t\"net\"\n\t\"os\"\n\t\"strconv\"\n\t\"strings\"\n\t\"sync\"\n\t\"time\"\n\n\t\"google.golang.org/grpc/grpclog\"\n\t\"google.golang.org/grpc/internal/envconfig\"\n\t\"google.golang.org/grpc/internal/grpcrand\"\n\t\"google.golang.org/grpc/resolver\"\n\t\"google.golang.org/grpc/serviceconfig\"\n)\n\n// EnableSRVLookups controls whether the DNS resolver attempts to fetch gRPCLB\n// addresses from SRV records.  Must not be changed after init time.\nvar EnableSRVLookups = false\n\nfunc init() {\n\tresolver.Register(NewBuilder())\n}\n\nconst (\n\tdefaultPort       = \"443\"\n\tdefaultDNSSvrPort = \"53\"\n\tgolang            = \"GO\"\n\t// txtPrefix is the prefix string to be prepended to the host name for txt record lookup.\n\ttxtPrefix = \"_grpc_config.\"\n\t// In DNS, service config is encoded in a TXT record via the mechanism\n\t// described in RFC-1464 using the attribute name grpc_config.\n\ttxtAttribute = \"grpc_config=\"\n)\n\nvar (\n\terrMissingAddr = errors.New(\"dns resolver: missing address\")\n\n\t// Addresses ending with a colon that is supposed to be the separator\n\t// between host and port is not allowed.  E.g. \"::\" is a valid address as\n\t// it is an IPv6 address (host only) and \"[::]:\" is invalid as it ends with\n\t// a colon as the host and port separator\n\terrEndsWithColon = errors.New(\"dns resolver: missing port after port-separator colon\")\n)\n\nvar (\n\tdefaultResolver netResolver = net.DefaultResolver\n\t// To prevent excessive re-resolution, we enforce a rate limit on DNS\n\t// resolution requests.\n\tminDNSResRate = 30 * time.Second\n)\n\nvar customAuthorityDialler = func(authority string) func(ctx context.Context, network, address string) (net.Conn, error) {\n\treturn func(ctx context.Context, network, address string) (net.Conn, error) {\n\t\tvar dialer net.Dialer\n\t\treturn dialer.DialContext(ctx, network, authority)\n\t}\n}\n\nvar customAuthorityResolver = func(authority string) (netResolver, error) {\n\thost, port, err := parseTarget(authority, defaultDNSSvrPort)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\n\tauthorityWithPort := net.JoinHostPort(host, port)\n\n\treturn \u0026net.Resolver{\n\t\tPreferGo: true,\n\t\tDial:     customAuthorityDialler(authorityWithPort),\n\t}, nil\n}\n\n// NewBuilder creates a dnsBuilder which is used to factory DNS resolvers.\nfunc NewBuilder() resolver.Builder {\n\treturn \u0026dnsBuilder{}\n}\n\ntype dnsBuilder struct{}\n\n// Build creates and starts a DNS resolver that watches the name resolution of the target.\nfunc (b *dnsBuilder) Build(target resolver.Target, cc resolver.ClientConn, opts resolver.BuildOptions) (resolver.Resolver, error) {\n\thost, port, err := parseTarget(target.Endpoint, defaultPort)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\n\t// IP address.\n\tif ipAddr, ok := formatIP(host); ok {\n\t\taddr := []resolver.Address{{Addr: ipAddr + \":\" + port}}\n\t\tcc.UpdateState(resolver.State{Addresses: addr})\n\t\treturn deadResolver{}, nil\n\t}\n\n\t// DNS address (non-IP).\n\tctx, cancel := context.WithCancel(context.Background())\n\td := \u0026dnsResolver{\n\t\thost:                 host,\n\t\tport:                 port,\n\t\tctx:                  ctx,\n\t\tcancel:               cancel,\n\t\tcc:                   cc,\n\t\trn:                   make(chan struct{}, 1),\n\t\tdisableServiceConfig: opts.DisableServiceConfig,\n\t}\n\n\tif target.Authority == \"\" {\n\t\td.resolver = defaultResolver\n\t} else {\n\t\td.resolver, err = customAuthorityResolver(target.Authority)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t}\n\n\td.wg.Add(1)\n\tgo d.watcher()\n\td.ResolveNow(resolver.ResolveNowOptions{})\n\treturn d, nil\n}\n\n// Scheme returns the naming scheme of this resolver builder, which is \"dns\".\nfunc (b *dnsBuilder) Scheme() string {\n\treturn \"dns\"\n}\n\ntype netResolver interface {\n\tLookupHost(ctx context.Context, host string) (addrs []string, err error)\n\tLookupSRV(ctx context.Context, service, proto, name string) (cname string, addrs []*net.SRV, err error)\n\tLookupTXT(ctx context.Context, name string) (txts []string, err error)\n}\n\n// deadResolver is a resolver that does nothing.\ntype deadResolver struct{}\n\nfunc (deadResolver) ResolveNow(resolver.ResolveNowOptions) {}\n\nfunc (deadResolver) Close() {}\n\n// dnsResolver watches for the name resolution update for a non-IP target.\ntype dnsResolver struct {\n\thost     string\n\tport     string\n\tresolver netResolver\n\tctx      context.Context\n\tcancel   context.CancelFunc\n\tcc       resolver.ClientConn\n\t// rn channel is used by ResolveNow() to force an immediate resolution of the target.\n\trn chan struct{}\n\t// wg is used to enforce Close() to return after the watcher() goroutine has finished.\n\t// Otherwise, data race will be possible. [Race Example] in dns_resolver_test we\n\t// replace the real lookup functions with mocked ones to facilitate testing.\n\t// If Close() doesn't wait for watcher() goroutine finishes, race detector sometimes\n\t// will warns lookup (READ the lookup function pointers) inside watcher() goroutine\n\t// has data race with replaceNetFunc (WRITE the lookup function pointers).\n\twg                   sync.WaitGroup\n\tdisableServiceConfig bool\n}\n\n// ResolveNow invoke an immediate resolution of the target that this dnsResolver watches.\nfunc (d *dnsResolver) ResolveNow(resolver.ResolveNowOptions) {\n\tselect {\n\tcase d.rn \u003c- struct{}{}:\n\tdefault:\n\t}\n}\n\n// Close closes the dnsResolver.\nfunc (d *dnsResolver) Close() {\n\td.cancel()\n\td.wg.Wait()\n}\n\nfunc (d *dnsResolver) watcher() {\n\tdefer d.wg.Done()\n\tfor {\n\t\tselect {\n\t\tcase \u003c-d.ctx.Done():\n\t\t\treturn\n\t\tcase \u003c-d.rn:\n\t\t}\n\n\t\tstate, err := d.lookup()\n\t\tif err != nil {\n\t\t\td.cc.ReportError(err)\n\t\t} else {\n\t\t\td.cc.UpdateState(*state)\n\t\t}\n\n\t\t// Sleep to prevent excessive re-resolutions. Incoming resolution requests\n\t\t// will be queued in d.rn.\n\t\tt := time.NewTimer(minDNSResRate)\n\t\tselect {\n\t\tcase \u003c-t.C:\n\t\tcase \u003c-d.ctx.Done():\n\t\t\tt.Stop()\n\t\t\treturn\n\t\t}\n\t}\n}\n\nfunc (d *dnsResolver) lookupSRV() ([]resolver.Address, error) {\n\tif !EnableSRVLookups {\n\t\treturn nil, nil\n\t}\n\tvar newAddrs []resolver.Address\n\t_, srvs, err := d.resolver.LookupSRV(d.ctx, \"grpclb\", \"tcp\", d.host)\n\tif err != nil {\n\t\terr = handleDNSError(err, \"SRV\") // may become nil\n\t\treturn nil, err\n\t}\n\tfor _, s := range srvs {\n\t\tlbAddrs, err := d.resolver.LookupHost(d.ctx, s.Target)\n\t\tif err != nil {\n\t\t\terr = handleDNSError(err, \"A\") // may become nil\n\t\t\tif err == nil {\n\t\t\t\t// If there are other SRV records, look them up and ignore this\n\t\t\t\t// one that does not exist.\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\treturn nil, err\n\t\t}\n\t\tfor _, a := range lbAddrs {\n\t\t\tip, ok := formatIP(a)\n\t\t\tif !ok {\n\t\t\t\treturn nil, fmt.Errorf(\"dns: error parsing A record IP address %v\", a)\n\t\t\t}\n\t\t\taddr := ip + \":\" + strconv.Itoa(int(s.Port))\n\t\t\tnewAddrs = append(newAddrs, resolver.Address{Addr: addr, Type: resolver.GRPCLB, ServerName: s.Target})\n\t\t}\n\t}\n\treturn newAddrs, nil\n}\n\nvar filterError = func(err error) error {\n/*\n *\n * Copyright 2017 gRPC authors.\n *\n * Licensed under the Apache License, Version 2.0 (the \"License\");\n * you may not use this file except in compliance with the License.\n * You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing, software\n * distributed under the License is distributed on an \"AS IS\" BASIS,\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n * See the License for the specific language governing permissions and\n * limitations under the License.\n *\n */\n\n// Package roundrobin defines a roundrobin balancer. Roundrobin balancer is\n// installed as one of the default balancers in gRPC, users don't need to\n// explicitly install this balancer.\npackage roundrobin\n\nimport (\n\t\"sync\"\n\n\t\"google.golang.org/grpc/balancer\"\n\t\"google.golang.org/grpc/balancer/base\"\n\t\"google.golang.org/grpc/grpclog\"\n\t\"google.golang.org/grpc/internal/grpcrand\"\n)\n\n// Name is the name of round_robin balancer.\nconst Name = \"round_robin\"\n\n// newBuilder creates a new roundrobin balancer builder.\nfunc newBuilder() balancer.Builder {\n\treturn base.NewBalancerBuilderV2(Name, \u0026rrPickerBuilder{}, base.Config{HealthCheck: true})\n}\n\nfunc init() {\n\tbalancer.Register(newBuilder())\n}\n\ntype rrPickerBuilder struct{}\n\nfunc (*rrPickerBuilder) Build(info base.PickerBuildInfo) balancer.V2Picker {\n\tgrpclog.Infof(\"roundrobinPicker: newPicker called with info: %v\", info)\n\tif len(info.ReadySCs) == 0 {\n\t\treturn base.NewErrPickerV2(balancer.ErrNoSubConnAvailable)\n\t}\n\tvar scs []balancer.SubConn\n\tfor sc := range info.ReadySCs {\n\t\tscs = append(scs, sc)\n\t}\n\treturn \u0026rrPicker{\n\t\tsubConns: scs,\n\t\t// Start at a random index, as the same RR balancer rebuilds a new\n\t\t// picker when SubConn states change, and we don't want to apply excess\n\t\t// load to the first server in the list.\n\t\tnext: grpcrand.Intn(len(scs)),\n\t}\n}\n\ntype rrPicker struct {\n\t// subConns is the snapshot of the roundrobin balancer when this picker was\n\t// created. The slice is immutable. Each Get() will do a round robin\n\t// selection from it and return the selected SubConn.\n\tsubConns []balancer.SubConn\n\n\tmu   sync.Mutex\n\tnext int\n}\n\nfunc (p *rrPicker) Pick(balancer.PickInfo) (balancer.PickResult, error) {\n\tp.mu.Lock()\n\tsc := p.subConns[p.next]\n\tp.next = (p.next + 1) % len(p.subConns)\n\tp.mu.Unlock()\n\treturn balancer.PickResult{SubConn: sc}, nil\n}\nresolver/resolver.go:178:\t// ReportError notifies the ClientConn that the Resolver encountered an\nresolver/resolver.go:180:\t// ResolveNow on the Resolver with exponential backoff.\nresolver/resolver.go:181:\tReportError(error)\nresolver/resolver.go:233:// ResolveNowOptions includes additional information for ResolveNow.\nresolver/resolver.go:234:type ResolveNowOptions struct{}\nresolver/resolver.go:239:\t// ResolveNow will be called by gRPC to try to resolve the target name\nresolver/resolver.go:243:\tResolveNow(ResolveNowOptions)\nbalancer/balancer.go:160:\t// ResolveNow is called by balancer to notify gRPC to do a name resolving.\nbalancer/balancer.go:161:\tResolveNow(resolver.ResolveNowOptions)\nbalancer/balancer.go:403:\t// will begin calling ResolveNow on the active name resolver with\nresolver/manual/manual.go:33:\t\tResolveNowCallback: func(resolver.ResolveNowOptions) {},\nresolver/manual/manual.go:41:\t// ResolveNowCallback is called when the ResolveNow method is called on the\nresolver/manual/manual.go:44:\tResolveNowCallback func(resolver.ResolveNowOptions)\nresolver/manual/manual.go:72:// ResolveNow is a noop for Resolver.\nresolver/manual/manual.go:73:func (r *Resolver) ResolveNow(o resolver.ResolveNowOptions) {\nresolver/manual/manual.go:74:\tr.ResolveNowCallback(o)\ninternal/resolver/dns/dns_resolver_test.go:93:func (t *testClientConn) ReportError(err error) {\ninternal/resolver/dns/dns_resolver_test.go:665:\ttestDNSResolveNow(t)\ninternal/resolver/dns/dns_resolver_test.go:843:func testDNSResolveNow(t *testing.T) {\ninternal/resolver/dns/dns_resolver_test.go:890:\t\tr.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver_test.go:951:\t\tr.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver_test.go:1106:\tr.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver_test.go:1119:\tr.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver_test.go:1237:// calls ResolveNow() and ensures only the expected number of resolution\ninternal/resolver/dns/dns_resolver_test.go:1279:\t// ResolveNow in Build.\ninternal/resolver/dns/dns_resolver_test.go:1282:\t// Here we start a couple of goroutines. One repeatedly calls ResolveNow()\ninternal/resolver/dns/dns_resolver_test.go:1294:\t\t\t\tr.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver_test.go:1337:func TestReportError(t *testing.T) {\ninternal/resolver/dns/dns_resolver_test.go:1349:\t\t\tt.Fatalf(`ReportError(err=%v) called; want err contains \"hostLookupError\"`, err)\ninternal/resolver/dns/dns_resolver.go:143:\td.ResolveNow(resolver.ResolveNowOptions{})\ninternal/resolver/dns/dns_resolver.go:161:func (deadResolver) ResolveNow(resolver.ResolveNowOptions) {}\ninternal/resolver/dns/dns_resolver.go:173:\t// rn channel is used by ResolveNow() to force an immediate resolution of the target.\ninternal/resolver/dns/dns_resolver.go:185:// ResolveNow invoke an immediate resolution of the target that this dnsResolver watches.\ninternal/resolver/dns/dns_resolver.go:186:func (d *dnsResolver) ResolveNow(resolver.ResolveNowOptions) {\ninternal/resolver/dns/dns_resolver.go:210:\t\t\td.cc.ReportError(err)\nbalancer/grpclb/grpclb_remote_balancer.go:379:\t\t// Trigger a re-resolve when the stream errors.\nbalancer/grpclb/grpclb_remote_balancer.go:380:\t\tccw.lb.cc.cc.ResolveNow(resolver.ResolveNowOptions{})\nbalancer/grpclb/grpclb_util.go:30:// The parent ClientConn should re-resolve when grpclb loses connection to the\nbalancer/grpclb/grpclb_util.go:32:// it calls lbManualResolver.ResolveNow(), which calls parent ClientConn's\nbalancer/grpclb/grpclb_util.go:33:// ResolveNow, and eventually results in re-resolve happening in parent\nbalancer/grpclb/grpclb_util.go:48://  | |              | \u003c--------------- |  ResolveNow  |            | |\nbalancer/grpclb/grpclb_util.go:49://  | |  \u003c---------  | ResolveNow |     |              |            | |\nbalancer/grpclb/grpclb_util.go:50://  | |  ResolveNow  |            |     |              |            | |\nbalancer/grpclb/grpclb_util.go:57:// resolver with a special ResolveNow() function.\nbalancer/grpclb/grpclb_util.go:59:// When ResolveNow() is called, it calls ResolveNow() on the parent ClientConn,\nbalancer/grpclb/grpclb_util.go:61:// ClientConn's resolver will re-resolve.\nbalancer/grpclb/grpclb_util.go:78:// ResolveNow calls resolveNow on the parent ClientConn.\nbalancer/grpclb/grpclb_util.go:79:func (r *lbManualResolver) ResolveNow(o resolver.ResolveNowOptions) {\nbalancer/grpclb/grpclb_util.go:80:\tr.ccb.ResolveNow(o)\ninternal/resolver/passthrough/passthrough.go:51:func (*passthroughResolver) ResolveNow(o resolver.ResolveNowOptions) {}\nbalancer/grpclb/grpclb_test.go:853:\tr.ResolveNowCallback = func(resolver.ResolveNowOptions) {\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_3",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"git log --oneline --all --grep='3165\\\\|resolver.*re-resolv\\\\|roundrobin.*Resolve' | head -30 \u0026\u0026 sed -n '360,430p' balancer/balancer.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(\\\" balancer/base balancer | head -50 \u0026\u0026 sed -n '1,160p' resolver/resolver.go\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_3",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"git log --oneline --all --grep='3165\\\\|resolver.*re-resolv\\\\|roundrobin.*Resolve' | head -30 \u0026\u0026 sed -n '360,430p' balancer/balancer.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(\\\" balancer/base balancer | head -50 \u0026\u0026 sed -n '1,160p' resolver/resolver.go\"",
+          "aggregated_output": "e5e980f2 dns: stop polling for updates; use UpdateState API (#3165)\n\t// HandleResolvedAddrs is called by gRPC to send updated resolved addresses to\n\t// balancers.\n\t// Balancer can create new SubConn or remove SubConn with the addresses.\n\t// An empty address slice and a non-nil error will be passed if the resolver returns\n\t// non-nil error to gRPC.\n\t//\n\t// Deprecated: if V2Balancer is implemented by the Balancer,\n\t// UpdateClientConnState will be called instead.\n\tHandleResolvedAddrs([]resolver.Address, error)\n\t// Close closes the balancer. The balancer is not required to call\n\t// ClientConn.RemoveSubConn for its existing SubConns.\n\tClose()\n}\n\n// SubConnState describes the state of a SubConn.\ntype SubConnState struct {\n\t// ConnectivityState is the connectivity state of the SubConn.\n\tConnectivityState connectivity.State\n\t// ConnectionError is set if the ConnectivityState is TransientFailure,\n\t// describing the reason the SubConn failed.  Otherwise, it is nil.\n\tConnectionError error\n}\n\n// ClientConnState describes the state of a ClientConn relevant to the\n// balancer.\ntype ClientConnState struct {\n\tResolverState resolver.State\n\t// The parsed load balancing configuration returned by the builder's\n\t// ParseConfig method, if implemented.\n\tBalancerConfig serviceconfig.LoadBalancingConfig\n}\n\n// ErrBadResolverState may be returned by UpdateClientConnState to indicate a\n// problem with the provided name resolver data.\nvar ErrBadResolverState = errors.New(\"bad resolver state\")\n\n// V2Balancer is defined for documentation purposes.  If a Balancer also\n// implements V2Balancer, its UpdateClientConnState method will be called\n// instead of HandleResolvedAddrs and its UpdateSubConnState will be called\n// instead of HandleSubConnStateChange.\ntype V2Balancer interface {\n\t// UpdateClientConnState is called by gRPC when the state of the ClientConn\n\t// changes.  If the error returned is ErrBadResolverState, the ClientConn\n\t// will begin calling ResolveNow on the active name resolver with\n\t// exponential backoff until a subsequent call to UpdateClientConnState\n\t// returns a nil error.  Any other errors are currently ignored.\n\tUpdateClientConnState(ClientConnState) error\n\t// ResolverError is called by gRPC when the name resolver reports an error.\n\tResolverError(error)\n\t// UpdateSubConnState is called by gRPC when the state of a SubConn\n\t// changes.\n\tUpdateSubConnState(SubConn, SubConnState)\n\t// Close closes the balancer. The balancer is not required to call\n\t// ClientConn.RemoveSubConn for its existing SubConns.\n\tClose()\n}\n\n// ConnectivityStateEvaluator takes the connectivity states of multiple SubConns\n// and returns one aggregated connectivity state.\n//\n// It's not thread safe.\ntype ConnectivityStateEvaluator struct {\n\tnumReady      uint64 // Number of addrConns in ready state.\n\tnumConnecting uint64 // Number of addrConns in connecting state.\n}\n\n// RecordTransition records state change happening in subConn and based on that\n// it evaluates what aggregated state should be.\n//\n//  - If at least one SubConn in Ready, the aggregated state is Ready;\n//  - Else if at least one SubConn in Connecting, the aggregated state is Connecting;\nbalancer/balancer.go:161:\tResolveNow(resolver.ResolveNowOptions)\nbalancer/grpclb/grpclb_remote_balancer.go:380:\t\tccw.lb.cc.cc.ResolveNow(resolver.ResolveNowOptions{})\nbalancer/grpclb/grpclb_util.go:32:// it calls lbManualResolver.ResolveNow(), which calls parent ClientConn's\nbalancer/grpclb/grpclb_util.go:57:// resolver with a special ResolveNow() function.\nbalancer/grpclb/grpclb_util.go:59:// When ResolveNow() is called, it calls ResolveNow() on the parent ClientConn,\nbalancer/grpclb/grpclb_util.go:79:func (r *lbManualResolver) ResolveNow(o resolver.ResolveNowOptions) {\nbalancer/grpclb/grpclb_util.go:80:\tr.ccb.ResolveNow(o)\n/*\n *\n * Copyright 2017 gRPC authors.\n *\n * Licensed under the Apache License, Version 2.0 (the \"License\");\n * you may not use this file except in compliance with the License.\n * You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing, software\n * distributed under the License is distributed on an \"AS IS\" BASIS,\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n * See the License for the specific language governing permissions and\n * limitations under the License.\n *\n */\n\n// Package resolver defines APIs for name resolution in gRPC.\n// All APIs in this package are experimental.\npackage resolver\n\nimport (\n\t\"context\"\n\t\"net\"\n\n\t\"google.golang.org/grpc/attributes\"\n\t\"google.golang.org/grpc/credentials\"\n\t\"google.golang.org/grpc/serviceconfig\"\n)\n\nvar (\n\t// m is a map from scheme to resolver builder.\n\tm = make(map[string]Builder)\n\t// defaultScheme is the default scheme to use.\n\tdefaultScheme = \"passthrough\"\n)\n\n// TODO(bar) install dns resolver in init(){}.\n\n// Register registers the resolver builder to the resolver map. b.Scheme will be\n// used as the scheme registered with this builder.\n//\n// NOTE: this function must only be called during initialization time (i.e. in\n// an init() function), and is not thread-safe. If multiple Resolvers are\n// registered with the same name, the one registered last will take effect.\nfunc Register(b Builder) {\n\tm[b.Scheme()] = b\n}\n\n// Get returns the resolver builder registered with the given scheme.\n//\n// If no builder is register with the scheme, nil will be returned.\nfunc Get(scheme string) Builder {\n\tif b, ok := m[scheme]; ok {\n\t\treturn b\n\t}\n\treturn nil\n}\n\n// SetDefaultScheme sets the default scheme that will be used. The default\n// default scheme is \"passthrough\".\n//\n// NOTE: this function must only be called during initialization time (i.e. in\n// an init() function), and is not thread-safe. The scheme set last overrides\n// previously set values.\nfunc SetDefaultScheme(scheme string) {\n\tdefaultScheme = scheme\n}\n\n// GetDefaultScheme gets the default scheme that will be used.\nfunc GetDefaultScheme() string {\n\treturn defaultScheme\n}\n\n// AddressType indicates the address type returned by name resolution.\n//\n// Deprecated: use Attributes in Address instead.\ntype AddressType uint8\n\nconst (\n\t// Backend indicates the address is for a backend server.\n\t//\n\t// Deprecated: use Attributes in Address instead.\n\tBackend AddressType = iota\n\t// GRPCLB indicates the address is for a grpclb load balancer.\n\t//\n\t// Deprecated: use Attributes in Address instead.\n\tGRPCLB\n)\n\n// Address represents a server the client connects to.\n// This is the EXPERIMENTAL API and may be changed or extended in the future.\ntype Address struct {\n\t// Addr is the server address on which a connection will be established.\n\tAddr string\n\n\t// ServerName is the name of this address.\n\t// If non-empty, the ServerName is used as the transport certification authority for\n\t// the address, instead of the hostname from the Dial target string. In most cases,\n\t// this should not be set.\n\t//\n\t// If Type is GRPCLB, ServerName should be the name of the remote load\n\t// balancer, not the name of the backend.\n\t//\n\t// WARNING: ServerName must only be populated with trusted values. It\n\t// is insecure to populate it with data from untrusted inputs since untrusted\n\t// values could be used to bypass the authority checks performed by TLS.\n\tServerName string\n\n\t// Attributes contains arbitrary data about this address intended for\n\t// consumption by the load balancing policy.\n\tAttributes *attributes.Attributes\n\n\t// Type is the type of this address.\n\t//\n\t// Deprecated: use Attributes instead.\n\tType AddressType\n\n\t// Metadata is the information associated with Addr, which may be used\n\t// to make load balancing decision.\n\t//\n\t// Deprecated: use Attributes instead.\n\tMetadata interface{}\n}\n\n// BuildOptions includes additional information for the builder to create\n// the resolver.\ntype BuildOptions struct {\n\t// DisableServiceConfig indicates whether a resolver implementation should\n\t// fetch service config data.\n\tDisableServiceConfig bool\n\t// DialCreds is the transport credentials used by the ClientConn for\n\t// communicating with the target gRPC service (set via\n\t// WithTransportCredentials). In cases where a name resolution service\n\t// requires the same credentials, the resolver may use this field. In most\n\t// cases though, it is not appropriate, and this field may be ignored.\n\tDialCreds credentials.TransportCredentials\n\t// CredsBundle is the credentials bundle used by the ClientConn for\n\t// communicating with the target gRPC service (set via\n\t// WithCredentialsBundle). In cases where a name resolution service\n\t// requires the same credentials, the resolver may use this field. In most\n\t// cases though, it is not appropriate, and this field may be ignored.\n\tCredsBundle credentials.Bundle\n\t// Dialer is the custom dialer used by the ClientConn for dialling the\n\t// target gRPC service (set via WithDialer). In cases where a name\n\t// resolution service requires the same dialer, the resolver may use this\n\t// field. In most cases though, it is not appropriate, and this field may\n\t// be ignored.\n\tDialer func(context.Context, string) (net.Conn, error)\n}\n\n// State contains the current Resolver state relevant to the ClientConn.\ntype State struct {\n\t// Addresses is the latest set of resolved addresses for the target.\n\tAddresses []Address\n\n\t// ServiceConfig contains the result from parsing the latest service\n\t// config.  If it is nil, it indicates no service config is present or the\n\t// resolver does not provide service configs.\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_4",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'git show --stat e5e980f2 \u0026\u0026 git show e5e980f2 -- internal/resolver/dns/dns_resolver.go balancer/roundrobin/roundrobin.go'",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_4",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'git show --stat e5e980f2 \u0026\u0026 git show e5e980f2 -- internal/resolver/dns/dns_resolver.go balancer/roundrobin/roundrobin.go'",
+          "aggregated_output": "fatal: unable to read 65f231c12cbc22674753e051fe20b6f7b26ea56c\ncommit e5e980f2766388fc243cc4cf20c59b9c13affa8c\nAuthor: Doug Fawley \u003cdfawley@google.com\u003e\nDate:   Fri Nov 22 15:48:45 2019 -0800\n\n    dns: stop polling for updates; use UpdateState API (#3165)\n\n",
+          "exit_code": 128,
+          "status": "failed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_5",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"rg -n \\\"type baseBalancer|UpdateSubConnState|TransientFailure|ResolveNow\\\" balancer/base \u0026\u0026 sed -n '1,300p' balancer/base/balancer.go \u0026\u0026 git log --oneline -- internal/resolver/dns/dns_resolver.go | head\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_5",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"rg -n \\\"type baseBalancer|UpdateSubConnState|TransientFailure|ResolveNow\\\" balancer/base \u0026\u0026 sed -n '1,300p' balancer/base/balancer.go \u0026\u0026 git log --oneline -- internal/resolver/dns/dns_resolver.go | head\"",
+          "aggregated_output": "balancer/base/balancer.go:66:type baseBalancer struct {\nbalancer/base/balancer.go:87:\tcase connectivity.TransientFailure, connectivity.Idle, connectivity.Connecting:\nbalancer/base/balancer.go:132://  - errPicker with ErrTransientFailure if the balancer is in TransientFailure,\nbalancer/base/balancer.go:135:\tif b.state == connectivity.TransientFailure {\nbalancer/base/balancer.go:137:\t\t\tb.picker = NewErrPicker(balancer.ErrTransientFailure)\nbalancer/base/balancer.go:140:\t\t\t\tb.v2Picker = NewErrPickerV2(balancer.TransientFailureError(err))\nbalancer/base/balancer.go:143:\t\t\t\t// TransientFailure (otherwise err must be set), but the\nbalancer/base/balancer.go:144:\t\t\t\t// aggregate state of the balancer is TransientFailure, meaning\nbalancer/base/balancer.go:146:\t\t\t\tb.v2Picker = NewErrPickerV2(balancer.TransientFailureError(errors.New(\"resolver returned no addresses\")))\nbalancer/base/balancer.go:178:func (b *baseBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {\nbalancer/base/balancer.go:206:\t//  - the aggregated state of balancer became TransientFailure from non-TransientFailure\nbalancer/base/balancer.go:207:\t//  - the aggregated state of balancer became non-TransientFailure from TransientFailure\nbalancer/base/balancer.go:209:\t\t(b.state == connectivity.TransientFailure) != (oldAggrState == connectivity.TransientFailure) {\n/*\n *\n * Copyright 2017 gRPC authors.\n *\n * Licensed under the Apache License, Version 2.0 (the \"License\");\n * you may not use this file except in compliance with the License.\n * You may obtain a copy of the License at\n *\n *     http://www.apache.org/licenses/LICENSE-2.0\n *\n * Unless required by applicable law or agreed to in writing, software\n * distributed under the License is distributed on an \"AS IS\" BASIS,\n * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.\n * See the License for the specific language governing permissions and\n * limitations under the License.\n *\n */\n\npackage base\n\nimport (\n\t\"context\"\n\t\"errors\"\n\n\t\"google.golang.org/grpc/balancer\"\n\t\"google.golang.org/grpc/connectivity\"\n\t\"google.golang.org/grpc/grpclog\"\n\t\"google.golang.org/grpc/resolver\"\n)\n\ntype baseBuilder struct {\n\tname            string\n\tpickerBuilder   PickerBuilder\n\tv2PickerBuilder V2PickerBuilder\n\tconfig          Config\n}\n\nfunc (bb *baseBuilder) Build(cc balancer.ClientConn, opt balancer.BuildOptions) balancer.Balancer {\n\tbal := \u0026baseBalancer{\n\t\tcc:              cc,\n\t\tpickerBuilder:   bb.pickerBuilder,\n\t\tv2PickerBuilder: bb.v2PickerBuilder,\n\n\t\tsubConns: make(map[resolver.Address]balancer.SubConn),\n\t\tscStates: make(map[balancer.SubConn]connectivity.State),\n\t\tcsEvltr:  \u0026balancer.ConnectivityStateEvaluator{},\n\t\tconfig:   bb.config,\n\t}\n\t// Initialize picker to a picker that always returns\n\t// ErrNoSubConnAvailable, because when state of a SubConn changes, we\n\t// may call UpdateState with this picker.\n\tif bb.pickerBuilder != nil {\n\t\tbal.picker = NewErrPicker(balancer.ErrNoSubConnAvailable)\n\t} else {\n\t\tbal.v2Picker = NewErrPickerV2(balancer.ErrNoSubConnAvailable)\n\t}\n\treturn bal\n}\n\nfunc (bb *baseBuilder) Name() string {\n\treturn bb.name\n}\n\nvar _ balancer.V2Balancer = (*baseBalancer)(nil) // Assert that we implement V2Balancer\n\ntype baseBalancer struct {\n\tcc              balancer.ClientConn\n\tpickerBuilder   PickerBuilder\n\tv2PickerBuilder V2PickerBuilder\n\n\tcsEvltr *balancer.ConnectivityStateEvaluator\n\tstate   connectivity.State\n\n\tsubConns map[resolver.Address]balancer.SubConn\n\tscStates map[balancer.SubConn]connectivity.State\n\tpicker   balancer.Picker\n\tv2Picker balancer.V2Picker\n\tconfig   Config\n}\n\nfunc (b *baseBalancer) HandleResolvedAddrs(addrs []resolver.Address, err error) {\n\tpanic(\"not implemented\")\n}\n\nfunc (b *baseBalancer) ResolverError(err error) {\n\tswitch b.state {\n\tcase connectivity.TransientFailure, connectivity.Idle, connectivity.Connecting:\n\t\tif b.picker != nil {\n\t\t\tb.picker = NewErrPicker(err)\n\t\t} else {\n\t\t\tb.v2Picker = NewErrPickerV2(err)\n\t\t}\n\t}\n}\n\nfunc (b *baseBalancer) UpdateClientConnState(s balancer.ClientConnState) error {\n\t// TODO: handle s.ResolverState.Err (log if not nil) once implemented.\n\t// TODO: handle s.ResolverState.ServiceConfig?\n\tif grpclog.V(2) {\n\t\tgrpclog.Infoln(\"base.baseBalancer: got new ClientConn state: \", s)\n\t}\n\t// addrsSet is the set converted from addrs, it's used for quick lookup of an address.\n\taddrsSet := make(map[resolver.Address]struct{})\n\tfor _, a := range s.ResolverState.Addresses {\n\t\taddrsSet[a] = struct{}{}\n\t\tif _, ok := b.subConns[a]; !ok {\n\t\t\t// a is a new address (not existing in b.subConns).\n\t\t\tsc, err := b.cc.NewSubConn([]resolver.Address{a}, balancer.NewSubConnOptions{HealthCheckEnabled: b.config.HealthCheck})\n\t\t\tif err != nil {\n\t\t\t\tgrpclog.Warningf(\"base.baseBalancer: failed to create new SubConn: %v\", err)\n\t\t\t\tcontinue\n\t\t\t}\n\t\t\tb.subConns[a] = sc\n\t\t\tb.scStates[sc] = connectivity.Idle\n\t\t\tsc.Connect()\n\t\t}\n\t}\n\tfor a, sc := range b.subConns {\n\t\t// a was removed by resolver.\n\t\tif _, ok := addrsSet[a]; !ok {\n\t\t\tb.cc.RemoveSubConn(sc)\n\t\t\tdelete(b.subConns, a)\n\t\t\t// Keep the state of this sc in b.scStates until sc's state becomes Shutdown.\n\t\t\t// The entry will be deleted in HandleSubConnStateChange.\n\t\t}\n\t}\n\treturn nil\n}\n\n// regeneratePicker takes a snapshot of the balancer, and generates a picker\n// from it. The picker is\n//  - errPicker with ErrTransientFailure if the balancer is in TransientFailure,\n//  - built by the pickerBuilder with all READY SubConns otherwise.\nfunc (b *baseBalancer) regeneratePicker(err error) {\n\tif b.state == connectivity.TransientFailure {\n\t\tif b.pickerBuilder != nil {\n\t\t\tb.picker = NewErrPicker(balancer.ErrTransientFailure)\n\t\t} else {\n\t\t\tif err != nil {\n\t\t\t\tb.v2Picker = NewErrPickerV2(balancer.TransientFailureError(err))\n\t\t\t} else {\n\t\t\t\t// This means the last subchannel transition was not to\n\t\t\t\t// TransientFailure (otherwise err must be set), but the\n\t\t\t\t// aggregate state of the balancer is TransientFailure, meaning\n\t\t\t\t// there are no other addresses.\n\t\t\t\tb.v2Picker = NewErrPickerV2(balancer.TransientFailureError(errors.New(\"resolver returned no addresses\")))\n\t\t\t}\n\t\t}\n\t\treturn\n\t}\n\tif b.pickerBuilder != nil {\n\t\treadySCs := make(map[resolver.Address]balancer.SubConn)\n\n\t\t// Filter out all ready SCs from full subConn map.\n\t\tfor addr, sc := range b.subConns {\n\t\t\tif st, ok := b.scStates[sc]; ok \u0026\u0026 st == connectivity.Ready {\n\t\t\t\treadySCs[addr] = sc\n\t\t\t}\n\t\t}\n\t\tb.picker = b.pickerBuilder.Build(readySCs)\n\t} else {\n\t\treadySCs := make(map[balancer.SubConn]SubConnInfo)\n\n\t\t// Filter out all ready SCs from full subConn map.\n\t\tfor addr, sc := range b.subConns {\n\t\t\tif st, ok := b.scStates[sc]; ok \u0026\u0026 st == connectivity.Ready {\n\t\t\t\treadySCs[sc] = SubConnInfo{Address: addr}\n\t\t\t}\n\t\t}\n\t\tb.v2Picker = b.v2PickerBuilder.Build(PickerBuildInfo{ReadySCs: readySCs})\n\t}\n}\n\nfunc (b *baseBalancer) HandleSubConnStateChange(sc balancer.SubConn, s connectivity.State) {\n\tpanic(\"not implemented\")\n}\n\nfunc (b *baseBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {\n\ts := state.ConnectivityState\n\tif grpclog.V(2) {\n\t\tgrpclog.Infof(\"base.baseBalancer: handle SubConn state change: %p, %v\", sc, s)\n\t}\n\toldS, ok := b.scStates[sc]\n\tif !ok {\n\t\tif grpclog.V(2) {\n\t\t\tgrpclog.Infof(\"base.baseBalancer: got state changes for an unknown SubConn: %p, %v\", sc, s)\n\t\t}\n\t\treturn\n\t}\n\tb.scStates[sc] = s\n\tswitch s {\n\tcase connectivity.Idle:\n\t\tsc.Connect()\n\tcase connectivity.Shutdown:\n\t\t// When an address was removed by resolver, b called RemoveSubConn but\n\t\t// kept the sc's state in scStates. Remove state for this sc here.\n\t\tdelete(b.scStates, sc)\n\t}\n\n\toldAggrState := b.state\n\tb.state = b.csEvltr.RecordTransition(oldS, s)\n\n\t// Regenerate picker when one of the following happens:\n\t//  - this sc became ready from not-ready\n\t//  - this sc became not-ready from ready\n\t//  - the aggregated state of balancer became TransientFailure from non-TransientFailure\n\t//  - the aggregated state of balancer became non-TransientFailure from TransientFailure\n\tif (s == connectivity.Ready) != (oldS == connectivity.Ready) ||\n\t\t(b.state == connectivity.TransientFailure) != (oldAggrState == connectivity.TransientFailure) {\n\t\tb.regeneratePicker(state.ConnectionError)\n\t}\n\n\tif b.picker != nil {\n\t\tb.cc.UpdateBalancerState(b.state, b.picker)\n\t} else {\n\t\tb.cc.UpdateState(balancer.State{ConnectivityState: b.state, Picker: b.v2Picker})\n\t}\n}\n\n// Close is a nop because base balancer doesn't have internal state to clean up,\n// and it doesn't need to call RemoveSubConn for the SubConns.\nfunc (b *baseBalancer) Close() {\n}\n\n// NewErrPicker returns a picker that always returns err on Pick().\nfunc NewErrPicker(err error) balancer.Picker {\n\treturn \u0026errPicker{err: err}\n}\n\ntype errPicker struct {\n\terr error // Pick() always returns this err.\n}\n\nfunc (p *errPicker) Pick(context.Context, balancer.PickInfo) (balancer.SubConn, func(balancer.DoneInfo), error) {\n\treturn nil, nil, p.err\n}\n\n// NewErrPickerV2 returns a V2Picker that always returns err on Pick().\nfunc NewErrPickerV2(err error) balancer.V2Picker {\n\treturn \u0026errPickerV2{err: err}\n}\n\ntype errPickerV2 struct {\n\terr error // Pick() always returns this err.\n}\n\nfunc (p *errPickerV2) Pick(info balancer.PickInfo) (balancer.PickResult, error) {\n\treturn balancer.PickResult{}, p.err\n}\n648cf9b0 advancedtls: use grpc 1.27.0 and small fixes (#3360)\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_6",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '820,980p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 sed -n '1220,1375p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(resolver|ResolveNow\\\\(\\\" balancer/base/*test.go\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_6",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '820,980p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 sed -n '1220,1375p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(resolver|ResolveNow\\\\(\\\" balancer/base/*test.go\"",
+          "aggregated_output": "\thostLookupTbl.Lock()\n\toldHostTblEntry := hostLookupTbl.tbl[target]\n\thostLookupTbl.tbl[target] = hostLookupTbl.tbl[target][:len(oldHostTblEntry)-1]\n\thostLookupTbl.Unlock()\n\ttxtLookupTbl.Lock()\n\toldTxtTblEntry := txtLookupTbl.tbl[txtPrefix+target]\n\ttxtLookupTbl.tbl[txtPrefix+target] = []string{txtAttribute + `[{\"serviceConfig\":{\"loadBalancingPolicy\": \"grpclb\"}}]`}\n\ttxtLookupTbl.Unlock()\n\n\treturn func() {\n\t\thostLookupTbl.Lock()\n\t\thostLookupTbl.tbl[target] = oldHostTblEntry\n\t\thostLookupTbl.Unlock()\n\t\ttxtLookupTbl.Lock()\n\t\tif len(oldTxtTblEntry) == 0 {\n\t\t\tdelete(txtLookupTbl.tbl, txtPrefix+target)\n\t\t} else {\n\t\t\ttxtLookupTbl.tbl[txtPrefix+target] = oldTxtTblEntry\n\t\t}\n\t\ttxtLookupTbl.Unlock()\n\t}\n}\n\nfunc testDNSResolveNow(t *testing.T) {\n\tdefer leakcheck.Check(t)\n\ttests := []struct {\n\t\ttarget   string\n\t\taddrWant []resolver.Address\n\t\taddrNext []resolver.Address\n\t\tscWant   string\n\t\tscNext   string\n\t}{\n\t\t{\n\t\t\t\"foo.bar.com\",\n\t\t\t[]resolver.Address{{Addr: \"1.2.3.4\" + colonDefaultPort}, {Addr: \"5.6.7.8\" + colonDefaultPort}},\n\t\t\t[]resolver.Address{{Addr: \"1.2.3.4\" + colonDefaultPort}},\n\t\t\tgenerateSC(\"foo.bar.com\"),\n\t\t\t`{\"loadBalancingPolicy\": \"grpclb\"}`,\n\t\t},\n\t}\n\n\tfor _, a := range tests {\n\t\tb := NewBuilder()\n\t\tcc := \u0026testClientConn{target: a.target}\n\t\tr, err := b.Build(resolver.Target{Endpoint: a.target}, cc, resolver.BuildOptions{})\n\t\tif err != nil {\n\t\t\tt.Fatalf(\"%v\\n\", err)\n\t\t}\n\t\tdefer r.Close()\n\t\tvar state resolver.State\n\t\tvar cnt int\n\t\tfor i := 0; i \u003c 2000; i++ {\n\t\t\tstate, cnt = cc.getState()\n\t\t\tif cnt \u003e 0 {\n\t\t\t\tbreak\n\t\t\t}\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tif cnt == 0 {\n\t\t\tt.Fatalf(\"UpdateState not called after 2s; aborting.  state=%v\", state)\n\t\t}\n\t\tif !reflect.DeepEqual(a.addrWant, state.Addresses) {\n\t\t\tt.Errorf(\"Resolved addresses of target: %q = %+v, want %+v\\n\", a.target, state.Addresses, a.addrWant)\n\t\t}\n\t\tsc := scFromState(state)\n\t\tif a.scWant != sc {\n\t\t\tt.Errorf(\"Resolved service config of target: %q = %+v, want %+v\\n\", a.target, sc, a.scWant)\n\t\t}\n\n\t\trevertTbl := mutateTbl(a.target)\n\t\tr.ResolveNow(resolver.ResolveNowOptions{})\n\t\tfor i := 0; i \u003c 2000; i++ {\n\t\t\tstate, cnt = cc.getState()\n\t\t\tif cnt == 2 {\n\t\t\t\tbreak\n\t\t\t}\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tif cnt != 2 {\n\t\t\tt.Fatalf(\"UpdateState not called after 2s; aborting.  state=%v\", state)\n\t\t}\n\t\tsc = scFromState(state)\n\t\tif !reflect.DeepEqual(a.addrNext, state.Addresses) {\n\t\t\tt.Errorf(\"Resolved addresses of target: %q = %+v, want %+v\\n\", a.target, state.Addresses, a.addrNext)\n\t\t}\n\t\tif a.scNext != sc {\n\t\t\tt.Errorf(\"Resolved service config of target: %q = %+v, want %+v\\n\", a.target, sc, a.scNext)\n\t\t}\n\t\trevertTbl()\n\t}\n}\n\nconst colonDefaultPort = \":\" + defaultPort\n\nfunc testIPResolver(t *testing.T) {\n\tdefer leakcheck.Check(t)\n\ttests := []struct {\n\t\ttarget string\n\t\twant   []resolver.Address\n\t}{\n\t\t{\"127.0.0.1\", []resolver.Address{{Addr: \"127.0.0.1\" + colonDefaultPort}}},\n\t\t{\"127.0.0.1:12345\", []resolver.Address{{Addr: \"127.0.0.1:12345\"}}},\n\t\t{\"::1\", []resolver.Address{{Addr: \"[::1]\" + colonDefaultPort}}},\n\t\t{\"[::1]:12345\", []resolver.Address{{Addr: \"[::1]:12345\"}}},\n\t\t{\"[::1]\", []resolver.Address{{Addr: \"[::1]:443\"}}},\n\t\t{\"2001:db8:85a3::8a2e:370:7334\", []resolver.Address{{Addr: \"[2001:db8:85a3::8a2e:370:7334]\" + colonDefaultPort}}},\n\t\t{\"[2001:db8:85a3::8a2e:370:7334]\", []resolver.Address{{Addr: \"[2001:db8:85a3::8a2e:370:7334]\" + colonDefaultPort}}},\n\t\t{\"[2001:db8:85a3::8a2e:370:7334]:12345\", []resolver.Address{{Addr: \"[2001:db8:85a3::8a2e:370:7334]:12345\"}}},\n\t\t{\"[2001:db8::1]:http\", []resolver.Address{{Addr: \"[2001:db8::1]:http\"}}},\n\t\t// TODO(yuxuanli): zone support?\n\t}\n\n\tfor _, v := range tests {\n\t\tb := NewBuilder()\n\t\tcc := \u0026testClientConn{target: v.target}\n\t\tr, err := b.Build(resolver.Target{Endpoint: v.target}, cc, resolver.BuildOptions{})\n\t\tif err != nil {\n\t\t\tt.Fatalf(\"%v\\n\", err)\n\t\t}\n\t\tvar state resolver.State\n\t\tvar cnt int\n\t\tfor {\n\t\t\tstate, cnt = cc.getState()\n\t\t\tif cnt \u003e 0 {\n\t\t\t\tbreak\n\t\t\t}\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tif !reflect.DeepEqual(v.want, state.Addresses) {\n\t\t\tt.Errorf(\"Resolved addresses of target: %q = %+v, want %+v\\n\", v.target, state.Addresses, v.want)\n\t\t}\n\t\tr.ResolveNow(resolver.ResolveNowOptions{})\n\t\tfor i := 0; i \u003c 50; i++ {\n\t\t\tstate, cnt = cc.getState()\n\t\t\tif cnt \u003e 1 {\n\t\t\t\tt.Fatalf(\"Unexpected second call by resolver to UpdateState.  state: %v\", state)\n\t\t\t}\n\t\t\ttime.Sleep(time.Millisecond)\n\t\t}\n\t\tr.Close()\n\t}\n}\n\nfunc TestResolveFunc(t *testing.T) {\n\tdefer leakcheck.Check(t)\n\ttests := []struct {\n\t\taddr string\n\t\twant error\n\t}{\n\t\t// TODO(yuxuanli): More false cases?\n\t\t{\"www.google.com\", nil},\n\t\t{\"foo.bar:12345\", nil},\n\t\t{\"127.0.0.1\", nil},\n\t\t{\"::\", nil},\n\t\t{\"127.0.0.1:12345\", nil},\n\t\t{\"[::1]:80\", nil},\n\t\t{\"[2001:db8:a0b:12f0::1]:21\", nil},\n\t\t{\":80\", nil},\n\t\t{\"127.0.0...1:12345\", nil},\n\t\t{\"[fe80::1%lo0]:80\", nil},\n\t\t{\"golang.org:http\", nil},\n\n\t\t\terr = \u003c-errChan\n\t\t\tif err != nil {\n\t\t\t\tt.Errorf(err.Error())\n\t\t\t}\n\n\t\t\tif a.expectError {\n\t\t\t\tt.Errorf(\"custom authority should have caused an error: %s\", a.authority)\n\t\t\t}\n\t\t} else if !a.expectError {\n\t\t\tt.Errorf(\"unexpected error using custom authority %s: %s\", a.authority, err)\n\t\t}\n\t}\n}\n\n// TestRateLimitedResolve exercises the rate limit enforced on re-resolution\n// requests. It sets the re-resolution rate to a small value and repeatedly\n// calls ResolveNow() and ensures only the expected number of resolution\n// requests are made.\nfunc TestRateLimitedResolve(t *testing.T) {\n\tdefer leakcheck.Check(t)\n\n\tconst dnsResRate = 10 * time.Millisecond\n\tdc := replaceDNSResRate(dnsResRate)\n\tdefer dc()\n\n\t// Create a new testResolver{} for this test because we want the exact count\n\t// of the number of times the resolver was invoked.\n\tnc := replaceNetFunc(make(chan struct{}))\n\tdefer nc()\n\n\ttarget := \"foo.bar.com\"\n\tb := NewBuilder()\n\tcc := \u0026testClientConn{target: target}\n\n\tr, err := b.Build(resolver.Target{Endpoint: target}, cc, resolver.BuildOptions{})\n\tif err != nil {\n\t\tt.Fatalf(\"resolver.Build() returned error: %v\\n\", err)\n\t}\n\tdefer r.Close()\n\n\tdnsR, ok := r.(*dnsResolver)\n\tif !ok {\n\t\tt.Fatalf(\"resolver.Build() returned unexpected type: %T\\n\", dnsR)\n\t}\n\n\ttr, ok := dnsR.resolver.(*testResolver)\n\tif !ok {\n\t\tt.Fatalf(\"delegate resolver returned unexpected type: %T\\n\", tr)\n\t}\n\n\t// Observe the time before unblocking the lookupHost call.  The 100ms rate\n\t// limiting timer will begin immediately after that.  This means the next\n\t// resolution could happen less than 100ms if we read the time *after*\n\t// receiving from tr.ch\n\tstart := time.Now()\n\n\t// Wait for the first resolution request to be done. This happens as part\n\t// of the first iteration of the for loop in watcher() because we call\n\t// ResolveNow in Build.\n\t\u003c-tr.ch\n\n\t// Here we start a couple of goroutines. One repeatedly calls ResolveNow()\n\t// until asked to stop, and the other waits for two resolution requests to be\n\t// made to our testResolver and stops the former. We measure the start and\n\t// end times, and expect the duration elapsed to be in the interval\n\t// {wantCalls*dnsResRate, wantCalls*dnsResRate}\n\tdone := make(chan struct{})\n\tgo func() {\n\t\tfor {\n\t\t\tselect {\n\t\t\tcase \u003c-done:\n\t\t\t\treturn\n\t\t\tdefault:\n\t\t\t\tr.ResolveNow(resolver.ResolveNowOptions{})\n\t\t\t\ttime.Sleep(1 * time.Millisecond)\n\t\t\t}\n\t\t}\n\t}()\n\n\tgotCalls := 0\n\tconst wantCalls = 3\n\tmin, max := wantCalls*dnsResRate, (wantCalls+1)*dnsResRate\n\ttMax := time.NewTimer(max)\n\tfor gotCalls != wantCalls {\n\t\tselect {\n\t\tcase \u003c-tr.ch:\n\t\t\tgotCalls++\n\t\tcase \u003c-tMax.C:\n\t\t\tt.Fatalf(\"Timed out waiting for %v calls after %v; got %v\", wantCalls, max, gotCalls)\n\t\t}\n\t}\n\tclose(done)\n\telapsed := time.Since(start)\n\n\tif gotCalls != wantCalls {\n\t\tt.Fatalf(\"resolve count mismatch for target: %q = %+v, want %+v\\n\", target, gotCalls, wantCalls)\n\t}\n\tif elapsed \u003c min {\n\t\tt.Fatalf(\"elapsed time: %v, wanted it to be between {%v and %v}\", elapsed, min, max)\n\t}\n\n\twantAddrs := []resolver.Address{{Addr: \"1.2.3.4\" + colonDefaultPort}, {Addr: \"5.6.7.8\" + colonDefaultPort}}\n\tvar state resolver.State\n\tfor {\n\t\tvar cnt int\n\t\tstate, cnt = cc.getState()\n\t\tif cnt \u003e 0 {\n\t\t\tbreak\n\t\t}\n\t\ttime.Sleep(time.Millisecond)\n\t}\n\tif !reflect.DeepEqual(state.Addresses, wantAddrs) {\n\t\tt.Errorf(\"Resolved addresses of target: %q = %+v, want %+v\\n\", target, state.Addresses, wantAddrs)\n\t}\n}\n\nfunc TestReportError(t *testing.T) {\n\tconst target = \"notfoundaddress\"\n\tcc := \u0026testClientConn{target: target, errChan: make(chan error)}\n\tb := NewBuilder()\n\tr, err := b.Build(resolver.Target{Endpoint: target}, cc, resolver.BuildOptions{})\n\tif err != nil {\n\t\tt.Fatalf(\"%v\\n\", err)\n\t}\n\tdefer r.Close()\n\tselect {\n\tcase err := \u003c-cc.errChan:\n\t\tif !strings.Contains(err.Error(), \"hostLookup error\") {\n\t\t\tt.Fatalf(`ReportError(err=%v) called; want err contains \"hostLookupError\"`, err)\n\t\t}\n\tcase \u003c-time.After(time.Second):\n\t\tt.Fatalf(\"did not receive error after 1s\")\n\t}\n}\nzsh:1: no matches found: balancer/base/*test.go\n",
+          "exit_code": 1,
+          "status": "failed"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_7",
+          "type": "agent_message",
+          "text": "The resolver’s current “rate limit” is also its only scheduling mechanism: it sleeps after a lookup, then waits indefinitely for `ResolveNow`. I’m restoring periodic lookup at that interval and adding a re-resolution request when the base balancer enters transient failure, so a failed endpoint can prompt a refresh sooner."
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_8",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/internal/resolver/dns/dns_resolver.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_8",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/internal/resolver/dns/dns_resolver.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_9",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/balancer/base/balancer.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_9",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/balancer/base/balancer.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_10",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_10",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+          "aggregated_output": "internal/resolver/dns/dns_resolver.go:236:63: expected ';', found '{'\n",
+          "exit_code": 2,
+          "status": "failed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_11",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"nl -ba internal/resolver/dns/dns_resolver.go | sed -n '195,245p'\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_11",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"nl -ba internal/resolver/dns/dns_resolver.go | sed -n '195,245p'\"",
+          "aggregated_output": "   195\t\td.cancel()\n   196\t\td.wg.Wait()\n   197\t}\n   198\t\n   199\tfunc (d *dnsResolver) watcher() {\n   200\t\tdefer d.wg.Done()\n   201\t\t// The first resolution is requested by Build. Subsequent resolutions happen\n   202\t\t// periodically, and can also be requested by the balancer.\n   203\t\tfor {\n   204\t\t\tselect {\n   205\t\t\tcase \u003c-d.ctx.Done():\n   206\t\t\t\treturn\n   207\t\t\tcase \u003c-d.rn:\n   208\t\t\t}\n   209\t\n   210\t\t\tfor {\n   211\t\t\tstate, err := d.lookup()\n   212\t\t\tif err != nil {\n   213\t\t\t\td.cc.ReportError(err)\n   214\t\t\t} else {\n   215\t\t\t\td.cc.UpdateState(*state)\n   216\t\t\t}\n   217\t\n   218\t\t\t// Refresh DNS periodically because endpoint changes do not necessarily\n   219\t\t\t// cause an error on an existing connection.\n   220\t\t\tt := time.NewTimer(minDNSResRate)\n   221\t\t\tselect {\n   222\t\t\tcase \u003c-t.C:\n   223\t\t\tcase \u003c-d.ctx.Done():\n   224\t\t\t\tt.Stop()\n   225\t\t\t\treturn\n   226\t\t\t}\n   227\t\t\t// Treat the timer as the scheduled resolution request. Discard any\n   228\t\t\t// requests queued while resolving so they do not cause an extra lookup.\n   229\t\t\tselect {\n   230\t\t\tcase \u003c-d.rn:\n   231\t\t\tdefault:\n   232\t\t\t}\n   233\t\t}\n   234\t}\n   235\t\n   236\tfunc (d *dnsResolver) lookupSRV() ([]resolver.Address, error) {\n   237\t\tif !EnableSRVLookups {\n   238\t\t\treturn nil, nil\n   239\t\t}\n   240\t\tvar newAddrs []resolver.Address\n   241\t\t_, srvs, err := d.resolver.LookupSRV(d.ctx, \"grpclb\", \"tcp\", d.host)\n   242\t\tif err != nil {\n   243\t\t\terr = handleDNSError(err, \"SRV\") // may become nil\n   244\t\t\treturn nil, err\n   245\t\t}\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_12",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/internal/resolver/dns/dns_resolver.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_12",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791320835919352000/internal/resolver/dns/dns_resolver.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_13",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_13",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+          "aggregated_output": "diff --git a/balancer/base/balancer.go b/balancer/base/balancer.go\nindex d952f09f..dd9f9d63 100644\n--- a/balancer/base/balancer.go\n+++ b/balancer/base/balancer.go\n@@ -129,8 +129,8 @@ func (b *baseBalancer) UpdateClientConnState(s balancer.ClientConnState) error {\n \n // regeneratePicker takes a snapshot of the balancer, and generates a picker\n // from it. The picker is\n-//  - errPicker with ErrTransientFailure if the balancer is in TransientFailure,\n-//  - built by the pickerBuilder with all READY SubConns otherwise.\n+//   - errPicker with ErrTransientFailure if the balancer is in TransientFailure,\n+//   - built by the pickerBuilder with all READY SubConns otherwise.\n func (b *baseBalancer) regeneratePicker(err error) {\n \tif b.state == connectivity.TransientFailure {\n \t\tif b.pickerBuilder != nil {\n@@ -199,6 +199,11 @@ func (b *baseBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.Su\n \n \toldAggrState := b.state\n \tb.state = b.csEvltr.RecordTransition(oldS, s)\n+\tif b.state == connectivity.TransientFailure \u0026\u0026 oldAggrState != connectivity.TransientFailure {\n+\t\t// The current resolver result may contain endpoints that are no longer\n+\t\t// available. Ask it to refresh when all SubConns have failed.\n+\t\tb.cc.ResolveNow(resolver.ResolveNowOptions{})\n+\t}\n \n \t// Regenerate picker when one of the following happens:\n \t//  - this sc became ready from not-ready\ndiff --git a/internal/resolver/dns/dns_resolver.go b/internal/resolver/dns/dns_resolver.go\nindex c368db62..543060c2 100644\n--- a/internal/resolver/dns/dns_resolver.go\n+++ b/internal/resolver/dns/dns_resolver.go\n@@ -198,13 +198,14 @@ func (d *dnsResolver) Close() {\n \n func (d *dnsResolver) watcher() {\n \tdefer d.wg.Done()\n+\t// The first resolution is requested by Build. Subsequent resolutions happen\n+\t// periodically, and can also be requested by the balancer.\n+\tselect {\n+\tcase \u003c-d.ctx.Done():\n+\t\treturn\n+\tcase \u003c-d.rn:\n+\t}\n \tfor {\n-\t\tselect {\n-\t\tcase \u003c-d.ctx.Done():\n-\t\t\treturn\n-\t\tcase \u003c-d.rn:\n-\t\t}\n-\n \t\tstate, err := d.lookup()\n \t\tif err != nil {\n \t\t\td.cc.ReportError(err)\n@@ -212,8 +213,8 @@ func (d *dnsResolver) watcher() {\n \t\t\td.cc.UpdateState(*state)\n \t\t}\n \n-\t\t// Sleep to prevent excessive re-resolutions. Incoming resolution requests\n-\t\t// will be queued in d.rn.\n+\t\t// Refresh DNS periodically because endpoint changes do not necessarily\n+\t\t// cause an error on an existing connection.\n \t\tt := time.NewTimer(minDNSResRate)\n \t\tselect {\n \t\tcase \u003c-t.C:\n@@ -221,6 +222,12 @@ func (d *dnsResolver) watcher() {\n \t\t\tt.Stop()\n \t\t\treturn\n \t\t}\n+\t\t// Treat the timer as the scheduled resolution request. Discard any\n+\t\t// requests queued while resolving so they do not cause an extra lookup.\n+\t\tselect {\n+\t\tcase \u003c-d.rn:\n+\t\tdefault:\n+\t\t}\n \t}\n }\n \n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_14",
+          "type": "agent_message",
+          "text": "Restored periodic DNS resolution at the existing 30-second interval and made the base balancer request resolution when all SubConns enter transient failure. This lets DNS changes refresh the endpoint list even when no connection error triggers a refresh.\n\n`gofmt` and `git diff --check` completed. I did not run tests."
+        }
+      },
+      {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 367473,
+          "cached_input_tokens": 332544,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 4931,
+          "reasoning_output_tokens": 3182
+        }
+      }
+    ],
+    "tool_calls": [
+      {
+        "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -100 \u0026\u0026 git status --short \u0026\u0026 git log -1 --oneline\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc \"cat go.mod \u0026\u0026 sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,240p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|ReportError|connection refused|re-resolv|MinTimeBetweenResolutions|Refresh\\\" resolver internal balancer\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc \"git log --oneline --all --grep='3165\\\\|resolver.*re-resolv\\\\|roundrobin.*Resolve' | head -30 \u0026\u0026 sed -n '360,430p' balancer/balancer.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(\\\" balancer/base balancer | head -50 \u0026\u0026 sed -n '1,160p' resolver/resolver.go\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc 'git show --stat e5e980f2 \u0026\u0026 git show e5e980f2 -- internal/resolver/dns/dns_resolver.go balancer/roundrobin/roundrobin.go'",
+        "transport_status": "unknown",
+        "functional_status": "failed"
+      },
+      {
+        "name": "/bin/zsh -lc \"rg -n \\\"type baseBalancer|UpdateSubConnState|TransientFailure|ResolveNow\\\" balancer/base \u0026\u0026 sed -n '1,300p' balancer/base/balancer.go \u0026\u0026 git log --oneline -- internal/resolver/dns/dns_resolver.go | head\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc \"sed -n '820,980p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 sed -n '1220,1375p' internal/resolver/dns/dns_resolver_test.go \u0026\u0026 rg -n \\\"ResolveNow\\\\(resolver|ResolveNow\\\\(\\\" balancer/base/*test.go\"",
+        "transport_status": "unknown",
+        "functional_status": "failed"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+        "transport_status": "unknown",
+        "functional_status": "failed"
+      },
+      {
+        "name": "/bin/zsh -lc \"nl -ba internal/resolver/dns/dns_resolver.go | sed -n '195,245p'\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go balancer/base/balancer.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      }
+    ],
+    "response": "I’ll trace the DNS resolver and round-robin error handling around the reported 1.26 regression, then make the smallest fix that restores the expected refresh behavior.\nThe resolver’s current “rate limit” is also its only scheduling mechanism: it sleeps after a lookup, then waits indefinitely for `ResolveNow`. I’m restoring periodic lookup at that interval and adding a re-resolution request when the base balancer enters transient failure, so a failed endpoint can prompt a refresh sooner.\nRestored periodic DNS resolution at the existing 30-second interval and made the base balancer request resolution when all SubConns enter transient failure. This lets DNS changes refresh the endpoint list even when no connection error triggers a refresh.\n\n`gofmt` and `git diff --check` completed. I did not run tests."
+  }
+]

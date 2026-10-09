@@ -1,0 +1,282 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-6ea7dce4c2dd7705",
+    "pair_id": "pair-73f5fbd1d609d07d",
+    "task_id": "grpc__grpc-go-2951",
+    "fixture_path": "testdata/bench/grpc__grpc-go-2951.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 534528,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T20:43:00.196447Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:00.196466Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:00.594264Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:00.594277Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-73f5fbd1d609d07d",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4059,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 7,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 534528,
+            "initial_load_turns": 7,
+            "internal_turns": 15,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 29260,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 6072,
+            "process_start_to_first_event_ms": 252,
+            "prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+            "prompt_tokens": 592571,
+            "reasoning_tokens": 3466,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"type Resolver|BuildOptions|ClientConn|ResolveNow|UpdateState|ReportError\\\" resolver.go resolver . --glob '*.go'\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat resolver/resolver.go \u0026\u0026 rg -n \\\"type ClientConn|UpdateState\\\\(|NewAddress\\\\(|updateResolverState|resolverState\\\" clientconn.go resolver -g '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '430,580p' clientconn.go \u0026\u0026 rg -n \\\"ErrNoSubConnAvailable|ErrTransientFailure|PickResult|pickerWrapper|blockingpicker|pickErr|failfast\\\" -g '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '570,650p' clientconn.go \u0026\u0026 sed -n '1,220p' picker_wrapper.go \u0026\u0026 sed -n '1,130p' resolver/manual/manual.go \u0026\u0026 rg -n \\\"UpdateState\\\\(s resolver.State\\\\)|newCCResolverWrapper|ccResolverWrapper\\\"\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat resolver_conn_wrapper.go \u0026\u0026 sed -n '210,270p' balancer_conn_wrappers.go \u0026\u0026 sed -n '200,265p' balancer/balancer.go \u0026\u0026 sed -n '1,130p' pickfirst.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"updateClientConnState|HandleResolvedAddrs\" balancer_conn_wrappers.go balancer_v1_wrapper.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '110,205p' balancer_conn_wrappers.go \u0026\u0026 sed -n '230,278p' balancer_v1_wrapper.go \u0026\u0026 rg -n \\\"ErrTransientFailure\\\"\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"func .* (UpdateState|NewAddress|NewServiceConfig)\\\\(\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '45,100p' balancer/grpclb/grpclb_util.go \u0026\u0026 sed -n '45,90p' xds/internal/resolver/xds_resolver_test.go \u0026\u0026 sed -n '45,90p' resolver/dns/dns_resolver_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff -- resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 git diff --stat \u0026\u0026 rg -n \\\"resolver\\\\.ClientConn\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"nl -ba resolver/resolver.go | sed -n '118,140p'; nl -ba picker_wrapper.go | sed -n '72,165p'; nl -ba resolver_conn_wrapper.go | sed -n '100,142p'; nl -ba resolver/manual/manual.go | sed -n '70,88p'\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 58043,
+            "wall_clock_ms": 65787
+          }
+        ],
+        "internal_turns": 15,
+        "job_id": "job-6ea7dce4c2dd7705",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 29260,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 6072,
+        "process_start_to_first_event_ms": 252,
+        "prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+        "prompt_tokens": 592571,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_grpc__grpc-go-2951_1791319379809853000.json"
+        },
+        "reasoning_tokens": 3466,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2951",
+        "tool_calls": [
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"type Resolver|BuildOptions|ClientConn|ResolveNow|UpdateState|ReportError\\\" resolver.go resolver . --glob '*.go'\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat resolver/resolver.go \u0026\u0026 rg -n \\\"type ClientConn|UpdateState\\\\(|NewAddress\\\\(|updateResolverState|resolverState\\\" clientconn.go resolver -g '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '430,580p' clientconn.go \u0026\u0026 rg -n \\\"ErrNoSubConnAvailable|ErrTransientFailure|PickResult|pickerWrapper|blockingpicker|pickErr|failfast\\\" -g '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '570,650p' clientconn.go \u0026\u0026 sed -n '1,220p' picker_wrapper.go \u0026\u0026 sed -n '1,130p' resolver/manual/manual.go \u0026\u0026 rg -n \\\"UpdateState\\\\(s resolver.State\\\\)|newCCResolverWrapper|ccResolverWrapper\\\"\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat resolver_conn_wrapper.go \u0026\u0026 sed -n '210,270p' balancer_conn_wrappers.go \u0026\u0026 sed -n '200,265p' balancer/balancer.go \u0026\u0026 sed -n '1,130p' pickfirst.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"updateClientConnState|HandleResolvedAddrs\" balancer_conn_wrappers.go balancer_v1_wrapper.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '110,205p' balancer_conn_wrappers.go \u0026\u0026 sed -n '230,278p' balancer_v1_wrapper.go \u0026\u0026 rg -n \\\"ErrTransientFailure\\\"\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"func .* (UpdateState|NewAddress|NewServiceConfig)\\\\(\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '45,100p' balancer/grpclb/grpclb_util.go \u0026\u0026 sed -n '45,90p' xds/internal/resolver/xds_resolver_test.go \u0026\u0026 sed -n '45,90p' resolver/dns/dns_resolver_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff -- resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 git diff --stat \u0026\u0026 rg -n \\\"resolver\\\\.ClientConn\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"nl -ba resolver/resolver.go | sed -n '118,140p'; nl -ba picker_wrapper.go | sed -n '72,165p'; nl -ba resolver_conn_wrapper.go | sed -n '100,142p'; nl -ba resolver/manual/manual.go | sed -n '70,88p'\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 15,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"type Resolver|BuildOptions|ClientConn|ResolveNow|UpdateState|ReportError\\\" resolver.go resolver . --glob '*.go'\"",
+          "/bin/zsh -lc \"cat resolver/resolver.go \u0026\u0026 rg -n \\\"type ClientConn|UpdateState\\\\(|NewAddress\\\\(|updateResolverState|resolverState\\\" clientconn.go resolver -g '*.go'\"",
+          "/bin/zsh -lc \"sed -n '430,580p' clientconn.go \u0026\u0026 rg -n \\\"ErrNoSubConnAvailable|ErrTransientFailure|PickResult|pickerWrapper|blockingpicker|pickErr|failfast\\\" -g '*.go'\"",
+          "/bin/zsh -lc \"sed -n '570,650p' clientconn.go \u0026\u0026 sed -n '1,220p' picker_wrapper.go \u0026\u0026 sed -n '1,130p' resolver/manual/manual.go \u0026\u0026 rg -n \\\"UpdateState\\\\(s resolver.State\\\\)|newCCResolverWrapper|ccResolverWrapper\\\"\"",
+          "/bin/zsh -lc \"cat resolver_conn_wrapper.go \u0026\u0026 sed -n '210,270p' balancer_conn_wrappers.go \u0026\u0026 sed -n '200,265p' balancer/balancer.go \u0026\u0026 sed -n '1,130p' pickfirst.go\"",
+          "/bin/zsh -lc 'rg -n \"updateClientConnState|HandleResolvedAddrs\" balancer_conn_wrappers.go balancer_v1_wrapper.go'",
+          "/bin/zsh -lc \"sed -n '110,205p' balancer_conn_wrappers.go \u0026\u0026 sed -n '230,278p' balancer_v1_wrapper.go \u0026\u0026 rg -n \\\"ErrTransientFailure\\\"\"",
+          "file_change",
+          "/bin/zsh -lc \"rg -n \\\"func .* (UpdateState|NewAddress|NewServiceConfig)\\\\(\\\" --glob '*.go'\"",
+          "/bin/zsh -lc \"sed -n '45,100p' balancer/grpclb/grpclb_util.go \u0026\u0026 sed -n '45,90p' xds/internal/resolver/xds_resolver_test.go \u0026\u0026 sed -n '45,90p' resolver/dns/dns_resolver_test.go\"",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff -- resolver/resolver.go picker_wrapper.go resolver_conn_wrapper.go resolver/manual/manual.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go'",
+          "file_change",
+          "/bin/zsh -lc \"git diff --check \u0026\u0026 git diff --stat \u0026\u0026 rg -n \\\"resolver\\\\.ClientConn\\\" --glob '*.go'\"",
+          "/bin/zsh -lc \"nl -ba resolver/resolver.go | sed -n '118,140p'; nl -ba picker_wrapper.go | sed -n '72,165p'; nl -ba resolver_conn_wrapper.go | sed -n '100,142p'; nl -ba resolver/manual/manual.go | sed -n '70,88p'\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 58043,
+        "variant": "small:default",
+        "wall_clock_ms": 95757
+      }
+    ],
+    "timestamp": "2026-10-06T20:44:35.92657Z"
+  }
+}

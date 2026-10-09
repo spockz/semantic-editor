@@ -1,0 +1,326 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-2260d34bd3dcea58",
+    "pair_id": "pair-fe0b918e9d9ba3e3",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 2,
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 517120,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-07T05:09:49.864478Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:09:49.864497Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:09:50.092317Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:09:50.092331Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-fe0b918e9d9ba3e3",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n}\n\nfunc (s) TestWithBackoffConfigDefault(t *testing.T) {\n\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n}\n\nfunc (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}\n\nfunc (s) TestWithBackoffMaxDelay(t *testing.T) {\n\tmd := DefaultBackoffConfig.MaxDelay / 2\n\texpected := BackoffConfig{MaxDelay: md}\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n}\n\nfunc testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\nerror: patch failed: clientconn_test.go:820\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4498,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 6,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 517120,
+            "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n}\n\nfunc (s) TestWithBackoffConfigDefault(t *testing.T) {\n\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n}\n\nfunc (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}\n\nfunc (s) TestWithBackoffMaxDelay(t *testing.T) {\n\tmd := DefaultBackoffConfig.MaxDelay / 2\n\texpected := BackoffConfig{MaxDelay: md}\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n}\n\nfunc testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\nerror: patch failed: clientconn_test.go:820\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...",
+            "initial_load_turns": 6,
+            "internal_turns": 20,
+            "mcp_load_turns": 0,
+            "output_tokens": 5783,
+            "process_start_to_first_event_ms": 167,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+            "prompt_tokens": 555762,
+            "reasoning_tokens": 2635,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g 'go.mod' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' backoff.go \u0026\u0026 sed -n '1,260p' internal/backoff/backoff.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|MaxDelay|Multiplier|Jitter\\\" --glob '*.go' --glob '*.md' | head -120\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"git status --short \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'doc/connection-backoff.md'\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '220,285p' dialoptions.go \u0026\u0026 sed -n '210,260p' clientconn.go \u0026\u0026 rg -n \\\"minConnectTimeout|MinConnect|backoff.Backoff|backoffStrategy\\\"\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '925,985p' clientconn.go \u0026\u0026 sed -n '1,110p' clientconn.go \u0026\u0026 sed -n '810,875p' clientconn_test.go \u0026\u0026 rg -n \\\"connectRetryNum|Backoff\\\\(\\\" clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff --stat'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"rg -n -U \\\"WithBackoffConfig[\\\\s\\\\S]{0,160}withMinConnectDeadline|withMinConnectDeadline[\\\\s\\\\S]{0,160}WithBackoffConfig\\\" --glob '*_test.go'\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 38642,
+            "wall_clock_ms": 132622
+          }
+        ],
+        "internal_turns": 20,
+        "job_id": "job-2260d34bd3dcea58",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": null,
+        "output_tokens": 5783,
+        "process_start_to_first_event_ms": 167,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+        "prompt_tokens": 555762,
+        "prompt_variant": "default",
+        "provenance": {
+          "coding_network": "disabled",
+          "oracle_patch_installation": "checked",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791349789601836000.json"
+        },
+        "reasoning_tokens": 2635,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g 'go.mod' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' backoff.go \u0026\u0026 sed -n '1,260p' internal/backoff/backoff.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|MaxDelay|Multiplier|Jitter\\\" --glob '*.go' --glob '*.md' | head -120\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"git status --short \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'doc/connection-backoff.md'\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '220,285p' dialoptions.go \u0026\u0026 sed -n '210,260p' clientconn.go \u0026\u0026 rg -n \\\"minConnectTimeout|MinConnect|backoff.Backoff|backoffStrategy\\\"\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '925,985p' clientconn.go \u0026\u0026 sed -n '1,110p' clientconn.go \u0026\u0026 sed -n '810,875p' clientconn_test.go \u0026\u0026 rg -n \\\"connectRetryNum|Backoff\\\\(\\\" clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff --stat'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"rg -n -U \\\"WithBackoffConfig[\\\\s\\\\S]{0,160}withMinConnectDeadline|withMinConnectDeadline[\\\\s\\\\S]{0,160}WithBackoffConfig\\\" --glob '*_test.go'\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 20,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g 'go.mod' | head -80\"",
+          "/bin/zsh -lc \"sed -n '1,240p' backoff.go \u0026\u0026 sed -n '1,260p' internal/backoff/backoff.go\"",
+          "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|MaxDelay|Multiplier|Jitter\\\" --glob '*.go' --glob '*.md' | head -120\"",
+          "/bin/zsh -lc \"git status --short \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'doc/connection-backoff.md'\"",
+          "/bin/zsh -lc \"sed -n '220,285p' dialoptions.go \u0026\u0026 sed -n '210,260p' clientconn.go \u0026\u0026 rg -n \\\"minConnectTimeout|MinConnect|backoff.Backoff|backoffStrategy\\\"\"",
+          "/bin/zsh -lc \"sed -n '925,985p' clientconn.go \u0026\u0026 sed -n '1,110p' clientconn.go \u0026\u0026 sed -n '810,875p' clientconn_test.go \u0026\u0026 rg -n \\\"connectRetryNum|Backoff\\\\(\\\" clientconn.go\"",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go'",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc 'git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff --stat'",
+          "/bin/zsh -lc \"rg -n -U \\\"WithBackoffConfig[\\\\s\\\\S]{0,160}withMinConnectDeadline|withMinConnectDeadline[\\\\s\\\\S]{0,160}WithBackoffConfig\\\" --glob '*_test.go'\"",
+          "file_change"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 38642,
+        "variant": "small:default",
+        "wall_clock_ms": 132622
+      }
+    ],
+    "timestamp": "2026-10-07T05:12:02.458855Z"
+  }
+}

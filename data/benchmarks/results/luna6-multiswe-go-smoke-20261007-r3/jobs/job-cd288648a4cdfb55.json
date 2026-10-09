@@ -1,0 +1,222 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-cd288648a4cdfb55",
+    "pair_id": "pair-1228995c501f99ba",
+    "task_id": "grpc__grpc-go-3361",
+    "fixture_path": "testdata/bench/grpc__grpc-go-3361.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 2,
+    "resolved_prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 570624,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-07T05:49:06.088370Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:49:06.088623Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-1228995c501f99ba",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 5,
+          "locality": 4,
+          "scale": 3,
+          "staging": 5
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 6230,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 7,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 570624,
+            "initial_load_turns": 7,
+            "internal_turns": 9,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 586773,
+              "error_message": "go test failed: signal: killed\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading golang.org/x/text v0.3.0\n--- FAIL: TestAddressesRemoved (5.00s)\n    roundrobin_test.go:220: EmptyCall() = _, rpc error: code = DeadlineExceeded desc = latest balancer error: resolver returned no addresses, want _, \u003cnil\u003e\nFAIL\nFAIL\tgoogle.golang.org/grpc/balancer/roundrobin\t5.503s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\n",
+              "failure_stage": "level_4_test",
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 5633,
+            "process_start_to_first_event_ms": 763,
+            "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+            "prompt_tokens": 660234,
+            "reasoning_tokens": 4072,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' -g '*balancer*' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' . .. | head -40; rg -n \\\"ResolveNow|ReportError|UpdateState|NewAddress|ResolveNow|round_robin|roundrobin|WithBalancerName\\\" resolver internal balancer naming | head -150; sed -n '1,240p' resolver/dns/dns_resolver.go; sed -n '1,200p' balancer/roundrobin/roundrobin.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"sed -n '130,250p' internal/resolver/dns/dns_resolver.go; sed -n '1,260p' balancer/base/balancer.go; sed -n '130,210p' resolver/resolver.go; rg -n \\\"ReportError|ResolveNow\\\\(\\\" balancer/base balancer.go clientconn.go\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"ResolveNow|ResolverError|ReportError|TransientFailure|connection error\\\" clientconn.go resolver balancer | head -200; git log -8 --oneline --decorate; sed -n '360,430p' balancer/balancer.go; rg -n \\\"func \\\\(.*ResolveNow|resolveNow|resolveNowLocked\\\" clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '780,875p' clientconn.go; sed -n '930,975p' clientconn.go; sed -n '1080,1160p' clientconn.go; git show --stat --oneline HEAD\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,145p' internal/resolver/dns/dns_resolver.go; sed -n '1,140p' naming/dns_resolver.go; rg -n \\\"minDNSResRate|ResolveNow|30 \\\\* time.Second|time.After\\\" internal/resolver/dns naming/dns_resolver.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,280p' resolver_conn_wrapper.go; sed -n '260,330p' clientconn.go; sed -n '1,180p' pickfirst.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 89610,
+            "wall_clock_ms": 132952
+          }
+        ],
+        "internal_turns": 9,
+        "job_id": "job-cd288648a4cdfb55",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 586773,
+          "error_message": "go test failed: signal: killed\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading golang.org/x/text v0.3.0\n--- FAIL: TestAddressesRemoved (5.00s)\n    roundrobin_test.go:220: EmptyCall() = _, rpc error: code = DeadlineExceeded desc = latest balancer error: resolver returned no addresses, want _, \u003cnil\u003e\nFAIL\nFAIL\tgoogle.golang.org/grpc/balancer/roundrobin\t5.503s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\n",
+          "failure_stage": "level_4_test",
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 5633,
+        "process_start_to_first_event_ms": 763,
+        "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+        "prompt_tokens": 660234,
+        "prompt_variant": "default",
+        "provenance": {
+          "coding_network": "disabled",
+          "oracle_patch_installation": "checked",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791352145235873000.json"
+        },
+        "reasoning_tokens": 4072,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-3361",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' -g '*balancer*' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' . .. | head -40; rg -n \\\"ResolveNow|ReportError|UpdateState|NewAddress|ResolveNow|round_robin|roundrobin|WithBalancerName\\\" resolver internal balancer naming | head -150; sed -n '1,240p' resolver/dns/dns_resolver.go; sed -n '1,200p' balancer/roundrobin/roundrobin.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"sed -n '130,250p' internal/resolver/dns/dns_resolver.go; sed -n '1,260p' balancer/base/balancer.go; sed -n '130,210p' resolver/resolver.go; rg -n \\\"ReportError|ResolveNow\\\\(\\\" balancer/base balancer.go clientconn.go\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"ResolveNow|ResolverError|ReportError|TransientFailure|connection error\\\" clientconn.go resolver balancer | head -200; git log -8 --oneline --decorate; sed -n '360,430p' balancer/balancer.go; rg -n \\\"func \\\\(.*ResolveNow|resolveNow|resolveNowLocked\\\" clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '780,875p' clientconn.go; sed -n '930,975p' clientconn.go; sed -n '1080,1160p' clientconn.go; git show --stat --oneline HEAD\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,145p' internal/resolver/dns/dns_resolver.go; sed -n '1,140p' naming/dns_resolver.go; rg -n \\\"minDNSResRate|ResolveNow|30 \\\\* time.Second|time.After\\\" internal/resolver/dns naming/dns_resolver.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,280p' resolver_conn_wrapper.go; sed -n '260,330p' clientconn.go; sed -n '1,180p' pickfirst.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 9,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' -g '*balancer*' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' . .. | head -40; rg -n \\\"ResolveNow|ReportError|UpdateState|NewAddress|ResolveNow|round_robin|roundrobin|WithBalancerName\\\" resolver internal balancer naming | head -150; sed -n '1,240p' resolver/dns/dns_resolver.go; sed -n '1,200p' balancer/roundrobin/roundrobin.go\"",
+          "/bin/zsh -lc \"sed -n '130,250p' internal/resolver/dns/dns_resolver.go; sed -n '1,260p' balancer/base/balancer.go; sed -n '130,210p' resolver/resolver.go; rg -n \\\"ReportError|ResolveNow\\\\(\\\" balancer/base balancer.go clientconn.go\"",
+          "/bin/zsh -lc \"rg -n \\\"ResolveNow|ResolverError|ReportError|TransientFailure|connection error\\\" clientconn.go resolver balancer | head -200; git log -8 --oneline --decorate; sed -n '360,430p' balancer/balancer.go; rg -n \\\"func \\\\(.*ResolveNow|resolveNow|resolveNowLocked\\\" clientconn.go\"",
+          "/bin/zsh -lc \"sed -n '780,875p' clientconn.go; sed -n '930,975p' clientconn.go; sed -n '1080,1160p' clientconn.go; git show --stat --oneline HEAD\"",
+          "/bin/zsh -lc \"sed -n '1,145p' internal/resolver/dns/dns_resolver.go; sed -n '1,140p' naming/dns_resolver.go; rg -n \\\"minDNSResRate|ResolveNow|30 \\\\* time.Second|time.After\\\" internal/resolver/dns naming/dns_resolver.go\"",
+          "/bin/zsh -lc \"sed -n '1,280p' resolver_conn_wrapper.go; sed -n '260,330p' clientconn.go; sed -n '1,180p' pickfirst.go\"",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 89610,
+        "variant": "small:default",
+        "wall_clock_ms": 720514
+      }
+    ],
+    "timestamp": "2026-10-07T06:01:06.054877Z"
+  }
+}

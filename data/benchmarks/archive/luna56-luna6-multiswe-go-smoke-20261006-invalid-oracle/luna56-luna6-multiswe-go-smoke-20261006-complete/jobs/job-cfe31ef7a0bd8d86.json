@@ -1,0 +1,258 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-cfe31ef7a0bd8d86",
+    "pair_id": "pair-fd1f2977d7bc21ad",
+    "task_id": "zeromicro__go-zero-964",
+    "fixture_path": "testdata/bench/zeromicro__go-zero-964.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "semedit-agentic",
+    "repeat": 1,
+    "resolved_prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-agentic",
+        "cached_prompt_tokens": 287488,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T21:26:54.378925Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T21:26:54.378944Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-fd1f2977d7bc21ad",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 3,
+          "locality": 4,
+          "scale": 4,
+          "staging": 3
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3429,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 10,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 287488,
+            "initial_load_turns": 10,
+            "internal_turns": 12,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 25620,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1715,
+            "process_start_to_first_event_ms": 685,
+            "prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+            "prompt_tokens": 311905,
+            "reasoning_tokens": 711,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*etcd*' | head -100\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg --files | head -80 \u0026\u0026 rg -n \"type EtcdConf|EtcdConf|NewEtcd|clientv3.Config\" core/discov'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"find .. -name PROJECT_BRIEF.md -o -name AGENTS.md | head -40; cat core/discov/config.go; sed -n '270,335p' core/discov/internal/registry.go; cat core/discov/config_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"DialClient\\\\(|NewEtcd|etcdclient|\\\\.Hosts\\\" core/discov\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"DialClient|EtcdConf|New\\\\(.*etcd|discov\\\" --glob '*.go' | head -100\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat core/discov/clients.go core/discov/publisher.go core/discov/subscriber.go; cat core/discov/internal/vars.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat core/discov/internal/registry.go | head -130; cat zrpc/config.go; cat core/discov/internal/etcdclient.go; rg -n \\\"GetRegistry\\\\(\\\\)|NewRegistry|Registry\\\" core/discov\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat zrpc/internal/target.go zrpc/internal/resolver/discovbuilder.go zrpc/internal/rpcpubserver.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"Etcd\\\\.Hosts|Etcd\\\\.Key|NewPublisher\\\\(|NewSubscriber\\\\(\\\" --glob '*.go' \"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,120p' zrpc/client.go; sed -n '1,100p' core/discov/internal/registry_test.go; sed -n '1,100p' core/discov/internal/vars.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- core/discov/config.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24417,
+            "wall_clock_ms": 34552
+          }
+        ],
+        "internal_turns": 12,
+        "job_id": "job-cfe31ef7a0bd8d86",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 25620,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1715,
+        "process_start_to_first_event_ms": 685,
+        "prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+        "prompt_tokens": 311905,
+        "prompt_variant": "default",
+        "provenance": {
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-default_zeromicro__go-zero-964_1791322013479768000.json"
+        },
+        "reasoning_tokens": 711,
+        "repeat": 1,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I couldn’t assess semedit’s value because I didn’t use its tools, so I can’t recommend asking my owner to add them based on this run."
+        },
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not discover any `semantic_*` tools in the available tools for this session. I used ordinary file editing instead."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "zeromicro__go-zero-964",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*etcd*' | head -100\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg --files | head -80 \u0026\u0026 rg -n \"type EtcdConf|EtcdConf|NewEtcd|clientv3.Config\" core/discov'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"find .. -name PROJECT_BRIEF.md -o -name AGENTS.md | head -40; cat core/discov/config.go; sed -n '270,335p' core/discov/internal/registry.go; cat core/discov/config_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"DialClient\\\\(|NewEtcd|etcdclient|\\\\.Hosts\\\" core/discov\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"DialClient|EtcdConf|New\\\\(.*etcd|discov\\\" --glob '*.go' | head -100\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat core/discov/clients.go core/discov/publisher.go core/discov/subscriber.go; cat core/discov/internal/vars.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat core/discov/internal/registry.go | head -130; cat zrpc/config.go; cat core/discov/internal/etcdclient.go; rg -n \\\"GetRegistry\\\\(\\\\)|NewRegistry|Registry\\\" core/discov\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat zrpc/internal/target.go zrpc/internal/resolver/discovbuilder.go zrpc/internal/rpcpubserver.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"Etcd\\\\.Hosts|Etcd\\\\.Key|NewPublisher\\\\(|NewSubscriber\\\\(\\\" --glob '*.go' \"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,120p' zrpc/client.go; sed -n '1,100p' core/discov/internal/registry_test.go; sed -n '1,100p' core/discov/internal/vars.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- core/discov/config.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 12,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*etcd*' | head -100\"",
+          "/bin/zsh -lc 'rg --files | head -80 \u0026\u0026 rg -n \"type EtcdConf|EtcdConf|NewEtcd|clientv3.Config\" core/discov'",
+          "/bin/zsh -lc \"find .. -name PROJECT_BRIEF.md -o -name AGENTS.md | head -40; cat core/discov/config.go; sed -n '270,335p' core/discov/internal/registry.go; cat core/discov/config_test.go\"",
+          "/bin/zsh -lc \"rg -n \\\"DialClient\\\\(|NewEtcd|etcdclient|\\\\.Hosts\\\" core/discov\"",
+          "/bin/zsh -lc \"rg -n \\\"DialClient|EtcdConf|New\\\\(.*etcd|discov\\\" --glob '*.go' | head -100\"",
+          "/bin/zsh -lc 'cat core/discov/clients.go core/discov/publisher.go core/discov/subscriber.go; cat core/discov/internal/vars.go'",
+          "/bin/zsh -lc \"cat core/discov/internal/registry.go | head -130; cat zrpc/config.go; cat core/discov/internal/etcdclient.go; rg -n \\\"GetRegistry\\\\(\\\\)|NewRegistry|Registry\\\" core/discov\"",
+          "/bin/zsh -lc 'cat zrpc/internal/target.go zrpc/internal/resolver/discovbuilder.go zrpc/internal/rpcpubserver.go'",
+          "/bin/zsh -lc \"rg -n \\\"Etcd\\\\.Hosts|Etcd\\\\.Key|NewPublisher\\\\(|NewSubscriber\\\\(\\\" --glob '*.go' \"",
+          "/bin/zsh -lc \"sed -n '1,120p' zrpc/client.go; sed -n '1,100p' core/discov/internal/registry_test.go; sed -n '1,100p' core/discov/internal/vars.go\"",
+          "file_change",
+          "/bin/zsh -lc 'git diff -- core/discov/config.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 24417,
+        "variant": "small:default",
+        "wall_clock_ms": 63143
+      }
+    ],
+    "timestamp": "2026-10-06T21:28:05.13871Z"
+  }
+}

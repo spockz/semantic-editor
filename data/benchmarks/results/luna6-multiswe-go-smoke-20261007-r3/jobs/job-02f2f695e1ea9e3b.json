@@ -1,0 +1,244 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-02f2f695e1ea9e3b",
+    "pair_id": "pair-7b992d034b24f091",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "baseline-diff",
+    "repeat": 2,
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 268288,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-07T05:07:24.058142Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:07:24.058505Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-7b992d034b24f091",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3227,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 268288,
+            "initial_load_turns": 5,
+            "internal_turns": 11,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 6707,
+              "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.2.0\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\n# google.golang.org/grpc/internal/backoff [google.golang.org/grpc/internal/backoff.test]\ninternal/backoff/backoff_test.go:27:12: undefined: NewExponentialBuilder\ninternal/backoff/backoff_test.go:29:3: unknown field baseDelay in struct literal of type Exponential, but does have BaseDelay\ninternal/backoff/backoff_test.go:29:15: undefined: baseDelay\ninternal/backoff/backoff_test.go:30:3: unknown field multiplier in struct literal of type Exponential, but does have Multiplier\ninternal/backoff/backoff_test.go:30:15: undefined: multiplier\ninternal/backoff/backoff_test.go:31:3: unknown field jitter in struct literal of type Exponential, but does have Jitter\ninternal/backoff/backoff_test.go:31:15: undefined: jitter\ninternal/backoff/backoff_test.go:32:3: unknown field maxDelay in struct literal of type Exponential, but does have MaxDelay\ninternal/backoff/backoff_test.go:32:15: undefined: maxDelay\ninternal/backoff/backoff_test.go:42:12: undefined: NewExponentialBuilder\ninternal/backoff/backoff_test.go:42:12: too many errors\nFAIL\tgoogle.golang.org/grpc/internal/backoff [build failed]\n# google.golang.org/grpc [google.golang.org/grpc.test]\n./clientconn_test.go:823:36: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:828:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:834:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:842:9: undefined: ConnectParams\n./clientconn_test.go:843:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:844:38: undefined: WithConnectParams\nok  \tgoogle.golang.org/grpc/health\t0.358s\n?   \tgoogle.golang.org/grpc/health/grpc_health_v1\t[no test files]\nok  \tgoogle.golang.org/grpc/resolver/dns\t1.972s\nFAIL\tgoogle.golang.org/grpc [build failed]\nFAIL\n",
+              "failure_stage": "level_4_test",
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 2321,
+            "process_start_to_first_event_ms": 764,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+            "prompt_tokens": 296682,
+            "reasoning_tokens": 787,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*.go' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; rg -n 'BackoffConfig|backoff' --glob '*.go' | head -100; find .. -name AGENTS.md -print\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat backoff.go; sed -n '30,100p' internal/backoff/backoff.go; sed -n '220,280p' dialoptions.go; cat go.mod | head -8\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'minConnectTimeout|MIN_CONNECT_TIMEOUT|baseDelay|factor|jitter' clientconn.go internal/backoff backoff.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc ''",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 28394,
+            "wall_clock_ms": 36712
+          }
+        ],
+        "internal_turns": 11,
+        "job_id": "job-02f2f695e1ea9e3b",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 6707,
+          "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.2.0\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\n# google.golang.org/grpc/internal/backoff [google.golang.org/grpc/internal/backoff.test]\ninternal/backoff/backoff_test.go:27:12: undefined: NewExponentialBuilder\ninternal/backoff/backoff_test.go:29:3: unknown field baseDelay in struct literal of type Exponential, but does have BaseDelay\ninternal/backoff/backoff_test.go:29:15: undefined: baseDelay\ninternal/backoff/backoff_test.go:30:3: unknown field multiplier in struct literal of type Exponential, but does have Multiplier\ninternal/backoff/backoff_test.go:30:15: undefined: multiplier\ninternal/backoff/backoff_test.go:31:3: unknown field jitter in struct literal of type Exponential, but does have Jitter\ninternal/backoff/backoff_test.go:31:15: undefined: jitter\ninternal/backoff/backoff_test.go:32:3: unknown field maxDelay in struct literal of type Exponential, but does have MaxDelay\ninternal/backoff/backoff_test.go:32:15: undefined: maxDelay\ninternal/backoff/backoff_test.go:42:12: undefined: NewExponentialBuilder\ninternal/backoff/backoff_test.go:42:12: too many errors\nFAIL\tgoogle.golang.org/grpc/internal/backoff [build failed]\n# google.golang.org/grpc [google.golang.org/grpc.test]\n./clientconn_test.go:823:36: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:828:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:834:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:842:9: undefined: ConnectParams\n./clientconn_test.go:843:22: undefined: backoff.NewExponentialBuilder\n./clientconn_test.go:844:38: undefined: WithConnectParams\nok  \tgoogle.golang.org/grpc/health\t0.358s\n?   \tgoogle.golang.org/grpc/health/grpc_health_v1\t[no test files]\nok  \tgoogle.golang.org/grpc/resolver/dns\t1.972s\nFAIL\tgoogle.golang.org/grpc [build failed]\nFAIL\n",
+          "failure_stage": "level_4_test",
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 2321,
+        "process_start_to_first_event_ms": 764,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+        "prompt_tokens": 296682,
+        "prompt_variant": "default",
+        "provenance": {
+          "coding_network": "disabled",
+          "oracle_patch_installation": "checked",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791349643107043000.json"
+        },
+        "reasoning_tokens": 787,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*.go' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; rg -n 'BackoffConfig|backoff' --glob '*.go' | head -100; find .. -name AGENTS.md -print\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat backoff.go; sed -n '30,100p' internal/backoff/backoff.go; sed -n '220,280p' dialoptions.go; cat go.mod | head -8\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'minConnectTimeout|MIN_CONNECT_TIMEOUT|baseDelay|factor|jitter' clientconn.go internal/backoff backoff.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc ''",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 11,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*.go' | head -80\"",
+          "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; rg -n 'BackoffConfig|backoff' --glob '*.go' | head -100; find .. -name AGENTS.md -print\"",
+          "/bin/zsh -lc \"cat backoff.go; sed -n '30,100p' internal/backoff/backoff.go; sed -n '220,280p' dialoptions.go; cat go.mod | head -8\"",
+          "/bin/zsh -lc \"rg -n 'minConnectTimeout|MIN_CONNECT_TIMEOUT|baseDelay|factor|jitter' clientconn.go internal/backoff backoff.go\"",
+          "/bin/zsh -lc ''",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 28394,
+        "variant": "small:default",
+        "wall_clock_ms": 43861
+      }
+    ],
+    "timestamp": "2026-10-07T05:08:07.372072Z"
+  }
+}

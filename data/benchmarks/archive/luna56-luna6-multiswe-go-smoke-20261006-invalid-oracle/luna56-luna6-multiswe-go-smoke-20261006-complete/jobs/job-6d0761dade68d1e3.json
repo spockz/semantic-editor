@@ -1,0 +1,233 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-6d0761dade68d1e3",
+    "pair_id": "pair-c8bd60d133bc5222",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "semedit-agentic",
+    "repeat": 1,
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-agentic",
+        "cached_prompt_tokens": 284672,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T20:32:47.089769Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:32:47.089811Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:32:47.294918Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:32:47.294929Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:33:59.015229Z  WARN codex_analytics::client: failed to send events request: error sending request for url (https://chatgpt.com/backend-api/codex/analytics-events/events)\n",
+        "comparison_pair_id": "pair-c8bd60d133bc5222",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "diagnostic_reflection_skipped": "final task oracle did not pass",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3236,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 284672,
+            "initial_load_turns": 5,
+            "internal_turns": 10,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 68818,
+              "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.2.0\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\n?   \tgoogle.golang.org/grpc/internal/backoff\t[no test files]\nok  \tgoogle.golang.org/grpc/health\t0.283s\n?   \tgoogle.golang.org/grpc/health/grpc_health_v1\t[no test files]\nok  \tgoogle.golang.org/grpc/resolver/dns\t2.204s\nE1006 22:34:59.950314   16369 pickfirst.go:61] pickfirstBalancer: failed to NewSubConn: grpc: cannot create SubConn with empty address list\nE1006 22:35:04.741728   16369 pickfirst.go:61] pickfirstBalancer: failed to NewSubConn: grpc: cannot create SubConn with empty address list\n--- FAIL: Test (37.24s)\n    --- FAIL: Test/CloseConnectionWhenServerPrefaceNotReceived (20.05s)\n        clientconn_test.go:473: Client didn't make another connection request in time.\n        clientconn_test.go:440: Error while accepting. Err: accept tcp 127.0.0.1:55151: use of closed network connection\n        grpc_test.go:39: Leaked goroutine: goroutine 358 [select]:\n            google.golang.org/grpc.(*ccBalancerWrapper).watcher(0x7cd2324ac500)\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/balancer_conn_wrappers.go:115 +0x84\n            created by google.golang.org/grpc.newCCBalancerWrapper in goroutine 354\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/balancer_conn_wrappers.go:106 +0x16c\n        grpc_test.go:39: Leaked goroutine: goroutine 359 [select]:\n            google.golang.org/grpc.(*addrConn).resetTransport(0x7cd232552288)\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/clientconn.go:995 +0x704\n            created by google.golang.org/grpc.(*addrConn).connect in goroutine 358\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/clientconn.go:704 +0x1e8\n        grpc_test.go:48: Leak check disabled for future tests\nFAIL\nFAIL\tgoogle.golang.org/grpc\t37.934s\nFAIL\n",
+              "failure_stage": "level_4_test",
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 3003,
+            "process_start_to_first_event_ms": 769,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+            "prompt_tokens": 322395,
+            "reasoning_tokens": 753,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"BackoffConfig|connection-backoff|ConnectParams|backoff\\\" --glob '\"'!vendor/**'\"' | head -160 \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*backoff*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '235,280p' dialoptions.go \u0026\u0026 sed -n '35,100p' internal/backoff/backoff.go \u0026\u0026 sed -n '810,865p' clientconn_test.go \u0026\u0026 sed -n '1,80p'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"rg -n \\\"baseDelay|factor|jitter|BackoffConfig|WithBackoffConfig\\\" --glob '*.go' --glob '*.md' | head -160; rg --files | rg 'AGENTS.md|PROJECT_BRIEF.md'\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"MinConnect|connect.*timeout|ConnectParams\"'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '900,975p' clientconn.go; sed -n '225,245p' clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"minConnectTimeout|type dialOptions\" dialoptions.go clientconn.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 37723,
+            "wall_clock_ms": 72479
+          }
+        ],
+        "internal_turns": 10,
+        "job_id": "job-6d0761dade68d1e3",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 68818,
+          "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.2.0\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\n?   \tgoogle.golang.org/grpc/internal/backoff\t[no test files]\nok  \tgoogle.golang.org/grpc/health\t0.283s\n?   \tgoogle.golang.org/grpc/health/grpc_health_v1\t[no test files]\nok  \tgoogle.golang.org/grpc/resolver/dns\t2.204s\nE1006 22:34:59.950314   16369 pickfirst.go:61] pickfirstBalancer: failed to NewSubConn: grpc: cannot create SubConn with empty address list\nE1006 22:35:04.741728   16369 pickfirst.go:61] pickfirstBalancer: failed to NewSubConn: grpc: cannot create SubConn with empty address list\n--- FAIL: Test (37.24s)\n    --- FAIL: Test/CloseConnectionWhenServerPrefaceNotReceived (20.05s)\n        clientconn_test.go:473: Client didn't make another connection request in time.\n        clientconn_test.go:440: Error while accepting. Err: accept tcp 127.0.0.1:55151: use of closed network connection\n        grpc_test.go:39: Leaked goroutine: goroutine 358 [select]:\n            google.golang.org/grpc.(*ccBalancerWrapper).watcher(0x7cd2324ac500)\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/balancer_conn_wrappers.go:115 +0x84\n            created by google.golang.org/grpc.newCCBalancerWrapper in goroutine 354\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/balancer_conn_wrappers.go:106 +0x16c\n        grpc_test.go:39: Leaked goroutine: goroutine 359 [select]:\n            google.golang.org/grpc.(*addrConn).resetTransport(0x7cd232552288)\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/clientconn.go:995 +0x704\n            created by google.golang.org/grpc.(*addrConn).connect in goroutine 358\n            \t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000/.scratch/oracle-3797470820/clientconn.go:704 +0x1e8\n        grpc_test.go:48: Leak check disabled for future tests\nFAIL\nFAIL\tgoogle.golang.org/grpc\t37.934s\nFAIL\n",
+          "failure_stage": "level_4_test",
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 3003,
+        "process_start_to_first_event_ms": 769,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+        "prompt_tokens": 322395,
+        "prompt_variant": "default",
+        "provenance": {
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-default_grpc__grpc-go-2735_1791318766124401000.json"
+        },
+        "reasoning_tokens": 753,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"BackoffConfig|connection-backoff|ConnectParams|backoff\\\" --glob '\"'!vendor/**'\"' | head -160 \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*backoff*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '235,280p' dialoptions.go \u0026\u0026 sed -n '35,100p' internal/backoff/backoff.go \u0026\u0026 sed -n '810,865p' clientconn_test.go \u0026\u0026 sed -n '1,80p'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"rg -n \\\"baseDelay|factor|jitter|BackoffConfig|WithBackoffConfig\\\" --glob '*.go' --glob '*.md' | head -160; rg --files | rg 'AGENTS.md|PROJECT_BRIEF.md'\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"MinConnect|connect.*timeout|ConnectParams\"'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '900,975p' clientconn.go; sed -n '225,245p' clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"minConnectTimeout|type dialOptions\" dialoptions.go clientconn.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"BackoffConfig|connection-backoff|ConnectParams|backoff\\\" --glob '\"'!vendor/**'\"' | head -160 \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' -g '*backoff*'\"",
+          "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '235,280p' dialoptions.go \u0026\u0026 sed -n '35,100p' internal/backoff/backoff.go \u0026\u0026 sed -n '810,865p' clientconn_test.go \u0026\u0026 sed -n '1,80p'\"",
+          "/bin/zsh -lc \"rg -n \\\"baseDelay|factor|jitter|BackoffConfig|WithBackoffConfig\\\" --glob '*.go' --glob '*.md' | head -160; rg --files | rg 'AGENTS.md|PROJECT_BRIEF.md'\"",
+          "/bin/zsh -lc 'rg -n \"MinConnect|connect.*timeout|ConnectParams\"'",
+          "/bin/zsh -lc \"sed -n '900,975p' clientconn.go; sed -n '225,245p' clientconn.go\"",
+          "file_change",
+          "/bin/zsh -lc 'rg -n \"minConnectTimeout|type dialOptions\" dialoptions.go clientconn.go'",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w backoff.go dialoptions.go internal/backoff/backoff.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git diff'",
+          "file_change"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 37723,
+        "variant": "small:default",
+        "wall_clock_ms": 142343
+      }
+    ],
+    "timestamp": "2026-10-06T20:35:08.988309Z"
+  }
+}

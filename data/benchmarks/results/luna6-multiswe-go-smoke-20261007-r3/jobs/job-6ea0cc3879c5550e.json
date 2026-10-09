@@ -1,0 +1,246 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-6ea0cc3879c5550e",
+    "pair_id": "pair-3a77fc519cf99013",
+    "task_id": "grpc__grpc-go-3361",
+    "fixture_path": "testdata/bench/grpc__grpc-go-3361.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "semedit-agentic",
+    "repeat": 1,
+    "resolved_prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-agentic",
+        "cached_prompt_tokens": 275200,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-07T05:18:05.463877Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:18:05.463902Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:18:05.798590Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-07T05:18:05.798602Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-3a77fc519cf99013",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 5,
+          "locality": 4,
+          "scale": 3,
+          "staging": 5
+        },
+        "diagnostic_reflection_skipped": "final task oracle did not pass",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3504,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 9,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 275200,
+            "initial_load_turns": 9,
+            "internal_turns": 11,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 609408,
+              "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading golang.org/x/text v0.3.0\n--- FAIL: TestAddressesRemoved (5.00s)\n    roundrobin_test.go:220: EmptyCall() = _, rpc error: code = DeadlineExceeded desc = latest balancer error: resolver returned no addresses, want _, \u003cnil\u003e\nFAIL\nFAIL\tgoogle.golang.org/grpc/balancer/roundrobin\t5.558s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\npanic: test timed out after 10m0s\n\trunning tests:\n\t\tTest (10m0s)\n\t\tTest/CZSocketGetSecurityValueTLS (9m53s)\n\ngoroutine 5697 [running]:\ntesting.(*M).startAlarm.func1()\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2959 +0x490\ncreated by time.goFunc\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/time/sleep.go:182 +0x44\n\ngoroutine 1 [chan receive, 10 minutes]:\ntesting.(*T).Run(0xc0001a8908, {0x10141ce2c, 0x4}, 0x101b301d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ntesting.runTests.func1(0xc0001a8908)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2742 +0x78\ntesting.tRunner(0xc0001a8908, 0xc000053a28)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ntesting.runTests({0x10142adec, 0x16}, {0x10142ed6a, 0x1b}, 0xc000010528, {0x101b930e8, 0x1, 0x1}, {0x0?, 0xc0000f0eb8?, ...})\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2740 +0x7a4\ntesting.(*M).Run(0xc0000cd540)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2600 +0xb3c\nmain.main()\n\t_testmain.go:46 +0x104\n\ngoroutine 4 [chan receive, 9 minutes]:\ntesting.(*T).Run(0xc0001a8b48, {0x101a829d2, 0x1b}, 0xc000f083c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests(0xc0001a8b48, {0x101b26200, 0x101bd4900})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/internal/grpctest/grpctest.go:62 +0x2ac\ngoogle.golang.org/grpc/test.Test(0xc0001a8b48)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:115 +0x3c\ntesting.tRunner(0xc0001a8b48, 0x101b301d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 1\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5135 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ClientConn).WaitForStateChange(0xc00100e388, {0x101b2d450, 0x101bd4900}, 0x3)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:510 +0xcc\ngoogle.golang.org/grpc.DialContext({0x101b2d450, 0x101bd4900}, {0xc000fc44e0, 0x1e}, {0xc0019bf080, 0x5, 0xc0000a8808?})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:325 +0x2190\ngoogle.golang.org/grpc.Dial(...)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:106\ngoogle.golang.org/grpc/test.(*test).clientConn(0xc0002a46c8, {0x0, 0x0, 0x0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:897 +0xc8\ngoogle.golang.org/grpc/test.s.TestCZSocketGetSecurityValueTLS({}, 0xc0002a4488)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/channelz_test.go:1350 +0x1c0\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests.func1(0xc0002a4488)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/internal/grpctest/grpctest.go:66 +0xa4\ntesting.tRunner(0xc0002a4488, 0xc000f083c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 4\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5588 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*addrConn).resetTransport(0xc000d5bb88)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:1149 +0x300\ncreated by google.golang.org/grpc.(*addrConn).connect in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:815 +0xe4\n\ngoroutine 5586 [IO wait, 2 minutes]:\ninternal/poll.runtime_pollWait(0x104e9a200, 0x72)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/netpoll.go:351 +0xa0\ninternal/poll.(*pollDesc).wait(0xc0019be620, 0x72, 0x0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:84 +0xb8\ninternal/poll.(*pollDesc).waitRead(...)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Accept(0xc0019be600)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_unix.go:618 +0x360\nnet.(*netFD).accept(0xc0019be600)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/fd_unix.go:149 +0x38\nnet.(*TCPListener).accept(0xc000035440)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock_posix.go:159 +0x40\nnet.(*TCPListener).Accept(0xc000035440)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock.go:387 +0x68\ngoogle.golang.org/grpc.(*Server).Serve(0xc00019c180, {0x101b2b948, 0xc000035440})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/server.go:597 +0x35c\ncreated by google.golang.org/grpc/test.(*test).listenAndServe in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:709 +0x23d0\n\ngoroutine 5587 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ccBalancerWrapper).watcher(0xc000035800)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/balancer_conn_wrappers.go:69 +0xe4\ncreated by google.golang.org/grpc.newCCBalancerWrapper in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/balancer_conn_wrappers.go:60 +0x2f0\nFAIL\tgoogle.golang.org/grpc/test\t600.342s\nok  \tgoogle.golang.org/grpc/test/bufconn\t1.806s\n?   \tgoogle.golang.org/grpc/test/codec_perf\t[no test files]\n?   \tgoogle.golang.org/grpc/test/go_vet\t[no test files]\n?   \tgoogle.golang.org/grpc/test/grpc_testing\t[no test files]\nFAIL\n",
+              "failure_stage": "level_4_test",
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 1864,
+            "process_start_to_first_event_ms": 154,
+            "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+            "prompt_tokens": 310343,
+            "reasoning_tokens": 736,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*dns*' -g '*roundrobin*' -g '*resolver*' | head -100\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'Makefile' | head -60 \u0026\u0026 git status --short \u0026\u0026 git log -8 --oneline --all\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,260p' resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,260p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n 'ResolveNow|ReportError|UpdateState|connection refused|re.?resolv' resolver/dns balancer/roundrobin\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,300p' internal/resolver/dns/dns_resolver.go \u0026\u0026 rg -n 'ResolveNow|ResolveNow\\\\(' balancer internal resolver\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git log --oneline -- internal/resolver/dns/dns_resolver.go | head -15 \u0026\u0026 sed -n '140,200p' balancer/balancer.go \u0026\u0026 sed -n '370,430p' balancer/balancer.go \u0026\u0026 rg -n 'ResolveNow\\\\(' clientconn.go balancer_conn_wrappers.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '175,225p' balancer_conn_wrappers.go \u0026\u0026 git show --stat --oneline 3165 2\u003e/dev/null || true \u0026\u0026 sed -n '820,930p' internal/resolver/dns/dns_resolver_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git show --stat 3165 \u0026\u0026 git show 3165 --'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'TransientFailure|ConnectionError|ResolveNow' balancer/base clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1080,1110p' clientconn.go \u0026\u0026 git show 3165 --stat --oneline\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 35143,
+            "wall_clock_ms": 28556
+          }
+        ],
+        "internal_turns": 11,
+        "job_id": "job-6ea0cc3879c5550e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 609408,
+          "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading golang.org/x/text v0.3.0\n--- FAIL: TestAddressesRemoved (5.00s)\n    roundrobin_test.go:220: EmptyCall() = _, rpc error: code = DeadlineExceeded desc = latest balancer error: resolver returned no addresses, want _, \u003cnil\u003e\nFAIL\nFAIL\tgoogle.golang.org/grpc/balancer/roundrobin\t5.558s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\npanic: test timed out after 10m0s\n\trunning tests:\n\t\tTest (10m0s)\n\t\tTest/CZSocketGetSecurityValueTLS (9m53s)\n\ngoroutine 5697 [running]:\ntesting.(*M).startAlarm.func1()\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2959 +0x490\ncreated by time.goFunc\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/time/sleep.go:182 +0x44\n\ngoroutine 1 [chan receive, 10 minutes]:\ntesting.(*T).Run(0xc0001a8908, {0x10141ce2c, 0x4}, 0x101b301d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ntesting.runTests.func1(0xc0001a8908)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2742 +0x78\ntesting.tRunner(0xc0001a8908, 0xc000053a28)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ntesting.runTests({0x10142adec, 0x16}, {0x10142ed6a, 0x1b}, 0xc000010528, {0x101b930e8, 0x1, 0x1}, {0x0?, 0xc0000f0eb8?, ...})\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2740 +0x7a4\ntesting.(*M).Run(0xc0000cd540)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2600 +0xb3c\nmain.main()\n\t_testmain.go:46 +0x104\n\ngoroutine 4 [chan receive, 9 minutes]:\ntesting.(*T).Run(0xc0001a8b48, {0x101a829d2, 0x1b}, 0xc000f083c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests(0xc0001a8b48, {0x101b26200, 0x101bd4900})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/internal/grpctest/grpctest.go:62 +0x2ac\ngoogle.golang.org/grpc/test.Test(0xc0001a8b48)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:115 +0x3c\ntesting.tRunner(0xc0001a8b48, 0x101b301d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 1\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5135 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ClientConn).WaitForStateChange(0xc00100e388, {0x101b2d450, 0x101bd4900}, 0x3)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:510 +0xcc\ngoogle.golang.org/grpc.DialContext({0x101b2d450, 0x101bd4900}, {0xc000fc44e0, 0x1e}, {0xc0019bf080, 0x5, 0xc0000a8808?})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:325 +0x2190\ngoogle.golang.org/grpc.Dial(...)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:106\ngoogle.golang.org/grpc/test.(*test).clientConn(0xc0002a46c8, {0x0, 0x0, 0x0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:897 +0xc8\ngoogle.golang.org/grpc/test.s.TestCZSocketGetSecurityValueTLS({}, 0xc0002a4488)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/channelz_test.go:1350 +0x1c0\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests.func1(0xc0002a4488)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/internal/grpctest/grpctest.go:66 +0xa4\ntesting.tRunner(0xc0002a4488, 0xc000f083c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 4\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5588 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*addrConn).resetTransport(0xc000d5bb88)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:1149 +0x300\ncreated by google.golang.org/grpc.(*addrConn).connect in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/clientconn.go:815 +0xe4\n\ngoroutine 5586 [IO wait, 2 minutes]:\ninternal/poll.runtime_pollWait(0x104e9a200, 0x72)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/netpoll.go:351 +0xa0\ninternal/poll.(*pollDesc).wait(0xc0019be620, 0x72, 0x0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:84 +0xb8\ninternal/poll.(*pollDesc).waitRead(...)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Accept(0xc0019be600)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_unix.go:618 +0x360\nnet.(*netFD).accept(0xc0019be600)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/fd_unix.go:149 +0x38\nnet.(*TCPListener).accept(0xc000035440)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock_posix.go:159 +0x40\nnet.(*TCPListener).Accept(0xc000035440)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock.go:387 +0x68\ngoogle.golang.org/grpc.(*Server).Serve(0xc00019c180, {0x101b2b948, 0xc000035440})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/server.go:597 +0x35c\ncreated by google.golang.org/grpc/test.(*test).listenAndServe in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/test/end2end_test.go:709 +0x23d0\n\ngoroutine 5587 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ccBalancerWrapper).watcher(0xc000035800)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/balancer_conn_wrappers.go:69 +0xe4\ncreated by google.golang.org/grpc.newCCBalancerWrapper in goroutine 5135\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000/.scratch/oracle-1722731649/balancer_conn_wrappers.go:60 +0x2f0\nFAIL\tgoogle.golang.org/grpc/test\t600.342s\nok  \tgoogle.golang.org/grpc/test/bufconn\t1.806s\n?   \tgoogle.golang.org/grpc/test/codec_perf\t[no test files]\n?   \tgoogle.golang.org/grpc/test/go_vet\t[no test files]\n?   \tgoogle.golang.org/grpc/test/grpc_testing\t[no test files]\nFAIL\n",
+          "failure_stage": "level_4_test",
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 1864,
+        "process_start_to_first_event_ms": 154,
+        "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+        "prompt_tokens": 310343,
+        "prompt_variant": "default",
+        "provenance": {
+          "coding_network": "disabled",
+          "oracle_patch_installation": "checked",
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-default_grpc__grpc-go-3361_1791350285096126000.json"
+        },
+        "reasoning_tokens": 736,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-3361",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*dns*' -g '*roundrobin*' -g '*resolver*' | head -100\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'Makefile' | head -60 \u0026\u0026 git status --short \u0026\u0026 git log -8 --oneline --all\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,260p' resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,260p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n 'ResolveNow|ReportError|UpdateState|connection refused|re.?resolv' resolver/dns balancer/roundrobin\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,300p' internal/resolver/dns/dns_resolver.go \u0026\u0026 rg -n 'ResolveNow|ResolveNow\\\\(' balancer internal resolver\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git log --oneline -- internal/resolver/dns/dns_resolver.go | head -15 \u0026\u0026 sed -n '140,200p' balancer/balancer.go \u0026\u0026 sed -n '370,430p' balancer/balancer.go \u0026\u0026 rg -n 'ResolveNow\\\\(' clientconn.go balancer_conn_wrappers.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '175,225p' balancer_conn_wrappers.go \u0026\u0026 git show --stat --oneline 3165 2\u003e/dev/null || true \u0026\u0026 sed -n '820,930p' internal/resolver/dns/dns_resolver_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git show --stat 3165 \u0026\u0026 git show 3165 --'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'TransientFailure|ConnectionError|ResolveNow' balancer/base clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1080,1110p' clientconn.go \u0026\u0026 git show 3165 --stat --oneline\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 11,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*dns*' -g '*roundrobin*' -g '*resolver*' | head -100\"",
+          "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'Makefile' | head -60 \u0026\u0026 git status --short \u0026\u0026 git log -8 --oneline --all\"",
+          "/bin/zsh -lc \"sed -n '1,260p' resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,260p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n 'ResolveNow|ReportError|UpdateState|connection refused|re.?resolv' resolver/dns balancer/roundrobin\"",
+          "/bin/zsh -lc \"sed -n '1,300p' internal/resolver/dns/dns_resolver.go \u0026\u0026 rg -n 'ResolveNow|ResolveNow\\\\(' balancer internal resolver\"",
+          "/bin/zsh -lc \"git log --oneline -- internal/resolver/dns/dns_resolver.go | head -15 \u0026\u0026 sed -n '140,200p' balancer/balancer.go \u0026\u0026 sed -n '370,430p' balancer/balancer.go \u0026\u0026 rg -n 'ResolveNow\\\\(' clientconn.go balancer_conn_wrappers.go\"",
+          "/bin/zsh -lc \"sed -n '175,225p' balancer_conn_wrappers.go \u0026\u0026 git show --stat --oneline 3165 2\u003e/dev/null || true \u0026\u0026 sed -n '820,930p' internal/resolver/dns/dns_resolver_test.go\"",
+          "/bin/zsh -lc 'git show --stat 3165 \u0026\u0026 git show 3165 --'",
+          "/bin/zsh -lc \"rg -n 'TransientFailure|ConnectionError|ResolveNow' balancer/base clientconn.go\"",
+          "/bin/zsh -lc \"sed -n '1080,1110p' clientconn.go \u0026\u0026 git show 3165 --stat --oneline\"",
+          "file_change",
+          "/bin/zsh -lc 'git diff -- internal/resolver/dns/dns_resolver.go \u0026\u0026 git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 35143,
+        "variant": "small:default",
+        "wall_clock_ms": 638530
+      }
+    ],
+    "timestamp": "2026-10-07T05:28:43.995189Z"
+  }
+}

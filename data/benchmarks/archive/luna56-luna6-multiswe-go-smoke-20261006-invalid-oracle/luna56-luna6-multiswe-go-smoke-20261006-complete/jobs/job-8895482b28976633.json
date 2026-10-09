@@ -1,0 +1,216 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-8895482b28976633",
+    "pair_id": "pair-fd1f2977d7bc21ad",
+    "task_id": "zeromicro__go-zero-964",
+    "fixture_path": "testdata/bench/zeromicro__go-zero-964.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 200192,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T21:26:09.208166Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T21:26:09.208185Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T21:26:09.593422Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T21:26:09.593435Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-fd1f2977d7bc21ad",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 3,
+          "locality": 4,
+          "scale": 4,
+          "staging": 3
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3550,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 7,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 200192,
+            "initial_load_turns": 7,
+            "internal_turns": 9,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 20927,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1341,
+            "process_start_to_first_event_ms": 142,
+            "prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+            "prompt_tokens": 221329,
+            "reasoning_tokens": 448,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' | head -100 \u0026\u0026 rg -n \\\"EtcdConf|NewEtcd|etcdserver|discov\\\" . --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat core/discov/config.go \u0026\u0026 cat core/discov/clients.go \u0026\u0026 cat core/discov/config_test.go \u0026\u0026 rg -n \"clientv3.Config|Endpoints:|Username|Password\" core'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,100p' core/discov/internal/registry.go \u0026\u0026 sed -n '280,325p' core/discov/internal/registry.go \u0026\u0026 rg -n \\\"NewEtcd|NewRegistry|new.*Registry|etcd.*Client\\\" core/discov\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"GetRegistry\\\\(\\\\)|\\\\.Monitor\\\\(|GetConn\\\\(|DialClient\\\\(\\\" core/discov \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' | head\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat core/discov/publisher.go core/discov/subscriber.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"NewPublisher\\\\(|NewSubscriber\\\\(|EtcdConf|DialClient\\\\(\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc ''",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat zrpc/internal/rpcpubserver.go; cat zrpc/internal/resolver/discovbuilder.go; cat zrpc/config.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 21137,
+            "wall_clock_ms": 21383
+          }
+        ],
+        "internal_turns": 9,
+        "job_id": "job-8895482b28976633",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 20927,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1341,
+        "process_start_to_first_event_ms": 142,
+        "prompt": "如题。\r\netcd打开了rbac authentication。但discov.EtcdConf中没有user等字段，无法进行身份认证。连接etcd时会报错：\r\netcdserver: user name is empty\n",
+        "prompt_tokens": 221329,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_zeromicro__go-zero-964_1791321968798810000.json"
+        },
+        "reasoning_tokens": 448,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "zeromicro__go-zero-964",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' | head -100 \u0026\u0026 rg -n \\\"EtcdConf|NewEtcd|etcdserver|discov\\\" . --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat core/discov/config.go \u0026\u0026 cat core/discov/clients.go \u0026\u0026 cat core/discov/config_test.go \u0026\u0026 rg -n \"clientv3.Config|Endpoints:|Username|Password\" core'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,100p' core/discov/internal/registry.go \u0026\u0026 sed -n '280,325p' core/discov/internal/registry.go \u0026\u0026 rg -n \\\"NewEtcd|NewRegistry|new.*Registry|etcd.*Client\\\" core/discov\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"GetRegistry\\\\(\\\\)|\\\\.Monitor\\\\(|GetConn\\\\(|DialClient\\\\(\\\" core/discov \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' | head\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat core/discov/publisher.go core/discov/subscriber.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"NewPublisher\\\\(|NewSubscriber\\\\(|EtcdConf|DialClient\\\\(\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc ''",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat zrpc/internal/rpcpubserver.go; cat zrpc/internal/resolver/discovbuilder.go; cat zrpc/config.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 9,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' | head -100 \u0026\u0026 rg -n \\\"EtcdConf|NewEtcd|etcdserver|discov\\\" . --glob '*.go'\"",
+          "/bin/zsh -lc 'cat core/discov/config.go \u0026\u0026 cat core/discov/clients.go \u0026\u0026 cat core/discov/config_test.go \u0026\u0026 rg -n \"clientv3.Config|Endpoints:|Username|Password\" core'",
+          "/bin/zsh -lc \"sed -n '1,100p' core/discov/internal/registry.go \u0026\u0026 sed -n '280,325p' core/discov/internal/registry.go \u0026\u0026 rg -n \\\"NewEtcd|NewRegistry|new.*Registry|etcd.*Client\\\" core/discov\"",
+          "/bin/zsh -lc \"rg -n \\\"GetRegistry\\\\(\\\\)|\\\\.Monitor\\\\(|GetConn\\\\(|DialClient\\\\(\\\" core/discov \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'go.mod' | head\"",
+          "/bin/zsh -lc 'cat core/discov/publisher.go core/discov/subscriber.go'",
+          "/bin/zsh -lc \"rg -n \\\"NewPublisher\\\\(|NewSubscriber\\\\(|EtcdConf|DialClient\\\\(\\\" --glob '*.go'\"",
+          "/bin/zsh -lc ''",
+          "file_change",
+          "/bin/zsh -lc 'cat zrpc/internal/rpcpubserver.go; cat zrpc/internal/resolver/discovbuilder.go; cat zrpc/config.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 21137,
+        "variant": "small:default",
+        "wall_clock_ms": 44266
+      }
+    ],
+    "timestamp": "2026-10-06T21:26:53.479765Z"
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-9418cf23a570e2c9",
+    "pair_id": "pair-a127f55c669ca0b3",
+    "task_id": "grpc__grpc-go-3361",
+    "fixture_path": "testdata/bench/grpc__grpc-go-3361.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 0,
+        "comparison_pair_id": "pair-a127f55c669ca0b3",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 5,
+          "locality": 4,
+          "scale": 3,
+          "staging": 5
+        },
+        "error": "hydrate external repository fixture: clone benchmark repository https://github.com/grpc/grpc-go.git: exit status 128: Cloning into '/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/cache/repos/.repo-cache-3070114424/repo'...\nfatal: unable to access 'https://github.com/grpc/grpc-go.git/': Could not resolve host: github.com",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "internal_turns": 0,
+        "job_id": "job-9418cf23a570e2c9",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": null,
+        "output_tokens": 0,
+        "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+        "prompt_tokens": 0,
+        "prompt_variant": "default",
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-3361",
+        "tool_count": 0,
+        "turns": 0,
+        "uncached_prompt_tokens": 0,
+        "variant": "small:default",
+        "wall_clock_ms": 0
+      }
+    ],
+    "timestamp": "2026-10-06T19:49:17.244627Z"
+  }
+}

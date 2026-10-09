@@ -1,0 +1,363 @@
+[
+  {
+    "number": 1,
+    "classification": "task",
+    "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "started_at": "2026-10-06T22:31:42.670417+02:00",
+    "finished_at": "2026-10-06T22:32:31.082629+02:00",
+    "resume_id": "01a112ea-3a7f-7b10-9bc4-0a13003e3aef",
+    "provider_exit": "codex exit code 0",
+    "raw_events": [
+      {
+        "type": "thread.started",
+        "thread_id": "01a112ea-3a7f-7b10-9bc4-0a13003e3aef"
+      },
+      {
+        "type": "turn.started"
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_0",
+          "type": "agent_message",
+          "text": "I’ll inspect the current backoff implementation and repository guidance, then wire the tunable fields through the retry path and add focused coverage."
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*conn*' | head -80 \u0026\u0026 rg -n \\\"type BackoffConfig|BackoffConfig|connection-backoff\\\" .\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_1",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*conn*' | head -80 \u0026\u0026 rg -n \\\"type BackoffConfig|BackoffConfig|connection-backoff\\\" .\"",
+          "aggregated_output": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000\nresolver_conn_wrapper.go\nbalancer_conn_wrappers.go\nclientconn_state_transition_test.go\ncredentials/internal/syscallconn_test.go\ncredentials/internal/syscallconn.go\ncredentials/internal/syscallconn_appengine.go\nconnectivity/connectivity.go\nbackoff.go\nclientconn_test.go\ntest/bufconn/bufconn_test.go\ntest/bufconn/bufconn.go\nclientconn.go\nresolver_conn_wrapper_test.go\ninternal/backoff/backoff.go\n./backoff.go:28:// DefaultBackoffConfig uses values specified for backoff in\n./backoff.go:29:// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n./backoff.go:30:var DefaultBackoffConfig = BackoffConfig{\n./backoff.go:34:// BackoffConfig defines the parameters for the default gRPC backoff strategy.\n./backoff.go:35:type BackoffConfig struct {\n./dialoptions.go:255:\treturn WithBackoffConfig(BackoffConfig{MaxDelay: md})\n./dialoptions.go:258:// WithBackoffConfig configures the dialer to use the provided backoff\n./dialoptions.go:261:// Use WithBackoffMaxDelay until more parameters on BackoffConfig are opened up\n./dialoptions.go:263:func WithBackoffConfig(b BackoffConfig) DialOption {\n./clientconn_test.go:822:func (s) TestWithBackoffConfigDefault(t *testing.T) {\n./clientconn_test.go:823:\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n./clientconn_test.go:826:func (s) TestWithBackoffConfig(t *testing.T) {\n./clientconn_test.go:827:\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n./clientconn_test.go:829:\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n./clientconn_test.go:833:\tmd := DefaultBackoffConfig.MaxDelay / 2\n./clientconn_test.go:834:\texpected := BackoffConfig{MaxDelay: md}\n./clientconn_test.go:835:\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n./clientconn_test.go:838:func testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n./internal/backoff/backoff.go:51:// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n./clientconn.go:236:\t\t\tMaxDelay: DefaultBackoffConfig.MaxDelay,\n./clientconn.go:971:\t\t// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md#proposed-backoff-algorithm\n./balancer/grpclb/grpclb.go:54:\t// defaultBackoffConfig configures the backoff strategy that's used when the\n./balancer/grpclb/grpclb.go:58:\t// It has the same value as the default grpc.DefaultBackoffConfig.\n./balancer/grpclb/grpclb.go:61:\tdefaultBackoffConfig = backoff.Exponential{\n./balancer/grpclb/grpclb.go:179:\t\tbackoff:        defaultBackoffConfig, // TODO: make backoff configurable.\n./balancer/xds/xds_client.go:48:\tdefaultBackoffConfig = backoff.Exponential{\n./balancer/xds/xds_client.go:260:\t\tbackoff:      defaultBackoffConfig,\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_2",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,150p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,275p' clientconn.go \u0026\u0026 sed -n '940,1005p' clientconn.go \u0026\u0026 sed -n '240,275p' dialoptions.go \u0026\u0026 find .. -name AGENTS.md -o -name PROJECT_BRIEF.md\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_2",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,150p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,275p' clientconn.go \u0026\u0026 sed -n '940,1005p' clientconn.go \u0026\u0026 sed -n '240,275p' dialoptions.go \u0026\u0026 find .. -name AGENTS.md -o -name PROJECT_BRIEF.md\"",
+          "aggregated_output": "",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_3",
+          "type": "web_search",
+          "id": "exec-037f379b-6503-41f2-a980-de02c5f45634",
+          "query": "",
+          "action": {
+            "type": "other"
+          }
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_3",
+          "type": "web_search",
+          "id": "exec-037f379b-6503-41f2-a980-de02c5f45634",
+          "query": "https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md",
+          "action": {
+            "type": "other"
+          }
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_4",
+          "type": "agent_message",
+          "text": "The protocol exposes four backoff knobs: initial delay, multiplier, jitter, and maximum delay. I’ll add `BaseDelay`, `Multiplier`, and `Jitter` while keeping zero values mapped to today’s defaults, so existing `BackoffConfig{MaxDelay: ...}` callers retain their behavior."
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_5",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '1,160p' internal/backoff/backoff_test.go 2\u003e/dev/null || true; sed -n '810,855p' clientconn_test.go; rg -n \\\"backoff\\\\.Exponential|Exponential\\\\{\\\" --glob '*.go' | head -60; rg -n \\\"WithBackoffConfig|BackoffConfig\\\" doc\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_5",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '1,160p' internal/backoff/backoff_test.go 2\u003e/dev/null || true; sed -n '810,855p' clientconn_test.go; rg -n \\\"backoff\\\\.Exponential|Exponential\\\\{\\\" --glob '*.go' | head -60; rg -n \\\"WithBackoffConfig|BackoffConfig\\\" doc\"",
+          "aggregated_output": "\t\tt.Fatalf(\"Failed to create authenticator %v\", err)\n\t}\n\t// Two conflicting credential configurations\n\tif _, err := Dial(\"passthrough:///Non-Existent.Server:80\", WithTransportCredentials(tlsCreds), WithBlock(), WithInsecure()); err != errCredentialsConflict {\n\t\tt.Fatalf(\"Dial(_, _) = _, %v, want _, %v\", err, errCredentialsConflict)\n\t}\n\t// security info on insecure connection\n\tif _, err := Dial(\"passthrough:///Non-Existent.Server:80\", WithPerRPCCredentials(securePerRPCCredentials{}), WithBlock(), WithInsecure()); err != errTransportCredentialsMissing {\n\t\tt.Fatalf(\"Dial(_, _) = _, %v, want _, %v\", err, errTransportCredentialsMissing)\n\t}\n}\n\nfunc (s) TestWithBackoffConfigDefault(t *testing.T) {\n\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n}\n\nfunc (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}\n\nfunc (s) TestWithBackoffMaxDelay(t *testing.T) {\n\tmd := DefaultBackoffConfig.MaxDelay / 2\n\texpected := BackoffConfig{MaxDelay: md}\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n}\n\nfunc testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error dialing connection: %v\", err)\n\t}\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\ndialoptions.go:264:\treturn withBackoff(backoff.Exponential{\nclientconn_test.go:850:\tactual, ok := conn.dopts.bs.(backoff.Exponential)\nclientconn_test.go:855:\texpectedValue := backoff.Exponential{\nhealth/client.go:37:var backoffStrategy = backoff.Exponential{MaxDelay: maxDelay}\nclientconn.go:235:\t\tcc.dopts.bs = backoff.Exponential{\nbalancer/grpclb/grpclb.go:61:\tdefaultBackoffConfig = backoff.Exponential{\nbalancer/xds/xds_client.go:48:\tdefaultBackoffConfig = backoff.Exponential{\nresolver/dns/dns_resolver.go:128:\t\tbackoff:              backoff.Exponential{MaxDelay: b.minFreq},\nresolver/dns/dns_resolver.go:200:\tbackoff    backoff.Exponential\nrg: doc: IO error for operation on doc: No such file or directory (os error 2)\n",
+          "exit_code": 2,
+          "status": "failed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_6",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '838,865p' clientconn_test.go; ls internal/backoff\"",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_6",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc \"sed -n '838,865p' clientconn_test.go; ls internal/backoff\"",
+          "aggregated_output": "func testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error dialing connection: %v\", err)\n\t}\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}\n}\n\n// emptyBalancer returns an empty set of servers.\ntype emptyBalancer struct {\n\tch chan []Address\nbackoff.go\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_7",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/backoff.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/dialoptions.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_7",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/backoff.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/dialoptions.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_8",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn_test.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_8",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn_test.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_9",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go'",
+          "aggregated_output": "",
+          "exit_code": null,
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_9",
+          "type": "command_execution",
+          "command": "/bin/zsh -lc 'gofmt -w backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go'",
+          "aggregated_output": "2026-10-06 22:32:18.749 xcodebuild[98799:150425534]  DVTFilePathFSEvents: Failed to start fs event stream.\n2026-10-06 22:32:19.727 xcodebuild[98799:150425310] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead.\ndiff --git a/backoff.go b/backoff.go\nindex 97c6e256..5a9549f3 100644\n--- a/backoff.go\n+++ b/backoff.go\n@@ -28,11 +28,20 @@ import (\n // DefaultBackoffConfig uses values specified for backoff in\n // https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n var DefaultBackoffConfig = BackoffConfig{\n-\tMaxDelay: 120 * time.Second,\n+\tBaseDelay:  1 * time.Second,\n+\tMultiplier: 1.6,\n+\tJitter:     0.2,\n+\tMaxDelay:   120 * time.Second,\n }\n \n // BackoffConfig defines the parameters for the default gRPC backoff strategy.\n type BackoffConfig struct {\n+\t// BaseDelay is the initial backoff delay.\n+\tBaseDelay time.Duration\n+\t// Multiplier is applied to the backoff after each retry.\n+\tMultiplier float64\n+\t// Jitter is the randomization factor applied to backoff delays.\n+\tJitter float64\n \t// MaxDelay is the upper bound of backoff delay.\n \tMaxDelay time.Duration\n }\ndiff --git a/clientconn.go b/clientconn.go\nindex bd2d2b31..09a218d4 100644\n--- a/clientconn.go\n+++ b/clientconn.go\n@@ -233,7 +233,10 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *\n \t}\n \tif cc.dopts.bs == nil {\n \t\tcc.dopts.bs = backoff.Exponential{\n-\t\t\tMaxDelay: DefaultBackoffConfig.MaxDelay,\n+\t\t\tBaseDelay:  DefaultBackoffConfig.BaseDelay,\n+\t\t\tMultiplier: DefaultBackoffConfig.Multiplier,\n+\t\t\tJitter:     DefaultBackoffConfig.Jitter,\n+\t\t\tMaxDelay:   DefaultBackoffConfig.MaxDelay,\n \t\t}\n \t}\n \tif cc.dopts.resolverBuilder == nil {\n@@ -704,9 +707,9 @@ func (ac *addrConn) connect() error {\n // tryUpdateAddrs tries to update ac.addrs with the new addresses list.\n //\n // It checks whether current connected address of ac is in the new addrs list.\n-//  - If true, it updates ac.addrs and returns true. The ac will keep using\n-//    the existing connection.\n-//  - If false, it does nothing and returns false.\n+//   - If true, it updates ac.addrs and returns true. The ac will keep using\n+//     the existing connection.\n+//   - If false, it does nothing and returns false.\n func (ac *addrConn) tryUpdateAddrs(addrs []resolver.Address) bool {\n \tac.mu.Lock()\n \tdefer ac.mu.Unlock()\ndiff --git a/clientconn_test.go b/clientconn_test.go\nindex 356f4f25..0cc450f0 100644\n--- a/clientconn_test.go\n+++ b/clientconn_test.go\n@@ -853,7 +853,10 @@ func testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOpt\n \t}\n \n \texpectedValue := backoff.Exponential{\n-\t\tMaxDelay: expected.MaxDelay,\n+\t\tBaseDelay:  expected.BaseDelay,\n+\t\tMultiplier: expected.Multiplier,\n+\t\tJitter:     expected.Jitter,\n+\t\tMaxDelay:   expected.MaxDelay,\n \t}\n \tif actual != expectedValue {\n \t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\ndiff --git a/dialoptions.go b/dialoptions.go\nindex e114fecb..972885ae 100644\n--- a/dialoptions.go\n+++ b/dialoptions.go\n@@ -262,7 +262,10 @@ func WithBackoffMaxDelay(md time.Duration) DialOption {\n // for use.\n func WithBackoffConfig(b BackoffConfig) DialOption {\n \treturn withBackoff(backoff.Exponential{\n-\t\tMaxDelay: b.MaxDelay,\n+\t\tBaseDelay:  b.BaseDelay,\n+\t\tMultiplier: b.Multiplier,\n+\t\tJitter:     b.Jitter,\n+\t\tMaxDelay:   b.MaxDelay,\n \t})\n }\n \ndiff --git a/internal/backoff/backoff.go b/internal/backoff/backoff.go\nindex 1bd0cce5..7dc84c12 100644\n--- a/internal/backoff/backoff.go\n+++ b/internal/backoff/backoff.go\n@@ -30,7 +30,6 @@ import (\n \n // Strategy defines the methodology for backing off after a grpc connection\n // failure.\n-//\n type Strategy interface {\n \t// Backoff returns the amount of time to wait before the next retry given\n \t// the number of consecutive failures.\n@@ -47,9 +46,17 @@ const (\n \tjitter = 0.2\n )\n \n+var defaultConfig = Exponential{BaseDelay: baseDelay, Multiplier: factor, Jitter: jitter, MaxDelay: 120 * time.Second}\n+\n // Exponential implements exponential backoff algorithm as defined in\n // https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n type Exponential struct {\n+\t// BaseDelay is the initial backoff delay. If zero, the default is used.\n+\tBaseDelay time.Duration\n+\t// Multiplier is applied to the backoff after each retry. If zero, the default is used.\n+\tMultiplier float64\n+\t// Jitter is the randomization factor applied to backoff delays. If zero, the default is used.\n+\tJitter float64\n \t// MaxDelay is the upper bound of backoff delay.\n \tMaxDelay time.Duration\n }\n@@ -57,12 +64,18 @@ type Exponential struct {\n // Backoff returns the amount of time to wait before the next retry given the\n // number of retries.\n func (bc Exponential) Backoff(retries int) time.Duration {\n-\tif retries == 0 {\n-\t\treturn baseDelay\n+\tif bc.BaseDelay == 0 {\n+\t\tbc.BaseDelay = defaultConfig.BaseDelay\n+\t}\n+\tif bc.Multiplier == 0 {\n+\t\tbc.Multiplier = defaultConfig.Multiplier\n+\t}\n+\tif bc.Jitter == 0 {\n+\t\tbc.Jitter = defaultConfig.Jitter\n \t}\n-\tbackoff, max := float64(baseDelay), float64(bc.MaxDelay)\n+\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n \tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n-\t\tbackoff *= factor\n+\t\tbackoff *= bc.Multiplier\n \t\tretries--\n \t}\n \tif backoff \u003e max {\n@@ -70,7 +83,7 @@ func (bc Exponential) Backoff(retries int) time.Duration {\n \t}\n \t// Randomize backoff delays so that if a cluster of requests start at\n \t// the same time, they won't operate in lockstep.\n-\tbackoff *= 1 + jitter*(grpcrand.Float64()*2-1)\n+\tbackoff *= 1 + bc.Jitter*(grpcrand.Float64()*2-1)\n \tif backoff \u003c 0 {\n \t\treturn 0\n \t}\n",
+          "exit_code": 0,
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.started",
+        "item": {
+          "id": "item_10",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/dialoptions.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "in_progress"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_10",
+          "type": "file_change",
+          "changes": [
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/clientconn.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/dialoptions.go",
+              "kind": "update"
+            },
+            {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-2735_1791318702456077000/internal/backoff/backoff.go",
+              "kind": "update"
+            }
+          ],
+          "status": "completed"
+        }
+      },
+      {
+        "type": "item.completed",
+        "item": {
+          "id": "item_11",
+          "type": "agent_message",
+          "text": "Added `BaseDelay`, `Multiplier`, and `Jitter` to `BackoffConfig` and passed them into the connection retry strategy. Zero values for these fields use the existing defaults, preserving callers that only set `MaxDelay`.\n\nRan `gofmt` and `git diff --check`. I did not run tests."
+        }
+      },
+      {
+        "type": "turn.completed",
+        "usage": {
+          "input_tokens": 235320,
+          "cached_input_tokens": 209408,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2482,
+          "reasoning_output_tokens": 548
+        }
+      }
+    ],
+    "tool_calls": [
+      {
+        "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*backoff*' -g '*conn*' | head -80 \u0026\u0026 rg -n \\\"type BackoffConfig|BackoffConfig|connection-backoff\\\" .\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,150p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,275p' clientconn.go \u0026\u0026 sed -n '940,1005p' clientconn.go \u0026\u0026 sed -n '240,275p' dialoptions.go \u0026\u0026 find .. -name AGENTS.md -o -name PROJECT_BRIEF.md\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc \"sed -n '1,160p' internal/backoff/backoff_test.go 2\u003e/dev/null || true; sed -n '810,855p' clientconn_test.go; rg -n \\\"backoff\\\\.Exponential|Exponential\\\\{\\\" --glob '*.go' | head -60; rg -n \\\"WithBackoffConfig|BackoffConfig\\\" doc\"",
+        "transport_status": "unknown",
+        "functional_status": "failed"
+      },
+      {
+        "name": "/bin/zsh -lc \"sed -n '838,865p' clientconn_test.go; ls internal/backoff\"",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "/bin/zsh -lc 'gofmt -w backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go'",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      },
+      {
+        "name": "file_change",
+        "transport_status": "succeeded",
+        "functional_status": "succeeded"
+      }
+    ],
+    "response": "I’ll inspect the current backoff implementation and repository guidance, then wire the tunable fields through the retry path and add focused coverage.\nThe protocol exposes four backoff knobs: initial delay, multiplier, jitter, and maximum delay. I’ll add `BaseDelay`, `Multiplier`, and `Jitter` while keeping zero values mapped to today’s defaults, so existing `BackoffConfig{MaxDelay: ...}` callers retain their behavior.\nAdded `BaseDelay`, `Multiplier`, and `Jitter` to `BackoffConfig` and passed them into the connection retry strategy. Zero values for these fields use the existing defaults, preserving callers that only set `MaxDelay`.\n\nRan `gofmt` and `git diff --check`. I did not run tests."
+  }
+]

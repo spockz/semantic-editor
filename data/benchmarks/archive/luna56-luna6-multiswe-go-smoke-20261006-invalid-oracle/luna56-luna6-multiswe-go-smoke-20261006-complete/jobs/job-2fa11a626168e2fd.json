@@ -1,0 +1,275 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-2fa11a626168e2fd",
+    "pair_id": "pair-e884f55e046863de",
+    "task_id": "grpc__grpc-go-3361",
+    "fixture_path": "testdata/bench/grpc__grpc-go-3361.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-5.6-luna",
+      "effort": "medium"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 456960,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T20:43:45.968079Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:45.968099Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:46.353034Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T20:43:46.353048Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-e884f55e046863de",
+        "complexity": {
+          "ambiguity": 3,
+          "composition": 4,
+          "context": 4,
+          "invariants": 5,
+          "locality": 4,
+          "scale": 3,
+          "staging": 5
+        },
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3693,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 6,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 456960,
+            "initial_load_turns": 6,
+            "internal_turns": 14,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 614829,
+              "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\nok  \tgoogle.golang.org/grpc/balancer/roundrobin\t1.613s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\npanic: test timed out after 10m0s\n\trunning tests:\n\t\tTest (10m0s)\n\t\tTest/CZSocketGetSecurityValueTLS (9m53s)\n\ngoroutine 5550 [running]:\ntesting.(*M).startAlarm.func1()\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2959 +0x490\ncreated by time.goFunc\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/time/sleep.go:182 +0x44\n\ngoroutine 1 [chan receive, 10 minutes]:\ntesting.(*T).Run(0xc000208908, {0x1032a4b6c, 0x4}, 0x1039b81d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ntesting.runTests.func1(0xc000208908)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2742 +0x78\ntesting.tRunner(0xc000208908, 0xc000053a28)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ntesting.runTests({0x1032b2b20, 0x16}, {0x1032b6a9e, 0x1b}, 0xc00011e510, {0x103a1b0e8, 0x1, 0x1}, {0x0?, 0xc000148a08?, ...})\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2740 +0x7a4\ntesting.(*M).Run(0xc00011d540)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2600 +0xb3c\nmain.main()\n\t_testmain.go:46 +0x104\n\ngoroutine 22 [chan receive, 9 minutes]:\ntesting.(*T).Run(0xc000208b48, {0x10390a9d2, 0x1b}, 0xc000f26ae0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests(0xc000208b48, {0x1039ae200, 0x103a5c900})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/internal/grpctest/grpctest.go:62 +0x2ac\ngoogle.golang.org/grpc/test.Test(0xc000208b48)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:115 +0x3c\ntesting.tRunner(0xc000208b48, 0x1039b81d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 1\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5474 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ClientConn).WaitForStateChange(0xc001478388, {0x1039b5450, 0x103a5c900}, 0x3)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:510 +0xcc\ngoogle.golang.org/grpc.DialContext({0x1039b5450, 0x103a5c900}, {0xc0013a6f40, 0x1e}, {0xc001325300, 0x5, 0xc0001fa808?})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:325 +0x2190\ngoogle.golang.org/grpc.Dial(...)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:106\ngoogle.golang.org/grpc/test.(*test).clientConn(0xc000208d88, {0x0, 0x0, 0x0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:897 +0xc8\ngoogle.golang.org/grpc/test.s.TestCZSocketGetSecurityValueTLS({}, 0xc0002086c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/channelz_test.go:1350 +0x1c0\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests.func1(0xc0002086c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/internal/grpctest/grpctest.go:66 +0xa4\ntesting.tRunner(0xc0002086c8, 0xc000f26ae0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 22\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5479 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*addrConn).resetTransport(0xc00138e2c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:1149 +0x300\ncreated by google.golang.org/grpc.(*addrConn).connect in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:815 +0xe4\n\ngoroutine 5478 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ccBalancerWrapper).watcher(0xc0003073c0)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/balancer_conn_wrappers.go:69 +0xe4\ncreated by google.golang.org/grpc.newCCBalancerWrapper in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/balancer_conn_wrappers.go:60 +0x2f0\n\ngoroutine 5477 [IO wait, 2 minutes]:\ninternal/poll.runtime_pollWait(0x106d80200, 0x72)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/netpoll.go:351 +0xa0\ninternal/poll.(*pollDesc).wait(0xc0013243a0, 0x72, 0x0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:84 +0xb8\ninternal/poll.(*pollDesc).waitRead(...)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Accept(0xc001324380)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_unix.go:618 +0x360\nnet.(*netFD).accept(0xc001324380)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/fd_unix.go:149 +0x38\nnet.(*TCPListener).accept(0xc0003067c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock_posix.go:159 +0x40\nnet.(*TCPListener).Accept(0xc0003067c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock.go:387 +0x68\ngoogle.golang.org/grpc.(*Server).Serve(0xc000544180, {0x1039b3948, 0xc0003067c0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/server.go:597 +0x35c\ncreated by google.golang.org/grpc/test.(*test).listenAndServe in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:709 +0x23d0\nFAIL\tgoogle.golang.org/grpc/test\t600.383s\nok  \tgoogle.golang.org/grpc/test/bufconn\t1.745s\n?   \tgoogle.golang.org/grpc/test/codec_perf\t[no test files]\n?   \tgoogle.golang.org/grpc/test/go_vet\t[no test files]\n?   \tgoogle.golang.org/grpc/test/grpc_testing\t[no test files]\nFAIL\n",
+              "failure_stage": "level_4_test",
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 5540,
+            "process_start_to_first_event_ms": 295,
+            "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+            "prompt_tokens": 502443,
+            "reasoning_tokens": 2837,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,300p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|BuildOption|dns|re-resolv|resolver\\\" internal/resolver balancer/clientconn.go clientconn.go | head -160\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '560,690p' clientconn.go; sed -n '930,980p' clientconn.go; sed -n '1070,1130p' clientconn.go; sed -n '1420,1475p' clientconn.go; git log --oneline -8 -- internal/resolver/dns/dns_resolver.go clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git log --all --oneline --decorate --max-count=30; sed -n '1180,1260p' clientconn.go; sed -n '1230,1320p' internal/resolver/dns/dns_resolver_test.go; sed -n '1300,1365p' internal/resolver/dns/dns_resolver_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git log --all --oneline --grep='resolve\\\\|re-resolv\\\\|roundrobin\\\\|round_robin' -i --max-count=40; git show 648cf9b0\"'^:internal/resolver/dns/dns_resolver.go | sed -n '\"'150,215p'; git show 648cf9b0:internal/resolver/dns/dns_resolver.go | sed -n '150,215p'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git log --all --oneline -S'resolveNow(resolver.ResolveNowOptions{})' -- clientconn.go | head -20; git blame -L 1080,1110 clientconn.go; git log --all --oneline --since=2019-01-01 --until=2020-01-01 -- clientconn.go internal/resolver/dns/dns_resolver.go | head -30\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git show --stat --oneline e5e980f2; git show --format=fuller --find-renames e5e980f2 -- internal/resolver/dns/dns_resolver.go | sed -n '1,260p'; git show --stat --oneline 6f8ce092; git show --format=fuller 6f8ce092 -- internal/resolver/dns/dns_resolver.go | sed -n '1,300p'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git show 9dc72d1d --format= -- internal/resolver/dns/dns_resolver.go | head -260; git show 6f8ce092''^:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '\"'160,235p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '160,235p'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git ls-tree -r --name-only e5e980f2 | rg 'dns_resolver.go\"'$'\"'; git show e5e980f2:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 9dc72d1d:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,120p' internal/resolver/dns/dns_resolver_test.go; sed -n '180,245p' internal/resolver/dns/dns_resolver.go; rg -n \\\"watcher|RateLimited|ResolveNow|replaceDNSResRate\\\" internal/resolver/dns/dns_resolver_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 go test ./internal/resolver/dns'",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -d internal/resolver/dns/dns_resolver.go; git diff --check; git diff -- internal/resolver/dns/dns_resolver.go; git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 45483,
+            "wall_clock_ms": 57103
+          }
+        ],
+        "internal_turns": 14,
+        "job_id": "job-2fa11a626168e2fd",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 614829,
+          "error_message": "go test failed: exit status 1\ngo: downloading github.com/golang/protobuf v1.3.3\ngo: downloading golang.org/x/net v0.0.0-20190311183353-d8887717615a\ngo: downloading google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55\ngo: downloading github.com/google/go-cmp v0.2.0\ngo: downloading github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b\ngo: downloading golang.org/x/text v0.3.0\nok  \tgoogle.golang.org/grpc/balancer/roundrobin\t1.613s\n?   \tgoogle.golang.org/grpc/balancer/base\t[no test files]\npanic: test timed out after 10m0s\n\trunning tests:\n\t\tTest (10m0s)\n\t\tTest/CZSocketGetSecurityValueTLS (9m53s)\n\ngoroutine 5550 [running]:\ntesting.(*M).startAlarm.func1()\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2959 +0x490\ncreated by time.goFunc\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/time/sleep.go:182 +0x44\n\ngoroutine 1 [chan receive, 10 minutes]:\ntesting.(*T).Run(0xc000208908, {0x1032a4b6c, 0x4}, 0x1039b81d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ntesting.runTests.func1(0xc000208908)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2742 +0x78\ntesting.tRunner(0xc000208908, 0xc000053a28)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ntesting.runTests({0x1032b2b20, 0x16}, {0x1032b6a9e, 0x1b}, 0xc00011e510, {0x103a1b0e8, 0x1, 0x1}, {0x0?, 0xc000148a08?, ...})\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2740 +0x7a4\ntesting.(*M).Run(0xc00011d540)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2600 +0xb3c\nmain.main()\n\t_testmain.go:46 +0x104\n\ngoroutine 22 [chan receive, 9 minutes]:\ntesting.(*T).Run(0xc000208b48, {0x10390a9d2, 0x1b}, 0xc000f26ae0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2266 +0x7dc\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests(0xc000208b48, {0x1039ae200, 0x103a5c900})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/internal/grpctest/grpctest.go:62 +0x2ac\ngoogle.golang.org/grpc/test.Test(0xc000208b48)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:115 +0x3c\ntesting.tRunner(0xc000208b48, 0x1039b81d0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 1\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5474 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ClientConn).WaitForStateChange(0xc001478388, {0x1039b5450, 0x103a5c900}, 0x3)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:510 +0xcc\ngoogle.golang.org/grpc.DialContext({0x1039b5450, 0x103a5c900}, {0xc0013a6f40, 0x1e}, {0xc001325300, 0x5, 0xc0001fa808?})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:325 +0x2190\ngoogle.golang.org/grpc.Dial(...)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:106\ngoogle.golang.org/grpc/test.(*test).clientConn(0xc000208d88, {0x0, 0x0, 0x0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:897 +0xc8\ngoogle.golang.org/grpc/test.s.TestCZSocketGetSecurityValueTLS({}, 0xc0002086c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/channelz_test.go:1350 +0x1c0\ngoogle.golang.org/grpc/internal/grpctest.RunSubTests.func1(0xc0002086c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/internal/grpctest/grpctest.go:66 +0xa4\ntesting.tRunner(0xc0002086c8, 0xc000f26ae0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0x168\ncreated by testing.(*T).Run in goroutine 22\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x7c0\n\ngoroutine 5479 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*addrConn).resetTransport(0xc00138e2c8)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:1149 +0x300\ncreated by google.golang.org/grpc.(*addrConn).connect in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/clientconn.go:815 +0xe4\n\ngoroutine 5478 [select, 2 minutes]:\ngoogle.golang.org/grpc.(*ccBalancerWrapper).watcher(0xc0003073c0)\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/balancer_conn_wrappers.go:69 +0xe4\ncreated by google.golang.org/grpc.newCCBalancerWrapper in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/balancer_conn_wrappers.go:60 +0x2f0\n\ngoroutine 5477 [IO wait, 2 minutes]:\ninternal/poll.runtime_pollWait(0x106d80200, 0x72)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/netpoll.go:351 +0xa0\ninternal/poll.(*pollDesc).wait(0xc0013243a0, 0x72, 0x0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:84 +0xb8\ninternal/poll.(*pollDesc).waitRead(...)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_poll_runtime.go:89\ninternal/poll.(*FD).Accept(0xc001324380)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/internal/poll/fd_unix.go:618 +0x360\nnet.(*netFD).accept(0xc001324380)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/fd_unix.go:149 +0x38\nnet.(*TCPListener).accept(0xc0003067c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock_posix.go:159 +0x40\nnet.(*TCPListener).Accept(0xc0003067c0)\n\t/opt/homebrew/Cellar/go/1.27.1/libexec/src/net/tcpsock.go:387 +0x68\ngoogle.golang.org/grpc.(*Server).Serve(0xc000544180, {0x1039b3948, 0xc0003067c0})\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/server.go:597 +0x35c\ncreated by google.golang.org/grpc/test.(*test).listenAndServe in goroutine 5474\n\t/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000/.scratch/oracle-397493907/test/end2end_test.go:709 +0x23d0\nFAIL\tgoogle.golang.org/grpc/test\t600.383s\nok  \tgoogle.golang.org/grpc/test/bufconn\t1.745s\n?   \tgoogle.golang.org/grpc/test/codec_perf\t[no test files]\n?   \tgoogle.golang.org/grpc/test/go_vet\t[no test files]\n?   \tgoogle.golang.org/grpc/test/grpc_testing\t[no test files]\nFAIL\n",
+          "failure_stage": "level_4_test",
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 5540,
+        "process_start_to_first_event_ms": 295,
+        "prompt": "### What version of gRPC are you using?\r\n\r\n1.26\r\n\r\n### What version of Go are you using (`go version`)?\r\n\r\n1.13.4\r\n\r\n### What operating system (Linux, Windows, …) and version?\r\n\r\nLinux / Kubernetes / Docker - various. \r\n\r\n### What did you do?\r\nWhen using `grpc.WithBalancerName(roundrobin.Name)`, with a `dns:///` Dial target, errors do not trigger re-resolve.\r\n\r\nDetail: a client starts with `dns:///my-service` as a dial target and the round_robin load balancer.  `my-service` DNS returns an IP `192.168.0.19`.  Due to an operational change, `my-service` is moved and DNS is updated to return `192.168.0.20`.  The service stops running on `192.168.0.19`, refusing connections.  \r\n\r\nThis is approximately the workflow that would occur when using Kubernetes and a headless service if a pod is replaced.  This happens for a variety of reasons, including routine updates and rescheduling.\r\n\r\n### What did you expect to see?\r\n(a) Upon receiving a connection refused, DNS should be re-queried for an updated endpoint list\r\n(b) Without receiving an error from an existing endpoint, the load balancer should be repopulated occasionally with the latest records in DNS as endpoint sets change\r\n\r\nThis was the behavior previous to 1.26.  By rolling code back to grpc 1.25.1, we were able to restore this behavior.  \r\n https://github.com/grpc/grpc-go/pull/3165 is likely the culprit.\r\n\r\n### What did you see instead?\r\n(a) Endpoint list is never re-queried and the client simply throws a persistent error: \r\n\r\n```\r\nrpc error: code = Unavailable desc = connection error: desc = \"transport: Error while dialing dial tcp 10.1.5.253:443: connect: connection refused\"\r\n```\r\n(b) Since _every_ subsequent request fails, the endpoint list does not seem to getting updated with new records in DNS at all.\r\n\r\n### Additional\r\n\r\nI recognize the API around DNS and load balancing may have changed recently (and are evolving) but I'm not seeing any clear indication of how to retain the expected behavior.\r\n\r\n",
+        "prompt_tokens": 502443,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_grpc__grpc-go-3361_1791319425266000000.json"
+        },
+        "reasoning_tokens": 2837,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "task_id": "grpc__grpc-go-3361",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,300p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|BuildOption|dns|re-resolv|resolver\\\" internal/resolver balancer/clientconn.go clientconn.go | head -160\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '560,690p' clientconn.go; sed -n '930,980p' clientconn.go; sed -n '1070,1130p' clientconn.go; sed -n '1420,1475p' clientconn.go; git log --oneline -8 -- internal/resolver/dns/dns_resolver.go clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git log --all --oneline --decorate --max-count=30; sed -n '1180,1260p' clientconn.go; sed -n '1230,1320p' internal/resolver/dns/dns_resolver_test.go; sed -n '1300,1365p' internal/resolver/dns/dns_resolver_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git log --all --oneline --grep='resolve\\\\|re-resolv\\\\|roundrobin\\\\|round_robin' -i --max-count=40; git show 648cf9b0\"'^:internal/resolver/dns/dns_resolver.go | sed -n '\"'150,215p'; git show 648cf9b0:internal/resolver/dns/dns_resolver.go | sed -n '150,215p'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git log --all --oneline -S'resolveNow(resolver.ResolveNowOptions{})' -- clientconn.go | head -20; git blame -L 1080,1110 clientconn.go; git log --all --oneline --since=2019-01-01 --until=2020-01-01 -- clientconn.go internal/resolver/dns/dns_resolver.go | head -30\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git show --stat --oneline e5e980f2; git show --format=fuller --find-renames e5e980f2 -- internal/resolver/dns/dns_resolver.go | sed -n '1,260p'; git show --stat --oneline 6f8ce092; git show --format=fuller 6f8ce092 -- internal/resolver/dns/dns_resolver.go | sed -n '1,300p'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git show 9dc72d1d --format= -- internal/resolver/dns/dns_resolver.go | head -260; git show 6f8ce092''^:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '\"'160,235p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '160,235p'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git ls-tree -r --name-only e5e980f2 | rg 'dns_resolver.go\"'$'\"'; git show e5e980f2:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 9dc72d1d:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,120p' internal/resolver/dns/dns_resolver_test.go; sed -n '180,245p' internal/resolver/dns/dns_resolver.go; rg -n \\\"watcher|RateLimited|ResolveNow|replaceDNSResRate\\\" internal/resolver/dns/dns_resolver_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 go test ./internal/resolver/dns'",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -d internal/resolver/dns/dns_resolver.go; git diff --check; git diff -- internal/resolver/dns/dns_resolver.go; git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 14,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*dns*' -g '*roundrobin*' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"sed -n '1,260p' internal/resolver/dns/dns_resolver.go \u0026\u0026 sed -n '1,300p' balancer/roundrobin/roundrobin.go \u0026\u0026 rg -n \\\"ResolveNow|BuildOption|dns|re-resolv|resolver\\\" internal/resolver balancer/clientconn.go clientconn.go | head -160\"",
+          "/bin/zsh -lc \"sed -n '560,690p' clientconn.go; sed -n '930,980p' clientconn.go; sed -n '1070,1130p' clientconn.go; sed -n '1420,1475p' clientconn.go; git log --oneline -8 -- internal/resolver/dns/dns_resolver.go clientconn.go\"",
+          "/bin/zsh -lc \"git log --all --oneline --decorate --max-count=30; sed -n '1180,1260p' clientconn.go; sed -n '1230,1320p' internal/resolver/dns/dns_resolver_test.go; sed -n '1300,1365p' internal/resolver/dns/dns_resolver_test.go\"",
+          "/bin/zsh -lc \"git log --all --oneline --grep='resolve\\\\|re-resolv\\\\|roundrobin\\\\|round_robin' -i --max-count=40; git show 648cf9b0\"'^:internal/resolver/dns/dns_resolver.go | sed -n '\"'150,215p'; git show 648cf9b0:internal/resolver/dns/dns_resolver.go | sed -n '150,215p'\"",
+          "/bin/zsh -lc \"git log --all --oneline -S'resolveNow(resolver.ResolveNowOptions{})' -- clientconn.go | head -20; git blame -L 1080,1110 clientconn.go; git log --all --oneline --since=2019-01-01 --until=2020-01-01 -- clientconn.go internal/resolver/dns/dns_resolver.go | head -30\"",
+          "/bin/zsh -lc \"git show --stat --oneline e5e980f2; git show --format=fuller --find-renames e5e980f2 -- internal/resolver/dns/dns_resolver.go | sed -n '1,260p'; git show --stat --oneline 6f8ce092; git show --format=fuller 6f8ce092 -- internal/resolver/dns/dns_resolver.go | sed -n '1,300p'\"",
+          "/bin/zsh -lc 'git show 9dc72d1d --format= -- internal/resolver/dns/dns_resolver.go | head -260; git show 6f8ce092''^:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '\"'160,235p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go 2\u003e\u00261 | sed -n '160,235p'\"",
+          "/bin/zsh -lc \"git ls-tree -r --name-only e5e980f2 | rg 'dns_resolver.go\"'$'\"'; git show e5e980f2:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 9dc72d1d:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'; git show 6f8ce092:internal/resolver/dns/dns_resolver.go | sed -n '150,250p'\"",
+          "/bin/zsh -lc \"sed -n '1,120p' internal/resolver/dns/dns_resolver_test.go; sed -n '180,245p' internal/resolver/dns/dns_resolver.go; rg -n \\\"watcher|RateLimited|ResolveNow|replaceDNSResRate\\\" internal/resolver/dns/dns_resolver_test.go\"",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w internal/resolver/dns/dns_resolver.go \u0026\u0026 go test ./internal/resolver/dns'",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -d internal/resolver/dns/dns_resolver.go; git diff --check; git diff -- internal/resolver/dns/dns_resolver.go; git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 45483,
+        "variant": "small:default",
+        "wall_clock_ms": 672484
+      }
+    ],
+    "timestamp": "2026-10-06T20:54:58.363054Z"
+  }
+}

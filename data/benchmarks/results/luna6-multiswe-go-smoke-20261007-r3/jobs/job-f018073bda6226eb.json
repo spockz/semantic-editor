@@ -1,0 +1,83 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-f018073bda6226eb",
+    "pair_id": "pair-d158a3b20bbb83a3",
+    "task_id": "zeromicro__go-zero-2463",
+    "fixture_path": "testdata/bench/zeromicro__go-zero-2463.txtar",
+    "context": "small",
+    "prompt_variant": "default",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "semedit-explicit",
+    "repeat": 2,
+    "mcp_server_instructions": "none"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-explicit",
+        "cached_prompt_tokens": 0,
+        "comparison_pair_id": "pair-d158a3b20bbb83a3",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 4,
+          "context": 4,
+          "invariants": 4,
+          "locality": 3,
+          "scale": 3,
+          "staging": 4
+        },
+        "diff": "diff --git a/core/logx/fields.go b/core/logx/fields.go\nindex 08bcf636..1bdba318 100644\n--- a/core/logx/fields.go\n+++ b/core/logx/fields.go\n@@ -1,11 +1,32 @@\n package logx\n \n-import \"context\"\n+import (\n+\t\"context\"\n+\t\"sync\"\n+\t\"sync/atomic\"\n+)\n \n-var fieldsContextKey contextKey\n+var (\n+\tfieldsContextKey contextKey\n+\tglobalFields     atomic.Value\n+\tglobalFieldsLock sync.Mutex\n+)\n \n type contextKey struct{}\n \n+// AddGlobalFields adds global fields.\n+func AddGlobalFields(fields ...LogField) {\n+\tglobalFieldsLock.Lock()\n+\tdefer globalFieldsLock.Unlock()\n+\n+\told := globalFields.Load()\n+\tif old == nil {\n+\t\tglobalFields.Store(append([]LogField(nil), fields...))\n+\t} else {\n+\t\tglobalFields.Store(append(old.([]LogField), fields...))\n+\t}\n+}\n+\n // ContextWithFields returns a new context with the given fields.\n func ContextWithFields(ctx context.Context, fields ...LogField) context.Context {\n \tif val := ctx.Value(fieldsContextKey); val != nil {\ndiff --git a/core/logx/writer.go b/core/logx/writer.go\nindex 46c7eb6a..deeb1c84 100644\n--- a/core/logx/writer.go\n+++ b/core/logx/writer.go\n@@ -263,7 +263,18 @@ func buildFields(fields ...LogField) []string {\n \treturn items\n }\n \n+func combineGlobalFields(fields []LogField) []LogField {\n+\tglobals := globalFields.Load()\n+\tif globals == nil {\n+\t\treturn fields\n+\t}\n+\n+\treturn append(globals.([]LogField), fields...)\n+}\n+\n func output(writer io.Writer, level string, val interface{}, fields ...LogField) {\n+\tfields = combineGlobalFields(fields)\n+\n \tswitch atomic.LoadUint32(\u0026encoding) {\n \tcase plainEncodingType:\n \t\twritePlainAny(writer, level, val, buildFields(fields...)...)\n",
+        "execution_mode": "ground_truth_fix_patch_replay",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "internal_turns": 0,
+        "job_id": "job-f018073bda6226eb",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 11144,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 0,
+        "prompt": "logx能否支持一下全局添加field功能，或默认加一个serviceName，收集日志想根据服务分索引很不方便\r\n",
+        "prompt_tokens": 0,
+        "prompt_variant": "default",
+        "provenance": {
+          "coding_network": "disabled",
+          "oracle_patch_installation": "checked"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "zeromicro__go-zero-2463",
+        "tool_count": 0,
+        "turns": 0,
+        "uncached_prompt_tokens": 0,
+        "variant": "small:default",
+        "wall_clock_ms": 11922
+      }
+    ],
+    "timestamp": "2026-10-07T06:05:19.15969Z"
+  }
+}
