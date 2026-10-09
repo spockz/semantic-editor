@@ -198,6 +198,15 @@ $(GOLANGCI_LINT):
 $(PACKAGE_CLOSURE_PLUGIN): $(GOLANGCI_LINT) $(PACKAGE_CLOSURE_SOURCES)
 	cd tools/package-closure && go build -buildmode=plugin -o "$(PACKAGE_CLOSURE_PLUGIN)" ./plugin
 
+bin/fatalorder: tools/linters/fatalorder/*.go tools/linters/fatalorder/cmd/fatalorder/*.go | go-env
+	@mkdir -p bin
+	go build -o bin/fatalorder ./tools/linters/fatalorder/cmd/fatalorder
+
+.PHONY: lint-fatalorder
+lint-fatalorder: bin/fatalorder go-env ## Run fatalorder static analysis on Go test packages
+	@echo "==> Running fatalorder static analysis..."
+	go vet -vettool=./bin/fatalorder ./...
+
 .PHONY: lint-markdown
 lint-markdown: ## Run markdownlint-cli2
 	@echo "==> Running markdownlint-cli2..."
