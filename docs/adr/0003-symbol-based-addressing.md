@@ -21,7 +21,7 @@ This semantic-editing layer lets the model name the intended symbol directly ins
 
 Go symbol addressing accepts direct short names scoped by `file`, receiver-qualified names such as `Type.Method`, and three-part `package.Type.Method` identifiers. A known file and symbol can therefore be sent directly to a mutation without a preliminary discovery lookup.
 
-Backend-native lookup is also permitted when an adapter can resolve symbols more accurately than a shared resolver. This decision does not require a broken-source fallback engine; syntax-error recovery remains outside this foundation slice.
+Backend-native lookup is also permitted when an adapter can resolve symbols more accurately than a shared resolver. This decision does not require a broken-source fallback engine; syntax-error recovery remains outside this foundation slice. Scope and path resolution follow the lenient in, precise out contract defined in [ADR-0065](0065-lenient-in-precise-out-input-resolution.md), accepting package directories as well as specific files.
 
 ## Invariants
 

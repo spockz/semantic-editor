@@ -40,7 +40,10 @@ before passing it to a subsequent semedit call.
 ### 2. Schema-Wide Parameter Name Consistency
 
 A logical concept uses the same JSON parameter name in every tool that accepts
-or returns it. No two tools use different names for the same concept.
+or returns it. No two tools use different names for the same concept. While tool
+ingress accepts standard synonyms and parameter aliases under the lenient-in
+principle ([ADR-0065](0065-lenient-in-precise-out-input-resolution.md)),
+registered schemas and continuation outputs strictly enforce canonical names.
 
 ### 3. Parameter Role Distinction: Target vs Selector
 

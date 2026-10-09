@@ -3,11 +3,25 @@ exec semedit replace-construct --file declarations.go --kind function --symbol C
 exec semedit replace-construct --file declarations.go --kind type --symbol Config --source 'type Config struct { Port int }'
 exec semedit replace-construct --file declarations.go --kind const --symbol Limit --source 'const Limit = 20'
 exec semedit replace-construct --file declarations.go --kind var --symbol Revision --source 'var Revision = 2'
+exec semedit replace-construct --file declarations.go --kind method --symbol dnsBuilder.Build --source 'func (b *dnsBuilder) Build(target string, secure bool) (string, error) { return target, nil }'
+exec semedit replace-construct --file declarations.go --kind method --symbol '(*dnsBuilder).Build' --source 'func (b *dnsBuilder) Build(target string, secure bool) (string, error) { if secure { return target, nil }; return "", nil }'
 cp declarations.go .scratch/replaced.go
 ! exec semedit replace-construct --file declarations.go --kind type --symbol Config --source 'type Other struct { Host string }'
 stderr 'name|identity|Config'
 cmp declarations.go .scratch/replaced.go
+! exec semedit replace-construct --file declarations.go --kind method --symbol dnsBuilder.Build --source 'func (b *otherBuilder) Build(target string, secure bool) (string, error) { return target, nil }'
+stderr 'receiver.*dnsBuilder'
+cmp declarations.go .scratch/replaced.go
+! exec semedit replace-construct --file declarations.go --kind method --symbol dnsBuilder.Build --source 'func (b *dnsBuilder) Resolve(target string, secure bool) (string, error) { return target, nil }'
+stderr 'preserve.*method.*dnsBuilder.Build'
+cmp declarations.go .scratch/replaced.go
+! exec semedit replace-construct --file declarations.go --kind method --symbol dnsBuilder.Build --source 'func (b dnsBuilder) Build(target string, secure bool) (string, error) { return target, nil }'
+stderr 'receiver syntax'
+cmp declarations.go .scratch/replaced.go
 grep 'func Convert\(text string\) string' declarations.go
+grep 'func \(b \*dnsBuilder\) Build' declarations.go
+grep 'secure bool' declarations.go
+grep 'if secure' declarations.go
 grep 'type Config struct' declarations.go
 grep 'Port int' declarations.go
 grep 'const Limit = 20' declarations.go
@@ -29,3 +43,7 @@ type Config struct { Host string }
 
 func Convert(value int) int { return value }
 func Sibling() int { return Limit }
+
+type dnsBuilder struct{}
+
+func (*dnsBuilder) Build(target string) string { return target }
