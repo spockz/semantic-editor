@@ -7,6 +7,9 @@ endif
 HUGO_BASE_URL ?= /
 DOCGEN_ARGS ?=
 GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_GO_VERSION := $(shell go env GOVERSION)
+GOLANGCI_LINT = $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOLANGCI_GO_VERSION)
+PACKAGE_CLOSURE_PLUGIN = $(GOBIN)/packageclosure.so
 MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
 VALE_VERSION ?= v3.22.0
 GOPLS_VERSION ?= v0.23.0
@@ -87,14 +90,10 @@ fix: lint-fix ## Apply automatic Go and Markdown fixes and standard library mode
 	@$(MAKE) fmt-go
 
 .PHONY: lint-fix
-lint-fix: go-env fix-markdown ## Apply unambiguous fixes supplied by configured Go and Markdown linters
+lint-fix: go-env fix-markdown build-golangci-lint ## Apply unambiguous fixes supplied by configured Go and Markdown linters
 	@echo "==> Applying Go linter fixes..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run --fix ./...; \
-	else \
-		echo "golangci-lint not installed. Run 'make tools'."; \
-		exit 1; \
-	fi
+	"$(GOLANGCI_LINT)" run --enable-only packageclosure --issues-exit-code=0 ./...
+	"$(GOLANGCI_LINT)" run --disable=packageclosure --fix ./...
 
 .PHONY: fmt
 fmt: fix ## Format Go source code and optimize imports
@@ -134,17 +133,16 @@ MARKDOWN_GLOBS := "docs/**/*.md" "skills/**/*.md" "tools/**/*.md" "*.md"
 VALE_TARGETS := docs skills tools *.md
 
 .PHONY: lint-check
-lint-check: go-env ## Run configured Go, Markdown, and Vale linters with automated fixes
-	@echo "==> Running Go lint with fixes..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run --fix ./...; \
-	else \
-		echo "golangci-lint not installed. Run 'make tools'."; \
-		exit 1; \
-	fi
+lint-check: go-env build-golangci-lint ## Run configured Go, Markdown, and Vale linters with automated fixes
+	@echo "==> Reporting package closure candidates (advisory)..."
+	"$(GOLANGCI_LINT)" run --enable-only packageclosure --issues-exit-code=0 ./...
+	@echo "==> Running blocking Go lint with fixes..."
+	"$(GOLANGCI_LINT)" run --disable=packageclosure --fix ./...
 	@echo "==> Running Markdown lint with fixes..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do [ -f "$$f" ] && echo "$$f"; done || true); \
+		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do \
+			if [[ "$$f" != data/benchmarks/results/* && "$$f" != data/benchmarks/archive/* && "$$f" != data/benchmarks/fixture-validation/* ]]; then [ -f "$$f" ] && echo "$$f"; fi; \
+		done || true); \
 		if [ -n "$$changed_md" ] && [ "$${CI:-}" != "true" ]; then \
 			echo "$$changed_md" | xargs markdownlint-cli2 --fix; \
 		else \
@@ -156,7 +154,9 @@ lint-check: go-env ## Run configured Go, Markdown, and Vale linters with automat
 	fi
 	@echo "==> Running read-only Vale lint..."
 	@if command -v vale >/dev/null 2>&1; then \
-		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do [ -f "$$f" ] && echo "$$f"; done || true); \
+		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do \
+			if [[ "$$f" != data/benchmarks/results/* && "$$f" != data/benchmarks/archive/* && "$$f" != data/benchmarks/fixture-validation/* ]]; then [ -f "$$f" ] && echo "$$f"; fi; \
+		done || true); \
 		if [ -n "$$changed_md" ] && [ "$${CI:-}" != "true" ]; then \
 			echo "$$changed_md" | xargs vale; \
 		else \
@@ -180,14 +180,23 @@ check-clean: check ## Run checks and fail if any tracked, staged, or untracked f
 	fi
 
 .PHONY: lint-go
-lint-go: go-env ## Run golangci-lint
+lint-go: go-env build-golangci-lint ## Build and run pinned golangci-lint with the native package-closure plugin
+	@echo "==> Reporting package closure candidates (advisory)..."
+	"$(GOLANGCI_LINT)" run --enable-only packageclosure --issues-exit-code=0 ./...
 	@echo "==> Running golangci-lint..."
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
-	else \
-		echo "golangci-lint not installed. Run 'make tools'."; \
-		exit 1; \
-	fi
+	"$(GOLANGCI_LINT)" run --disable=packageclosure ./...
+
+PACKAGE_CLOSURE_SOURCES := $(filter-out %_test.go,$(wildcard tools/package-closure/*.go tools/package-closure/plugin/*.go tools/package-closure/go.mod tools/package-closure/go.sum))
+
+.PHONY: build-golangci-lint
+build-golangci-lint: go-env $(GOLANGCI_LINT) $(PACKAGE_CLOSURE_PLUGIN) ## Build golangci-lint and its native package-closure plugin
+
+$(GOLANGCI_LINT):
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+	mv "$(GOBIN)/golangci-lint" "$@"
+
+$(PACKAGE_CLOSURE_PLUGIN): $(GOLANGCI_LINT) $(PACKAGE_CLOSURE_SOURCES)
+	cd tools/package-closure && go build -buildmode=plugin -o "$(PACKAGE_CLOSURE_PLUGIN)" ./plugin
 
 .PHONY: lint-markdown
 lint-markdown: ## Run markdownlint-cli2
@@ -234,10 +243,14 @@ vuln: go-env ## Run vulnerability security check
 .PHONY: test test-core
 test: test-core ## Alias for test-core
 
-test-core: go-env ## Run core engine unit tests excluding benchmark-harness
+test-core: go-env test-package-closure ## Run core engine unit tests excluding benchmark-harness
 	@echo "==> Running core engine tests..."
 	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
 	go test $$CORE_PACKAGES
+
+.PHONY: test-package-closure
+test-package-closure: go-env ## Test the custom package-closure linter module
+	cd tools/package-closure && go test ./...
 
 .PHONY: test-race
 test-race: go-env ## Run core engine unit tests with race detector
