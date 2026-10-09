@@ -49,7 +49,7 @@ Paths in this table are relative to this directory unless they start with `../..
 | Change | Start here | Responsibility and nearby checks |
 | :--- | :--- | :--- |
 | CLI flags, defaults, utility dispatch, output destinations, or resume behavior | [main.go](main.go): `parseBenchmarkCLI`, `runPlannedCLI`, `executeBenchmarkPlan`; [resume.go](resume.go) | Translate user input into `PlanOptions`, print the plan before execution, checkpoint terminal job results, validate a saved run manifest, and rebuild reports. Process-level contracts are in [cli_integration_test.go](cli_integration_test.go) and checkpoint contracts are in [resume_test.go](resume_test.go). |
-| External repository cache, pinned checkout hydration, private test/fix patches, or patch-replay execution | [external_repo.go](external_repo.go), [oracle.go](oracle.go) | Cache repositories and prepare per-job checkouts before timing; keep dataset acceptance patches out of agent workspaces and replay the fix patch as a separately labeled upper-bound arm. See [external_repo_test.go](external_repo_test.go). |
+| External repository cache, pinned checkout hydration, private test/fix patches, or fixture diagnostics | [external_repo.go](external_repo.go), [oracle.go](oracle.go) | Prepare local pinned checkouts before timing; keep acceptance patches private. Human fix replay diagnoses fixture validity and is excluded from agent comparisons. See [external_repo_test.go](external_repo_test.go). |
 | Make variables, forwarded flags, and local Go state | [Makefile](Makefile) | Both `bench` and `bench-all` use the same CLI path. Forward `SEMEDIT_ARM_RESTRICT`, defaulting to `write`, and `RESUME=true` with a caller-stable `RUN_ID`. The root Makefile includes this file, and standalone harness targets derive their Go caches from the repository's `.scratch/go` directory. Check the Make tests in `cli_integration_test.go`. |
 | Fixture selection, context compatibility, prompt expansion, pairing, job identities, exclusions, or plan display | [planner.go](planner.go): `BuildBenchmarkPlan`, `RenderBenchmarkPlan` | Load fixtures, normalize selections, and create all jobs and resolved prompts once. See [planner_test.go](planner_test.go). |
 | Concurrency, cancellation, per-job timeout, completion output, or failed-job accounting | [planner.go](planner.go): `ExecutePlan` | Scheduling currently shares this file with planning. It consumes existing jobs, fills terminal result metadata, emits completion order, and returns plan order. See [scheduler_test.go](scheduler_test.go). |
@@ -57,7 +57,7 @@ Paths in this table are relative to this directory unless they start with `../..
 | MCP server instruction mode matrix | [runner.go](runner.go): `ParseMCPServerInstructionModes`; [planner.go](planner.go): `normalizePlanOptions`, `makePlannedJobs` | Expand each selected server instruction mode into independent paired agent jobs with mode-specific identities. Deterministic control jobs remain single. See `planner_test.go` and `cli_integration_test.go`. |
 | Agent lifecycle and measurement boundaries | [driver.go](driver.go): `Runner.ExecuteAgent`, `mergeTurn`, `requestSemanticToolReflection` | Orchestrate setup, task turns, oracle checks, task metric finalization, and optional diagnostic questioning. See [session_test.go](session_test.go). |
 | Workspace ownership, original snapshot, continuation state, transcript recording, or follow-up sequencing | [session.go](session.go): `agentSession`, `runTurn`, `runFollowups`, `runStagedFollowups`, `evaluateStage`, `close` | One session owns mutable state and one selected adapter. Cleanup retains evidence outside the task workspace. See `session_test.go`. |
-| Provider process arguments, environment, event parsing, tool outcomes, or provider diagnostics | [codex_driver.go](codex_driver.go), [agy_driver.go](agy_driver.go), [opencode_driver.go](opencode_driver.go), [opencode_usage.go](opencode_usage.go) | Keep protocol details in the matching driver. OpenCode usage owns step deduplication, token normalization, and terminal completeness. Adapter selection and Agy's cumulative-observation cursor live in `session.go`. See [bench_test.go](bench_test.go), [session_test.go](session_test.go), and [opencode_usage_test.go](opencode_usage_test.go). |
+| Provider process arguments, environment, event parsing, tool outcomes, or provider diagnostics | [codex_app_server.go](codex_app_server.go), [agy_stream.go](agy_stream.go), [opencode_session.go](opencode_session.go), [codex_driver.go](codex_driver.go), [agy_driver.go](agy_driver.go), [opencode_driver.go](opencode_driver.go), [opencode_usage.go](opencode_usage.go) | Each coding job owns a persistent backend. Codex uses app-server; Agy streams prompts through one process and normalizes cumulative observations; OpenCode attaches thin clients to one retained server instance. Shared adapter selection and continuation guards live in `session.go`. Legacy drivers retain stream parsing contracts. See [codex_app_server_test.go](codex_app_server_test.go), [agy_stream_test.go](agy_stream_test.go), [opencode_session_test.go](opencode_session_test.go), [session_continuity_test.go](session_continuity_test.go), and [opencode_usage_test.go](opencode_usage_test.go). |
 | Target syntax or a pinned model catalog | [target.go](target.go), [openrouter.go](openrouter.go) | Parse harness/model/effort and expand the explicitly selected catalog. See [target_test.go](target_test.go), [openrouter_test.go](openrouter_test.go), and [the OpenRouter guide](../../docs/benchmark-openrouter.md). |
 | Result fields, tool telemetry types, runner options, or deterministic control execution | [runner.go](runner.go): `RunResult`, `ToolCall`, `Runner`, `ExecuteControlVariant` | Shared runtime data and control execution. A serialized field change also needs review of `report.go` and the docgen read model. |
 | Fixture metadata, extraction, mutation guards, hidden tests, or acceptance evaluation | [oracle.go](oracle.go): `TaskMetadata`, `ParseTask`, `ExtractVariantTo`, `Evaluate` | [txtar.go](txtar.go) wraps archive parsing; [large_overlay.go](large_overlay.go) supplies supported large-context overlays. Inputs live in [testdata/bench](../../testdata/bench), with some script fixtures also usable as benchmarks. See `bench_test.go` and planner context tests. |
@@ -81,7 +81,17 @@ remaining jobs finish.
 
 `agentSession` owns the workspace, snapshot, selected `providerAdapter`, resume identifier, transcript, start time, measured result, and retention decision. `Runner.ExecuteAgent` provides lifecycle orchestration; session methods run follow-ups, evaluate results, and clean up. A provider adapter handles one turn and continuation mechanics. It does not decide whether the oracle requires a corrective attempt.
 
+Every coding harness keeps the original live coding session and MCP service through initial work, corrective hints, staged prompts, and diagnostic reflection. The shared session layer rejects missing or changed identities, preserves the original ID in its state, and records the error in the transcript. Once a provider fails, later turns cannot dispatch or start a replacement. Workspace, target, arm, configuration, and sandbox settings remain bound to that session.
+
+Codex uses one owned `codex app-server` process and one `thread/start` per task. Initial work, corrective hints, staged turns, and diagnostic questions use `turn/start` with that original thread ID on the same connection. Repeated `codex exec resume` processes preserve conversation history but restart MCP servers, so they are not used for task continuation. A disconnected process or changed thread identity is an explicit provider failure; continuation never silently starts a replacement. The fixture, model, effort, MCP configuration, and sandbox remain fixed. Coding agents have workspace write access and no network access. The harness preapproves operations from its configured local semedit server; other interactive approval requests terminate the unattended run after receiving a rejection response.
+
+OpenCode owns one sandboxed `opencode serve` process bound to a selected localhost port. Each `run --attach` client submits to that server with the same absolute `--dir` and original `--session` ID. The server retains the directory instance, coding session, and MCP state; the client performs no local coding operations. The sandbox adds only the selected localhost listener port to its existing permissions. Agy owns one process with `--input-format stream-json --output-format stream-json`; each prompt is an NDJSON user message in the original conversation. Its transport checks the init/result identity, computes usage differences from cumulative totals, and reads only newly appended transcript observations.
+
 `RunResult` holds normalized task measurements. `InteractionStep` records each turn, including its cumulative edit count, oracle outcome, elapsed time, and token usage for staged fixtures. `sessionTurn` records classified transcript evidence, including diagnostic turns, provider errors, and raw events. The transcript path is retained in provenance and lives under the runner's `transcripts` directory outside the disposable workspace. Semedit agent jobs also persist MCP server timing records under the fixture's `.scratch` directory during execution. At close, the harness retains task-only records beside the transcript and records `mcp_metrics_file` in result provenance when any records exist.
+
+The session closes and reaps its provider before retaining MCP timing records or removing the fixture. Codex raw evidence contains app-server JSON-RPC messages; normalized item observations remain separate. A matching `turn/completed` with completed status confirms capture. Per-turn token counts are differences between cumulative thread usage snapshots, so repeated usage updates and diagnostic turns cannot inflate task totals.
+
+Results record `provider_transport` as `codex_app_server_v2`, `agy_stream_json_v1`, or `opencode_attached_server_v1`. Every coding transport participates in resume fingerprints, preventing a partially saved run from mixing earlier CLI-resume measurements with persistent-session measurements. Archived results keep their original evidence.
 
 ## Measurement and policy boundaries
 
@@ -91,7 +101,7 @@ The measured lifecycle is initial task answer, oracle evaluation, and declared c
 
 Failed or exhausted task attempts do not trigger diagnostic reflection. The result retains the last oracle and task measurements and records why reflection was skipped.
 
-An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after a clean stream containing `turn.completed`; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
+An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after the matching app-server `turn/completed` notification reports completed status; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
 
 Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
 
@@ -103,26 +113,74 @@ The primary evaluation matrix standardizes on three canonical arms (ADR-0050):
 
 1. `baseline-diff`: Vanilla LLM editing with native file manipulation / patch tools (no semedit tools).
 2. `semedit-agentic`: Autonomous agentic AST discovery, navigation, and editing using semedit MCP tools.
-3. `semedit-explicit`: Deterministic AST replay decomposed directly from the human ground-truth PR patch (`fix_patch`).
+3. `semedit-explicit`: An agent receives an exact successful semedit recipe, including complete arguments, batch grouping, and operation order.
 
-The legacy `--mcp-server-instructions=none,descriptive,prescriptive` array is deprecated. Skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`). Large production monorepos (Multi-SWE-bench Go) are shallow-cloned into `.scratch/cache/repos/` and hydrated via instant Copy-on-Write (`cp -Rc` on macOS APFS / Linux reflink) in <150ms strictly outside measured agent wall-clock time (ADR-0044).
+New benchmark plans default to `--mcp-server-instructions=prescriptive`; pass `none` explicitly to omit MCP initialization guidance, or select `descriptive` to advertise semantic tools without directing their use. The legacy instruction-mode array remains available for ablation runs. Historical results without an instruction-mode field continue to report as `none`. Skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`). External-repository fixtures require a pre-existing local clone under `.scratch/benchmarks/cache/repos/<repository>/<base-commit>`. The harness checks out the pinned revision, removes remotes, and copies the fully materialized checkout into the fixture before provider launch, outside measured agent wall-clock time. Missing or invalid cache data fails setup; there is no clone or fetch fallback.
 
 The selected `read`, `write`, or `readwrite` policy is a comparison condition on both agent arms, but steering applies only to semedit. `Job.Policy` describes semedit applicability; `AgentExecution.Policy` carries the selected agent condition. Terminal `RunResult.SemeditArmRestrict` records the condition, and `SemeditArmRestrictionApplied` records applicability. Direct control has no restriction condition. All policies permit shell builds and tests.
 
-Pinned external-repository fixtures use baseline, semedit-agentic, and
-semedit-explicit arms. The explicit arm currently applies the source dataset's
-human fix patch and records `execution_mode=ground_truth_fix_patch_replay`; it
-is a correctness and speed upper bound, not evidence of agent tool use. The
-optional `--semedit-skill=true` condition adds the project skill only to the
-semedit-agentic workspace and changes job identities. Repository cache warmup,
-checkout, and copy-on-write hydration occur before agent timing. Dataset test
-patches are installed only into the private oracle copy.
+Pinned external-repository fixtures use the same agent lifecycle for all three
+arms. A private `.benchmark/explicit.md` supplies the exact recipe only to the
+explicit arm; baseline and agentic receive the original issue. Planning fails
+when the recipe is missing or blank. Authoring requires executing the recipe
+through semedit from the pinned base and passing the ordinary private oracle.
+Human fix patches may inform recipe authoring and diagnose fixture validity;
+they cannot execute the explicit arm. Legacy
+`execution_mode=ground_truth_fix_patch_replay` records remain raw evidence and
+are excluded from comparisons and publication. The optional skill condition
+applies equally to both semedit arms. Hydration and prewarm precede agent timing.
+
+All five Multi-SWE Go fixtures contain a self-contained explicit prompt with
+exactly one `semantic_batch`, complete JSON arguments, and ordered child edits.
+The prompt requires no preliminary lookup or private artifact reads.
+
+| Fixture | Batch operations | Validation evidence |
+| :--- | ---: | :--- |
+| `grpc__grpc-go-2735` | 32 | [Prompt and receipt](../../data/benchmarks/fixture-validation/grpc__grpc-go-2735/) |
+| `grpc__grpc-go-2951` | 59 | [Prompt and receipt](../../data/benchmarks/fixture-validation/grpc__grpc-go-2951/) |
+| `grpc__grpc-go-3361` | 7 | [Prompt and receipt](../../data/benchmarks/fixture-validation/grpc__grpc-go-3361/) |
+| `zeromicro__go-zero-2463` | 29 | [Prompt and receipt](../../data/benchmarks/fixture-validation/zeromicro__go-zero-2463/) |
+| `zeromicro__go-zero-964` | 17 | [Prompt and receipt](../../data/benchmarks/fixture-validation/zeromicro__go-zero-964/) |
+
+Each recipe passed a fresh pinned-source replay and the ordinary private oracle.
+Receipts preserve binary, fixture, recipe, and response hashes. Recipe validation
+uses prepared disk dependencies and a local file proxy for isolated oracle caches;
+it does not constitute a measured coding-agent run or prove a globally minimal
+operation sequence. grpc 3361 scopes its batch to `balancer/base` to avoid unrelated
+tools-only nested modules.
+
+Two acceptance fixtures were repaired without removing assertions: grpc 3361
+uses a fixed TLS verification clock inside the certificates' validity interval;
+go-zero 964 passes the interceptor function value and pins an arm64-compatible
+test-only monkeypatch dependency. Its test command declares `-gcflags=all=-l`
+so patches cannot be bypassed by compiler inlining. Only that exact compiler
+option is allowed by the oracle argument validator. Original and corrected
+private patches remain in the validation evidence; historical smoke results
+retain their original fixture identity.
+
+All five external fixtures declare three progressively stronger
+`interactive_followups`, authored from their human fix patches. Vanilla and
+implicit receive the same task-specific hint content in the same order, with
+the selected semedit steering added only to implicit. The initial issue stays
+verbatim. Hints describe behavior, APIs, and integration points; they contain
+neither raw patch text nor acceptance-test output. External explicit receives
+its complete initial recipe and no corrective hint ladder. Hints advance only
+after an oracle task failure, stop on success, and never turn setup errors into
+retries. `InteractionSteps` retains each received hint and its outcome; time,
+tokens, and tools remain part of the measured session. Hint-bearing runs have
+changed fixture fingerprints and cannot resume the earlier unhinted smoke plan.
+
+Patch application bounds Git discovery to the target directory, rejects skipped
+patches even when Git exits successfully, and reverse-checks the applied patch.
+Acceptance-test installation errors return through the scheduler's `ERROR` path
+with retained run evidence; failed acceptance assertions remain oracle `FAIL`
+results. Neither a nonzero patch exit nor a silent skip is a task verdict.
 
 Policy changes must remain consistent across planning, prompts, result metadata, comparison keys, filenames, and publication. Historical results without policy metadata remain `unspecified`; the new-run default `write` must not be applied to them. Planned results retain exact fixture task identities, while legacy results retain their established normalization.
 
 ## Explicit semedit prompt experiment
 
-Every agent fixture declares an `explicit` prompt that names the semantic tool sequence and task-specific arguments. Select it with `--variants small:explicit` (or `large:explicit`). That selection schedules three results per repeat and instruction mode: baseline, semedit with the default implicit task prompt, and semedit with the explicit tool plan. The two semedit comparisons share the same baseline run. The arm execution order rotates across repeats. Existing report columns and paired deltas remain unchanged; ordinary `small` selections do not include the explicit experiment. Explicit prompts permit parallel independent read-only lookups and require mutations to run serially or inside one ordered `semantic_batch`.
+An explicit prompt names the complete semantic tool arguments and execution order, batching compatible mutations in an ordered `semantic_batch`. Select first-party fixtures with `--variants small:explicit` (or `large:explicit`); external fixtures schedule all three arms by default and require the exact recipe. The implicit and explicit arms share the baseline run and rotate execution order across repeats. Independent reads may run in parallel. A missing recipe never falls back to the issue or a fix patch.
 
 The experiment investigates whether semedit's extra time and tool cycles come from model-side operation selection and planning or from MCP execution. Explicit instructions add input tokens, so compare turns, tool cycles, invocations, failures, token components, and wall time together rather than assuming lower total tokens. See [RQ-0065](../../docs/research/RQ-0065-explicit-semedit-prompt-arm.md).
 
@@ -136,7 +194,8 @@ The runner creates isolated OpenCode state and configuration for each fixture, a
 resumes that same session for corrective task turns and diagnostic questions.
 Each fixture is initialized as its own Git project, and OpenCode plus its child
 processes run under a fail-closed macOS Seatbelt profile. The profile permits the
-fixture workspace while denying reads elsewhere and all network egress. Remote
+fixture workspace and the exact root directory vnode required by the macOS 26
+loader, while denying outside-file reads and all network egress. Remote
 provider calls therefore remain unavailable until the OS boundary can allow the
 configured endpoint without widening access to other hosts.
 

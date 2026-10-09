@@ -23,15 +23,27 @@ always schedule paired baseline and semedit jobs. Direct control uses the same
 scheduler. Complete plan rendering precedes execution.
 
 Fixtures with pinned external repositories use the three-arm benchmark matrix:
-`baseline-diff`, `semedit-agentic`, and `semedit-explicit`. The latter replays
-the source dataset's `fix_patch` as an oracle upper bound and records
-`execution_mode=ground_truth_fix_patch_replay`; it is not counted as an agent
-tool invocation. External fixtures expose only their verbatim problem statement
-to the agent. Their test and fix patches remain private to the harness, and the
-test patch is applied only in the private oracle workspace. The optional
-`--semedit-skill` condition installs the repository skill into the agent
-workspace only for the `semedit-agentic` arm. It participates in job and pair
-identities independently of the arm.
+`baseline-diff`, `semedit-agentic`, and `semedit-explicit`. All use the agent
+session lifecycle. The explicit prompt contains exact semedit operations,
+complete arguments, batch grouping, and order, authored and validated by
+executing semedit from the pinned base through the normal oracle. External
+fixtures keep this prompt in private `.benchmark/explicit.md`; only the explicit
+arm receives it. Missing or blank recipes fail planning before provider launch.
+Baseline and agentic receive the verbatim issue. Test and fix patches remain
+private; only the private oracle installs the test patch. Human fix replay is a
+fixture diagnostic, excluded from semedit performance comparisons, including
+legacy `execution_mode=ground_truth_fix_patch_replay` records. The optional
+skill condition applies equally to both semedit arms and participates in job
+and pair identities independently of the arm.
+
+The private human fix may also inform an authored `interactive_followups` hint
+ladder. External baseline and agentic receive identical progressive task content
+after unsuccessful attempts, with ordinary arm steering preserved. The complete
+explicit recipe has no corrective hint ladder. Hints remain independent of the
+agent's hidden oracle output and do not expose raw patch text or hidden tests.
+Harness errors terminate the session; only graded task failures advance hints.
+Each received hint, verdict, and cost is retained in the measured session so
+first-attempt success can be distinguished from success after hints.
 
 External repository caches are stored under the configured benchmark scratch
 directory. Each run workspace is hydrated from the cache and checked out at its
@@ -51,13 +63,48 @@ Provider adapters retain protocol-specific decoding. Every terminal job outcome,
 including setup failure and cancellation before dispatch, is retained. Progress
 uses completion order; final results retain plan order.
 
+Every coding harness retains its original live coding session and MCP service
+for the entire task. Initial work, corrective hints, staged turns, and diagnostic
+questions all use that original identity. Missing or changed identities and
+provider failures terminate continuation without creating a replacement.
+Freeze workspace, model, effort, MCP configuration, and sandbox settings.
+Close and reap the provider before collecting final MCP metrics and deleting
+the workspace. Record each adapter's transport in provenance and resume
+fingerprints to prevent mixing legacy CLI-resume jobs with persistent jobs.
+
+Codex owns one app-server process and transport for the entire task session.
+Initialize the connection and start the thread once. Send every subsequent hint,
+stage, and diagnostic question to that original thread ID with `turn/start`.
+Repeated CLI resume processes lose MCP and gopls memory even when their thread
+IDs match. A dead connection or changed identity fails explicitly without a
+replacement process. Freeze workspace, model, effort, MCP configuration, and
+network-denied sandbox settings for the lifetime. Await a matching completed
+turn notification before another turn. Account for usage with cumulative token
+snapshot differences. Close and reap the provider before collecting final MCP
+metrics and deleting the workspace.
+OpenCode owns one `serve` process. Thin `run --attach` clients submit each turn
+with the same absolute directory and original session ID; tools and MCP state
+remain in the server's retained directory instance. Its sandbox permits only
+the selected localhost listener port in addition to existing permissions.
+macOS 26 requires read access to the exact root directory vnode for loader
+startup; grant `(literal "/")` while retaining fixture and outside-file
+containment checks.
+Agy owns one process with stream-JSON input and output. Each prompt is a new
+input message in the original conversation. Normalize cumulative usage into
+per-turn differences and retain only newly appended transcript observations.
+
 The primary evaluation matrix standardizes on three canonical arms:
 
 1. `baseline-diff`: Vanilla LLM editing with native file manipulation / patch tools (no semedit tools).
 2. `semedit-agentic`: Autonomous agentic AST discovery, navigation, and editing using semedit MCP tools.
-3. `semedit-explicit`: Deterministic AST replay decomposed directly from the human ground-truth PR patch (`fix_patch`).
+3. `semedit-explicit`: Agent execution of an exact validated semedit recipe, with complete arguments, ordered batches, and no operation-selection search.
 
 The legacy `--mcp-server-instructions=none,descriptive,prescriptive` Cartesian array is deprecated.
+New benchmark plans and runner configurations default to `prescriptive` server
+instructions. Explicit `none` passes empty `--instructions` to every coding
+harness's MCP process, overriding the server default. Explicit `descriptive`
+remains available. Historical records with missing instruction metadata retain
+their original `none` interpretation.
 In its place, skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`),
 testing whether prompt-delivered macro-refactoring guidelines alter agent tool selection efficiency without inflating primary evaluation arms. Direct control jobs execute under deterministic AST semantics without agent interaction.
 
@@ -138,9 +185,21 @@ signal-cancelled jobs remain pending and can run on resume.
 - Resume never repeats a saved terminal task failure and never treats signal cancellation as completed work.
 - Agent pairs share experiment conditions but only semedit receives policy steering.
 - Different policies, including historical unspecified policy, never merge silently.
+- New runtime defaults do not reinterpret historical instruction conditions.
+- Explicit `none` disables server-wide guidance even when MCP startup defaults
+  to prescriptive guidance.
 - Follow-ups reuse the task session and workspace and never receive hidden oracle output.
+- Every coding harness retains the original live session and MCP connection.
+  A fresh backend process with the same saved identity does not satisfy continuity.
+- Missing or changed continuation identities fail explicitly, and failed
+  sessions cannot dispatch another turn or silently create a replacement.
+- Provider cleanup precedes MCP evidence retention and workspace deletion.
 - Diagnostic questioning never changes measured task aggregates.
 - Transcript failures remain explicit; missing telemetry is not measured zero.
+- Explicit recipes must pass the oracle when executed through semedit. Git fix
+  replay cannot substitute for recipe validation or measured execution.
+- Explicit wall time includes provider overhead; tool timing measures semedit
+  execution. A known efficient recipe does not prove a global time minimum.
 - External repository arms share a pinned base commit; acceptance patches remain
   outside the issue prompt and test patches stay outside the agent workspace.
 

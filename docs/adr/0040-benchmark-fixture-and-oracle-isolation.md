@@ -30,6 +30,13 @@ stored outside the extracted fixture and copied only after the agent exits.
 The copy path is root-scoped so an agent-created symlink cannot redirect a
 hidden test outside the benchmark workspace.
 
+Oracle Go test commands accept package paths, `-race`, and the exact
+`-gcflags=all=-l` option. The last option is required for acceptance tests that
+monkeypatch Go functions: compiler inlining otherwise bypasses the patched
+function. It is a declared fixture condition shared by all arms. Other compiler
+and linker options remain rejected. Test-only dependencies belong in the private
+test patch, independently of a candidate's production edits or human fix patch.
+
 An empty txtar fixture may probe fixed agent overhead. The mutation policy
 entry `disallowed_files: ["*"]` rejects changes to regular workspace files,
 including newly created files, using the post-extraction snapshot. The snapshot
@@ -59,6 +66,8 @@ across small and large variants without revealing a symbol-by-symbol plan.
   and runs build and hidden behavioral checks independently.
 - Small and large variants preserve the same task contract while changing the
   amount of related code an agent must navigate.
+- Acceptance fixture corrections preserve assertions and record original and
+  corrected artifacts. Historical results retain their original fixture identity.
 
 ## Consequences
 
