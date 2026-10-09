@@ -32,7 +32,7 @@ TARGET ?= codex/gpt-5.6-luna/medium
 VARIANTS ?= small,large
 CONCURRENCY ?= 2
 REPEATS ?= 1
-MCP_SERVER_INSTRUCTIONS ?= none
+MCP_SERVER_INSTRUCTIONS ?= prescriptive
 # MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive.
 SEMEDIT_ARM_RESTRICT ?= write
 SEMEDIT_PREWARM_VERIFY ?= true

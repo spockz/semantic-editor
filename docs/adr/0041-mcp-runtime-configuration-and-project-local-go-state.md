@@ -18,7 +18,10 @@ can redirect work outside the fixture.
 
 MCP registration uses an absolute path to the semedit binary and starts the
 server with the client project directory as its working directory. The server
-offers optional initialization instructions and a `--go-base-dir` setting.
+defaults to prescriptive initialization instructions and offers a `--go-base-dir`
+setting. `WithInstructions` and `--instructions` override that guidance;
+explicit empty instructions omit the initialization field. Omission retains
+the prescriptive default, including direct `NewServer` callers.
 The launch CWD is only an initial fallback. During MCP `initialize`, resolve the
 workspace root supplied by the client before deriving the default Go state
 directory as `<workspace-root>/.scratch/go`; retain an explicitly configured
@@ -105,6 +108,8 @@ process must not expose those transient files in workspace snapshots.
   than relying on configuration inherited from the fixture directory.
 - Server instructions are a server configuration input, not a task-prompt
   rewrite.
+- Default initialization guidance is prescriptive; explicit empty guidance
+  remains distinct from an omitted override.
 - MCP startup fails before tool use when its Go state directory is inaccessible.
 - Go subprocess state is derived from the selected request context, never from
   an inaccessible inherited cache path.

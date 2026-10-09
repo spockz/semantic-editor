@@ -169,6 +169,8 @@ semedit mcp --enabled-languages=go
 
 `--profile=full` is the default; `--profile=mutations-only` omits lookup tools. `--enabled-languages` limits the exposed language set. Go subprocess state defaults to `.scratch/go` beneath the server working directory, with `--go-base-dir` available to select another location. Configure the client with the executable path and working directory explicitly. The [semedit steering skill](skills/semedit/SKILL.md) explains intent selection and operation boundaries.
 
+MCP initialization includes prescriptive guidance by default: inspect the tool inventory and use applicable semantic tools for mutations. `--instructions 'Custom guidance'` replaces it; `--instructions=` omits server-wide guidance. Individual tool descriptions remain available.
+
 ## 7. Open research and future scope
 
 The [ADR index](docs/adr/README.md) records accepted decisions and their evolution; the [research index](docs/research/README.md) tracks investigations. A resolved feasibility question does not necessarily mean its integration has shipped.

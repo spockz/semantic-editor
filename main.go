@@ -77,7 +77,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVar(&toolProfile, "tool-profile", "base", "MCP tool catalog profile (base or full)")
 	cmd.Flags().StringArrayVar(&exposeToolVariants, "expose-tool-variant", nil, "Expose specialized MCP tool variants by verb:kind; repeat or use comma-separated patterns")
 	cmd.Flags().BoolVar(&liveReload, "live-reload", false, "Enable in-place live-reload and dynamic tool schema discovery")
-	cmd.Flags().StringVar(&instructions, "instructions", "", "Optional server-wide MCP instructions returned during initialization")
+	cmd.Flags().StringVar(&instructions, "instructions", mcp.PrescriptiveInstructions, "Server-wide MCP instructions returned during initialization; empty disables guidance")
 	cmd.Flags().StringVar(&goBaseDir, "go-base-dir", "", "Directory for Go subprocess state; defaults to .scratch/go below the server working directory")
 	cmd.Flags().StringVar(&expectedRoot, "expected-root", "", "Require the client-selected workspace root to match this canonical root")
 	cmd.Flags().StringVar(&enabledLanguages, "enabled-languages", "", "Comma-separated language allowlist for MCP tools (go,rust,java,scala,haskell,kotlin,bash,make)")

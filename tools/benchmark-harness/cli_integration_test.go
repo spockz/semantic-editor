@@ -294,6 +294,24 @@ func TestCLIMCPInstructionModeMatrixUsesPerJobRuntimeSettings(t *testing.T) {
 	assertMCPInstructionModeMatrix(t, trial)
 }
 
+func TestCLIDefaultMCPInstructionsArePrescriptive(t *testing.T) {
+	trial := runCLITrial(t, nil, false)
+	if trial.Err != nil {
+		t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
+	}
+	if !strings.Contains(trial.Output, "MCP-instructions=prescriptive") {
+		t.Fatalf("resolved CLI plan omitted the prescriptive default:\n%s", trial.Output)
+	}
+	if len(trial.Report.Runs) == 0 {
+		t.Fatal("CLI report contained no runs")
+	}
+	for _, run := range trial.Report.Runs {
+		if run.MCPServerInstructions != MCPServerInstructionsPrescriptive {
+			t.Errorf("run instruction mode = %q, want prescriptive", run.MCPServerInstructions)
+		}
+	}
+}
+
 func assertMCPInstructionModeMatrix(t *testing.T, trial cliTrial) {
 	t.Helper()
 	if len(trial.Invocations) != 9 || len(trial.Report.Runs) != 6 {

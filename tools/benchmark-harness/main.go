@@ -399,7 +399,7 @@ func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
 	fs.StringVar(&input.settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
 	fs.StringVar(&input.settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
 	fs.DurationVar(&input.timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
-	fs.StringVar(&input.mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
+	fs.StringVar(&input.mcpRaw, "mcp-server-instructions", "prescriptive", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
 	fs.StringVar(&input.policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
 	fs.BoolVar(&input.settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", true, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
 	fs.Var(&input.provenance, "provenance", "Technical execution provenance key=value (repeatable)")

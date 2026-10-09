@@ -316,6 +316,7 @@ func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
 	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
+		args = append(args, "--instructions", "")
 	case MCPServerInstructionsDescriptive:
 		args = append(args, "--instructions", mcp.DescriptiveInstructions)
 	case MCPServerInstructionsPrescriptive:

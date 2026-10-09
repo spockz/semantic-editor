@@ -1,0 +1,19 @@
+# MCP initialization defaults to prescriptive guidance and honors explicit overrides.
+stdin input.json
+exec semedit mcp
+stdout '"instructions":\s*"Inspect the complete tool inventory'
+
+stdin input.json
+exec semedit mcp --instructions=
+! stdout '"instructions":'
+stdout '"name":\s*"semedit"'
+
+stdin input.json
+exec semedit mcp --instructions 'Custom semantic guidance.'
+stdout '"instructions":\s*"Custom semantic guidance\."'
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+
+-- main.go --
+package main

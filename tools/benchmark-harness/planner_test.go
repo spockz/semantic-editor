@@ -189,3 +189,25 @@ func TestBuildBenchmarkPlanCreatesThreeArmExplicitPromptCell(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildBenchmarkPlanDefaultsMCPInstructionsToPrescriptive(t *testing.T) {
+	dir := t.TempDir()
+	writePlanningFixture(t, dir, "default-instructions", "contexts:\n  - small")
+	plan, err := BuildBenchmarkPlan(PlanOptions{
+		BenchDir: dir,
+		OutDir:   "",
+		Targets:  []Target{{Harness: "codex"}},
+		Variants: []string{"small"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(plan.Options.MCPServerInstructions, []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}) {
+		t.Fatalf("plan instruction modes = %v, want [prescriptive]", plan.Options.MCPServerInstructions)
+	}
+	for _, job := range plan.Jobs {
+		if job.MCPServerInstructions != MCPServerInstructionsPrescriptive {
+			t.Errorf("job instruction mode = %q, want prescriptive", job.MCPServerInstructions)
+		}
+	}
+}

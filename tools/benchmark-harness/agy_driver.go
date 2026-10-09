@@ -226,6 +226,7 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 	if !disabled {
 		switch mode {
 		case MCPServerInstructionsNone:
+			args = append(args, "--instructions", "")
 		case MCPServerInstructionsDescriptive:
 			args = append(args, "--instructions", mcp.DescriptiveInstructions)
 		case MCPServerInstructionsPrescriptive:

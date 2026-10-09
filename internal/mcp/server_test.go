@@ -199,21 +199,46 @@ func TestMCPServerLifecycle(t *testing.T) {
 func TestMCPServerReturnsConfiguredInstructions(t *testing.T) {
 	t.Parallel()
 
-	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
-	var out bytes.Buffer
-	if err := mcptest.NewServer(t, "full", ".", &out, mcp.WithInstructions("Prefer semantic operations.")).Serve(context.Background(), strings.NewReader(input)); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name    string
+		opts    []mcp.Option
+		want    string
+		present bool
+	}{
+		{name: "default", want: mcp.PrescriptiveInstructions, present: true},
+		{name: "custom", opts: []mcp.Option{mcp.WithInstructions(" Prefer semantic operations. ")}, want: "Prefer semantic operations.", present: true},
+		{name: "empty", opts: []mcp.Option{mcp.WithInstructions("")}},
+		{name: "whitespace", opts: []mcp.Option{mcp.WithInstructions(" \t\n ")}},
 	}
-	var response struct {
-		Result struct {
-			Instructions string `json:"instructions"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if got, want := response.Result.Instructions, "Prefer semantic operations."; got != want {
-		t.Errorf("initialize instructions = %q, want %q", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
+			var out bytes.Buffer
+			if err := mcptest.NewServer(t, "full", ".", &out, tt.opts...).Serve(context.Background(), strings.NewReader(input)); err != nil {
+				t.Fatal(err)
+			}
+			var response struct {
+				Result map[string]json.RawMessage `json:"result"`
+			}
+			if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			raw, present := response.Result["instructions"]
+			if present != tt.present {
+				t.Fatalf("initialize instructions presence = %v, want %v; response = %s", present, tt.present, out.Bytes())
+			}
+			if !present {
+				return
+			}
+			var got string
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.want {
+				t.Errorf("initialize instructions = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

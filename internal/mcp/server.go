@@ -204,14 +204,15 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 		profile = "full"
 	}
 	s := &Server{
-		profile:     profile,
-		toolProfile: "base",
-		workDir:     workDir,
-		service:     backends.NewDefaultService(),
-		diagnostics: godiagnostics.NewSessionManager(),
-		startedAt:   time.Now(),
-		out:         out,
-		catalog:     newCatalogCache(),
+		profile:      profile,
+		toolProfile:  "base",
+		workDir:      workDir,
+		service:      backends.NewDefaultService(),
+		diagnostics:  godiagnostics.NewSessionManager(),
+		startedAt:    time.Now(),
+		out:          out,
+		catalog:      newCatalogCache(),
+		instructions: PrescriptiveInstructions,
 	}
 	for _, opt := range opts {
 		opt(s)

@@ -50,7 +50,9 @@ const (
 func ParseMCPServerInstructionMode(raw string) (MCPServerInstructionMode, error) {
 	mode := MCPServerInstructionMode(strings.ToLower(strings.TrimSpace(raw)))
 	switch mode {
-	case "", MCPServerInstructionsNone:
+	case "":
+		return MCPServerInstructionsPrescriptive, nil
+	case MCPServerInstructionsNone:
 		return MCPServerInstructionsNone, nil
 	case MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive:
 		return mode, nil
@@ -308,6 +310,9 @@ type RunnerOption func(*Runner)
 
 // WithMCPServerInstructions selects the server instruction experiment mode for all runs made by a runner.
 func WithMCPServerInstructions(mode MCPServerInstructionMode) RunnerOption {
+	if mode == "" {
+		mode = MCPServerInstructionsPrescriptive
+	}
 	return func(r *Runner) { r.mcpServerInstructionsMode = mode }
 }
 
@@ -329,7 +334,7 @@ func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	}
 	runner := &Runner{
 		baseScratchDir:            scratchDir,
-		mcpServerInstructionsMode: MCPServerInstructionsNone,
+		mcpServerInstructionsMode: MCPServerInstructionsPrescriptive,
 		semeditArmRestriction:     SemeditArmRestrictWrite,
 	}
 	for _, option := range options {

@@ -568,7 +568,7 @@ func normalizePlanOptions(options PlanOptions) (PlanOptions, error) {
 	}
 	options.SemeditArmRestriction = policy
 	if len(options.MCPServerInstructions) == 0 {
-		options.MCPServerInstructions = []MCPServerInstructionMode{MCPServerInstructionsNone}
+		options.MCPServerInstructions = []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}
 	} else {
 		modes, parseModesErr := ParseMCPServerInstructionModes(strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","))
 		if parseModesErr != nil {
@@ -681,7 +681,7 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 	}
 	modes := options.MCPServerInstructions
 	if len(modes) == 0 {
-		modes = []MCPServerInstructionMode{MCPServerInstructionsNone}
+		modes = []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}
 	}
 	conditions := []struct {
 		arm     ArmType

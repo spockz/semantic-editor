@@ -1443,6 +1443,19 @@ func assertOracleCleanupArtifacts(t *testing.T, testCase oracleCleanupCase, fixt
 	}
 }
 
+func codexMCPArgsFromOverride(t *testing.T, override string) []string {
+	t.Helper()
+	_, rawArgs, ok := strings.Cut(override, "=")
+	if !ok {
+		t.Fatalf("Codex override has no args assignment: %s", override)
+	}
+	var args []string
+	if decodeErr := json.Unmarshal([]byte(rawArgs), &args); decodeErr != nil {
+		t.Fatalf("decode Codex args from %q: %v", rawArgs, decodeErr)
+	}
+	return args
+}
+
 func TestEvaluateKeepsHiddenTestsOutOfAgentWorkspace(t *testing.T) {
 	for _, pass := range []bool{true, false} {
 		t.Run(fmt.Sprintf("oracle_passes_%v", pass), func(t *testing.T) {
@@ -1775,5 +1788,78 @@ func TestParseTaskLoadsPrivateExplicitRecipe(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(workDir, ".benchmark", "explicit.md")); !os.IsNotExist(err) {
 		t.Fatalf("private recipe extracted into workspace: %v", err)
+	}
+}
+
+func TestMCPInstructionAdaptersPassEmptyInstructionsForNone(t *testing.T) {
+	fixtureRoot := t.TempDir()
+	runner := NewRunner(t.TempDir(), WithMCPServerInstructions(MCPServerInstructionsNone))
+	codexOverride, err := runner.codexMCPServerInstructionsOverride(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	codexArgs := codexMCPArgsFromOverride(t, codexOverride)
+	if index := slices.Index(codexArgs, "--instructions"); index < 0 || index+1 >= len(codexArgs) || codexArgs[index+1] != "" {
+		t.Errorf("Codex none arguments = %#v, want --instructions followed by an empty value", codexArgs)
+	}
+
+	openCodeArgs, err := runner.openCodeMCPArguments(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if index := slices.Index(openCodeArgs, "--instructions"); index < 0 || index+1 >= len(openCodeArgs) || openCodeArgs[index+1] != "" {
+		t.Errorf("OpenCode none arguments = %#v, want --instructions followed by an empty value", openCodeArgs)
+	}
+
+	env, err := fixtureGoEnvironment(t.Context(), fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryRoot := t.TempDir()
+	if configErr := writeAgyMCPConfig(fixtureRoot, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); configErr != nil {
+		t.Fatal(configErr)
+	}
+	data, err := os.ReadFile(filepath.Join(fixtureRoot, ".agents", "mcp_config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Servers map[string]struct {
+			Args []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	server := config.Servers["semedit"]
+	if index := slices.Index(server.Args, "--instructions"); index < 0 || index+1 >= len(server.Args) || server.Args[index+1] != "" {
+		t.Errorf("Agy none arguments = %#v, want --instructions followed by an empty value", server.Args)
+	}
+}
+
+func TestRunnerInstructionModesReachCodexMCPArgs(t *testing.T) {
+	cases := []struct {
+		name    string
+		options []RunnerOption
+		want    string
+	}{
+		{name: "omitted", want: mcp.PrescriptiveInstructions},
+		{name: "empty", options: []RunnerOption{WithMCPServerInstructions("")}, want: mcp.PrescriptiveInstructions},
+		{name: "none", options: []RunnerOption{WithMCPServerInstructions(MCPServerInstructionsNone)}},
+		{name: "descriptive", options: []RunnerOption{WithMCPServerInstructions(MCPServerInstructionsDescriptive)}, want: mcp.DescriptiveInstructions},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			runner := NewRunner(t.TempDir(), test.options...)
+			override, err := runner.codexMCPServerInstructionsOverride(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			args := codexMCPArgsFromOverride(t, override)
+			index := slices.Index(args, "--instructions")
+			if index < 0 || index+1 >= len(args) || args[index+1] != test.want {
+				t.Errorf("Codex MCP args = %#v, want --instructions followed by %q", args, test.want)
+			}
+		})
 	}
 }
