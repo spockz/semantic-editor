@@ -77,6 +77,11 @@ func autoOperationContract(key string) (capability.OperationContract, bool) {
 		return singleContract(0, scope,
 			contractRequirements(scope, capability.RequireSnapshotState, capability.RequireWritableDestination),
 			capability.FeatureRestore, capability.GuaranteeConflictChecked|capability.GuaranteeAtomicWrites, allFaultSupport()), true
+	case "workspace_outline":
+		scope := capability.ScopeWorkspacePaths
+		return singleContract(0, scope,
+			contractRequirements(scope, capability.RequireSourceStable),
+			capability.FeatureOutline, capability.GuaranteeReadOnly, allFaultSupport()), true
 	case capability.OpVerify:
 		fileScope, scopeScope := capability.ScopeSelectedFile, capability.ScopeSelectedScope
 		features := capability.FeatureDiagnostics | capability.FeatureProjectHooks

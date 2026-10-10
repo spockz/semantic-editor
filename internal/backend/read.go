@@ -14,6 +14,8 @@ const (
 	OperationOutline Operation = "outline"
 	// OperationFindReferences returns typed source references.
 	OperationFindReferences Operation = "find_references"
+	// OperationWorkspaceOutline returns discovered packages and modules across a workspace.
+	OperationWorkspaceOutline Operation = "workspace_outline"
 
 	// CapabilityInspect is the inspect capability key.
 	CapabilityInspect = OperationInspect
@@ -21,6 +23,8 @@ const (
 	CapabilityOutline = OperationOutline
 	// CapabilityFindReferences is the find_references capability key.
 	CapabilityFindReferences = OperationFindReferences
+	// CapabilityWorkspaceOutline is the workspace_outline capability key.
+	CapabilityWorkspaceOutline = OperationWorkspaceOutline
 )
 
 // ReadScope describes the source region covered by a read result.
@@ -85,6 +89,31 @@ type OutlineFile struct {
 type OutlineResult struct {
 	Scope ReadScope     `json:"scope"`
 	Files []OutlineFile `json:"files"`
+}
+
+// WorkspacePackage describes one discovered package in the workspace.
+type WorkspacePackage struct {
+	Path       string  `json:"path"`
+	Name       string  `json:"name"`
+	Synopsis   string  `json:"synopsis"`
+	Doc        *string `json:"doc,omitempty"`
+	Depth      int     `json:"depth"`
+	FilesCount int     `json:"files_count"`
+}
+
+// WorkspaceModule describes one module discovered in the workspace.
+type WorkspaceModule struct {
+	Path       string `json:"path"`
+	ModulePath string `json:"module_path"`
+	GoVersion  string `json:"go_version,omitempty"`
+	IsRoot     bool   `json:"is_root"`
+}
+
+// WorkspaceOutlineResult contains discovered packages and modules for a workspace.
+type WorkspaceOutlineResult struct {
+	Scope    ReadScope          `json:"scope"`
+	Modules  []WorkspaceModule  `json:"modules"`
+	Packages []WorkspacePackage `json:"packages"`
 }
 
 // Reference identifies a source use of a resolved declaration.

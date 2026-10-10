@@ -251,7 +251,17 @@ func collectExtractionPackageInputs(loaded []*packages.Package) (extractionPacka
 }
 
 func collectPackageInputRecord(pkg *packages.Package, inputs *extractionPackageInputs) error {
-	if err := collectModuleInput(pkg.Module, inputs); err != nil {
+	if pkg.Module == nil {
+		return nil
+	}
+	module := pkg.Module
+	if module.Replace != nil {
+		module = module.Replace
+	}
+	if module.Version != "" || module.Dir == "" {
+		return nil
+	}
+	if err := collectModuleInput(module, inputs); err != nil {
 		return err
 	}
 	goFiles := append(append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...), pkg.OtherFiles...)
@@ -268,7 +278,7 @@ func collectModuleInput(module *packages.Module, inputs *extractionPackageInputs
 	if module.Replace != nil {
 		module = module.Replace
 	}
-	if module.Dir == "" {
+	if module.Version != "" || module.Dir == "" {
 		return nil
 	}
 	root, err := filepath.Abs(module.Dir)

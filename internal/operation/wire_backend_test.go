@@ -120,8 +120,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 40 {
-		t.Errorf("registered operations = %d, want 40", len(entries))
+	if len(entries) != 41 {
+		t.Errorf("registered operations = %d, want 41", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -351,12 +351,12 @@ func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline" || entry.Key == "find_references"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline" || entry.Key == "find_references" || entry.Key == "workspace_outline"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
-		if entry.Key == "find_references" && entry.Batchable {
-			t.Error("find_references must not be batchable")
+		if (entry.Key == "find_references" || entry.Key == "workspace_outline") && entry.Batchable {
+			t.Errorf("%s must not be batchable", entry.Key)
 		}
 	}
 }

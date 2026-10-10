@@ -317,6 +317,7 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_snapshot":                   "missing snapshot path",
 		"semantic_undo":                       "nonexistent snapshot id",
 		"semantic_verify":                     "missing verification path",
+		"semantic_workspace_outline":          "missing directory path",
 		"semantic_batch":                      "child operation failure",
 		"semantic_metrics":                    "out-of-range limit",
 		"report_feedback":                     "invalid interface value",
@@ -507,7 +508,7 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 	case "semantic_lookup", "semantic_inspect_symbol", "semantic_find_references":
 		args["symbol"] = "MissingSymbol"
 		args["language"] = "go"
-	case "semantic_outline":
+	case "semantic_outline", "semantic_workspace_outline":
 		args["path"] = "missing.go"
 		args["language"] = "go"
 	case "semantic_replace_construct", "semantic_remove_construct", "semantic_insert_case":

@@ -11,9 +11,10 @@ When the request matches an operation exposed by the active semedit server, use 
 
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
+| Discover packages, synopses, and module boundaries across the workspace | `semantic_workspace_outline` with optional `path` and `include_tests` | Directory listing, `find`, or `tree` shell exploration |
 | Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
 | Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
-| View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` | Reading whole files or manual grep navigation |
+| View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` (use `semantic_workspace_outline` first to discover packages) | Reading whole files or manual grep navigation |
 | Find usages, call sites, or references of a Go symbol | `semantic_find_references` | Broad text search or regex |
 | Rename a symbol and its references in Go, or in selected trusted Rust or Java files | `semantic_rename` | Built-in text replacement across files |
 | Replace one Go control-flow construct, clause, or statement/expression inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |

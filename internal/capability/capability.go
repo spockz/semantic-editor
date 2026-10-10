@@ -20,6 +20,8 @@ const (
 	OpOutline = "outline"
 	// OpFindReferences returns typed references within the active Go module build.
 	OpFindReferences = "find_references"
+	// OpWorkspaceOutline outlines packages and modules across the workspace.
+	OpWorkspaceOutline = "workspace_outline"
 )
 
 // LanguageMatrix declares capabilities and constraints for a single language backend.

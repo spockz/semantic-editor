@@ -384,9 +384,9 @@ func resolveContractContinuation(ctx context.Context, root string, candidate Sym
 		return SymbolTarget{}, false, nil
 	}
 	name := candidate.Symbol
-	if separator := strings.LastIndex(name, "."); separator >= 0 {
-		receiverName := strings.Trim(name[:separator], "() *")
-		methodName := name[separator+1:]
+	if before, after, ok0 := strings.CutLast(name, "."); ok0 {
+		receiverName := strings.Trim(before, "() *")
+		methodName := after
 		typeName, ok := pkg.Types.Scope().Lookup(receiverName).(*types.TypeName)
 		if !ok {
 			return SymbolTarget{}, false, nil

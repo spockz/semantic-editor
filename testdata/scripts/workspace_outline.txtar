@@ -1,0 +1,54 @@
+# Test semedit workspace-outline discovering packages, descriptions, and modules
+exec semedit workspace-outline
+stdout 'Packages:'
+stdout '\. \(main\) — Package main is the Root package for wsoutline\.'
+stdout 'api \(api\) — Package api provides API endpoints\.'
+stdout 'submod \(submod\) — Package submod is a sub-module\.'
+stdout 'api/sub \(sub\) — Package sub provides nested utilities\.'
+stdout 'Modules:'
+stdout '\. \(example\.com/wsoutline, go 1\.24\) \[root\]'
+stdout 'submod \(example\.com/wsoutline/submod, go 1\.24\)'
+
+# Scoped outline to api/
+exec semedit workspace-outline --path api
+stdout 'Packages:'
+stdout 'api \(api\) — Package api provides API endpoints\.'
+stdout 'api/sub \(sub\) — Package sub provides nested utilities\.'
+! stdout 'submod \(submod\)'
+
+-- go.mod --
+module example.com/wsoutline
+
+go 1.24
+
+-- main.go --
+// Package main is the Root package for wsoutline.
+package main
+
+func main() {}
+
+-- api/doc.go --
+// Package api provides API endpoints.
+package api
+
+-- api/api.go --
+package api
+
+func Endpoint() {}
+
+-- api/sub/sub.go --
+// Package sub provides nested utilities.
+package sub
+
+func Helper() {}
+
+-- submod/go.mod --
+module example.com/wsoutline/submod
+
+go 1.24
+
+-- submod/submod.go --
+// Package submod is a sub-module.
+package submod
+
+func SubmodFunc() {}

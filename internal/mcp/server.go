@@ -103,7 +103,7 @@ const (
 	// DescriptiveInstructions advertises semantic operations without requiring their use.
 	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
 	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
-	PrescriptiveInstructions    = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
+	PrescriptiveInstructions    = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Use semantic_workspace_outline to discover project layout and packages before inspecting declarations or editing code. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
 	toolFieldDescription        = "description"
 	toolFieldInputSchema        = "inputSchema"
 	toolFieldOutputSchema       = "outputSchema"
