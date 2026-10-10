@@ -5774,3 +5774,19 @@ failure remains the documented batch behavior.
 - Observed failure: the parameter declarations were not in the guessed file, and the guessed backend test file does not exist. The inspection returned `symbol not found` or a missing-file error without changing files.
 - Workaround: locate declarations and tests with repository file/search tools, then inspect the actual symbols.
 - Root cause: the handover names outdated source locations; body/construct parameter contracts are in `internal/operation/wire_engine_mutations.go`, and Go backend tests use different filenames.
+
+## 2026-10-10: case insertion could not identify the selected switch
+
+- Tool: `insert-case`
+- Target: `internal/astedit/construct.go`, `constructReplacementWrapper`
+- Observed failure: Inserting `default: return "", ""` with `--placement last` returned `switch statement not found`; no source changed.
+- Workaround applied: Retry with `--discriminator kind` for the tagged switch.
+- Root cause: The selector lacked the explicit switch discriminator `kind`.
+
+## 2026-10-10: body replacement could not resolve existing imports
+
+- Tool: `replace-body`
+- Target: `internal/astedit/construct.go`, `constructReplacementWrapper`
+- Observed failure: The replacement was rejected during orphan-import pruning because the package name for `bytes` could not be resolved; no source changed.
+- Workaround applied: Use the narrower switch-clause insertion with its required discriminator.
+- Root cause: The semantic replacement's import-pruning preflight could not resolve an existing import in the current workspace state.

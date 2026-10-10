@@ -35,6 +35,7 @@ func resolveBaseDir(ctx context.Context, workDir string) (string, error) {
 }
 
 func verifyStateDirectory(dir string) error {
+	// #nosec G703 -- dir is the caller-selected or process-configured Go cache root.
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return fmt.Errorf("create Go state directory %q: %w", dir, err)
 	}
@@ -47,6 +48,7 @@ func verifyStateDirectory(dir string) error {
 	}
 	name := probe.Name()
 	_ = probe.Close()
+	// #nosec G703 -- name comes from CreateTemp in dir with a fixed prefix.
 	_ = os.Remove(name)
 	return nil
 }

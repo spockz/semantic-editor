@@ -15,11 +15,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"semedit/internal/pipeline"
 
 	"gopkg.in/yaml.v3"
 )
@@ -740,8 +741,10 @@ type oracleScratch struct {
 
 func prepareOracleScratch(sourceRoot string) (oracleScratch, error) {
 	scratchDir := filepath.Join(sourceRoot, ".scratch")
+	// #nosec G703 -- scratchDir is the fixed .scratch child of the selected workspace root.
 	info, statErr := os.Lstat(scratchDir)
 	if errors.Is(statErr, os.ErrNotExist) {
+		// #nosec G703 -- scratchDir is the fixed .scratch child after confirming it does not exist.
 		if err := os.Mkdir(scratchDir, 0o700); err != nil {
 			return oracleScratch{}, fmt.Errorf("create workspace scratch directory: %w", err)
 		}
@@ -768,6 +771,7 @@ func (scratch oracleScratch) cleanup() error {
 }
 
 func copyOracleWorkspaceFiles(sourceRoot string, sourceFS, targetFS *os.Root) error {
+	// #nosec G703 -- sourceRoot is a trusted fixture root; symlinks are not followed and reads/writes use opened os.Root handles.
 	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -831,6 +835,7 @@ func installHiddenTests(workDir, sourceDir string) error {
 		_ = workFS.Close()
 	}()
 
+	// #nosec G703 -- sourceRoot is a trusted fixture root; symlinks are not followed and reads/writes use opened os.Root handles.
 	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -862,6 +867,7 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 	}
 
 	targetPath := filepath.Join(workDir, filepath.FromSlash(cfg.File))
+	// #nosec G703 -- cfg.File is an operator-selected AST target from trusted fixture configuration.
 	src, err := os.ReadFile(filepath.Clean(targetPath))
 	if err != nil {
 		return fmt.Errorf("read target file for AST validation %s: %w", cfg.File, err)

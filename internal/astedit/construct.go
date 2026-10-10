@@ -434,6 +434,9 @@ func constructReplacementWrapper(kind ConstructKind, trimmed string) (string, st
 	case ConstructDefer:
 		stub = "package p\nfunc _(){\n" + trimmed + "\n}"
 		want = "defer"
+
+	default:
+		return "", ""
 	}
 	return stub, want
 }
@@ -452,8 +455,9 @@ func constructReplacementNode(kind ConstructKind, fn *ast.FuncDecl) ast.Node {
 		return singleCaseClause(fn)
 	case ConstructSelect:
 		return singleCommClause(fn)
+	default:
+		return nil
 	}
-	return nil
 }
 
 func singleLoopStatement(fn *ast.FuncDecl) ast.Node {
