@@ -94,6 +94,68 @@ func TestExecutePlanRecordsQueuedCancellationAndNilResultFailure(t *testing.T) {
 	}
 }
 
+func TestExecutePlanKeepsParentContextAliveForOracleAfterAgentDeadline(t *testing.T) {
+	plan := &BenchmarkPlan{Options: PlanOptions{Concurrency: 1, Timeout: 25 * time.Millisecond}, Jobs: []Job{{ID: "oracle-budget", TaskID: "task", Target: Target{Harness: "codex"}, Arm: ArmBaseline}}}
+	outcomes, err := ExecutePlan(context.Background(), plan, io.Discard, func(ctx context.Context, _ Job) (*RunResult, error) {
+		taskCtx, cancelTask := agentTaskContext(ctx)
+		defer cancelTask()
+		select {
+		case <-taskCtx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("agent task deadline was not applied")
+		}
+		if !errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+			t.Fatalf("agent task error = %v, want deadline exceeded", taskCtx.Err())
+		}
+		if ctx.Err() != nil {
+			t.Fatalf("parent context was canceled with the agent task deadline: %v", ctx.Err())
+		}
+		oracleCtx, cancelOracle := acceptanceOracleContext(ctx)
+		defer cancelOracle()
+		if oracleCtx.Err() != nil {
+			t.Fatalf("oracle context inherited the expired agent task deadline: %v", oracleCtx.Err())
+		}
+		return &RunResult{Success: true}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Err != nil || !outcomes[0].Result.Success {
+		t.Fatalf("oracle-budget outcome = %+v", outcomes)
+	}
+}
+
+func TestExecutePlanRetainsDeadlineForControlJobs(t *testing.T) {
+	plan := &BenchmarkPlan{Options: PlanOptions{Concurrency: 1, Timeout: 25 * time.Millisecond}, Jobs: []Job{{ID: "control-deadline", TaskID: "task", Target: Target{Harness: "control"}, Arm: ArmControl}}}
+	outcomes, err := ExecutePlan(context.Background(), plan, io.Discard, func(ctx context.Context, _ Job) (*RunResult, error) {
+		<-ctx.Done()
+		return &RunResult{}, ctx.Err()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || !errors.Is(outcomes[0].Err, context.DeadlineExceeded) {
+		t.Fatalf("control timeout outcome = %+v", outcomes)
+	}
+}
+
+func TestPopulatePlanResultPreservesPrimaryAndCleanupErrorsOnce(t *testing.T) {
+	primary := errors.New("provider failed")
+	cleanup := errors.New("cleanup failed")
+	result := &RunResult{Error: primary.Error()}
+	populatePlanResult(&BenchmarkPlan{Options: PlanOptions{}}, Job{ID: "job", TaskID: "task"}, result, errors.Join(primary, cleanup))
+	if got := result.Error; strings.Count(got, primary.Error()) != 1 || strings.Count(got, cleanup.Error()) != 1 {
+		t.Fatalf("preserved errors = %q, want each error once", got)
+	}
+	short := errors.New("timeout")
+	long := errors.New("provider timeout")
+	result = &RunResult{Error: long.Error()}
+	populatePlanResult(&BenchmarkPlan{Options: PlanOptions{}}, Job{ID: "job", TaskID: "task"}, result, errors.Join(long, short))
+	if got := result.Error; !containsErrorMessage(got, long.Error()) || !containsErrorMessage(got, short.Error()) || strings.Count(got, "\n") != 1 {
+		t.Fatalf("substring errors were collapsed: %q", got)
+	}
+}
+
 func TestExecutePlanPropagatesProgressWriterFailureAfterDraining(t *testing.T) {
 	plan := &BenchmarkPlan{Options: PlanOptions{Concurrency: 2, Timeout: time.Second}, Jobs: []Job{
 		{ID: "a", TaskID: "t", Context: "small", Target: Target{Harness: "control"}, Arm: ArmControl},

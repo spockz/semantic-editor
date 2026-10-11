@@ -35,7 +35,8 @@ const appServerTurnCompletedMethod = "turn/completed"
 
 type appServerThreadStartResponse struct {
 	Thread struct {
-		ID string `json:"id"`
+		ID        string `json:"id"`
+		Ephemeral bool   `json:"ephemeral"`
 	} `json:"thread"`
 	Cwd             string  `json:"cwd"`
 	Model           string  `json:"model"`
@@ -499,6 +500,7 @@ func (s *codexAppServer) startThread(ctx context.Context) error {
 		return fmt.Errorf("notify Codex initialization: %w", err)
 	}
 	params := map[string]any{"cwd": s.workDir, "approvalPolicy": "never", "sandbox": "workspace-write"}
+	params["ephemeral"] = true
 	if s.target.Model != "" {
 		params["model"] = s.target.Model
 	}
@@ -1004,6 +1006,9 @@ func normalizeAppServerItem(rawItem json.RawMessage, item *codexItem) {
 }
 
 func validateAppServerThreadStart(response appServerThreadStartResponse, workDir string, target Target) error {
+	if !response.Thread.Ephemeral {
+		return fmt.Errorf("codex benchmark thread is not ephemeral")
+	}
 	if response.Thread.ID == "" {
 		return fmt.Errorf("codex app-server thread/start response omitted thread ID")
 	}

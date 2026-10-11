@@ -14,6 +14,16 @@ import (
 	"time"
 )
 
+const acceptanceOracleTimeout = 5 * time.Minute
+
+func acceptanceOracleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, acceptanceOracleTimeout)
+}
+
+func (s *agentSession) recordExecutionError(err error) {
+	s.executionErr = joinDistinctErrors(s.executionErr, err)
+}
+
 func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, classification string, result *RunResult) error {
 	started := time.Now()
 	var returnedID string
@@ -81,20 +91,28 @@ func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, class
 func (s *agentSession) evaluate(ctx context.Context, result *RunResult) error {
 	if result == nil {
 		s.oracleExecutionErr = fmt.Errorf("evaluate session result: result is nil")
+		s.recordExecutionError(s.oracleExecutionErr)
 		return s.oracleExecutionErr
 	}
-	s.oracleExecutionErr = evaluateAgentResult(ctx, s.execution.Task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	oracleCtx, cancel := acceptanceOracleContext(ctx)
+	defer cancel()
+	s.oracleExecutionErr = evaluateAgentResult(oracleCtx, s.execution.Task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	s.recordExecutionError(s.oracleExecutionErr)
 	return s.oracleExecutionErr
 }
 
 func (s *agentSession) evaluateStage(ctx context.Context, result *RunResult, oracle OracleConfig) error {
 	if result == nil {
 		s.oracleExecutionErr = fmt.Errorf("evaluate session stage: result is nil")
+		s.recordExecutionError(s.oracleExecutionErr)
 		return s.oracleExecutionErr
 	}
 	task := *s.execution.Task
 	task.Metadata.Oracle = oracle
-	s.oracleExecutionErr = evaluateAgentResult(ctx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	oracleCtx, cancel := acceptanceOracleContext(ctx)
+	defer cancel()
+	s.oracleExecutionErr = evaluateAgentResult(oracleCtx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	s.recordExecutionError(s.oracleExecutionErr)
 	return s.oracleExecutionErr
 }
 
@@ -252,7 +270,7 @@ func (s *agentSession) removeWorkspace() error {
 	return nil
 }
 
-func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
+func (s *agentSession) runFollowups(taskCtx, oracleCtx context.Context) (string, bool) {
 	result := s.result
 	target := s.execution.Target
 	arm := s.execution.Arm
@@ -262,23 +280,25 @@ func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
 		}
 		turn := &RunResult{Target: target, Arm: arm, Prompt: followup}
 		turnStarted := time.Now()
-		runErr := s.runTurn(ctx, target, followup, "task", turn)
+		runErr := s.runTurn(taskCtx, target, followup, "task", turn)
 		if runErr != nil {
 			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = runErr.Error()
-			result.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
+			primaryErr := fmt.Errorf("interactive step %d: %w", index+2, runErr)
+			s.recordExecutionError(primaryErr)
+			result.Error = appendResultError(result.Error, primaryErr)
 			result.WallClock = elapsedTaskTime(s.started)
-			s.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
+			s.retainWorkDir = shouldRetainWorkDir(taskCtx, runErr)
 			mergeTurn(result, turn)
 			result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 			return s.resumeID, s.retainWorkDir
 		}
-		if err := s.evaluate(ctx, turn); err != nil {
+		if err := s.evaluate(oracleCtx, turn); err != nil {
 			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = err.Error()
 			result.Error = err.Error()
 			result.WallClock = elapsedTaskTime(s.started)
-			s.retainWorkDir = shouldRetainWorkDir(ctx, err)
+			s.retainWorkDir = shouldRetainWorkDir(oracleCtx, err)
 			mergeTurn(result, turn)
 			result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 			return s.resumeID, s.retainWorkDir
@@ -290,7 +310,7 @@ func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
 	return s.resumeID, s.retainWorkDir
 }
 
-func (s *agentSession) runStagedFollowups(ctx context.Context) (string, bool) {
+func (s *agentSession) runStagedFollowups(taskCtx, oracleCtx context.Context) (string, bool) {
 	result := s.result
 	target := s.execution.Target
 	arm := s.execution.Arm
@@ -298,23 +318,25 @@ func (s *agentSession) runStagedFollowups(ctx context.Context) (string, bool) {
 	for index, followup := range s.execution.StagedFollowups {
 		turn := &RunResult{Target: target, Arm: arm, Prompt: followup.Instruction}
 		turnStarted := time.Now()
-		runErr := s.runTurn(ctx, target, followup.Instruction, "task", turn)
+		runErr := s.runTurn(taskCtx, target, followup.Instruction, "task", turn)
 		if runErr != nil {
 			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = runErr.Error()
-			result.Error = fmt.Sprintf("staged step %d: %v", index+2, runErr)
-			s.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
+			primaryErr := fmt.Errorf("staged step %d: %w", index+2, runErr)
+			s.recordExecutionError(primaryErr)
+			result.Error = appendResultError(result.Error, primaryErr)
+			s.retainWorkDir = shouldRetainWorkDir(taskCtx, runErr)
 			mergeTurn(result, turn)
 			result.Success = false
 			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
 			result.WallClock = elapsedTaskTime(s.started)
 			return s.resumeID, s.retainWorkDir
 		}
-		if err := s.evaluateStage(ctx, turn, followup.Oracle); err != nil {
+		if err := s.evaluateStage(oracleCtx, turn, followup.Oracle); err != nil {
 			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = err.Error()
 			result.Error = err.Error()
-			s.retainWorkDir = shouldRetainWorkDir(ctx, err)
+			s.retainWorkDir = shouldRetainWorkDir(oracleCtx, err)
 			mergeTurn(result, turn)
 			result.Success = false
 			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
@@ -329,6 +351,17 @@ func (s *agentSession) runStagedFollowups(ctx context.Context) (string, bool) {
 	}
 	result.WallClock = elapsedTaskTime(s.started)
 	return s.resumeID, s.retainWorkDir
+}
+
+func (s *agentSession) prepareFixture(ctx context.Context, target Target, arm ArmType, external bool) error {
+	if preparer, ok := s.adapter.(interface {
+		prepareFixture(context.Context, string, Target, ArmType, bool) error
+	}); ok {
+		if err := preparer.prepareFixture(ctx, s.workDir, target, arm, external); err != nil {
+			return fmt.Errorf("prepare provider fixture: %w", err)
+		}
+	}
+	return nil
 }
 
 type agentSession struct {
@@ -352,6 +385,7 @@ type agentSession struct {
 	toolObservationState   ToolObservationState
 	taskObservationTurns   int
 	toolObservationReasons []string
+	executionErr           error
 }
 
 type sessionTurn struct {
@@ -366,107 +400,6 @@ type sessionTurn struct {
 	RawEvents      []json.RawMessage `json:"raw_events,omitempty"`
 	ToolCalls      []ToolCall        `json:"tool_calls,omitempty"`
 	Response       string            `json:"response,omitempty"`
-}
-
-type openCodeProvider struct {
-	runner  *Runner
-	session *openCodeSession
-}
-
-func (p *openCodeProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	if p.session == nil {
-		if resumeID != "" {
-			return "", fmt.Errorf("cannot resume OpenCode session %q without its live server", resumeID)
-		}
-		server, err := newOpenCodeSession(ctx, p.runner, workDir, target, result.Arm)
-		p.session = server
-		if err != nil {
-			if server != nil {
-				result.processStartedAt = server.startedAt
-				result.OpenCodeStderr = server.diagnostic()
-			}
-			return "", err
-		}
-	}
-	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
-		return "", fmt.Errorf("OpenCode session workspace, target, or arm changed")
-	}
-	return p.session.run(ctx, prompt, result, resumeID)
-}
-
-func (p *openCodeProvider) close() error {
-	if p.session == nil {
-		return nil
-	}
-	if err := p.session.close(); err != nil {
-		return fmt.Errorf("close OpenCode provider session: %w", err)
-	}
-	return nil
-}
-
-type agyProvider struct {
-	runner  *Runner
-	session *agySession
-}
-
-func (p *agyProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	if p.session == nil {
-		if resumeID != "" {
-			return "", fmt.Errorf("cannot resume Agy conversation %q without its live process", resumeID)
-		}
-		p.session = newAgySession(p.runner, workDir, target, result.Arm)
-	}
-	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
-		return "", fmt.Errorf("agy session workspace, target, or arm changed")
-	}
-	return p.session.run(ctx, prompt, result, resumeID)
-}
-
-func (p *agyProvider) close() error {
-	if p.session == nil {
-		return nil
-	}
-	if err := p.session.close(); err != nil {
-		return fmt.Errorf("close Agy provider session: %w", err)
-	}
-	return nil
-}
-
-type codexProvider struct {
-	runner  *Runner
-	server  *codexAppServer
-	workDir string
-	target  Target
-	arm     ArmType
-}
-
-func (p *codexProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	if p.server != nil {
-		if workDir != p.workDir || target != p.target || result.Arm != p.arm {
-			return resumeID, fmt.Errorf("codex follow-up changed the original workspace, target, or arm")
-		}
-		if resumeID == "" || resumeID != p.server.threadID {
-			return resumeID, fmt.Errorf("codex follow-up thread %q does not match the original thread %q", resumeID, p.server.threadID)
-		}
-		return p.server.run(ctx, prompt, result)
-	}
-	if resumeID != "" {
-		return resumeID, fmt.Errorf("cannot continue Codex thread %q without its live app-server", resumeID)
-	}
-	server, err := newCodexAppServer(p.runner, workDir, target, result.Arm)
-	if err != nil {
-		return "", err
-	}
-	p.server = server
-	p.workDir, p.target, p.arm = workDir, target, result.Arm
-	return p.server.run(ctx, prompt, result)
-}
-
-func (p *codexProvider) close() error {
-	if p.server == nil {
-		return nil
-	}
-	return p.server.close()
 }
 
 type providerAdapter interface {

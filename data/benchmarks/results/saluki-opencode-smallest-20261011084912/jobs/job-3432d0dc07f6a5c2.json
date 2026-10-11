@@ -1,0 +1,92 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-3432d0dc07f6a5c2",
+    "pair_id": "pair-bc6ed946063e8db4",
+    "task_id": "task-01-rename-local",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_01_rename_local.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "opencode",
+      "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "semedit",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nThis is a rename of the existing unexported Server method. Preserve its receiver, signature, and behavior; the oldName method should no longer exist alongside newName. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nUpdate every call to that method in the api package, including Run. Run must continue to return `ok` through the renamed method; unrelated names and behavior should stay unchanged. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: Server.newName replaces Server.oldName in api/server.go, all callers use the new name, and Run still returns `ok`. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 0,
+        "comparison_pair_id": "pair-bc6ed946063e8db4",
+        "error": "opencode execution: OpenCode attached turn did not emit a session ID",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 0,
+            "error": "opencode execution: OpenCode attached turn did not emit a session ID",
+            "initial_load_turns": 0,
+            "internal_turns": 0,
+            "mcp_load_turns": 0,
+            "output_tokens": 0,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 0,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "turns": 0,
+            "uncached_prompt_tokens": 0,
+            "wall_clock_ms": 65119
+          }
+        ],
+        "internal_turns": 0,
+        "job_id": "job-3432d0dc07f6a5c2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "opencode_exit_code": 0,
+        "oracle": null,
+        "output_tokens": 0,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 0,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "provider_transport": "opencode_attached_server_v1",
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-implicit_task-01-rename-local_1791708631659522000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "harness": "opencode",
+          "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_count": 0,
+        "turns": 0,
+        "uncached_prompt_tokens": 0,
+        "variant": "small:implicit",
+        "wall_clock_ms": 65119
+      }
+    ],
+    "timestamp": "2026-10-11T08:51:36.843799Z"
+  }
+}

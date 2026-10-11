@@ -1,0 +1,219 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-73e6d0cc433eddc4",
+    "pair_id": "pair-ef2be7cb37a730ac",
+    "task_id": "grpc__grpc-go-2951",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/grpc__grpc-go-2951.txtar",
+    "context": "small",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+    "followups": [
+      "When name resolution fails, propagate that failure to the ClientConn so fail-fast RPCs can return a resolution error instead of waiting until timeout. Preserve normal behavior when valid resolver state arrives.",
+      "Extend the balancer update contract to report whether resolver state is usable, and provide balancers a callback for resolver errors. Add resolver.ClientConn.ReportError and ParseServiceConfig, represent parsed service config as a serviceconfig.ParseResult containing Config or Err, and use ErrBadResolverState to request resolution retries.",
+      "Carry resolver errors from resolver.ClientConn.ReportError through the ClientConn and serialized balancer wrapper; let UpdateClientConnState return an error and add ResolverError(error). Define balancer.ErrBadResolverState for unusable address or service-config state. On bad state, surface an Unavailable picker error when there is no usable prior/default config, retain a usable prior/default config when available, and poll ResolveNow with exponential backoff until good state arrives or the resolver closes. Stop polling on recovery/close, serialize resolver and balancer callbacks, and signal the first-resolve event even on error paths."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 268800,
+        "codex_stderr": "{\"timestamp\":\"2026-10-11T11:00:41.734510Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-11T11:00:41.734546Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n",
+        "comparison_pair_id": "pair-ef2be7cb37a730ac",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch balancer/grpclb/grpclb_test.go...\nChecking patch balancer_conn_wrappers_test.go...\nChecking patch balancer_switching_test.go...\nChecking patch clientconn_test.go...\nChecking patch resolver/dns/dns_resolver_test.go...\nHunk #2 succeeded at 92 (offset 2 lines).\nChecking patch resolver_conn_wrapper_test.go...\nChecking patch service_config_test.go...\nChecking patch test/channelz_test.go...\nChecking patch test/end2end_test.go...\nChecking patch test/healthcheck_test.go...\nChecking patch xds/internal/resolver/xds_resolver_test.go...\nerror: while searching for:\n\tclose(t.done)\n}\n\nfunc (*testClientConn) NewAddress(addresses []resolver.Address) { panic(\"unimplemented\") }\nfunc (*testClientConn) NewServiceConfig(serviceConfig string)   { panic(\"unimplemented\") }\n\n// TestXDSRsolverSchemeAndAddresses creates a new xds resolver, verifies that\n// it returns an empty address list and the appropriate xds-experimental\n\nerror: patch failed: xds/internal/resolver/xds_resolver_test.go:67\nerror: xds/internal/resolver/xds_resolver_test.go: patch does not apply",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4014,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 268800,
+            "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch balancer/grpclb/grpclb_test.go...\nChecking patch balancer_conn_wrappers_test.go...\nChecking patch balancer_switching_test.go...\nChecking patch clientconn_test.go...\nChecking patch resolver/dns/dns_resolver_test.go...\nHunk #2 succeeded at 92 (offset 2 lines).\nChecking patch resolver_conn_wrapper_test.go...\nChecking patch service_config_test.go...\nChecking patch test/channelz_test.go...\nChecking patch test/end2end_test.go...\nChecking patch test/healthcheck_test.go...\nChecking patch xds/internal/resolver/xds_resolver_test.go...\nerror: while searching for:\n\tclose(t.done)\n}\n\nfunc (*testClientConn) NewAddress(addresses []resolver.Address) { panic(\"unimplemented\") }\nfunc (*testClientConn) NewServiceConfig(serviceConfig string)   { panic(\"unimplemented\") }\n\n// TestXDSRsolverSchemeAndAddresses creates a new xds resolver, verifies that\n// it returns an empty address list and the appropriate xds-experimental\n\nerror: patch failed: xds/internal/resolver/xds_resolver_test.go:67\nerror: xds/internal/resolver/xds_resolver_test.go: patch does not apply",
+            "initial_load_turns": 5,
+            "internal_turns": 10,
+            "mcp_load_turns": 0,
+            "output_tokens": 2270,
+            "process_start_to_first_event_ms": 56,
+            "prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+            "prompt_tokens": 308749,
+            "reasoning_tokens": 600,
+            "step": 1,
+            "tool_calls": [
+              {
+                "failure": "rg: resolver.go: No such file or directory (os error 2) resolver_conn_wrapper_test.go:108: t.Fatalf(\"Failed to create ClientConn: %v\", err) clientconn.go:59: // ErrClientConnClosing indicates that the operation is illegal because clientconn.go:60: // the ClientConn is closing. clientconn.go:64: ErrClientConnClosing = status.Error(codes.Canceled, \"grpc: the client connection is closing\") clientconn.go:79: // being set for ClientConn. Users should either set one or explicitly clientconn.go:103:func Dial(targe",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc 'rg -n \"type Resolver|UpdateState|ReportError|ResolveNow|failfast|FailFast|ClientConn\" resolver.go resolver* clientconn.go'",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; sed -n '115,155p' resolver/resolver.go; sed -n '30,125p' resolver_conn_wrapper.go; sed -n '533,590p' clientconn.go; rg -n \\\"picker|Picker|ErrNoSubConnAvailable|TransientFailure\\\"\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,220p' picker_wrapper.go; rg -n \\\"ccResolverWrapper|UpdateState\\\\(\\\" resolver_conn_wrapper_test.go clientconn_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,70p' resolver/resolver.go; \"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'resolver.ClientConn interface|UpdateState\\\\(s resolver.State\\\\)' --glob '*.go' | head -30\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '50,90p' xds/internal/resolver/xds_resolver_test.go; sed -n '52,90p' resolver/dns/dns_resolver_test.go; rg -n 'NewServiceConfig\\\\(serviceConfig string\\\\)'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w resolver/resolver.go resolver_conn_wrapper.go picker_wrapper.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go\ngit diff --stat \u0026\u0026 git diff --check \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 39949,
+            "wall_clock_ms": 32748
+          }
+        ],
+        "internal_turns": 10,
+        "job_id": "job-73e6d0cc433eddc4",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": null,
+        "output_tokens": 2270,
+        "process_start_to_first_event_ms": 56,
+        "prompt": "If a resolver could not resolve a name, there's currently no way to report error back to ClientConn, and RPCs on the ClientConn will fail with timeout.\r\n\r\nThis method allows resolver to report error to ClientConn, and failfast RPCs should fail with this error (or RPC errors that contain info from this error).\n",
+        "prompt_tokens": 308749,
+        "provenance": {
+          "provider_transport": "codex_app_server_v2",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_grpc__grpc-go-2951_1791716440995428000.json"
+        },
+        "reasoning_tokens": 600,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2951",
+        "tool_calls": [
+          {
+            "failure": "rg: resolver.go: No such file or directory (os error 2) resolver_conn_wrapper_test.go:108: t.Fatalf(\"Failed to create ClientConn: %v\", err) clientconn.go:59: // ErrClientConnClosing indicates that the operation is illegal because clientconn.go:60: // the ClientConn is closing. clientconn.go:64: ErrClientConnClosing = status.Error(codes.Canceled, \"grpc: the client connection is closing\") clientconn.go:79: // being set for ClientConn. Users should either set one or explicitly clientconn.go:103:func Dial(targe",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc 'rg -n \"type Resolver|UpdateState|ReportError|ResolveNow|failfast|FailFast|ClientConn\" resolver.go resolver* clientconn.go'",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; sed -n '115,155p' resolver/resolver.go; sed -n '30,125p' resolver_conn_wrapper.go; sed -n '533,590p' clientconn.go; rg -n \\\"picker|Picker|ErrNoSubConnAvailable|TransientFailure\\\"\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,220p' picker_wrapper.go; rg -n \\\"ccResolverWrapper|UpdateState\\\\(\\\" resolver_conn_wrapper_test.go clientconn_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,70p' resolver/resolver.go; \"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'resolver.ClientConn interface|UpdateState\\\\(s resolver.State\\\\)' --glob '*.go' | head -30\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '50,90p' xds/internal/resolver/xds_resolver_test.go; sed -n '52,90p' resolver/dns/dns_resolver_test.go; rg -n 'NewServiceConfig\\\\(serviceConfig string\\\\)'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w resolver/resolver.go resolver_conn_wrapper.go picker_wrapper.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go\ngit diff --stat \u0026\u0026 git diff --check \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "/bin/zsh -lc 'rg -n \"type Resolver|UpdateState|ReportError|ResolveNow|failfast|FailFast|ClientConn\" resolver.go resolver* clientconn.go'",
+          "/bin/zsh -lc \"cat PROJECT_BRIEF.md 2\u003e/dev/null; sed -n '115,155p' resolver/resolver.go; sed -n '30,125p' resolver_conn_wrapper.go; sed -n '533,590p' clientconn.go; rg -n \\\"picker|Picker|ErrNoSubConnAvailable|TransientFailure\\\"\"",
+          "/bin/zsh -lc \"sed -n '1,220p' picker_wrapper.go; rg -n \\\"ccResolverWrapper|UpdateState\\\\(\\\" resolver_conn_wrapper_test.go clientconn_test.go\"",
+          "/bin/zsh -lc \"sed -n '1,70p' resolver/resolver.go; \"",
+          "/bin/zsh -lc \"rg -n 'resolver.ClientConn interface|UpdateState\\\\(s resolver.State\\\\)' --glob '*.go' | head -30\"",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc \"sed -n '50,90p' xds/internal/resolver/xds_resolver_test.go; sed -n '52,90p' resolver/dns/dns_resolver_test.go; rg -n 'NewServiceConfig\\\\(serviceConfig string\\\\)'\"",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w resolver/resolver.go resolver_conn_wrapper.go picker_wrapper.go resolver/dns/dns_resolver_test.go xds/internal/resolver/xds_resolver_test.go\ngit diff --stat \u0026\u0026 git diff --check \u0026\u0026 git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 39949,
+        "variant": "small",
+        "wall_clock_ms": 32748
+      }
+    ],
+    "timestamp": "2026-10-11T11:01:14.09686Z"
+  }
+}

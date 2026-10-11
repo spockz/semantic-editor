@@ -68,6 +68,9 @@ func (t *openCodeUsageTracker) observe(event map[string]any) {
 		t.firstStepID = id
 	}
 	t.steps[id] = usage
+	if usage.Reason == "length" {
+		t.err = errors.Join(t.err, fmt.Errorf("OpenCode step %s exhausted the model output token limit (finish reason length)", id))
+	}
 	t.finished = usage.Reason == "stop"
 }
 

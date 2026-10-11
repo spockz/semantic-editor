@@ -1920,27 +1920,14 @@ func TestMCPCancellationClosesIdleDiagnostics(t *testing.T) {
 		done <- err
 	}()
 	decoder := json.NewDecoder(outputReader)
-	for _, request := range []string{
+	for index, request := range []string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}`,
 	} {
-		if _, err := io.WriteString(inputWriter, request+"\n"); err != nil {
-			t.Fatal(err)
-		}
+		writeDone := make(chan error, 1)
+		go func() { _, writeErr := io.WriteString(inputWriter, request+"\n"); writeDone <- writeErr }()
 		responseDone := make(chan error, 1)
-		go func() {
-			var response struct {
-				Error  json.RawMessage `json:"error"`
-				Result struct {
-					IsError bool `json:"isError"`
-				} `json:"result"`
-			}
-			err := decoder.Decode(&response)
-			if err == nil && (response.Error != nil || response.Result.IsError) {
-				err = fmt.Errorf("failed MCP response: %+v", response)
-			}
-			responseDone <- err
-		}()
+		go func() { responseDone <- readMCPCancellationResponse(decoder, index+1) }()
 		select {
 		case err := <-responseDone:
 			if err != nil {
@@ -1948,6 +1935,14 @@ func TestMCPCancellationClosesIdleDiagnostics(t *testing.T) {
 			}
 		case <-time.After(30 * time.Second):
 			t.Fatal("MCP response timed out")
+		}
+		select {
+		case err := <-writeDone:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("MCP request write timed out")
 		}
 	}
 	cancel()
@@ -2189,5 +2184,30 @@ func assertMCPMavenToolFailure(t *testing.T, root, mavenBin, tool, goal string) 
 	metrics, _ := structured["metrics"].(map[string]any)
 	if metrics["schema_version"] != nil {
 		t.Fatalf("MCP Maven failure unexpectedly includes inline metrics: %#v", metrics)
+	}
+}
+
+func readMCPCancellationResponse(decoder *json.Decoder, expectedID int) error {
+	for {
+		var response struct {
+			ID     json.RawMessage `json:"id"`
+			Error  json.RawMessage `json:"error"`
+			Result struct {
+				IsError bool `json:"isError"`
+			} `json:"result"`
+		}
+		if err := decoder.Decode(&response); err != nil {
+			return err
+		}
+		if len(response.ID) == 0 || string(response.ID) == "null" {
+			continue
+		}
+		if string(response.ID) != strconv.Itoa(expectedID) {
+			return fmt.Errorf("MCP response ID = %s, want %d", response.ID, expectedID)
+		}
+		if response.Error != nil || response.Result.IsError {
+			return fmt.Errorf("failed MCP response: %+v", response)
+		}
+		return nil
 	}
 }

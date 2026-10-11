@@ -4,12 +4,12 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"semedit/internal/mcp"
-	"semedit/internal/pipeline"
 	"strings"
 )
 
@@ -62,27 +62,6 @@ type agyTranscriptStep struct {
 type agyTranscriptToolCall struct {
 	Name string `json:"name"`
 	Args any    `json:"args"`
-}
-
-func isMutatingTool(name string) bool {
-	clean := strings.ToLower(strings.Trim(name, "\""))
-	if strings.Contains(clean, "write") || strings.Contains(clean, "replace") ||
-		strings.Contains(clean, "edit") || strings.Contains(clean, "patch") ||
-		strings.Contains(clean, "insert") || strings.Contains(clean, "delete") ||
-		strings.Contains(clean, "rename") || strings.Contains(clean, "semantic_") ||
-		clean == codexFileChangeItemType {
-		return true
-	}
-	return false
-}
-
-func isMCPDiscoveryTool(name string) bool {
-	clean := strings.ToLower(strings.Trim(name, "\""))
-	return strings.Contains(clean, "mcp") ||
-		strings.Contains(clean, "list_resources") ||
-		strings.Contains(clean, "read_resource") ||
-		strings.Contains(clean, "get_server_capabilities") ||
-		strings.Contains(clean, "describe")
 }
 
 func parseAgyTranscript(data []byte, res *RunResult) error {
@@ -206,8 +185,8 @@ func completeAgyTranscriptCalls(step agyTranscriptStep, result *RunResult, state
 
 func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {
 	configDir := filepath.Join(workDir, ".agents")
-	if err := os.MkdirAll(configDir, 0o750); err != nil {
-		return fmt.Errorf("create Agy MCP config directory: %w", err)
+	if err := prepareRuntimeLayout(workDir, []string{".agents"}, nil); err != nil {
+		return err
 	}
 
 	configPath := filepath.Join(configDir, "mcp_config.json")
@@ -249,8 +228,43 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 	if err != nil {
 		return fmt.Errorf("encode Agy MCP config: %w", err)
 	}
-	if err := pipeline.WriteAtomic(configPath, data); err != nil {
+	if err := prepareRuntimeLayout(workDir, nil, map[string][]byte{filepath.Join(".agents", "mcp_config.json"): data}); err != nil {
 		return fmt.Errorf("write Agy MCP config: %w", err)
 	}
 	return nil
+}
+
+type agyProvider struct {
+	runner  *Runner
+	session *agySession
+}
+
+func (p *agyProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
+	if p.session == nil {
+		if resumeID != "" {
+			return "", fmt.Errorf("cannot resume Agy conversation %q without its live process", resumeID)
+		}
+		p.session = newAgySession(p.runner, workDir, target, result.Arm)
+	}
+	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
+		return "", fmt.Errorf("agy session workspace, target, or arm changed")
+	}
+	return p.session.run(ctx, prompt, result, resumeID)
+}
+
+func (p *agyProvider) close() error {
+	if p.session == nil {
+		return nil
+	}
+	if err := p.session.close(); err != nil {
+		return fmt.Errorf("close Agy provider session: %w", err)
+	}
+	return nil
+}
+
+func (p *agyProvider) prepareFixture(ctx context.Context, workDir string, target Target, arm ArmType, _ bool) error {
+	if p.session == nil {
+		p.session = newAgySession(p.runner, workDir, target, arm)
+	}
+	return p.session.prepare(ctx)
 }

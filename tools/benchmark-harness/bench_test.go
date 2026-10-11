@@ -333,6 +333,8 @@ func assertOpenCodeBaselineConfiguration(t *testing.T, runner *Runner) {
 
 func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
 	t.Helper()
+	const relayURL = "http://127.0.0.1:43123/v1"
+	runner = NewRunner(runner.baseScratchDir, WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
 	configPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "qwen36-iq4-xs"})
 	if err != nil {
 		t.Fatal(err)
@@ -346,21 +348,63 @@ func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
 		Provider map[string]struct {
 			Options map[string]string `json:"options"`
 			Models  map[string]struct {
-				ID string `json:"id"`
+				ID    string `json:"id"`
+				Limit struct {
+					Context int `json:"context"`
+					Output  int `json:"output"`
+				} `json:"limit"`
 			} `json:"models"`
 		} `json:"provider"`
 	}
 	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
-	if got := config.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
-		t.Errorf("AMD Beast base URL = %q, want %q", got, openCodeQwenBaseURL)
+	if got := config.Provider["amdbeast"].Options["baseURL"]; got != relayURL {
+		t.Errorf("AMD Beast base URL = %q, want %q", got, relayURL)
 	}
 	if got := config.Provider["amdbeast"].Models["qwen36-iq4-xs"].ID; got != "qwen36-iq4-xs" {
 		t.Errorf("AMD Beast API model = %q, want qwen36-iq4-xs", got)
 	}
+	if got := config.Provider["amdbeast"].Models["qwen36-iq4-xs"].Limit; got.Context != 65536 || got.Output != 8192 {
+		t.Errorf("AMD Beast limits = %+v, want context=65536 output=8192", got)
+	}
 	if _, found := config.Provider["openrouter"]; found {
 		t.Error("AMD Beast config unexpectedly includes OpenRouter")
+	}
+}
+
+func TestOpenCodeAMDConfigRequiresRunRelay(t *testing.T) {
+	target := Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}
+	if _, err := NewRunner(t.TempDir()).openCodeConfig(t.TempDir(), ArmBaseline, target, nil); err == nil || !strings.Contains(err.Error(), "run-owned OpenCode relay") {
+		t.Fatalf("config without relay error = %v, want explicit relay requirement", err)
+	}
+	const relayURL = "http://127.0.0.1:43123/v1"
+	config, err := NewRunner(t.TempDir(), WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192})).openCodeConfig(t.TempDir(), ArmBaseline, target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := config["provider"].(map[string]any)["amdbeast"].(map[string]any)
+	options := provider["options"].(map[string]any)
+	if options["baseURL"] != relayURL {
+		t.Fatalf("AMD Beast config base URL = %v, want %q", options["baseURL"], relayURL)
+	}
+	profile, err := renderOpenCodeSeatbeltProfile(t.TempDir(), "43123", "/bin/sh", "/bin/cat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(profile, `(allow network-outbound (remote tcp "localhost:43123"))`) || strings.Contains(profile, "192.168.1.122") {
+		t.Fatalf("profile does not restrict outbound access to the same relay port: %s", profile)
+	}
+	openRouterPort, err := openCodeSandboxRelayPort("https://openrouter.ai/api/v1")
+	if err != nil || openRouterPort != "" {
+		t.Fatalf("OpenRouter outbound port = %q, error = %v; want no provider egress", openRouterPort, err)
+	}
+	openRouterProfile, err := renderOpenCodeSeatbeltProfile(t.TempDir(), openRouterPort, "/bin/sh", "/bin/cat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(openRouterProfile, "network-outbound") {
+		t.Fatalf("OpenRouter profile unexpectedly permits outbound traffic: %s", openRouterProfile)
 	}
 }
 
@@ -1351,6 +1395,28 @@ func TestEvaluateCleansReadOnlyPrivateGoCaches(t *testing.T) {
 			assertOracleCleanupResult(t, testCase, result)
 			assertOracleCleanupArtifacts(t, testCase, fixture)
 		})
+	}
+}
+
+func TestEvaluateCancellationIsExecutionError(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, "go"), []byte("#!/bin/sh\nsleep 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	result, err := Evaluate(ctx, &Task{Metadata: TaskMetadata{Oracle: OracleConfig{Build: BuildConfig{CleanCompile: true}}}}, workDir, nil)
+	if result != nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Evaluate cancellation = result=%+v err=%v, want execution deadline error", result, err)
 	}
 }
 

@@ -262,11 +262,14 @@ func handleFakeCodexThreadStart(request fakeCodexAppServerRequest, state *fakeCo
 		model = "test-model"
 	}
 	result := map[string]any{
-		"thread":         map[string]any{"id": state.threadID},
+		"thread":         (map[string]any{"id": state.threadID, "ephemeral": params["ephemeral"]}),
 		"cwd":            cwd,
 		"model":          model,
 		"approvalPolicy": "never",
 		"sandbox":        map[string]any{"type": "workspaceWrite", "networkAccess": false},
+	}
+	if state.mode == "persistent" {
+		result["thread"] = map[string]any{"id": state.threadID, "ephemeral": false}
 	}
 	if effort, ok := config["model_reasoning_effort"].(string); ok {
 		result["reasoningEffort"] = effort
@@ -530,4 +533,22 @@ func fakeCodexAppServerCLIOverrides(args []string) (bool, []string) {
 		}
 	}
 	return enabled, serverArgs
+}
+
+func TestCodexAppServerRejectsPersistentThread(t *testing.T) {
+	root := t.TempDir()
+	installCodexAppServerFake(t, root, "persistent")
+	server, err := newCodexAppServer(NewRunner(filepath.Join(root, "scratch")), root, Target{Harness: string(HarnessCodex), Model: "test-model", Effort: "medium"}, ArmBaseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if closeErr := server.close(); closeErr != nil {
+			t.Errorf("close app-server: %v", closeErr)
+		}
+	}()
+	_, err = server.run(context.Background(), "prompt", &RunResult{})
+	if err == nil || !strings.Contains(err.Error(), "thread is not ephemeral") {
+		t.Fatalf("run error = %v, want rejection of persistent thread", err)
+	}
 }

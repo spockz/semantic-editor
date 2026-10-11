@@ -9,13 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"semedit/internal/mcp"
-	"semedit/internal/pipeline"
-	"slices"
 	"strings"
 	"time"
 )
@@ -37,20 +33,16 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	if strings.HasPrefix(model, "openrouter/") && strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
 		return "", fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
 	}
-	args := []string{"run", "--format", "json", "--auto", "--dir", workDir}
-	if resumeID != "" {
-		args = append(args, "--session", resumeID)
-	}
-	args = append(args, "--model", model)
-	if target.Effort != "" {
-		args = append(args, "--variant", target.Effort)
-	}
-	args = append(args, prompt)
+	args := openCodeRunArguments(model, workDir, resumeID, target.Effort, prompt)
 	openCodePath, err := exec.LookPath("opencode")
 	if err != nil {
 		return "", fmt.Errorf("locate OpenCode executable: %w", err)
 	}
-	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, openCodeModelBaseURL(target))
+	modelURL, err := r.openCodeModelEndpointURL(target)
+	if err != nil {
+		return "", err
+	}
+	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, modelURL)
 	if err != nil {
 		return "", fmt.Errorf("prepare OpenCode filesystem containment: %w", err)
 	}
@@ -103,6 +95,7 @@ type openCodeEventStream struct {
 	identityErr  error
 	scanErr      error
 	usage        openCodeUsageTracker
+	partIDs      map[string]bool
 }
 
 func readOpenCodeEventStream(stdout io.Reader, result *RunResult, resumeID string) openCodeEventStream {
@@ -140,6 +133,14 @@ func consumeOpenCodeEvent(stream *openCodeEventStream, result *RunResult, raw []
 	appendOpenCodeAgentResponse(result, event)
 	stream.tracker.observe(result, event, observedAt)
 	stream.usage.observe(event)
+	if part := openCodeEventPart(event); part != nil {
+		if id := stringValue(part["id"]); id != "" {
+			if stream.partIDs == nil {
+				stream.partIDs = make(map[string]bool)
+			}
+			stream.partIDs[id] = true
+		}
+	}
 }
 
 func applyOpenCodeStreamMetrics(result *RunResult, stream openCodeEventStream, processStartedAt time.Time) {
@@ -208,10 +209,14 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	if envErr != nil {
 		return "", nil, envErr
 	}
+	goRoot, goErr := resolveOpenCodeGoRoot(goEnv)
+	if goErr != nil {
+		return "", nil, goErr
+	}
 	configRoot := filepath.Join(workDir, ".scratch", "opencode")
 	configPath := filepath.Join(configRoot, "opencode.json")
-	if err := os.MkdirAll(configRoot, 0o750); err != nil {
-		return "", nil, fmt.Errorf("create OpenCode fixture state: %w", err)
+	if err := prepareRuntimeLayout(workDir, []string{filepath.Join(".scratch", "opencode")}, nil); err != nil {
+		return "", nil, err
 	}
 	config, err := r.openCodeConfig(workDir, arm, target, goEnv)
 	if err != nil {
@@ -221,8 +226,8 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	if err != nil {
 		return "", nil, fmt.Errorf("marshal OpenCode configuration: %w", err)
 	}
-	if err := pipeline.WriteAtomic(configPath, data); err != nil {
-		return "", nil, fmt.Errorf("write OpenCode configuration: %w", err)
+	if err := prepareRuntimeLayout(workDir, nil, map[string][]byte{filepath.Join(".scratch", "opencode", "opencode.json"): data}); err != nil {
+		return "", nil, err
 	}
 	homeDir := filepath.Join(configRoot, "home")
 	configDir := filepath.Join(configRoot, "config")
@@ -230,8 +235,12 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	cacheDir := filepath.Join(configRoot, "cache")
 	tempDir := filepath.Join(configRoot, "tmp")
 	for _, dir := range []string{homeDir, configDir, dataDir, cacheDir, tempDir} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return "", nil, fmt.Errorf("create OpenCode isolated directory: %w", err)
+		relative, err := filepath.Rel(workDir, dir)
+		if err != nil {
+			return "", nil, fmt.Errorf("resolve runtime directory: %w", err)
+		}
+		if err := prepareRuntimeLayout(workDir, []string{relative}, nil); err != nil {
+			return "", nil, err
 		}
 	}
 	env := sanitizedOpenCodeEnvironment(goEnv)
@@ -241,6 +250,7 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 		"XDG_DATA_HOME":                   dataDir,
 		"XDG_CACHE_HOME":                  cacheDir,
 		"TMPDIR":                          tempDir,
+		"GOROOT":                          goRoot,
 		"OPENCODE_CONFIG":                 configPath,
 		"OPENCODE_DISABLE_PROJECT_CONFIG": "1",
 	})
@@ -256,19 +266,30 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	var providerConfig map[string]any
 	switch provider {
 	case "openrouter":
-		providerConfig = map[string]any{
-			"models": map[string]any{providerModel: map[string]any{"name": providerModel}},
-		}
+		providerConfig = map[string]any{"models": map[string]any{providerModel: map[string]any{"name": providerModel}}}
 	case "amdbeast":
-		baseURL := openCodeQwenBaseURL
-		if override := strings.TrimSpace(os.Getenv(openCodeQwenBaseURLEnv)); override != "" {
-			baseURL = override
+		baseURL := strings.TrimSpace(r.openCodeRelayURL)
+		if baseURL == "" {
+			return nil, fmt.Errorf("AMD Beast requires a run-owned OpenCode relay; configure the Runner with WithOpenCodeRelayURL")
+		}
+		if r.openCodeModelLimits == nil {
+			return nil, fmt.Errorf("AMD Beast requires model limits discovered by the run-owned OpenCode relay; configure the Runner with WithOpenCodeModelLimits")
+		}
+		limits := *r.openCodeModelLimits
+		if limits.Context <= 0 || limits.Output <= 0 || limits.Output >= limits.Context {
+			return nil, fmt.Errorf("AMD Beast model limits are invalid: context=%d output=%d", limits.Context, limits.Output)
 		}
 		providerConfig = map[string]any{
-			"name":    "AMD Beast",
-			"npm":     "@ai-sdk/openai-compatible",
+			"name": "AMD Beast", "npm": "@ai-sdk/openai-compatible",
 			"options": map[string]any{"baseURL": baseURL},
-			"models":  map[string]any{providerModel: map[string]any{"name": providerModel, "id": providerModel}},
+			"models": map[string]any{providerModel: map[string]any{
+				"name": providerModel,
+				"id":   providerModel,
+				"limit": map[string]int{
+					"context": limits.Context,
+					"output":  limits.Output,
+				},
+			}},
 		}
 	default:
 		return nil, fmt.Errorf("unsupported OpenCode provider %q", provider)
@@ -294,17 +315,13 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		return nil, err
 	}
 	repositoryRoot := filepath.Dir(filepath.Dir(r.baseScratchDir))
-	config["mcp"] = map[string]any{
-		"servers": map[string]any{
-			"semedit": map[string]any{
-				"type":        "local",
-				"command":     append([]string{filepath.Join(repositoryRoot, "bin", "semedit-next")}, args...),
-				"cwd":         workDir,
-				"environment": environmentMap(env),
-				"codemode":    false,
-			},
-		},
-	}
+	config["mcp"] = map[string]any{"servers": map[string]any{"semedit": map[string]any{
+		"type":        "local",
+		"command":     append([]string{filepath.Join(repositoryRoot, "bin", "semedit-next")}, args...),
+		"cwd":         workDir,
+		"environment": environmentMap(env),
+		"codemode":    false,
+	}}}
 	return config, nil
 }
 
@@ -327,34 +344,6 @@ func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
 	return args, nil
 }
 
-func environmentMap(env []string) map[string]string {
-	values := make(map[string]string, 8)
-	allowed := map[string]struct{}{
-		"GOENV": {}, "GOCACHE": {}, "GOMODCACHE": {}, "GOTMPDIR": {},
-		"GOBIN": {}, "GOPATH": {}, "GOFLAGS": {}, "GOWORK": {},
-	}
-	for _, entry := range env {
-		key, value, found := strings.Cut(entry, "=")
-		if found {
-			if _, ok := allowed[key]; !ok {
-				continue
-			}
-			values[key] = value
-		}
-	}
-	return values
-}
-
-func environmentLookup(env []string, key string) string {
-	for _, entry := range env {
-		entryKey, value, found := strings.Cut(entry, "=")
-		if found && entryKey == key {
-			return value
-		}
-	}
-	return ""
-}
-
 func sanitizeOpenRouterDiagnostic(diagnostic string, env []string) string {
 	for _, entry := range env {
 		key, value, found := strings.Cut(entry, "=")
@@ -363,24 +352,6 @@ func sanitizeOpenRouterDiagnostic(diagnostic string, env []string) string {
 		}
 	}
 	return diagnostic
-}
-
-func replaceEnvironment(env []string, replacements map[string]string) []string {
-	result := make([]string, 0, len(env)+len(replacements))
-	for _, entry := range env {
-		key, _, found := strings.Cut(entry, "=")
-		if !found {
-			continue
-		}
-		if _, replaced := replacements[key]; !replaced {
-			result = append(result, entry)
-		}
-	}
-	keys := slices.Sorted(maps.Keys(replacements))
-	for _, key := range keys {
-		result = append(result, key+"="+replacements[key])
-	}
-	return result
 }
 
 type openCodeToolTracker struct {
@@ -551,7 +522,21 @@ func openCodeEventSessionID(event map[string]any) string {
 			}
 		}
 	}
+	if part := openCodeEventPart(event); part != nil {
+		if id := firstString(part["sessionID"], part["session_id"]); id != "" {
+			return id
+		}
+	}
 	return ""
+}
+
+func openCodeEventPart(event map[string]any) map[string]any {
+	if part, ok := event["part"].(map[string]any); ok {
+		return part
+	}
+	properties, _ := event["properties"].(map[string]any)
+	part, _ := properties["part"].(map[string]any)
+	return part
 }
 
 func appendOpenCodeAgentResponse(res *RunResult, event map[string]any) {
@@ -619,4 +604,73 @@ func openCodeProviderModel(model string) string {
 		return "amdbeast/" + model
 	}
 	return model
+}
+
+func openCodeRunArguments(model, workDir, resumeID, effort, prompt string) []string {
+	args := []string{"run", "--format", "json", "--auto", "--dir", workDir}
+	if resumeID != "" {
+		args = append(args, "--session", resumeID)
+	}
+	args = append(args, "--model", model)
+	if effort != "" {
+		args = append(args, "--variant", effort)
+	}
+	return append(args, prompt)
+}
+
+type openCodeProvider struct {
+	runner  *Runner
+	session *openCodeSession
+	runtime *openCodePreparedRuntime
+}
+
+func (p *openCodeProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
+	if p.session == nil {
+		if resumeID != "" {
+			return "", fmt.Errorf("cannot resume OpenCode session %q without its live server", resumeID)
+		}
+		var server *openCodeSession
+		var err error
+		if p.runtime != nil {
+			server, err = newOpenCodeSessionWithPreparedRuntime(ctx, p.runner, workDir, target, result.Arm, *p.runtime)
+		} else {
+			server, err = newOpenCodeSession(ctx, p.runner, workDir, target, result.Arm)
+		}
+		p.session = server
+		if err != nil {
+			if server != nil {
+				result.processStartedAt = server.startedAt
+				result.OpenCodeStderr = server.diagnostic()
+			}
+			return "", err
+		}
+	}
+	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
+		return "", fmt.Errorf("OpenCode session workspace, target, or arm changed")
+	}
+	return p.session.run(ctx, prompt, result, resumeID)
+}
+
+func (p *openCodeProvider) close() error {
+	if p.session == nil {
+		return nil
+	}
+	if err := p.session.close(); err != nil {
+		return fmt.Errorf("close OpenCode provider session: %w", err)
+	}
+	return nil
+}
+
+func (p *openCodeProvider) prepareFixture(ctx context.Context, workDir string, target Target, arm ArmType, external bool) error {
+	if !external {
+		if err := initializeOpenCodeFixtureGit(ctx, workDir); err != nil {
+			return err
+		}
+	}
+	runtime, err := prepareOpenCodeRuntime(ctx, p.runner, workDir, target, arm)
+	if err != nil {
+		return err
+	}
+	p.runtime = &runtime
+	return nil
 }

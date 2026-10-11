@@ -589,6 +589,9 @@ func (t *Task) ExtractVariantTo(targetDir, variant string) error {
 func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []string) (result *OracleResult, retErr error) {
 	start := time.Now()
 	res := &OracleResult{}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("oracle context: %w", err)
+	}
 	if failure := checkMutationPolicy(task.Metadata.Oracle.MutationPolicy, modifiedFiles); failure.failed {
 		applyOracleFailure(res, failure, start)
 		return res, nil
@@ -609,13 +612,22 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	}
 	res.Level2AST = true
 	if err := evaluateOracleBuild(ctx, task, evalDir); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("oracle context: %w", ctxErr)
+		}
 		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_3_build", message: err.Error()}, start)
 		return res, nil
 	}
 	res.Level3Build = true
 	if err := prepareOracleTests(ctx, task, evalDir); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("oracle context: %w", ctxErr)
+		}
 		return nil, fmt.Errorf("prepare oracle tests: %w", err)
 	} else if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("oracle context: %w", ctxErr)
+		}
 		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_4_test", message: err.Error()}, start)
 		return res, nil
 	}

@@ -19,7 +19,11 @@ func TestOpenCodeUsageProcessAccounting(t *testing.T) {
 		t.Fatal(err)
 	}
 	installPassthroughOpenCodeSandbox(t, bin)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	goplsBin, err := filepath.Abs(filepath.Join("..", "..", ".scratch", "go", "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+goplsBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	first := `{"type":"step_finish","part":{"type":"step-finish","id":"finish-1","messageID":"message-1","reason":"tool-calls","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}}`
 	duplicate := `{"type":"message.part.updated","properties":{"part":{"type":"step-finish","id":"finish-1","messageID":"message-1","reason":"tool-calls","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}}}`
 	second := `{"type":"step_finish","part":{"type":"step-finish","id":"finish-2","messageID":"message-1","reason":"stop","tokens":{"input":11,"output":13,"reasoning":17,"cache":{"read":19,"write":23}}}}`
@@ -53,7 +57,7 @@ func TestOpenCodeUsageProcessAccounting(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Setenv("SEMEDIT_OPENCODE_EVENTS", `{"type":"session.created","properties":{"info":{"id":"usage-session"}}}`+"\n"+test.events)
 			result := &RunResult{Arm: ArmBaseline}
-			session, err := NewRunner(t.TempDir()).runOpenCode(t.Context(), t.TempDir(), Target{Harness: string(HarnessOpenCode), Model: openCodeDefaultModel}, "solve", result, "")
+			session, err := NewRunner(t.TempDir(), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192})).runOpenCode(t.Context(), t.TempDir(), Target{Harness: string(HarnessOpenCode), Model: openCodeDefaultModel}, "solve", result, "")
 			if test.wantError != "" {
 				if err != nil && strings.Contains(err.Error(), "token-to-redact") {
 					t.Fatal("credential leaked into provider error")
@@ -94,7 +98,11 @@ exec "$SEMEDIT_HELPER_BINARY" -test.run=TestOpenCodeAttachHelperProcess -- "$@"
 		t.Fatal(writeErr)
 	}
 	installPassthroughOpenCodeSandbox(t, bin)
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	goplsBin, lookupErr := filepath.Abs(filepath.Join(".scratch", "go", "bin"))
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+goplsBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SEMEDIT_HELPER_BINARY", binary)
 	t.Setenv("SEMEDIT_OPENCODE_HELPER", "1")
 	t.Setenv("SEMEDIT_OPENCODE_HELPER_MODE", "usage")
@@ -103,7 +111,7 @@ exec "$SEMEDIT_HELPER_BINARY" -test.run=TestOpenCodeAttachHelperProcess -- "$@"
 	t.Setenv("SEMEDIT_CAPTURE_CONFIG", configPath)
 	task := &Task{Metadata: TaskMetadata{TaskID: "opencode-session", Instruction: "Add Done.", Oracle: OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"Done"}}}}, Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Old() {}\n"))}
 	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessOpenCode), Model: openCodeDefaultModel}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: []string{"Correct the implementation so Done exists."}, Policy: SemeditArmRestrictWrite}
-	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(t.Context(), execution)
+	result, err := NewRunner(filepath.Join(root, "scratch"), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192})).ExecuteAgent(t.Context(), execution)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,5 +255,28 @@ func TestSemanticToolProviderPrefixesNormalizeConsistently(t *testing.T) {
 	}
 	if isSemanticTool("shell", "local") {
 		t.Fatal("ordinary shell tool was classified as semantic")
+	}
+}
+
+func TestOpenCodeReportsOutputLimit(t *testing.T) {
+	bin := t.TempDir()
+	program := "#!/bin/sh\nprintf '%s\\n' \"$SEMEDIT_OPENCODE_EVENTS\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(program), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	installPassthroughOpenCodeSandbox(t, bin)
+	goplsBin, err := filepath.Abs(filepath.Join("..", "..", ".scratch", "go", "bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+goplsBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_OPENCODE_EVENTS", `{"type":"session.created","properties":{"info":{"id":"limit-session"}}}`+"\n"+`{"type":"step_finish","part":{"type":"step-finish","id":"finish","reason":"length","tokens":{"input":12,"output":8,"reasoning":0,"cache":{"read":0,"write":0}}}}`)
+	result := &RunResult{Arm: ArmBaseline}
+	_, err = NewRunner(t.TempDir(), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192})).runOpenCode(t.Context(), t.TempDir(), Target{Harness: string(HarnessOpenCode), Model: openCodeDefaultModel}, "solve", result, "")
+	if err == nil || !strings.Contains(err.Error(), "output token limit") {
+		t.Fatalf("error = %v, want output token limit", err)
+	}
+	if result.PromptTokens != 12 || result.OutputTokens != 8 {
+		t.Fatalf("lost terminal usage: %+v", result)
 	}
 }

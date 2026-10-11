@@ -15,8 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"semedit/internal/pipeline"
 )
 
 func boundedDiagnostic(data []byte, limit int) string {
@@ -42,6 +40,66 @@ func shouldRetainWorkDir(ctx context.Context, runErr error) bool {
 	}
 	var exitErr *exec.ExitError
 	return errors.As(runErr, &exitErr) && exitErr.ExitCode() == -1
+}
+
+type agentTaskTimeoutKey struct{}
+
+func withAgentTaskTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	return context.WithValue(ctx, agentTaskTimeoutKey{}, timeout)
+}
+
+func agentTaskContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	timeout, ok := ctx.Value(agentTaskTimeoutKey{}).(time.Duration)
+	if !ok || timeout <= 0 {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+func appendResultError(existing string, err error) string {
+	for _, component := range errorComponents(err) {
+		if strings.TrimSpace(component.Error()) == "" || containsErrorMessage(existing, component.Error()) {
+			continue
+		}
+		if strings.TrimSpace(existing) == "" {
+			existing = component.Error()
+			continue
+		}
+		existing += "\n" + component.Error()
+	}
+	return existing
+}
+
+func joinDistinctErrors(existing, next error) error {
+	missing := make([]error, 0)
+	for _, component := range errorComponents(next) {
+		if existing == nil || !sameError(existing, component) {
+			missing = append(missing, component)
+		}
+	}
+	return errors.Join(append([]error{existing}, missing...)...)
+}
+
+func containsErrorMessage(messages, candidate string) bool {
+	return messages == candidate || strings.HasPrefix(messages, candidate+"\n") || strings.HasSuffix(messages, "\n"+candidate) || strings.Contains(messages, "\n"+candidate+"\n")
+}
+
+func sameError(existing, candidate error) bool {
+	return errors.Is(existing, candidate) || errors.Is(candidate, existing) || existing.Error() == candidate.Error()
+}
+
+func errorComponents(err error) []error {
+	if err == nil {
+		return nil
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		var components []error
+		for _, child := range joined.Unwrap() {
+			components = append(components, errorComponents(child)...)
+		}
+		return components
+	}
+	return []error{err}
 }
 
 func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Target, arm ArmType, variant string) (*RunResult, error) {
@@ -78,13 +136,9 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		if closeErr := session.close(); closeErr != nil {
 			if session.result != nil {
 				session.result.Success = false
-				if strings.TrimSpace(session.result.Error) == "" {
-					session.result.Error = closeErr.Error()
-				} else {
-					session.result.Error = session.result.Error + "\n" + closeErr.Error()
-				}
+				session.result.Error = appendResultError(session.result.Error, closeErr)
 			}
-			executeErr = errors.Join(executeErr, closeErr)
+			executeErr = joinDistinctErrors(executeErr, closeErr)
 		}
 	}()
 	workspace, workspaceErr := prepareAgentWorkspace(ctx, r, task, target, arm, variant, workDir, session)
@@ -100,19 +154,27 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		session: session, workspace: workspace, mcpInstructions: mcpInstructions,
 	})
 	session.result = res
+	if target.Harness == string(HarnessOpenCode) && strings.HasPrefix(openCodeProviderModel(target.Model), "amdbeast/") && r.openCodeModelLimits != nil && r.openCodeModelLimits.Context > 0 {
+		ensureProvenance(res)
+		res.Provenance["local_model_context_tokens"] = fmt.Sprint(r.openCodeModelLimits.Context)
+		res.Provenance["local_model_output_tokens"] = fmt.Sprint(r.openCodeModelLimits.Output)
+		res.Provenance["local_model_limits_source"] = "llama.cpp-props"
+	}
 	prompt, err := prepareAgentRunMetadata(execution, session, res, r.semeditPrewarmVerify)
 	if err != nil {
 		return nil, err
 	}
-	initialTask := runInitialAgentTask(ctx, session, target, task, prompt, res)
+	taskCtx, cancelTask := agentTaskContext(ctx)
+	defer cancelTask()
+	initialTask := runInitialAgentTask(taskCtx, ctx, session, target, task, prompt, res)
 	if initialTask.stopEarly {
-		return res, session.oracleExecutionErr
+		return res, session.executionErr
 	}
-	r.runAgentFollowups(ctx, session, target, arm, initialTask.started, res)
+	r.runAgentFollowups(taskCtx, ctx, session, target, arm, initialTask.started, res)
 	if isSemeditArm(arm) && session.resumeID != "" && res.Success {
 		res.SemanticIntegrationReflection = r.requestSemanticToolReflection(ctx, session, target, semanticIntegrationReflectionPrompt)
 	}
-	return res, session.oracleExecutionErr
+	return res, session.executionErr
 }
 
 type agentWorkspaceSetup struct {
@@ -134,18 +196,12 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 			return agentWorkspaceSetup{}, fmt.Errorf("install semedit benchmark skill: %w", err)
 		}
 	}
-	if target.Harness == string(HarnessOpenCode) && task.Metadata.Repository.URL == "" {
-		if err := initializeOpenCodeFixtureGit(ctx, workDir); err != nil {
-			return agentWorkspaceSetup{}, err
-		}
+	if err := session.prepareFixture(ctx, target, arm, task.Metadata.Repository.URL != ""); err != nil {
+		return agentWorkspaceSetup{}, err
 	}
-	if target.Harness == string(HarnessCodex) && task.Metadata.Repository.URL == "" {
-		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
-			return agentWorkspaceSetup{}, fmt.Errorf("prepare Codex fixture instructions: %w", err)
-		}
-	}
+
 	setup := agentWorkspaceSetup{}
-	if isSemeditArm(arm) && runner.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
+	if isSemeditArm(arm) && runner.semeditPrewarmVerify && task.Metadata.Oracle.AST.File != "" {
 		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")
 		var err error
 		setup.prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
@@ -153,6 +209,9 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 			return agentWorkspaceSetup{}, err
 		}
 		setup.prewarmApplied = true
+	}
+	if err := prepareFixtureGoDependencies(ctx, workDir); err != nil {
+		return agentWorkspaceSetup{}, err
 	}
 	beforeFiles, err := snapshotWorkspaceFiles(workDir)
 	if err != nil {
@@ -173,14 +232,7 @@ func installSemeditSkill(workDir, scratchRoot string) error {
 	if err != nil {
 		return fmt.Errorf("read source skill %s: %w", sourcePath, err)
 	}
-	skillPath := filepath.Join(workDir, ".agents", "skills", "semedit", "SKILL.md")
-	if err := os.MkdirAll(filepath.Dir(skillPath), 0o750); err != nil {
-		return fmt.Errorf("create project skill directory: %w", err)
-	}
-	if err := pipeline.WriteAtomic(skillPath, content); err != nil {
-		return fmt.Errorf("write project skill: %w", err)
-	}
-	return nil
+	return prepareRuntimeLayout(workDir, nil, map[string][]byte{filepath.Join(".agents", "skills", "semedit", "SKILL.md"): content})
 }
 
 func setAgentInitialFile(session *agentSession, task *Task, workDir string) error {
@@ -240,6 +292,7 @@ func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, re
 	}
 	result.Prompt = execution.Prompt
 	ensureProvenance(result)
+	result.Provenance["fixture_dependency_preparation"] = "go-list-readonly-deps-test"
 	result.Provenance["session_transcript"] = session.transcriptPath
 	if transport := providerContinuationTransport(execution.Target); transport != "" {
 		result.Provenance["provider_transport"] = transport
@@ -248,7 +301,7 @@ func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, re
 		result.Provenance["semedit_prewarm"] = "verify_cli_check_only"
 		result.Provenance["go_cache_initial_state"] = "empty"
 	} else if isSemeditArm(execution.Arm) && prewarmConfigured {
-		result.Provenance["semedit_prewarm_skipped"] = "no_go_target_or_unsupported_provider"
+		result.Provenance["semedit_prewarm_skipped"] = ("no_go_target")
 	}
 	return execution.Prompt, nil
 }
@@ -264,10 +317,10 @@ type initialAgentTaskResult struct {
 	stopEarly bool
 }
 
-func runInitialAgentTask(ctx context.Context, session *agentSession, target Target, task *Task, prompt string, result *RunResult) initialAgentTaskResult {
+func runInitialAgentTask(taskCtx, oracleCtx context.Context, session *agentSession, target Target, task *Task, prompt string, result *RunResult) initialAgentTaskResult {
 	started := time.Now()
 	session.started = started
-	runErr := session.runTurn(ctx, target, prompt, "task", result)
+	runErr := session.runTurn(taskCtx, target, prompt, "task", result)
 	if result.processStartedAt.IsZero() {
 		started = time.Time{}
 	} else {
@@ -276,15 +329,17 @@ func runInitialAgentTask(ctx context.Context, session *agentSession, target Targ
 	session.started = started
 	if runErr != nil {
 		result.WallClock = elapsedTaskTime(started)
-		session.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
-		result.Error = fmt.Sprintf("%s execution: %v", target.Harness, runErr)
+		session.retainWorkDir = shouldRetainWorkDir(taskCtx, runErr)
+		primaryErr := fmt.Errorf("%s execution: %w", target.Harness, runErr)
+		session.recordExecutionError(primaryErr)
+		result.Error = appendResultError(result.Error, primaryErr)
 		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
 		return initialAgentTaskResult{started: started, stopEarly: true}
 	}
 	result.WallClock = elapsedTaskTime(started)
-	if err := session.evaluate(ctx, result); err != nil {
+	if err := session.evaluate(oracleCtx, result); err != nil {
 		result.WallClock = elapsedTaskTime(started)
-		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
+		session.retainWorkDir = shouldRetainWorkDir(oracleCtx, err)
 		result.Error = err.Error()
 		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
 		return initialAgentTaskResult{started: started, stopEarly: true}
@@ -296,17 +351,17 @@ func runInitialAgentTask(ctx context.Context, session *agentSession, target Targ
 	return initialAgentTaskResult{started: started}
 }
 
-func (r *Runner) runAgentFollowups(ctx context.Context, session *agentSession, target Target, arm ArmType, started time.Time, result *RunResult) {
+func (r *Runner) runAgentFollowups(taskCtx, oracleCtx context.Context, session *agentSession, target Target, arm ArmType, started time.Time, result *RunResult) {
 	if session.execution.Task.Metadata.InteractiveMode == "staged" {
-		_, session.retainWorkDir = session.runStagedFollowups(ctx)
+		_, session.retainWorkDir = session.runStagedFollowups(taskCtx, oracleCtx)
 	} else {
-		_, session.retainWorkDir = session.runFollowups(ctx)
+		_, session.retainWorkDir = session.runFollowups(taskCtx, oracleCtx)
 	}
 	result.WallClock = elapsedTaskTime(started)
 	if shouldRequestSemanticBatchReflection(arm, session.resumeID, result) {
-		result.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, session, target, semanticBatchReflectionPrompt)
+		result.SemanticBatchReflection = r.requestSemanticToolReflection(oracleCtx, session, target, semanticBatchReflectionPrompt)
 	} else if shouldRequestSemanticToolReflection(arm, session.resumeID, result) {
-		result.SemanticToolReflection = r.requestSemanticToolReflection(ctx, session, target, semanticToolReflectionPrompt)
+		result.SemanticToolReflection = r.requestSemanticToolReflection(oracleCtx, session, target, semanticToolReflectionPrompt)
 	}
 }
 
@@ -373,20 +428,6 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	return "", fmt.Errorf("unsupported arm for agent driver: %s", arm)
 }
 
-// writeBenchmarkAGENTSOverride confines inherited Codex instructions to the synthetic fixture.
-func writeBenchmarkAGENTSOverride(workDir string) error {
-	path := filepath.Join(workDir, "AGENTS.override.md")
-	if _, err := os.Lstat(path); err == nil {
-		return fmt.Errorf("fixture already defines reserved %s", filepath.Base(path))
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("inspect fixture instruction override: %w", err)
-	}
-	if err := pipeline.WriteAtomic(path, []byte(benchmarkAGENTSOverride)); err != nil {
-		return fmt.Errorf("write fixture instruction override: %w", err)
-	}
-	return nil
-}
-
 const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
 
 const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
@@ -436,6 +477,8 @@ func semanticToolBaseName(name string) string {
 }
 
 func (r *Runner) requestSemanticToolReflection(ctx context.Context, session *agentSession, target Target, prompt string) *SemanticToolReflection {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
 	turn := &RunResult{Target: target, Arm: ArmSemedit, Prompt: prompt}
 	started := time.Now()
 	runErr := session.runTurn(ctx, target, prompt, "diagnostic_reflection", turn)
@@ -560,7 +603,7 @@ func mergeTurn(total, turn *RunResult) {
 		total.Oracle, total.Success = turn.Oracle, turn.Success
 	}
 	if turn.Error != "" {
-		total.Error = turn.Error
+		total.Error = appendResultError(total.Error, errors.New(turn.Error))
 	}
 }
 

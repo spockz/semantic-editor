@@ -303,6 +303,8 @@ type Runner struct {
 	semeditPrewarmVerify      bool
 	provenance                ProvenanceSet
 	agyExecutable             string
+	openCodeRelayURL          string
+	openCodeModelLimits       *openCodeModelLimits
 }
 
 // RunnerOption configures one benchmark runner without adding global process state.
@@ -537,4 +539,13 @@ func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObser
 
 func isSemeditArm(arm ArmType) bool {
 	return arm == ArmSemedit || arm == ArmSemeditAgentic || arm == ArmSemeditExplicit
+}
+
+func WithOpenCodeRelayURL(url string) RunnerOption {
+	return func(r *Runner) { r.openCodeRelayURL = url }
+}
+
+// WithOpenCodeModelLimits supplies limits discovered once by the run-owned relay.
+func WithOpenCodeModelLimits(limits openCodeModelLimits) RunnerOption {
+	return func(r *Runner) { r.openCodeModelLimits = &limits }
 }

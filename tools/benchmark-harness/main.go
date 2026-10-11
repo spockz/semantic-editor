@@ -527,8 +527,18 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 	pending := pendingBenchmarkPlan(plan, completed)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	relayURL, modelLimits, closeRelay, relayErr := prepareOpenCodeRunRelay(pending.Jobs)
+	if relayErr != nil {
+		fmt.Fprintf(os.Stderr, "start OpenCode model relay: %v\n", relayErr)
+		return 1
+	}
+	defer func() {
+		if closeErr := closeRelay(); closeErr != nil {
+			fmt.Fprintf(os.Stderr, "close OpenCode model relay: %v\n", closeErr)
+		}
+	}()
 	freshOutcomes, progressErr := ExecutePlanWithCompletion(ctx, pending, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
-		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance))
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance), WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(modelLimits))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}

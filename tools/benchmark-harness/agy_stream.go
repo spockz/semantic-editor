@@ -19,17 +19,18 @@ import (
 )
 
 type agySession struct {
-	runner           *Runner
-	workDir          string
-	target           Target
-	arm              ArmType
-	process          *agyProcess
-	cancel           context.CancelFunc
-	transcriptOffset int64
-	configPath       string
-	configData       []byte
-	closed           bool
-	failure          error
+	runner              *Runner
+	workDir             string
+	target              Target
+	arm                 ArmType
+	process             *agyProcess
+	cancel              context.CancelFunc
+	transcriptOffset    int64
+	configPath          string
+	configData          []byte
+	closed              bool
+	failure             error
+	preparedEnvironment []string
 }
 
 type agyStreamEvent struct {
@@ -156,19 +157,19 @@ func (s *agySession) start(ctx context.Context) error {
 	if s.runner == nil {
 		return fmt.Errorf("agy session has no runner")
 	}
-	absWorkDir, configPath, configData, env, err := prepareAgyMCPConfig(ctx, s.runner, s.workDir, s.arm)
+	if err := s.prepare(ctx); err != nil {
+		return err
+	}
+	absWorkDir, err := filepath.Abs(s.workDir)
+	if err != nil {
+		return fmt.Errorf("resolve Agy workspace: %w", err)
+	}
+	args := buildAgyStreamArguments(absWorkDir, s.target)
+	process, cancel, err := launchAgyStream(configuredAgyExecutable(s.runner.agyExecutable), s.workDir, s.configPath, args, s.preparedEnvironment)
 	if err != nil {
 		return err
 	}
-	args := buildAgyStreamArguments(absWorkDir, s.target)
-	process, cancel, err := launchAgyStream(configuredAgyExecutable(s.runner.agyExecutable), s.workDir, configPath, args, env)
-	if err != nil {
-		removeErr := os.Remove(configPath)
-		return errors.Join(err, removeErr)
-	}
 	s.process = process
-	s.configPath = configPath
-	s.configData = append([]byte(nil), configData...)
 	s.cancel = cancel
 	return nil
 }
@@ -607,4 +608,18 @@ func (s *agySession) fail(err error) error {
 	}
 	s.failure = err
 	return errors.Join(err, s.close())
+}
+
+func (s *agySession) prepare(ctx context.Context) error {
+	if s.configPath != "" {
+		return nil
+	}
+	_, configPath, data, env, err := prepareAgyMCPConfig(ctx, s.runner, s.workDir, s.arm)
+	if err != nil {
+		return err
+	}
+	s.configPath = configPath
+	s.configData = append([]byte(nil), data...)
+	s.preparedEnvironment = env
+	return nil
 }

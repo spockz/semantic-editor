@@ -1,5 +1,204 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-11: cancellation test loop selector
+
+`semantic_replace_construct` could not select the request loop in `internal/mcp/server_test.go` from its range expression. No source changed. Select the returned construct path `8`. The caller supplied a range expression rather than the backend's expected loop selector.
+
+## 2026-10-11: import cleanup during function replacement
+
+The import insertion retry without placement failed because it appended after functions (`imports must appear before other declarations`). No source changed on that retry. Use explicit `file_start` placement for the import declaration.
+
+`semantic_replace_construct` replacing `TestPreparedFixtureBuildsOfflineWithoutManifestChanges` in `tools/benchmark-harness/driver_dependency_test.go` removed the temporarily unused `archive/zip` import despite `auto_organize_imports: false`. Inserting the extracted proxy helper then reported `undefined: zip`. Restore the import with a semantic declaration insertion. The replacement operation cleaned imports even when cleanup was disabled.
+
+## 2026-10-11: OpenCode usage fixture selector was guessed
+
+- Tool: `semantic_batch` with `semantic_replace_construct`.
+- Target: `tools/benchmark-harness/opencode_usage_test.go`.
+- Observed failure: the guessed enclosing test symbol `TestOpenCodeUsageAccounting` was absent, so no test replacement applied.
+- Workaround applied: use narrow atomic edits to add deterministic runner limits at the concrete calls already inspected.
+- Root cause: the test table is nested under a differently named declaration.
+
+## 2026-10-11: relay props test verification failed
+
+- Tool: `semantic_batch` with `semantic_insert_construct`.
+- Target: `tools/benchmark-harness/opencode_relay_test.go`.
+- Observed failure: the HTTP discovery test and its import applied, then repository-wide `golangci-lint` exited with status 3 while the shared branch was still changing.
+- Workaround applied: run focused tests only after updating every deterministic fake runner with explicit limits.
+- Root cause: the semantic verifier evaluates concurrent partial changes outside the test target.
+
+## 2026-10-11: relay caller batch selector missed a concurrent source change
+
+- Tool: `semantic_batch` with `semantic_replace_construct`.
+- Target: `tools/benchmark-harness/main.go`, runner construction in `executeBenchmarkPlan`.
+- Observed failure: the relay signature and its result assignment applied, but the runner statement selector no longer matched its earlier source text; the batch stopped before that caller update.
+- Workaround applied: inspect the current nested callback and apply the smallest targeted replacement.
+- Root cause: shared-file updates changed the statement text between inspection and mutation.
+
+## 2026-10-11: props lifecycle batch verification failed
+
+- Tool: `semantic_batch` with relay helper insertion and `prepareOpenCodeRunRelay` body replacement.
+- Target: `tools/benchmark-harness/opencode_relay.go`.
+- Observed failure: the structural updates applied, then the repository-wide `golangci-lint` verifier exited with status 3 during concurrent work.
+- Workaround applied: inspect the resulting signature and complete its caller update before focused package tests.
+- Root cause: repository-wide semantic verification observed an intermediate cross-file API change.
+
+## 2026-10-11: model-limit config body verification failed
+
+- Tool: `semantic_batch` with `semantic_replace_body`.
+- Target: `tools/benchmark-harness/opencode_driver.go`, `Runner.openCodeConfig`.
+- Observed failure: the config replacement applied, then the trusted repository-wide `golangci-lint` hook exited with status 3 during concurrent harness edits.
+- Workaround applied: inspect the applied source and defer repository-wide verification to the owner after all dependent edits complete.
+- Root cause: the semantic verifier checks the entire mutable workspace rather than this coherent package change.
+
+## 2026-10-11: llama.cpp props batch verification failed
+
+- Tool: `semantic_batch` with declaration and method insertions.
+- Target: `tools/benchmark-harness/opencode_relay.go`.
+- Observed failure: the AST edits, including the loopback `/props` client, applied, then the trusted repository-wide `golangci-lint` hook exited with status 3 while other workers were editing.
+- Workaround applied: inspect the published source and use focused checks once the shared harness is stable.
+- Root cause: repository-wide semantic verification observed concurrent intermediate changes.
+
+## 2026-10-11: preparation budget insertion
+
+`semantic_insert_construct` rejected an assignment and a defer supplied together as a statement in `prepareFixtureGoDependencies` (`tools/benchmark-harness/codex_driver.go`): expected exactly one statement. No source changed. Insert the assignment and defer separately. The caller supplied two statements to a single-statement operation.
+
+## 2026-10-11: model-limit runner option batch verification failed
+
+- Tool: `semantic_batch` with `semantic_insert_construct`.
+- Target: `tools/benchmark-harness/runner.go`, `Runner` and `WithOpenCodeModelLimits`.
+- Observed failure: both structural edits applied, then the trusted repository-wide `golangci-lint` hook exited with status 3 while concurrent work remained in progress.
+- Workaround applied: inspect the published edits and complete focused checks after the shared harness changes are coherent.
+- Root cause: the semantic verifier runs repository-wide lint against a concurrently edited workspace.
+
+## 2026-10-11: provider test inspection selector
+
+`semantic_inspect_symbol` could not find the guessed `TestRunOpenCodeUsesAMDBeastProvider` in `tools/benchmark-harness/bench_test.go`. No source changed. Discover the actual test declaration names before inspection; the cause was an incorrect caller selector.
+
+## 2026-10-11: chat inventory limit
+
+`list_threads` rejected `limit: 100`; its exposed schema omitted the maximum of 50. No state changed. Retry with 50 and use the installed app-server protocol for a paginated benchmark inventory if necessary.
+
+## 2026-10-11: nested deferred closure selector
+
+- Tool: `semantic_replace_construct`.
+- Target: `tools/benchmark-harness/codex_app_server_test.go`, `TestCodexAppServerRejectsPersistentThread`.
+- Observed failure: selecting the inner `if err := server.close()` returned not found; candidates included the enclosing deferred closure but not its inner statements.
+- The enclosing `defer` also failed selection using its exact returned source.
+- Workaround: select the enclosing `defer` with its returned construct path `4`.
+- Root cause: statement traversal does not descend into a function literal in a deferred call; defer source discrimination also failed despite an identical candidate.
+
+## 2026-10-11: Runtime command construct cannot resolve context
+
+`replace-construct` on `resolveOpenCodeGoRoot` in `tools/benchmark-harness/opencode_sandbox.go` refused an `exec.CommandContext` replacement because import cleanup could not resolve existing standard-library import `context`, even with `--auto-organize-imports=false`. No source changed. Use the minimal atomic replacement after repeated standard-library cleanup failures; the same fallback handles the adjacent runtime execution allowance.
+
+## 2026-10-11: Switch-case insertion did not locate a documented case discriminator
+
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/opencode_session_test.go`, `serveOpenCodeUsageHelper`
+- Observed failure: The tool could not locate the exact displayed switch case condition; no source changed.
+- Workaround applied: Use the smallest atomic fallback to add the fixture's authoritative message-list response.
+- Root cause: Case insertion did not support the compound boolean case selector.
+
+## 2026-10-11: Function replacement rejected an unchanged method signature
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/opencode_session.go`, `openCodeSessionMessages`
+- Observed failure: The tool rejected a full replacement as not preserving `(*openCodeSession).openCodeSessionMessages`, although the replacement kept that receiver and method name; no source changed.
+- Workaround applied: Use the already supported precise statement edit plus the repository's narrow atomic fallback for the named return signature.
+- Root cause: The function-symbol validator did not recognize the equivalent named result signature.
+
+## 2026-10-11: Gopls wrapper body cleanup cannot resolve bufio
+
+The `replace-body` semantic CLI operation on `resolveOpenCodeGopls` in `tools/benchmark-harness/opencode_sandbox.go` failed import pruning with `cannot resolve package name for import "bufio"`. No body changed. Retry the structural body edit without import cleanup, then make the minimal atomic import correction. The standard-library import resolver failure prevents its otherwise supported cleanup.
+
+## 2026-10-11: Defer selector rejected its reported source text
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/opencode_session.go`, `openCodeSessionMessages`
+- Observed failure: Selecting `defer response.Body.Close()` reported it was absent while listing the identical construct at path `9`; no source changed.
+- Workaround applied: Retry with the reported construct path.
+- Root cause: The defer selector did not accept its displayed source representation.
+
+## 2026-10-11: Runtime batch verification has a plugin Go version mismatch
+
+`semantic_batch` reported runtime body and import edits, then workspace verification failed (`golangci-lint` exit 3): `.scratch/go/bin/packageclosure.so` was built with a different version of package `cmp`. Its diagnostics also included unrelated backend/astedit errors. Follow-up inspection and disk reads still showed the earlier sandbox resolver and a missing runtime renderer, while the driver body changed. Verify disk state directly, then use a minimal atomic patch for the unpublished helpers; run checks under the repository's pinned Go environment after edits become coherent.
+
+## 2026-10-11: Runtime batch collided with a session source revision
+
+`semantic_batch` published four runtime helper changes in `tools/benchmark-harness/opencode_sandbox.go`, then rejected `Runner.openCodeSandboxProfile` because another worker changed `opencode_session.go` in the shared package. The profile still called the earlier helper signature. Finish session writes, reload the changed source, and publish the remaining bodies serially before verification.
+
+## 2026-10-11: Tool-log patch raced concurrent updates
+
+- Tool: `apply_patch`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`
+- Observed failure: The patch expected a heading that had moved under concurrent edits and made no source change.
+- Workaround applied: Read the current document prefix and retry against its current first entry.
+- Root cause: The shared workspace changed between inspection and patch application.
+
+## 2026-10-11: OpenCode route source path did not resolve
+
+- Tool: `web.run` through the orchestration wrapper
+- Target: `packages/opencode/src/server/routes/session.ts` at the OpenCode v1.18.30 tag
+- Observed failure: The source request returned an internal error because that guessed route path does not exist; no source changed.
+- Workaround applied: Inspect the tagged generated OpenAPI specification.
+- Root cause: The route file path was inferred from current source layout rather than resolved from the tagged tree.
+
+## 2026-10-11: Runtime function replacement used declaration-only operation
+
+`semantic_batch` rejected `semantic_replace_decl` in `tools/benchmark-harness/opencode_sandbox.go` with `unexpected declaration type`; no diff was applied. Replace the function with `semantic_replace_construct` kind `function`, or replace its body through the specialized operation.
+
+## 2026-10-11: Runtime renderer replacement supplied two declarations
+
+`semantic_batch` inserted runtime helpers in `tools/benchmark-harness/opencode_sandbox.go`, then `semantic_replace_decl` rejected the renderer snippet with `multiple declarations found in snippet`. The helpers remained published and awaited import organization. Insert the second declaration separately, replace only the selected declaration, and organize imports after the coherent batch.
+
+## 2026-10-11: Web result wrapper lacked content blocks
+
+- Tool: `web.run` through the orchestration wrapper
+- Target: OpenCode v1.18.30 primary source URLs
+- Observed failure: The wrapper assumed an MCP `content` array and threw while the web result used a different result shape; no source changed.
+- Workaround applied: Reissue the source request while rendering the returned value directly.
+- Root cause: The generic orchestration adapter shape does not match this web tool's response object.
+
+## 2026-10-11: Runtime helper insertion used an unsupported name key
+
+`semantic_batch` rejected a `semantic_insert_function` runtime helper step because `name` is unsupported; the declaration name belongs in `source`. No source changed. Retry using the documented `file` and `source` arguments.
+
+## 2026-10-11: Runtime profile batch verification failed after publication
+
+`semantic_batch` updated `Runner.openCodeSandboxProfile` in `tools/benchmark-harness/opencode_sandbox.go` but reported workspace verification failure (`golangci-lint` exit 3). Its final diff confirmed the edit remained. Concurrent root test setup temporarily had unresolved identifiers, so whole-workspace verification could observe an intermediate state. Preserve the published edit, finish coherent test setup, and rerun repository checks after source writers finish.
+
+## 2026-10-11: Statement insertion rejects multiple statements
+
+`semantic_insert_construct` in `internal/godiagnostics/manager_error_test.go` rejected a declaration plus an error guard with `expected exactly one statement`. A dependent replacement then temporarily produced undefined names. Replace the complete test declaration coherently with the required setup; the insertion contract permits one statement only.
+
+## 2026-10-11: CLI test inspection used the wrong singular name
+
+`semantic_inspect_symbol` on `main_test.go` with `TestScript` failed with symbol not found. No source changed. Use the declaration outline to discover the test name rather than guessing.
+
+## 2026-10-11: If selector rejected the complete header
+
+`semantic_replace_construct` on `resolveDiagnosticsModule` in `internal/godiagnostics/manager.go` rejected discriminator `if err != nil` while listing that header as a candidate. The selector expects only the condition. No source changed; retry using the returned construct path `3`.
+
+## 2026-10-11: OpenCode lifecycle inspection used absent symbol names
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/opencode_session.go` symbol `openCodeSession.runTurn` and `tools/benchmark-harness/opencode_usage.go` symbol `openCodeUsageCollector`
+- Observed failure: Neither exact declaration exists; the tool returned `symbol not found` and made no changes.
+- Workaround applied: Use the inspected `openCodeSession.readAttachedTurn` declaration and repository search to locate the actual turn and usage helpers before further analysis.
+- Root cause: The requested lifecycle names were inferred from the task description rather than verified against the current shared working tree.
+
+## 2026-10-11: Tool-log patch used stale local context
+
+- Tool: `apply_patch`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`
+- Observed failure: The first insertion patch could not find the assumed next heading because a concurrent entry had been added; no source changed.
+- Workaround applied: Read the current document prefix and retry against the stable title line.
+- Root cause: The patch context did not account for concurrent edits in the shared workspace.
+
+## 2026-10-11: Diagnostics inspection used an unresolved symbol
+
+`semantic_inspect_symbol` on `internal/godiagnostics/manager.go` with `resolveModuleRoot` failed with symbol not found. The selector was guessed from an error message rather than discovered. No source changed; use the declaration outline to select the actual function.
+
 ## 2026-10-08: Semantic lookup guessed two benchmark harness symbol names
 
 - Tool: `semantic_lookup`
@@ -5790,3 +5989,252 @@ failure remains the documented batch behavior.
 - Observed failure: The replacement was rejected during orphan-import pruning because the package name for `bytes` could not be resolved; no source changed.
 - Workaround applied: Use the narrower switch-clause insertion with its required discriminator.
 - Root cause: The semantic replacement's import-pruning preflight could not resolve an existing import in the current workspace state.
+
+## 2026-10-11: scaffold-file rejected a non-comment purpose header
+
+- Tool: `scaffold-file`
+- Target: `tools/benchmark-harness/opencode_relay.go`
+- Observed failure: `scaffold-file` rejected the purpose header as invalid Go source; no file was created.
+- Workaround applied: Retry with the purpose header prefixed as a Go comment.
+- Root cause: The purpose-header argument requires valid Go comment syntax.
+
+## 2026-10-11: method insertion used the function construct kind
+
+- Tool: `insert-construct`
+- Target: `tools/benchmark-harness/opencode_relay.go`, method `openCodeRelay.accept`
+- Observed failure: The source declaration was rejected because receiver methods do not match construct kind `function`; no source changed.
+- Workaround applied: Retry with construct kind `method`.
+- Root cause: The insertion selector distinguishes methods from free functions.
+
+## 2026-10-11: struct field insertion used an unsupported placement
+
+- Tool: `insert-construct`
+- Target: `tools/benchmark-harness/opencode_relay.go`, type `openCodeRelay`
+- Observed failure: Field insertion rejected placement `last`; no source changed.
+- Workaround applied: Retry with placement `type_end`.
+- Root cause: Struct fields use type placement qualifiers rather than declaration placement values.
+
+## 2026-10-11: body replacement could not resolve a standard-library import
+
+- Tool: `replace-body`
+- Target: `tools/benchmark-harness/opencode_relay.go`, `startOpenCodeRelay`
+- Observed failure: Replacement was rejected while pruning imports because it could not resolve the existing `context` import; no source changed.
+- Workaround applied: Preserve the existing import set and retry with a body that uses the already imported package.
+- Root cause: The semantic replacement preflight could not resolve an existing standard-library import in the current workspace state.
+
+## 2026-10-11: symbol inspection selected the wrong source file
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/opencode_driver.go`, helper `openCodeModelBaseURL`
+- Observed failure: The helper was not found in the selected file; no source changed.
+- Workaround applied: Locate the helper in `opencode_sandbox.go` and inspect it there.
+- Root cause: The inspection used the provider-driver file instead of the sandbox file that owns endpoint selection.
+
+## 2026-10-11: retry could not resolve the same standard-library import
+
+- Tool: `replace-body`
+- Target: `tools/benchmark-harness/opencode_relay.go`, `startOpenCodeRelay`
+- Observed failure: A retry of the body replacement again refused to resolve the existing `context` import; no source changed.
+- Workaround applied: Use narrower semantic construct edits that do not require whole-function replacement.
+- Root cause: The import-resolution failure persisted across retries.
+
+## 2026-10-11: body replacement batch used the wrong payload field
+
+- Tool: `semantic_batch` with `semantic_replace_body`
+- Target: OpenCode session and driver integration
+- Observed failure: The batch stopped before changing source because the body replacement payload used `source` instead of `body`.
+- Workaround applied: Retry with the required `body` parameter.
+- Root cause: The batch child parameters did not match the selected semantic tool schema.
+
+## 2026-10-11: construct replacement could not resolve a standard-library import
+
+- Tool: `replace-construct`
+- Target: `tools/benchmark-harness/opencode_relay.go`, relay initialization in `startOpenCodeRelay`
+- Observed failure: The replacement was rejected while resolving the existing `context` import; no source changed.
+- Workaround applied: Retry the local statement edit using an insertion or a separate helper to avoid import movement.
+- Root cause: The construct replacement import-cleanup preflight could not resolve `context` in the current workspace state.
+
+## 2026-10-11: lookup confirmed an earlier batch did not create its helper
+
+- Tool: `semantic_lookup`
+- Target: OpenCode integration helper `openCodeOutboundURL`
+- Observed failure: The helper was not found; no source changed.
+- Workaround applied: Retry insertion as a standalone semantic edit.
+- Root cause: The prior batch stopped before its first edit because of an invalid payload field.
+
+## 2026-10-11: semantic batch source changed during sandbox edit
+
+- Tool: `semantic_batch`
+- Target: OpenCode sandbox and session integration
+- Observed failure: The batch was rejected because `opencode_sandbox.go` changed on disk while the buffered edit was pending; no batch changes were published.
+- Workaround applied: Retry after the sandbox file is stable and narrow the batch to session/driver files.
+- Root cause: Concurrent edits invalidated the semantic tool's buffered source revision.
+
+## 2026-10-11: verification hook rejected an applied OpenCode config body edit
+
+- Tool: `semantic_batch` with `semantic_replace_body`
+- Target: `tools/benchmark-harness/opencode_driver.go`, `Runner.openCodeConfig`
+- Observed failure: The body edit applied, then batch verification failed because workspace trust was not supplied; the returned diff shows the edit remained applied.
+- Workaround applied: Retry subsequent edits with `trust_workspace=true` and inspect the current source before continuing.
+- Root cause: The semantic verification hook requires explicit workspace trust even after the AST edit is staged.
+
+## 2026-10-11: trusted semantic batch verification failed lint
+
+- Tool: `semantic_batch` with OpenCode session and driver body replacements
+- Target: `tools/benchmark-harness/opencode_session.go` and `opencode_driver.go`
+- Observed failure: The trusted batch reached the golangci-lint verification hook, which exited with status 3; the agent is inspecting whether the body edits applied and the lint diagnostics.
+- Workaround applied: Inspect the workspace diff and diagnostics before further changes.
+- Root cause: The verification hook reported lint failure after applying the requested semantic mutations.
+
+## 2026-10-11: test construct replacement could not resolve a standard-library import
+
+- Tool: `replace-construct`
+- Target: `tools/benchmark-harness/session_test.go`, Codex stream test setup
+- Observed failure: The statement replacement was refused while resolving the existing `context` import; no source changed.
+- Workaround applied: Use a narrow atomic text patch after the semantic operation failed.
+- Root cause: The semantic replacement import-cleanup preflight could not resolve an existing standard-library import in the current workspace state.
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_sandbox_test.go`, `opencode_relay_test.go` | Three helper insertions applied, but batch verification failed because workspace trust for `golangci-lint` was not enabled. The failure was limited to the post-edit verification hook; no source edits were rolled back. Continued with the same structural refactor and will rely on the repository check after notifying the owner. Root cause: verification trust is per-request and was omitted. |
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_sandbox_test.go`, `opencode_relay_test.go` | The trusted batch applied both test refactors, then `golangci-lint` exited 3. Source changes remain applied. Workaround is to inspect the lint output, fix any reported issues, and run the repository check. Root cause is lint diagnostics in the post-edit verification hook. |
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_relay_test.go`, `opencode_sandbox_test.go` | The trusted batch applied local-variable renames in the two test helpers, then `golangci-lint` exited 3. Source changes remain applied; the root check will identify any remaining diagnostics. Root cause is lint feedback from the post-edit verification hook. |
+| 2026-10-11 | `semantic_batch` selector guard | `tools/benchmark-harness/opencode_sandbox_test.go` | The batch replaced the Seatbelt test body, then rejected a helper replacement because `semantic_replace_construct` requires preserving the selected function symbol. No helper replacement or later batch edits were applied. Workaround: use semantic rename to change the helper name, then replace its body; remove the no-longer-used HTTP helper and import structurally. Root cause: replacement selectors cannot rename declarations. |
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_sandbox_test.go` | The trusted batch changed the Seatbelt probe to use bounded `nc` checks and removed the HTTP fixture helper, then `golangci-lint` exited 3. Changes appear applied; root owns the next full check. Root cause is the post-edit lint hook failure. |
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_sandbox_test.go` | The trusted batch successfully replaced the TCP probe and denial helper, removed the obsolete HTTP helper, and cleaned the unused import, then `golangci-lint` exited 3. Changes applied. Workaround: rely on the parent run’s full check and inspect any reported diagnostics. Root cause is the post-edit verification hook. |
+| 2026-10-11 | `semantic_batch` selector miss | `tools/benchmark-harness/opencode_usage_test.go` | Three relay/parser edits applied, then the fourth edit failed because the selector targeted an inner `NewRunner(...)` expression rather than the full assignment/call statement; no usage-test edit was applied. Workaround: inspect the enclosing statement and target that complete construct. Root cause: selector text must match the exact AST construct kind. |
+| 2026-10-11 | `semantic_batch` verification hook | `tools/benchmark-harness/opencode_relay.go`, `opencode_relay_test.go`, `opencode_usage_test.go` | Parser, relay-dial, and runner fixture updates applied, then `golangci-lint` exited 3. The diagnostic may include expected temporary state from earlier batch attempts; parent is running focused checks after these updates. Root cause is the post-edit lint hook. |
+
+## 2026-10-11: Saluki discovered rename but Go diagnostics failed in Seatbelt
+
+- Tool: OpenCode `semedit_semantic_rename`
+- Target: `api/server.go`, `Server.oldName`, in the implicit and explicit arms of `saluki-opencode-relay-20261011T095400Z`
+- Observed failure: Two calls in each arm reached the MCP server but failed with `check Go diagnostics with gopls: resolve Go diagnostics module: exit status 2`. Explicit lookup and outline succeeded.
+- Workaround applied: Retain the failures in the transcript and benchmark report; no sandbox allowance or benchmark verdict was relaxed.
+- Root cause: Retained shell output confirms the sandbox denied the inherited cached Go 1.27.2 GOROOT and the selected gopls wrapper's backing executable and canonical interpreter. Go reported `cannot find GOROOT directory` before source diagnostics. The runtime profile now allows the exact selected toolchain and wrapper dependencies; the diagnostics manager preserves Go stderr and the process error.
+<!-- Records tool failures encountered while maintaining this repository. -->
+
+## 2026-10-11: failure-audit inspection selector
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/opencode_driver.go`, `(*Runner).openCodeConfiguration`.
+- Observed: symbol not found.
+- Root cause: the caller guessed a method name; the actual method is `openCodeConfig`.
+- Workaround: use the declaration name already reported by navigation. No source mutation occurred.
+
+## 2026-10-11: workspace outline deferred tool unavailable
+
+- Tool: `semantic_workspace_outline`.
+- Target: `tools/benchmark-harness`.
+- Observed failure: the tool was advertised by the deferred semedit inventory but was unavailable in the active tool namespace, returning a JavaScript `TypeError`; no source mutation occurred.
+- Workaround: use targeted read-only repository inspection while retaining semantic editing for any supported mutation.
+- Root cause: deferred MCP tool registration did not expose the advertised workspace-outline method to this task.
+
+## 2026-10-11: body replacement deferred tool unavailable
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/driver.go`, `Runner.ExecuteAgent`.
+- Observed failure: the declared direct semantic operation was unavailable in the active tool namespace, returning a JavaScript `TypeError`; no source mutation occurred.
+- Workaround: use the callable `semantic_batch` wrapper for the same structural replacement.
+- Root cause: deferred MCP tool registration did not expose the advertised direct body-replacement method to this task.
+
+## 2026-10-11: task-timeout body replacement verification failed
+
+- Tool: `semantic_batch` with `semantic_replace_body`.
+- Target: `tools/benchmark-harness/driver.go`, `Runner.ExecuteAgent`.
+- Observed failure: the requested AST edit applied, but the trusted workspace verification hook reported a repository-wide `golangci-lint` exit status 3.
+- Workaround: inspect the applied source and run the focused harness checks after completing the related lifecycle edits.
+- Root cause: the batch verifier ran the repository hook while concurrent uncommitted work remained in the workspace.
+
+## 2026-10-11: adapter audit inspected a nonexistent file
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/agy_session.go`, `prepareAgyMCPConfig`.
+- Observed failure: the requested source file does not exist.
+- Workaround: locate the declaration with `rg` and inspect `agy_stream.go`.
+- Root cause: the caller assumed the session filename instead of confirming the declaration location.
+
+## 2026-10-11: runtime preparation if selectors rejected
+
+- Tool: `semantic_replace_construct`.
+- Targets: `writeAgyMCPConfig` in `agy_driver.go` (directory creation and file publication) and `writeBenchmarkAGENTSOverride` in `driver.go` (file publication).
+- Observed failure: three selectors combining an if initializer and condition were rejected; the tool lists these as separate selectors.
+- Workaround: select the short initializer alone using the returned candidates.
+- Root cause: caller supplied the complete header instead of the supported initializer selector.
+
+## 2026-10-11: runtime directory loop selector rejected
+
+- Tool: `semantic_replace_construct`.
+- Target: `Runner.openCodeEnvironment` in `opencode_driver.go`.
+- Observed failure: a range header selector did not resolve the loop.
+- Workaround: use returned `construct_path: 17`.
+- Root cause: loop selection requires the supported source form or the returned structural path.
+
+## 2026-10-11: runtime file timestamp insertion anchor rejected
+
+- Tool: `semantic_insert_construct`.
+- Target: `writeRuntimeFile` in `workspace.go`.
+- Observed failure: the combined if header could not be used as a statement anchor.
+- Workaround: replace the complete small function to add timestamp advancement.
+- Root cause: the caller supplied an unsupported anchor form.
+
+## 2026-10-11: nested test cleanup cannot be selected
+
+- Tool: `semantic_replace_construct`.
+- Target: `TestWorkspacePrewarmIsIndependentOfHarness` in `session_test.go`.
+- Observed failure: the tool did not find a defer inside the subtest function literal.
+- Workaround: replace the enclosing test function with the corrected cleanup variable name.
+- Root cause: nested function-literal statements are outside the selector's supported traversal.
+
+## 2026-10-11: same-source call replacement is ambiguous
+
+- Tool: `semantic_replace_construct`.
+- Target: `TestAgentLaunchFailureHasZeroTaskTimeForBothArms` in `session_test.go`.
+- Observed failure: selecting `t.Setenv("PATH", root)` matched both the statement and its expression slot.
+- Workaround: omit the unnecessary replacement and replace the enclosing test declaration for its setup changes.
+- Root cause: identical call text is a valid selector for two construct kinds.
+
+## 2026-10-11: multi-function insertion selector rejected
+
+- Tool: `semantic_insert_construct`.
+- Target: `tools/benchmark-harness/driver.go`, error aggregation helpers.
+- Observed failure: the operation rejected a declaration group containing two functions because the selected `function` kind requires exactly one function; no source mutation occurred.
+- Workaround: insert the helpers as a declaration group with `kind: decl`.
+- Root cause: the construct kind was too narrow for the requested grouped declaration.
+
+## 2026-10-11: oracle-context replacement verification failed
+
+- Tool: `semantic_batch` with `semantic_replace_body`.
+- Target: `tools/benchmark-harness/session.go`, `agentSession.evaluate` and `agentSession.evaluateStage`.
+- Observed failure: both AST edits applied, but the trusted workspace verification hook reported a repository-wide `golangci-lint` exit status 3.
+- Workaround: inspect the applied source and use focused harness checks after all lifecycle changes are complete.
+- Root cause: the batch verifier ran the repository hook while concurrent uncommitted work remained in the workspace.
+
+## 2026-10-11: workspace outline unavailable
+
+- Tool: `semantic_workspace_outline`.
+- Target: `tools/benchmark-harness`.
+- Observed failure: the MCP namespace did not expose `semantic_workspace_outline` despite its required discovery workflow.
+- Workaround: use the available symbol inspection and structural editing operations; if unavailable, make the smallest manual edit.
+- Root cause: the current MCP tool registration omits the advertised workspace-outline operation.
+
+## 2026-10-11: grouped function insertion rejected
+
+- Tool: `semantic_insert_construct`.
+- Target: `tools/benchmark-harness/opencode_session.go` prepared-runtime helpers.
+- Observed failure: the function insertion rejected a source payload containing two related functions.
+- Workaround: insert each function separately or use a supported declaration-group operation.
+- Root cause: the function construct kind accepts exactly one declaration.
+
+## 2026-10-11: struct-field placement rejected
+
+- Tool: `semantic_insert_construct`.
+- Target: `openCodeProvider` in `tools/benchmark-harness/opencode_driver.go`.
+- Observed failure: field insertion rejected the documented `last` placement.
+- Workaround: use the supported `type_end` field placement.
+- Root cause: field placement support differs from declaration placement.
+
+## 2026-10-11: symbol inspection parameter contract unavailable
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/opencode_sandbox.go`, sandbox profile and environment helpers.
+- Observed failure: the tool rejected the documented discovery-style `query` parameter and exposed only environment configuration parameters.
+- Workaround: inspect the file outline, then use read-only source inspection for the needed implementation details.
+- Root cause: the registered inspection endpoint does not expose the expected symbol-query contract.

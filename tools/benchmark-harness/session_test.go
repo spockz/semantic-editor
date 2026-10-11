@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"semedit/internal/pipeline"
 	"slices"
@@ -172,6 +173,37 @@ func TestExecuteAgentUsesOneProcessSessionAndExcludesReflectionMetrics(t *testin
 	assertSessionProcessTranscript(t, result)
 }
 
+func TestExecuteAgentEvaluatesOracleAfterAgentDeadline(t *testing.T) {
+	root := t.TempDir()
+	installCodexAppServerFake(t, root, "")
+	bin := filepath.Join(root, "bin")
+	if err := pipeline.WriteAtomic(filepath.Join(bin, "go"), []byte("#!/bin/sh\nsleep 0.9\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(bin, "go"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	task := &Task{
+		Metadata: TaskMetadata{
+			TaskID:      "oracle-after-agent-deadline",
+			Instruction: "Leave the existing declaration intact.",
+			Oracle: OracleConfig{
+				AST:   ASTConfig{File: "main.go", MustContainSymbols: []string{"Existing"}},
+				Build: BuildConfig{CleanCompile: true},
+			},
+		},
+		Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Existing() {}\n")),
+	}
+	ctx := withAgentTaskTimeout(context.Background(), 750*time.Millisecond)
+	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(ctx, AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmBaseline, Variant: "small", Prompt: task.Metadata.Instruction})
+	if err != nil {
+		t.Fatalf("ExecuteAgent returned an oracle deadline error: %v", err)
+	}
+	if !result.Success || result.Oracle == nil || !result.Oracle.Passed {
+		t.Fatalf("oracle did not run after the agent deadline: %+v", result)
+	}
+}
+
 func assertSessionProcessTaskResult(t *testing.T, result *RunResult) {
 	t.Helper()
 	if !result.Success || result.Turns != 2 || result.PromptTokens != 12 || result.OutputTokens != 4 || result.ToolCount != 2 || result.DiagnosticToolCoverage == nil || !result.DiagnosticToolCoverage.Complete || result.DiagnosticToolCoverage.ObservationState != ToolObservationComplete || result.DiagnosticToolCoverage.ExpectedSatisfied || !slices.Equal(result.DiagnosticToolCoverage.Missing, []string{"semantic_rename"}) || !slices.Equal(result.DiagnosticToolCoverage.Observed, []string{"semantic_lookup", "semantic_replace_body"}) {
@@ -319,8 +351,8 @@ func TestExecuteAgentRecordsNoWallTimeBeforeCodexStarts(t *testing.T) {
 	}
 	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmBaseline, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
 	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(context.Background(), execution)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("missing Codex executable returned no execution error")
 	}
 	if !result.processStartedAt.IsZero() {
 		t.Fatalf("missing Codex executable started a process at %s", result.processStartedAt)
@@ -331,10 +363,18 @@ func TestExecuteAgentRecordsNoWallTimeBeforeCodexStarts(t *testing.T) {
 	if result.Error == "" {
 		t.Fatal("missing Codex executable produced no error")
 	}
+	assertLaunchFailureTranscript(t, result)
 }
 
 func TestAgentLaunchFailureHasZeroTaskTimeForBothArms(t *testing.T) {
 	root := t.TempDir()
+	goPath, lookupErr := exec.LookPath("go")
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
+	}
+	if symlinkErr := os.Symlink(goPath, filepath.Join(root, "go")); symlinkErr != nil {
+		t.Fatal(symlinkErr)
+	}
 	t.Setenv("PATH", root)
 	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
 	if err != nil {
@@ -347,13 +387,13 @@ func TestAgentLaunchFailureHasZeroTaskTimeForBothArms(t *testing.T) {
 	for _, harness := range []HarnessType{HarnessOpenCode, HarnessAgy} {
 		for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
 			t.Run(string(harness)+"/"+string(arm), func(t *testing.T) {
-				runner := NewRunner(filepath.Join(root, string(harness), string(arm), "scratch"))
+				runner := NewRunner(filepath.Join(root, string(harness), string(arm), "scratch"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
 				runner.agyExecutable = filepath.Join(root, "missing-agy")
 				target := Target{Harness: string(harness), Model: "amdbeast/fake"}
 				execution := AgentExecution{Task: task, Target: target, Arm: arm, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
 				result, err := runner.ExecuteAgent(t.Context(), execution)
-				if err != nil {
-					t.Fatal(err)
+				if err == nil {
+					t.Fatal("missing provider executable returned no execution error")
 				}
 				if result.Error == "" || !result.processStartedAt.IsZero() || result.WallClock != 0 {
 					t.Fatalf("failed launch recorded task time: %+v", result)
@@ -361,8 +401,20 @@ func TestAgentLaunchFailureHasZeroTaskTimeForBothArms(t *testing.T) {
 				if len(result.InteractionSteps) != 1 || result.InteractionSteps[0].WallClock != 0 {
 					t.Fatalf("failed launch recorded step time: %+v", result.InteractionSteps)
 				}
+				assertLaunchFailureTranscript(t, result)
 			})
 		}
+	}
+}
+
+func assertLaunchFailureTranscript(t *testing.T, result *RunResult) {
+	t.Helper()
+	transcriptPath := result.Provenance["session_transcript"]
+	if transcriptPath == "" {
+		t.Fatal("failed launch omitted its session transcript")
+	}
+	if _, err := os.Stat(transcriptPath); err != nil {
+		t.Fatalf("failed launch transcript is not retained: %v", err)
 	}
 }
 
@@ -402,7 +454,7 @@ done
 	if err := os.Mkdir(workDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewRunner(filepath.Join(root, "scratch"))
+	runner := NewRunner(filepath.Join(root, "scratch"), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
 	runner.agyExecutable = script
 	provider := &agyProvider{runner: runner}
 	t.Cleanup(func() {
@@ -522,7 +574,7 @@ exit 0
 	}
 	installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	runner := NewRunner(filepath.Join(root, "scratch"))
+	runner := NewRunner(filepath.Join(root, "scratch"), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
 	for _, mode := range []string{"empty", "malformed", "null", "object"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("SEMEDIT_OPENCODE_STREAM", mode)
@@ -719,6 +771,51 @@ func TestExecuteAgentIntegrationFeedbackFollowsOnlySemeditTasks(t *testing.T) {
 	for _, testCase := range integrationFeedbackCases() {
 		t.Run(testCase.name, func(t *testing.T) {
 			runIntegrationFeedbackCase(t, testCase)
+		})
+	}
+}
+
+func TestWorkspacePrewarmIsIndependentOfHarness(t *testing.T) {
+	for _, harness := range []HarnessType{HarnessCodex, HarnessAgy, HarnessOpenCode} {
+		t.Run(string(harness), func(t *testing.T) {
+			root := t.TempDir()
+			scratch := filepath.Join(root, ".scratch", "benchmarks")
+			workDir := filepath.Join(scratch, "fixture")
+			if err := os.MkdirAll(workDir, 0o750); err != nil {
+				t.Fatal(err)
+			}
+			binary := filepath.Join(root, "bin", "semedit-next")
+			if err := os.MkdirAll(filepath.Dir(binary), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			script := "#!/bin/sh\ntest \"$1\" = verify && test \"$3\" = main.go && test \"$6\" = --check-only || exit 9\nprintf warmed > warmup-marker\n"
+			if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			task, err := ParseTask([]byte("task_id: warmup\ncategory: test\ninstruction: warmup\ncontexts: [small]\noracle:\n  level_2_ast:\n    file: main.go\n  level_3_build:\n    clean_compile: false\n  level_4_test:\n    pass_tests: false\n-- main.go --\npackage fixture\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			task.Metadata.Oracle.AST.File = "main.go"
+			session, err := newAgentSession(&behavioralSessionProvider{}, scratch, "warmup", workDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() {
+				if closeErr := session.close(); closeErr != nil {
+					t.Error(closeErr)
+				}
+			}()
+			setup, err := prepareAgentWorkspace(t.Context(), NewRunner(scratch, WithSemeditPrewarmVerify(true)), task, Target{Harness: string(harness)}, ArmSemedit, "small", workDir, session)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !setup.prewarmApplied {
+				t.Fatal("prewarm skipped for selected harness")
+			}
+			if _, err := os.Stat(filepath.Join(workDir, "warmup-marker")); err != nil {
+				t.Fatal(err)
+			}
 		})
 	}
 }

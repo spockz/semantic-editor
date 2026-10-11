@@ -599,6 +599,11 @@ func resolveDiagnosticsModule(ctx context.Context, root string, environment []st
 	cmd.Dir, cmd.Env = root, environment
 	output, err := cmd.Output()
 	if err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			if detail := strings.TrimSpace(string(exitErr.Stderr)); detail != "" {
+				return "", fmt.Errorf("resolve Go diagnostics module: %w: %s", err, detail)
+			}
+		}
 		return "", fmt.Errorf("resolve Go diagnostics module: %w", err)
 	}
 	moduleFile := strings.TrimSpace(string(output))

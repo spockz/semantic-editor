@@ -64,6 +64,11 @@ func TestOpenCodeAttachHelperProcess(t *testing.T) {
 			sessionID = "ses-changed"
 		}
 		fmt.Printf("{\"type\":\"session.created\",\"properties\":{\"info\":{\"id\":%q}}}\n", sessionID)
+		if mode == "unfinished" {
+			fmt.Printf("{\"type\":\"message.part.updated\",\"properties\":{\"sessionID\":%q,\"part\":{\"id\":\"tool-1\",\"sessionID\":%q,\"messageID\":\"message-1\",\"type\":\"tool\",\"tool\":\"semantic_lookup\",\"state\":{\"status\":\"running\",\"input\":{\"symbol\":\"target\"}}}}}\n", sessionID, sessionID)
+			fmt.Printf("{\"type\":\"step_start\",\"sessionID\":%q,\"part\":{\"id\":\"start-1\",\"messageID\":\"message-1\",\"type\":\"step-start\"}}\n", sessionID)
+			os.Exit(0)
+		}
 		if mode == "mixed" {
 			fmt.Println(`{"type":"session.updated","properties":{"info":{"id":"ses-123"}}}`)
 		}
@@ -83,6 +88,7 @@ func TestOpenCodeAttachedTurnsReuseServerAndSession(t *testing.T) {
 		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline,
 		startedAt: startedAt, env: env,
 	}
+	installOpenCodeSessionSandbox(t, session)
 	for i, prompt := range []string{"first task", "corrective task", "diagnostic reflection"} {
 		result := &RunResult{Arm: ArmBaseline}
 		sessionID, err := session.run(context.Background(), prompt, result, session.sessionID)
@@ -100,6 +106,148 @@ func TestOpenCodeAttachedTurnsReuseServerAndSession(t *testing.T) {
 		}
 	}
 	assertOpenCodeAttachedTurns(t, observation, server.URL, workDir)
+}
+
+func TestOpenCodeAttachedTurnRecoversTerminalUsageFromServer(t *testing.T) {
+	env := openCodeFakeClient(t, "unfinished")
+	var statusRequests, messageRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/harness/turn":
+			w.WriteHeader(http.StatusOK)
+		case "/session/status":
+			statusRequests.Add(1)
+			_, _ = io.WriteString(w, `{}`)
+		case "/session/ses-123/message":
+			messageRequests.Add(1)
+			_, _ = io.WriteString(w, `[{"info":{"id":"message-1","role":"assistant"},"parts":[{"id":"tool-1","sessionID":"ses-123","messageID":"message-1","type":"tool","tool":"semantic_lookup","state":{"status":"completed","input":{"symbol":"target"},"output":{"ok":true}}},{"id":"finish-1","sessionID":"ses-123","messageID":"message-1","type":"step-finish","reason":"stop","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}]}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	session := &openCodeSession{
+		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(),
+		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
+	}
+	installOpenCodeSessionSandbox(t, session)
+	result := &RunResult{Arm: ArmBaseline}
+	sessionID, err := session.run(t.Context(), "solve", result, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionID != "ses-123" {
+		t.Fatalf("session ID = %q, want ses-123", sessionID)
+	}
+	if result.OpenCodeExitCode == nil || *result.OpenCodeExitCode != 0 {
+		t.Fatalf("OpenCode exit code = %v, want clean exit", result.OpenCodeExitCode)
+	}
+	if result.PromptTokens != 15 || result.CachedPromptTokens != 5 || result.UncachedPromptTokens != 10 || result.OutputTokens != 4 || result.ReasoningTokens != 2 {
+		t.Fatalf("recovered usage = %+v", result)
+	}
+	if len(result.ToolCalls) != 1 || result.ToolCalls[0].FunctionalStatus != ToolCallStatusSucceeded {
+		t.Fatalf("recovered tool state = %+v, want completed call", result.ToolCalls)
+	}
+	if statusRequests.Load() == 0 || messageRequests.Load() == 0 {
+		t.Fatalf("server recovery requests: status=%d messages=%d", statusRequests.Load(), messageRequests.Load())
+	}
+}
+
+func TestOpenCodeAttachedTurnRecoveryPreservesProviderError(t *testing.T) {
+	env := append(openCodeFakeClient(t, "unfinished"), "OPENROUTER_API_KEY=recovery-secret")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/harness/turn":
+			w.WriteHeader(http.StatusOK)
+		case "/session/status":
+			_, _ = io.WriteString(w, `{}`)
+		case "/session/ses-123/message":
+			_, _ = io.WriteString(w, `[{"info":{"id":"message-1","role":"assistant","error":{"data":{"message":"provider unavailable: recovery-secret"}}},"parts":[{"id":"finish-1","sessionID":"ses-123","messageID":"message-1","type":"step-finish","reason":"stop","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}]}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	session := &openCodeSession{
+		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(),
+		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
+	}
+	installOpenCodeSessionSandbox(t, session)
+	_, err := session.run(t.Context(), "solve", &RunResult{Arm: ArmBaseline}, "")
+	if err == nil || !strings.Contains(err.Error(), "provider unavailable") {
+		t.Fatalf("recovered provider error = %v", err)
+	}
+	if strings.Contains(err.Error(), "recovery-secret") {
+		t.Fatalf("recovered provider error leaked credential: %v", err)
+	}
+}
+
+func TestOpenCodeAttachedTurnRecoveryExcludesPriorAssistantUsage(t *testing.T) {
+	env := openCodeFakeClient(t, "unfinished")
+	var messageRequests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/session/ses-123", "/harness/turn":
+			w.WriteHeader(http.StatusOK)
+		case "/session/status":
+			_, _ = io.WriteString(w, `{}`)
+		case "/session/ses-123/message":
+			if messageRequests.Add(1) == 1 {
+				_, _ = io.WriteString(w, `[{"info":{"id":"previous","role":"assistant"},"parts":[{"id":"previous-finish","sessionID":"ses-123","messageID":"previous","type":"step-finish","reason":"stop","tokens":{"input":100,"output":200,"reasoning":300,"cache":{"read":400,"write":500}}}]}]`)
+				return
+			}
+			_, _ = io.WriteString(w, `[{"info":{"id":"previous","role":"assistant"},"parts":[{"id":"previous-finish","sessionID":"ses-123","messageID":"previous","type":"step-finish","reason":"stop","tokens":{"input":100,"output":200,"reasoning":300,"cache":{"read":400,"write":500}}}]},{"info":{"id":"message-1","role":"assistant"},"parts":[{"id":"finish-1","sessionID":"ses-123","messageID":"message-1","type":"step-finish","reason":"stop","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}]}]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	session := &openCodeSession{
+		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(), sessionID: "ses-123",
+		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
+	}
+	installOpenCodeSessionSandbox(t, session)
+	result := &RunResult{Arm: ArmBaseline}
+	_, err := session.run(t.Context(), "solve", result, "ses-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PromptTokens != 15 || result.OutputTokens != 4 || result.ReasoningTokens != 2 {
+		t.Fatalf("recovered current-turn usage = %+v", result)
+	}
+	if messageRequests.Load() != 2 {
+		t.Fatalf("message requests = %d, want snapshot and recovery", messageRequests.Load())
+	}
+}
+
+func TestOpenCodeAttachedTurnRecoveryRejectsIdleWithoutTerminalUsage(t *testing.T) {
+	env := openCodeFakeClient(t, "unfinished")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/harness/turn":
+			w.WriteHeader(http.StatusOK)
+		case "/session/status":
+			_, _ = io.WriteString(w, `{}`)
+		case "/session/ses-123/message":
+			_, _ = io.WriteString(w, `[]`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	session := &openCodeSession{
+		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(),
+		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
+	}
+	installOpenCodeSessionSandbox(t, session)
+	result := &RunResult{Arm: ArmBaseline}
+	_, err := session.run(t.Context(), "solve", result, "")
+	if err == nil || !strings.Contains(err.Error(), "reached idle without complete terminal token usage") {
+		t.Fatalf("idle recovery error = %v", err)
+	}
+	if result.toolObservationState != ToolObservationPartial || result.PromptTokens != 0 || result.OutputTokens != 0 {
+		t.Fatalf("idle recovery result = %+v", result)
+	}
 }
 
 type openCodeAttachObservation struct {
@@ -129,6 +277,17 @@ func openCodeFakeClient(t *testing.T, mode string) []string {
 	}
 }
 
+func installOpenCodeSessionSandbox(t *testing.T, session *openCodeSession) {
+	t.Helper()
+	binDir := t.TempDir()
+	installPassthroughOpenCodeSandbox(t, binDir)
+	session.sandboxPath = filepath.Join(binDir, "sandbox-exec")
+	session.profilePath = filepath.Join(t.TempDir(), "session.sb")
+	if err := os.WriteFile(session.profilePath, []byte("(version 1)\n(deny default)\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenCodeAttachedSessionFailureIsExplicit(t *testing.T) {
 	t.Run("missing session", TestOpenCodeMissingSessionFails)
 	t.Run("changed session", openCodeChangedSessionFails)
@@ -144,10 +303,11 @@ func TestOpenCodeSessionLoopbackRuleIsPortScoped(t *testing.T) {
 	}
 	text := string(profile)
 	if !strings.Contains(text, `(allow network-bind (local tcp "localhost:40123"))`) ||
-		!strings.Contains(text, `(allow network-inbound (local tcp "localhost:40123"))`) {
-		t.Fatalf("profile does not grant bind and inbound on the selected local TCP port: %s", text)
+		!strings.Contains(text, `(allow network-inbound (local tcp "localhost:40123"))`) ||
+		!strings.Contains(text, `(allow network-outbound (remote tcp "localhost:40123"))`) {
+		t.Fatalf("profile does not grant the selected local TCP server port: %s", text)
 	}
-	if strings.Contains(text, "(allow network-outbound") || strings.Contains(text, "localhost:*") {
+	if strings.Contains(text, `(remote tcp "localhost:*")`) || strings.Contains(text, `(remote ip "*")`) || strings.Contains(text, `(remote tcp "192.168.1.122:1234")`) || strings.Contains(text, "(allow network-outbound)") {
 		t.Fatalf("profile widened network access: %s", text)
 	}
 	for _, invalid := range []string{"", "0", "65536", "abc"} {
@@ -192,6 +352,8 @@ func newOpenCodeAttachedTestServer(t *testing.T) (*httptest.Server, *openCodeAtt
 		case "/session/ses-123":
 			observation.sessionChecks++
 			w.WriteHeader(http.StatusOK)
+		case "/session/ses-123/message":
+			_, _ = io.WriteString(w, `[]`)
 		case "/harness/turn":
 			observation.turnRequests++
 			body, err := io.ReadAll(r.Body)
@@ -274,6 +436,7 @@ func TestOpenCodeEmptyStreamFails(t *testing.T) {
 		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(),
 		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
 	}
+	installOpenCodeSessionSandbox(t, session)
 	_, err := session.run(context.Background(), "initial", &RunResult{Arm: ArmBaseline}, "")
 	if err == nil || !strings.Contains(err.Error(), "session ID") {
 		t.Fatalf("empty stream error = %v, want explicit missing-session EOF failure", err)
@@ -290,6 +453,7 @@ func TestOpenCodeCanceledTurnFails(t *testing.T) {
 		done: make(chan struct{}), serverURL: server.URL, workDir: t.TempDir(),
 		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline, env: env,
 	}
+	installOpenCodeSessionSandbox(t, session)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	_, err := session.run(ctx, "initial", &RunResult{Arm: ArmBaseline}, "")
@@ -409,6 +573,47 @@ exit 23`
 	}
 }
 
+func TestOpenCodeProviderReusesPreparedConfigurationAtLaunch(t *testing.T) {
+	root := t.TempDir()
+	goPath, lookupErr := exec.LookPath("go")
+	if lookupErr != nil {
+		t.Fatal(lookupErr)
+	}
+	executableDir := filepath.Join(root, "bin")
+	if mkdirErr := os.Mkdir(executableDir, 0o750); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	if symlinkErr := os.Symlink(goPath, filepath.Join(executableDir, "go")); symlinkErr != nil {
+		t.Fatal(symlinkErr)
+	}
+	t.Setenv("PATH", executableDir)
+	workspace := filepath.Join(root, "fixture")
+	if mkdirErr := os.Mkdir(workspace, 0o750); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	runner := NewRunner(filepath.Join(root, ".scratch", "benchmarks"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
+	provider := &openCodeProvider{runner: runner}
+	target := Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}
+	if prepErr := provider.prepareFixture(t.Context(), workspace, target, ArmBaseline, false); prepErr != nil {
+		t.Fatal(prepErr)
+	}
+	configPath := filepath.Join(workspace, ".scratch", "opencode", "opencode.json")
+	before, beforeErr := os.Stat(configPath)
+	if beforeErr != nil {
+		t.Fatal(beforeErr)
+	}
+	if _, runErr := provider.run(t.Context(), workspace, target, "hi", &RunResult{Arm: ArmBaseline}, ""); runErr == nil || !strings.Contains(runErr.Error(), "locate OpenCode executable") {
+		t.Fatalf("expected launch failure after preparation, got %v", runErr)
+	}
+	after, afterErr := os.Stat(configPath)
+	if afterErr != nil {
+		t.Fatal(afterErr)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatal("provider recreated prepared configuration during task turn")
+	}
+}
+
 func assertOpenCodeSessionIDFailure(t *testing.T, mode string) {
 	t.Helper()
 	env := openCodeFakeClient(t, mode)
@@ -425,6 +630,7 @@ func assertOpenCodeSessionIDFailure(t *testing.T, mode string) {
 		target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, arm: ArmBaseline,
 		env: env, sessionID: "ses-123",
 	}
+	installOpenCodeSessionSandbox(t, session)
 	_, err := session.run(context.Background(), "follow-up", &RunResult{Arm: ArmBaseline}, "ses-123")
 	if err == nil {
 		t.Fatal("session identity change unexpectedly succeeded")
@@ -464,6 +670,8 @@ func serveOpenCodeUsageHelper(args []string) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/global/health":
 			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/message"):
+			_, _ = io.WriteString(w, `[]`)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/session/"):
 			w.WriteHeader(http.StatusOK)
 		case r.Method == http.MethodPost && (r.URL.Path == "/instance/dispose" || r.URL.Path == "/harness/turn"):

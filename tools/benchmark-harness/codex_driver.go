@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/gocache"
 	"semedit/internal/mcp"
 	"strconv"
 	"strings"
@@ -231,84 +230,6 @@ func codexMCPStartupMetrics(result json.RawMessage) *MCPStartupMetrics {
 	return envelope.StructuredContent.SessionMetrics
 }
 
-func appendToolCall(res *RunResult, call ToolCall) int {
-	res.ToolCalls = append(res.ToolCalls, call)
-	res.ToolsUsed = append(res.ToolsUsed, call.Name)
-	return len(res.ToolCalls) - 1
-}
-
-func applyMCPStartupMetrics(res *RunResult, metrics *MCPStartupMetrics) {
-	if metrics == nil {
-		return
-	}
-	if res.MCPServerStartToInitialize == nil {
-		value := time.Duration(metrics.ServerStartToInitializeMS) * time.Millisecond
-		res.MCPServerStartToInitialize = &value
-	}
-	if res.MCPInitializeToFirstSemanticCall == nil {
-		value := time.Duration(metrics.InitializeToFirstSemanticCallMS) * time.Millisecond
-		res.MCPInitializeToFirstSemanticCall = &value
-	}
-}
-
-func refreshMCPVerified(res *RunResult) {
-	res.MCPVerified = false
-	for _, call := range res.ToolCalls {
-		if isSemanticTool(call.Name, call.Server) && call.TransportStatus == ToolCallStatusSucceeded {
-			res.MCPVerified = true
-			return
-		}
-	}
-}
-
-func isSemanticTool(name, server string) bool {
-	cleanServer := strings.ToLower(strings.Trim(server, "\""))
-	return cleanServer == "semedit" || strings.HasPrefix(semanticToolBaseName(name), "semantic_")
-}
-
-func hasJSONValue(raw json.RawMessage) bool {
-	value := strings.TrimSpace(string(raw))
-	return value != "" && value != "null"
-}
-
-func jsonToolFailure(raw json.RawMessage) string {
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return compactToolFailure(string(raw))
-	}
-	return compactToolFailure(toolFailureText(value))
-}
-
-func toolFailureText(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case []any:
-		for _, item := range typed {
-			if text := toolFailureText(item); text != "" {
-				return text
-			}
-		}
-	case map[string]any:
-		for _, key := range []string{"error", "message", "text", "content", "result"} {
-			if item, ok := typed[key]; ok {
-				if text := toolFailureText(item); text != "" {
-					return text
-				}
-			}
-		}
-	}
-	return ""
-}
-
-func compactToolFailure(message string) string {
-	message = strings.Join(strings.Fields(message), " ")
-	if len(message) > 512 {
-		return message[:512]
-	}
-	return message
-}
-
 func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
 	args := []string{"exec"}
 	if resumeID == "" {
@@ -493,53 +414,6 @@ func (r *Runner) codexMCPOverride(arm ArmType, workDir string) (string, error) {
 	}
 }
 
-func fixtureGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
-	return gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
-}
-
-func runSemeditVerifyWarmup(ctx context.Context, workDir, file, binaryPath string) (time.Duration, error) {
-	if !filepath.IsLocal(filepath.FromSlash(file)) {
-		return 0, fmt.Errorf("prewarm verify file %q must be fixture-local", file)
-	}
-	env, err := fixtureGoEnvironment(ctx, workDir)
-	if err != nil {
-		return 0, fmt.Errorf("prepare prewarm Go environment: %w", err)
-	}
-	for _, subdir := range []string{"build", "mod"} {
-		cacheDir := filepath.Join(workDir, ".scratch", "go", subdir)
-		entries, readErr := os.ReadDir(cacheDir)
-		if readErr != nil {
-			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, readErr)
-		}
-		if len(entries) != 0 {
-			return 0, fmt.Errorf("prewarm %s cache is not empty in %s", subdir, cacheDir)
-		}
-	}
-	// #nosec G204 -- binaryPath is the repository-owned semedit-next binary selected by the runner.
-	cmd := exec.CommandContext(ctx, binaryPath, "verify", "--file", filepath.FromSlash(file), "--language", "go", "--check-only")
-	cmd.Dir = workDir
-	cmd.Env = env
-	started := time.Now()
-	output, err := cmd.CombinedOutput()
-	duration := time.Since(started)
-	if err != nil {
-		return duration, fmt.Errorf("prewarm semedit verify: %w: %s", err, boundedDiagnostic(output, 2048))
-	}
-	return duration, nil
-}
-
-func canonicalFixtureRoot(workDir string) (string, error) {
-	absoluteRoot, err := filepath.Abs(workDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve fixture root %q: %w", workDir, err)
-	}
-	canonicalRoot, err := filepath.EvalSymlinks(absoluteRoot)
-	if err != nil {
-		return "", fmt.Errorf("canonicalize fixture root %q: %w", absoluteRoot, err)
-	}
-	return filepath.Clean(canonicalRoot), nil
-}
-
 func codexMCPGoEnvironmentOverride() string {
 	return `mcp_servers.semedit.env_vars=["GOENV","GOCACHE","GOMODCACHE","GOTMPDIR","GOBIN","GOPATH","GOFLAGS","GOWORK"]`
 }
@@ -613,4 +487,62 @@ func codexWaitFailure(ctx context.Context, waitErr error, signaled bool, stderr 
 		return fmt.Errorf("run codex: %w%s: %s", waitErr, terminationDetails, diagnostic)
 	}
 	return fmt.Errorf("run codex: %w%s", waitErr, terminationDetails)
+}
+
+type codexProvider struct {
+	runner  *Runner
+	server  *codexAppServer
+	workDir string
+	target  Target
+	arm     ArmType
+}
+
+func (p *codexProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
+	if p.server != nil {
+		if workDir != p.workDir || target != p.target || result.Arm != p.arm {
+			return resumeID, fmt.Errorf("codex follow-up changed the original workspace, target, or arm")
+		}
+		if resumeID == "" || resumeID != p.server.threadID {
+			return resumeID, fmt.Errorf("codex follow-up thread %q does not match the original thread %q", resumeID, p.server.threadID)
+		}
+		return p.server.run(ctx, prompt, result)
+	}
+	if resumeID != "" {
+		return resumeID, fmt.Errorf("cannot continue Codex thread %q without its live app-server", resumeID)
+	}
+	server, err := newCodexAppServer(p.runner, workDir, target, result.Arm)
+	if err != nil {
+		return "", err
+	}
+	p.server = server
+	p.workDir, p.target, p.arm = workDir, target, result.Arm
+	return p.server.run(ctx, prompt, result)
+}
+
+func (p *codexProvider) close() error {
+	if p.server == nil {
+		return nil
+	}
+	return p.server.close()
+}
+
+func (p *codexProvider) prepareFixture(_ context.Context, workDir string, _ Target, _ ArmType, external bool) error {
+	if external {
+		return nil
+	}
+	return writeBenchmarkAGENTSOverride(workDir)
+}
+
+// writeBenchmarkAGENTSOverride confines inherited Codex instructions to the synthetic fixture.
+func writeBenchmarkAGENTSOverride(workDir string) error {
+	path := filepath.Join(workDir, "AGENTS.override.md")
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("fixture already defines reserved %s", filepath.Base(path))
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect fixture instruction override: %w", err)
+	}
+	if err := prepareRuntimeLayout(workDir, nil, map[string][]byte{"AGENTS.override.md": []byte(benchmarkAGENTSOverride)}); err != nil {
+		return fmt.Errorf("write fixture instruction override: %w", err)
+	}
+	return nil
 }

@@ -305,3 +305,24 @@ done
 		t.Fatal("failed Agy session process was not reaped")
 	}
 }
+
+func TestExecuteAgentAgyNoOpDoesNotGradeRuntimeConfiguration(t *testing.T) {
+	fixture := newAgyMultiTurnFixture(t)
+	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := fixture.session.runner.ExecuteAgent(t.Context(), AgentExecution{
+		Task: task, Target: fixture.session.target, Arm: ArmBaseline, Variant: "small", Prompt: task.Metadata.Instruction,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("harness configuration counted as agent work: %+v", result)
+	}
+}

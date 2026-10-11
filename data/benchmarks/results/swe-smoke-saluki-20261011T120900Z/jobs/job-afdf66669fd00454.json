@@ -1,0 +1,693 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-afdf66669fd00454",
+    "pair_id": "pair-b12a599ee2a89be4",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "target": {
+      "harness": "opencode",
+      "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "followups": [
+      "Allow callers to tune the connection retry schedule beyond its maximum delay, including the initial delay, growth factor, randomization, and minimum time allowed for a connection attempt. Preserve the existing default behavior for callers that do not opt in.",
+      "Expose these settings through a public connection-parameter value and a dial option, and ensure the selected parameters control both retry delays and the minimum connection-attempt timeout. Keep the existing backoff configuration options working for compatibility.",
+      "Add grpc.ConnectParams with BackoffBaseDelay, BackoffMultiplier, BackoffJitter, BackoffMaxDelay, and MinConnectTimeout, and wire grpc.WithConnectParams into the dial options and retry strategy. Keep defaults equivalent to the current behavior, retain the legacy WithBackoffConfig and WithBackoffMaxDelay behavior while marking those APIs deprecated, and replace fixed internal backoff configurations with internal/backoff.NewExponentialBuilder and its fluent StrategyBuilder methods. Update the backoff users in ClientConn, health checking, DNS resolution, grpclb, and xDS to use the new strategy API."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 453059,
+        "comparison_pair_id": "pair-b12a599ee2a89be4",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 2319,
+        "initial_context_tokens": 6766,
+        "initial_load_turns": 10,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 453059,
+            "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+            "initial_load_turns": 10,
+            "internal_turns": 31,
+            "mcp_load_turns": 0,
+            "output_tokens": 11570,
+            "process_start_to_first_event_ms": 12581,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+            "prompt_tokens": 468473,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "pattern": "**/backoff*.go"
+                },
+                "functional_status": "succeeded",
+                "name": "glob",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "BackoffConfig"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/backoff.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/internal/backoff/backoff.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/dialoptions.go",
+                  "limit": 80,
+                  "offset": 230
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git log --oneline -10 \u0026\u0026 git status",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn_test.go",
+                  "limit": 60,
+                  "offset": 810
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "include": "*.go",
+                  "pattern": "baseDelay|factor|jitter"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "internal/backoff/*"
+                },
+                "functional_status": "succeeded",
+                "name": "glob",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn.go",
+                  "limit": 25,
+                  "offset": 225
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/backoff.go",
+                  "newString": "// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay:      120 * time.Second,\n\tBaseDelay:     1 * time.Second,\n\tJitter:        0.2,\n\tBackoffFactor: 1.6,\n}\n\n// BackoffConfig defines the parameters for the default gRPC backoff strategy.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n\t// BaseDelay is the base delay for backoff.\n\tBaseDelay time.Duration\n\t// Jitter is the randomize factor for backoff delay.\n\tJitter float64\n\t// BackoffFactor is the factor for backoff delay.\n\tBackoffFactor float64\n}",
+                  "oldString": "// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay: 120 * time.Second,\n}\n\n// BackoffConfig defines the parameters for the default gRPC backoff strategy.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/internal/backoff/backoff.go",
+                  "newString": "// Exponential implements exponential backoff algorithm as defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\ntype Exponential struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n\t// BaseDelay is the base delay for backoff.\n\tBaseDelay time.Duration\n\t// Jitter is the randomize factor for backoff delay.\n\tJitter float64\n\t// BackoffFactor is the factor for backoff delay.\n\tBackoffFactor float64\n}\n\n// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won't operate in lockstep.\n\tbackoff *= 1 + bc.Jitter*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+                  "oldString": "const (\n\t// baseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tbaseDelay = 1.0 * time.Second\n\t// factor is applied to the backoff after each retry.\n\tfactor = 1.6\n\t// jitter provides a range to randomize backoff delays.\n\tjitter = 0.2\n)\n\n// Exponential implements exponential backoff algorithm as defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\ntype Exponential struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}\n\n// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn baseDelay\n\t}\n\tbackoff, max := float64(baseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= factor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won't operate in lockstep.\n\tbackoff *= 1 + jitter*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/dialoptions.go",
+                  "newString": "// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tMaxDelay:      b.MaxDelay,\n\t\tBaseDelay:     b.BaseDelay,\n\t\tJitter:        b.Jitter,\n\t\tBackoffFactor: b.BackoffFactor,\n\t})\n}",
+                  "oldString": "// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\n//\n// Use WithBackoffMaxDelay until more parameters on BackoffConfig are opened up\n// for use.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn.go",
+                  "newString": "\tif cc.dopts.bs == nil {\n\t\tcc.dopts.bs = backoff.Exponential{\n\t\t\tMaxDelay:      DefaultBackoffConfig.MaxDelay,\n\t\t\tBaseDelay:     DefaultBackoffConfig.BaseDelay,\n\t\t\tJitter:        DefaultBackoffConfig.Jitter,\n\t\t\tBackoffFactor: DefaultBackoffConfig.BackoffFactor,\n\t\t}\n\t}",
+                  "oldString": "\tif cc.dopts.bs == nil {\n\t\tcc.dopts.bs = backoff.Exponential{\n\t\t\tMaxDelay: DefaultBackoffConfig.MaxDelay,\n\t\t}\n\t}"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn_test.go",
+                  "newString": "\texpectedValue := backoff.Exponential{\n\t\tMaxDelay:      expected.MaxDelay,\n\t\tBaseDelay:     expected.BaseDelay,\n\t\tJitter:        expected.Jitter,\n\t\tBackoffFactor: expected.BackoffFactor,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}",
+                  "oldString": "\texpectedValue := backoff.Exponential{\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "include": "*.go",
+                  "pattern": "backoff.Exponential|DefaultBackoffConfig"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "go version \u0026\u0026 go build ./...",
+                  "timeout": 300000,
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls vendor 2\u003e/dev/null; go env GOPROXY GOFLAGS GOMODCACHE; ls $(go env GOMODCACHE) 2\u003e/dev/null | head",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/go/mod"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/go.mod"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls -d /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/*/vendor 2\u003e/dev/null; ls /Users/alessandro/go/pkg 2\u003e/dev/null | head; ls ~/go 2\u003e/dev/null | head"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "nslookup proxy.golang.org 2\u003e\u00261 | head -5; nslookup github.com 2\u003e\u00261 | head -5"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls go.sum 2\u003e/dev/null; ls internal/grpcrand/",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "go build ./internal/backoff/ 2\u003e\u00261 | head -20",
+                  "timeout": 120000,
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "gofmt -l backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "gofmt -d internal/backoff/backoff.go | head -40",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "which -a git 2\u003e/dev/null; ls /opt/homebrew/bin/git /usr/local/bin/git 2\u003e/dev/null"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "gofmt -d clientconn.go | head -60",
+                  "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "content": "package main\n\nimport (\n\t\"fmt\"\n\t\"math/rand\"\n\t\"testing\"\n\t\"time\"\n)\n\ntype Exponential struct {\n\tMaxDelay      time.Duration\n\tBaseDelay     time.Duration\n\tJitter        float64\n\tBackoffFactor float64\n}\n\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + bc.Jitter*(rand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}\n\nfunc TestDefault(t *testing.T) {\n\t// Default values must match old behavior: base 1s, factor 1.6, jitter 0.2, max 120s.\n\tbc := Exponential{\n\t\tMaxDelay:      120 * time.Second,\n\t\tBaseDelay:     1 * time.Second,\n\t\tJitter:        0.2,\n\t\tBackoffFactor: 1.6,\n\t}\n\tif d := bc.Backoff(0); d != time.Second {\n\t\tt.Fatalf(\"Backoff(0) = %v, want %v\", d, time.Second)\n\t}\n\tif d := bc.Backoff(1); d != time.Second {\n\t\tt.Fatalf(\"Backoff(1) = %v, want %v\", d, time.Second)\n\t}\n\t// After many retries, delay must be bounded by MaxDelay (with jitter).\n\tfor i := 100; i \u003c 1000; i++ {\n\t\td := bc.Backoff(i)\n\t\tif d \u003e 120*time.Second*1.2+time.Second || d \u003c= 0 {\n\t\t\tt.Fatalf(\"Backoff(%d) = %v, want in (0, 144s]\", i, d)\n\t\t}\n\t}\n}\n\nfunc TestCustom(t *testing.T) {\n\t// Aggressive retry: base 100ms, factor 1.1, no jitter, max 1s.\n\tbc := Exponential{\n\t\tMaxDelay:      1 * time.Second,\n\t\tBaseDelay:     100 * time.Millisecond,\n\t\tJitter:        0,\n\t\tBackoffFactor: 1.1,\n\t}\n\tif d := bc.Backoff(0); d != 100*time.Millisecond {\n\t\tt.Fatalf(\"Backoff(0) = %v, want 100ms\", d)\n\t}\n\tif d := bc.Backoff(1); d != 100*time.Millisecond {\n\t\tt.Fatalf(\"Backoff(1) = %v, want 100ms\", d)\n\t}\n\t// 100ms * 1.1^10 ≈ 259ms\n\tif d := bc.Backoff(10); d != time.Duration(float64(100*time.Millisecond)*(1.1**10)) {\n\t\tt.Fatalf(\"Backoff(10) = %v, want %v\", d, time.Duration(float64(100*time.Millisecond)*(1.1**10)))\n\t}\n\t// Bounded by max delay.\n\tif d := bc.Backoff(100); d != time.Second {\n\t\tt.Fatalf(\"Backoff(100) = %v, want 1s\", d)\n\t}\n}\n\nfunc TestZeroBase(t *testing.T) {\n\tbc := Exponential{MaxDelay: time.Second, BaseDelay: 0, Jitter: 0, BackoffFactor: 1.6}\n\tif d := bc.Backoff(5); d != 0 {\n\t\tt.Fatalf(\"Backoff(5) = %v, want 0\", d)\n\t}\n}\n\nfunc TestNegativeResult(t *testing.T) {\n\t// Huge jitter with tiny base can go negative; result must clamp to 0.\n\tbc := Exponential{MaxDelay: time.Millisecond, BaseDelay: time.Millisecond, Jitter: 10, BackoffFactor: 1.6}\n\td := bc.Backoff(1)\n\tif d \u003c 0 {\n\t\tt.Fatalf(\"Backoff(1) = %v, want \u003e= 0\", d)\n\t}\n}\n\nfunc main() {\n\tr := rand.New(rand.NewSource(1))\n\t_ = r\n\tif err := func() error {\n\t\treturn nil\n\t}(); err != nil {\n\t\tfmt.Println(err)\n\t}\n}\n",
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/backoff_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "write",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "rm /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/backoff_test.go \u0026\u0026 mkdir -p /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest \u0026\u0026 cd /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest \u0026\u0026 printf 'package btest\\n\\nimport (\\n\\t\"testing\"\\n\\t\"time\"\\n)\\n\\ntype Exponential struct {\\n\\tMaxDelay      time.Duration\\n\\tBaseDelay     time.Duration\\n\\tJitter        float64\\n\\tBackoffFactor float64\\n}\\n\\nfunc (bc Exponential) Backoff(retries int) time.Duration {\\n\\tif retries == 0 {\\n\\t\\treturn bc.BaseDelay\\n\\t}\\n\\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\\n\\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\\n\\t\\tbackoff *= bc.BackoffFactor\\n\\t\\tretries--\\n\\t}\\n\\tif backoff \u003e max {\\n\\t\\tbackoff = max\\n\\t}\\n\\tbackoff *= 1 + bc.Jitter*(2*0.5-1)*0 // placeholder\\n\\treturn time.Duration(backoff)\\n}\\n' \u003e /dev/null"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "content": "package btest\n\nimport (\n\t\"testing\"\n\t\"time\"\n)\n\ntype Exponential struct {\n\tMaxDelay      time.Duration\n\tBaseDelay     time.Duration\n\tJitter        float64\n\tBackoffFactor float64\n}\n\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + bc.Jitter*(0.999*2-1)*0.5\n\t_ = backoff\n\treturn time.Duration(0)\n}\n\nfunc TestX(t *testing.T) {}\n",
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest/backoff_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "write",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 15414,
+            "wall_clock_ms": 299810
+          }
+        ],
+        "internal_turns": 31,
+        "job_id": "job-afdf66669fd00454",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "opencode_exit_code": -1,
+        "oracle": null,
+        "output_tokens": 11570,
+        "process_start_to_first_event_ms": 12581,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+        "prompt_tokens": 468473,
+        "provenance": {
+          "provider_transport": "opencode_attached_server_v1",
+          "retained_working_directory": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "harness": "opencode",
+          "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "arguments": {
+              "pattern": "**/backoff*.go"
+            },
+            "functional_status": "succeeded",
+            "name": "glob",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "BackoffConfig"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/backoff.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/internal/backoff/backoff.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/dialoptions.go",
+              "limit": 80,
+              "offset": 230
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git log --oneline -10 \u0026\u0026 git status",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn_test.go",
+              "limit": 60,
+              "offset": 810
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "include": "*.go",
+              "pattern": "baseDelay|factor|jitter"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "internal/backoff/*"
+            },
+            "functional_status": "succeeded",
+            "name": "glob",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn.go",
+              "limit": 25,
+              "offset": 225
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/backoff.go",
+              "newString": "// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay:      120 * time.Second,\n\tBaseDelay:     1 * time.Second,\n\tJitter:        0.2,\n\tBackoffFactor: 1.6,\n}\n\n// BackoffConfig defines the parameters for the default gRPC backoff strategy.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n\t// BaseDelay is the base delay for backoff.\n\tBaseDelay time.Duration\n\t// Jitter is the randomize factor for backoff delay.\n\tJitter float64\n\t// BackoffFactor is the factor for backoff delay.\n\tBackoffFactor float64\n}",
+              "oldString": "// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay: 120 * time.Second,\n}\n\n// BackoffConfig defines the parameters for the default gRPC backoff strategy.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/internal/backoff/backoff.go",
+              "newString": "// Exponential implements exponential backoff algorithm as defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\ntype Exponential struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n\t// BaseDelay is the base delay for backoff.\n\tBaseDelay time.Duration\n\t// Jitter is the randomize factor for backoff delay.\n\tJitter float64\n\t// BackoffFactor is the factor for backoff delay.\n\tBackoffFactor float64\n}\n\n// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won't operate in lockstep.\n\tbackoff *= 1 + bc.Jitter*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+              "oldString": "const (\n\t// baseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tbaseDelay = 1.0 * time.Second\n\t// factor is applied to the backoff after each retry.\n\tfactor = 1.6\n\t// jitter provides a range to randomize backoff delays.\n\tjitter = 0.2\n)\n\n// Exponential implements exponential backoff algorithm as defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\ntype Exponential struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}\n\n// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn baseDelay\n\t}\n\tbackoff, max := float64(baseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= factor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won't operate in lockstep.\n\tbackoff *= 1 + jitter*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/dialoptions.go",
+              "newString": "// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tMaxDelay:      b.MaxDelay,\n\t\tBaseDelay:     b.BaseDelay,\n\t\tJitter:        b.Jitter,\n\t\tBackoffFactor: b.BackoffFactor,\n\t})\n}",
+              "oldString": "// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\n//\n// Use WithBackoffMaxDelay until more parameters on BackoffConfig are opened up\n// for use.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn.go",
+              "newString": "\tif cc.dopts.bs == nil {\n\t\tcc.dopts.bs = backoff.Exponential{\n\t\t\tMaxDelay:      DefaultBackoffConfig.MaxDelay,\n\t\t\tBaseDelay:     DefaultBackoffConfig.BaseDelay,\n\t\t\tJitter:        DefaultBackoffConfig.Jitter,\n\t\t\tBackoffFactor: DefaultBackoffConfig.BackoffFactor,\n\t\t}\n\t}",
+              "oldString": "\tif cc.dopts.bs == nil {\n\t\tcc.dopts.bs = backoff.Exponential{\n\t\t\tMaxDelay: DefaultBackoffConfig.MaxDelay,\n\t\t}\n\t}"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/clientconn_test.go",
+              "newString": "\texpectedValue := backoff.Exponential{\n\t\tMaxDelay:      expected.MaxDelay,\n\t\tBaseDelay:     expected.BaseDelay,\n\t\tJitter:        expected.Jitter,\n\t\tBackoffFactor: expected.BackoffFactor,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}",
+              "oldString": "\texpectedValue := backoff.Exponential{\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "include": "*.go",
+              "pattern": "backoff.Exponential|DefaultBackoffConfig"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "go version \u0026\u0026 go build ./...",
+              "timeout": 300000,
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls vendor 2\u003e/dev/null; go env GOPROXY GOFLAGS GOMODCACHE; ls $(go env GOMODCACHE) 2\u003e/dev/null | head",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/go/mod"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/go.mod"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls -d /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/*/vendor 2\u003e/dev/null; ls /Users/alessandro/go/pkg 2\u003e/dev/null | head; ls ~/go 2\u003e/dev/null | head"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "nslookup proxy.golang.org 2\u003e\u00261 | head -5; nslookup github.com 2\u003e\u00261 | head -5"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls go.sum 2\u003e/dev/null; ls internal/grpcrand/",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "go build ./internal/backoff/ 2\u003e\u00261 | head -20",
+              "timeout": 120000,
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "gofmt -l backoff.go dialoptions.go clientconn.go clientconn_test.go internal/backoff/backoff.go",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "gofmt -d internal/backoff/backoff.go | head -40",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "which -a git 2\u003e/dev/null; ls /opt/homebrew/bin/git /usr/local/bin/git 2\u003e/dev/null"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "gofmt -d clientconn.go | head -60",
+              "workdir": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "content": "package main\n\nimport (\n\t\"fmt\"\n\t\"math/rand\"\n\t\"testing\"\n\t\"time\"\n)\n\ntype Exponential struct {\n\tMaxDelay      time.Duration\n\tBaseDelay     time.Duration\n\tJitter        float64\n\tBackoffFactor float64\n}\n\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + bc.Jitter*(rand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}\n\nfunc TestDefault(t *testing.T) {\n\t// Default values must match old behavior: base 1s, factor 1.6, jitter 0.2, max 120s.\n\tbc := Exponential{\n\t\tMaxDelay:      120 * time.Second,\n\t\tBaseDelay:     1 * time.Second,\n\t\tJitter:        0.2,\n\t\tBackoffFactor: 1.6,\n\t}\n\tif d := bc.Backoff(0); d != time.Second {\n\t\tt.Fatalf(\"Backoff(0) = %v, want %v\", d, time.Second)\n\t}\n\tif d := bc.Backoff(1); d != time.Second {\n\t\tt.Fatalf(\"Backoff(1) = %v, want %v\", d, time.Second)\n\t}\n\t// After many retries, delay must be bounded by MaxDelay (with jitter).\n\tfor i := 100; i \u003c 1000; i++ {\n\t\td := bc.Backoff(i)\n\t\tif d \u003e 120*time.Second*1.2+time.Second || d \u003c= 0 {\n\t\t\tt.Fatalf(\"Backoff(%d) = %v, want in (0, 144s]\", i, d)\n\t\t}\n\t}\n}\n\nfunc TestCustom(t *testing.T) {\n\t// Aggressive retry: base 100ms, factor 1.1, no jitter, max 1s.\n\tbc := Exponential{\n\t\tMaxDelay:      1 * time.Second,\n\t\tBaseDelay:     100 * time.Millisecond,\n\t\tJitter:        0,\n\t\tBackoffFactor: 1.1,\n\t}\n\tif d := bc.Backoff(0); d != 100*time.Millisecond {\n\t\tt.Fatalf(\"Backoff(0) = %v, want 100ms\", d)\n\t}\n\tif d := bc.Backoff(1); d != 100*time.Millisecond {\n\t\tt.Fatalf(\"Backoff(1) = %v, want 100ms\", d)\n\t}\n\t// 100ms * 1.1^10 ≈ 259ms\n\tif d := bc.Backoff(10); d != time.Duration(float64(100*time.Millisecond)*(1.1**10)) {\n\t\tt.Fatalf(\"Backoff(10) = %v, want %v\", d, time.Duration(float64(100*time.Millisecond)*(1.1**10)))\n\t}\n\t// Bounded by max delay.\n\tif d := bc.Backoff(100); d != time.Second {\n\t\tt.Fatalf(\"Backoff(100) = %v, want 1s\", d)\n\t}\n}\n\nfunc TestZeroBase(t *testing.T) {\n\tbc := Exponential{MaxDelay: time.Second, BaseDelay: 0, Jitter: 0, BackoffFactor: 1.6}\n\tif d := bc.Backoff(5); d != 0 {\n\t\tt.Fatalf(\"Backoff(5) = %v, want 0\", d)\n\t}\n}\n\nfunc TestNegativeResult(t *testing.T) {\n\t// Huge jitter with tiny base can go negative; result must clamp to 0.\n\tbc := Exponential{MaxDelay: time.Millisecond, BaseDelay: time.Millisecond, Jitter: 10, BackoffFactor: 1.6}\n\td := bc.Backoff(1)\n\tif d \u003c 0 {\n\t\tt.Fatalf(\"Backoff(1) = %v, want \u003e= 0\", d)\n\t}\n}\n\nfunc main() {\n\tr := rand.New(rand.NewSource(1))\n\t_ = r\n\tif err := func() error {\n\t\treturn nil\n\t}(); err != nil {\n\t\tfmt.Println(err)\n\t}\n}\n",
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/backoff_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "write",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "rm /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/backoff_test.go \u0026\u0026 mkdir -p /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest \u0026\u0026 cd /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest \u0026\u0026 printf 'package btest\\n\\nimport (\\n\\t\"testing\"\\n\\t\"time\"\\n)\\n\\ntype Exponential struct {\\n\\tMaxDelay      time.Duration\\n\\tBaseDelay     time.Duration\\n\\tJitter        float64\\n\\tBackoffFactor float64\\n}\\n\\nfunc (bc Exponential) Backoff(retries int) time.Duration {\\n\\tif retries == 0 {\\n\\t\\treturn bc.BaseDelay\\n\\t}\\n\\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\\n\\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\\n\\t\\tbackoff *= bc.BackoffFactor\\n\\t\\tretries--\\n\\t}\\n\\tif backoff \u003e max {\\n\\t\\tbackoff = max\\n\\t}\\n\\tbackoff *= 1 + bc.Jitter*(2*0.5-1)*0 // placeholder\\n\\treturn time.Duration(backoff)\\n}\\n' \u003e /dev/null"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "content": "package btest\n\nimport (\n\t\"testing\"\n\t\"time\"\n)\n\ntype Exponential struct {\n\tMaxDelay      time.Duration\n\tBaseDelay     time.Duration\n\tJitter        float64\n\tBackoffFactor float64\n}\n\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.BaseDelay\n\t}\n\tbackoff, max := float64(bc.BaseDelay), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.BackoffFactor\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + bc.Jitter*(0.999*2-1)*0.5\n\t_ = backoff\n\treturn time.Duration(0)\n}\n\nfunc TestX(t *testing.T) {}\n",
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791720224916127000/.scratch/opencode/tmp/opencode/btest/backoff_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "write",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 31,
+        "tools_used": [
+          "glob",
+          "grep",
+          "read",
+          "read",
+          "read",
+          "bash",
+          "read",
+          "grep",
+          "glob",
+          "read",
+          "edit",
+          "edit",
+          "edit",
+          "edit",
+          "edit",
+          "grep",
+          "bash",
+          "bash",
+          "bash",
+          "read",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "write",
+          "bash",
+          "write"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 15414,
+        "variant": "small",
+        "wall_clock_ms": 299810
+      }
+    ],
+    "timestamp": "2026-10-11T12:08:44.956014Z"
+  }
+}

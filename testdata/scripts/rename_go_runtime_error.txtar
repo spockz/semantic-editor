@@ -1,0 +1,24 @@
+# A broken Go runtime must expose the subprocess diagnostic without modifying source.
+env GOROOT=$WORK/missing-go-runtime
+! exec semedit rename --file api/server.go --symbol Server.Start --to Serve
+stderr 'check Go diagnostics with gopls: .*go: cannot find GOROOT directory:'
+cmp api/server.go want/api/server.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Start() {}
+
+-- want/api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Start() {}
+

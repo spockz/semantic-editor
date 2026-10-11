@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +19,15 @@ import (
 	"sync"
 	"time"
 )
+
+type openCodePreparedRuntime struct {
+	workDir    string
+	target     Target
+	arm        ArmType
+	configPath string
+	configData []byte
+	env        []string
+}
 
 type openCodeSession struct {
 	mu           sync.Mutex
@@ -39,6 +49,8 @@ type openCodeSession struct {
 	sessionID    string
 	startedAt    time.Time
 	closed       bool
+	sandboxPath  string
+	profilePath  string
 }
 
 type boundedOpenCodeBuffer struct {
@@ -70,12 +82,46 @@ func (b *boundedOpenCodeBuffer) String() string {
 }
 
 func newOpenCodeSession(ctx context.Context, runner *Runner, workDir string, target Target, arm ArmType) (*openCodeSession, error) {
+	runtime, err := prepareOpenCodeRuntime(ctx, runner, workDir, target, arm)
+	if err != nil {
+		return nil, err
+	}
+	return newOpenCodeSessionWithPreparedRuntime(ctx, runner, workDir, target, arm, runtime)
+}
+
+func prepareOpenCodeRuntime(ctx context.Context, runner *Runner, workDir string, target Target, arm ArmType) (openCodePreparedRuntime, error) {
 	configPath, env, err := runner.openCodeEnvironment(ctx, workDir, arm, target)
 	if err != nil {
-		return nil, fmt.Errorf("prepare OpenCode environment: %w", err)
+		return openCodePreparedRuntime{}, fmt.Errorf("prepare OpenCode environment: %w", err)
 	}
 	model := openCodeProviderModel(target.Model)
 	if strings.HasPrefix(model, "openrouter/") && strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
+		return openCodePreparedRuntime{}, fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
+	}
+	// #nosec G304 -- configPath is generated inside the isolated fixture runtime directory.
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return openCodePreparedRuntime{}, fmt.Errorf("snapshot OpenCode configuration: %w", err)
+	}
+	return openCodePreparedRuntime{
+		workDir: workDir, target: target, arm: arm, configPath: configPath,
+		configData: append([]byte(nil), configData...), env: append([]string(nil), env...),
+	}, nil
+}
+
+func newOpenCodeSessionWithPreparedRuntime(ctx context.Context, runner *Runner, workDir string, target Target, arm ArmType, runtime openCodePreparedRuntime) (*openCodeSession, error) {
+	if runtime.workDir != workDir || runtime.target != target || runtime.arm != arm {
+		return nil, fmt.Errorf("prepared OpenCode runtime does not match session workspace, target, or arm")
+	}
+	configData, err := os.ReadFile(runtime.configPath)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot OpenCode configuration: %w", err)
+	}
+	if !bytes.Equal(configData, runtime.configData) {
+		return nil, fmt.Errorf("OpenCode configuration changed before server startup")
+	}
+	model := openCodeProviderModel(target.Model)
+	if strings.HasPrefix(model, "openrouter/") && strings.TrimSpace(environmentLookup(runtime.env, openRouterAPIKeyEnv)) == "" {
 		return nil, fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
 	}
 	openCodePath, err := exec.LookPath("opencode")
@@ -86,7 +132,11 @@ func newOpenCodeSession(ctx context.Context, runner *Runner, workDir string, tar
 	if err != nil {
 		return nil, err
 	}
-	sandboxPath, profilePath, err := runner.openCodeSessionSandboxProfile(workDir, openCodePath, openCodeModelBaseURL(target), port)
+	modelURL, err := runner.openCodeModelEndpointURL(target)
+	if err != nil {
+		return nil, err
+	}
+	sandboxPath, profilePath, err := runner.openCodeSessionSandboxProfile(workDir, openCodePath, modelURL, port)
 	if err != nil {
 		return nil, fmt.Errorf("prepare OpenCode filesystem containment: %w", err)
 	}
@@ -96,25 +146,19 @@ func newOpenCodeSession(ctx context.Context, runner *Runner, workDir string, tar
 	cmd.Cancel = func() error { return signalOpenCodeServerProcess(cmd, false) }
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Dir = workDir
-	cmd.Env = env
-	// #nosec G304 -- configPath is created under the isolated fixture state by openCodeEnvironment.
-	configData, err := os.ReadFile(configPath)
-	if err != nil {
-		serverCancel()
-		return nil, fmt.Errorf("snapshot OpenCode configuration: %w", err)
-	}
+	cmd.Env = append([]string(nil), runtime.env...)
 	server := &openCodeSession{
 		cmd: cmd, done: make(chan struct{}), stdout: &boundedOpenCodeBuffer{limit: maxOpenCodeStderrBytes},
 		stderr: &boundedOpenCodeBuffer{limit: maxOpenCodeStderrBytes}, serverURL: "http://" + address,
-		workDir: workDir, target: target, arm: arm, configPath: configPath, configData: configData, env: env,
-		serverCancel: serverCancel,
+		workDir: workDir, target: target, arm: arm, configPath: runtime.configPath, configData: append([]byte(nil), runtime.configData...), env: append([]string(nil), runtime.env...),
+		serverCancel: serverCancel, sandboxPath: sandboxPath, profilePath: profilePath,
 	}
 	configureOpenCodeServerProcess(cmd)
 	cmd.Stdout = server.stdout
 	cmd.Stderr = server.stderr
 	if err := cmd.Start(); err != nil {
 		serverCancel()
-		return nil, fmt.Errorf("start sandboxed OpenCode server using %s: %w", configPath, err)
+		return nil, fmt.Errorf("start sandboxed OpenCode server using %s: %w", runtime.configPath, err)
 	}
 	server.startedAt = time.Now()
 	go server.waitForServerExit()
@@ -362,8 +406,15 @@ func (s *openCodeSession) runAttached(ctx context.Context, prompt string, result
 	if err != nil {
 		return expectedSessionID, fmt.Errorf("locate OpenCode executable for attached turn: %w", err)
 	}
+	if s.sandboxPath == "" || s.profilePath == "" {
+		return expectedSessionID, fmt.Errorf("OpenCode attached turn has no sandbox profile")
+	}
+	priorMessages, err := s.snapshotAssistantMessages(ctx, workDir, expectedSessionID)
+	if err != nil {
+		return expectedSessionID, err
+	}
 	// #nosec G204 -- OpenCode is resolved from PATH and receives fixed flags plus the benchmark prompt.
-	cmd := exec.CommandContext(ctx, openCodePath, args...)
+	cmd := exec.CommandContext(ctx, s.sandboxPath, append([]string{"-f", s.profilePath, openCodePath}, args...)...)
 	cmd.Dir = workDir
 	cmd.Env = s.env
 	stdout, err := cmd.StdoutPipe()
@@ -373,12 +424,12 @@ func (s *openCodeSession) runAttached(ctx context.Context, prompt string, result
 	stderr := &boundedOpenCodeBuffer{limit: maxOpenCodeStderrBytes}
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
-		return expectedSessionID, fmt.Errorf("start attached OpenCode turn: %w", err)
+		return expectedSessionID, fmt.Errorf("start sandboxed attached OpenCode turn: %w", err)
 	}
-	return s.readAttachedTurn(ctx, cmd, stdout, stderr, result, expectedSessionID)
+	return s.readAttachedTurn(ctx, cmd, stdout, stderr, result, expectedSessionID, workDir, priorMessages)
 }
 
-func (s *openCodeSession) readAttachedTurn(ctx context.Context, cmd *exec.Cmd, stdout io.Reader, stderr *boundedOpenCodeBuffer, result *RunResult, expectedSessionID string) (string, error) {
+func (s *openCodeSession) readAttachedTurn(ctx context.Context, cmd *exec.Cmd, stdout io.Reader, stderr *boundedOpenCodeBuffer, result *RunResult, expectedSessionID, workDir string, priorMessages map[string]bool) (string, error) {
 	stream := readOpenCodeEventStream(stdout, result, s.sessionID)
 	waitErr := cmd.Wait()
 	if ctx.Err() != nil {
@@ -389,6 +440,11 @@ func (s *openCodeSession) readAttachedTurn(ctx context.Context, cmd *exec.Cmd, s
 		result.OpenCodeExitCode = &code
 	}
 	result.OpenCodeStderr = sanitizeOpenRouterDiagnostic(boundedDiagnostic([]byte(stderr.String()), maxOpenCodeStderrBytes), s.env)
+	if waitErr == nil && stream.sessionID != "" && len(stream.usage.starts) > 0 && openCodeStreamNeedsTerminalRecovery(stream) {
+		if err := s.recoverAttachedTurn(ctx, workDir, stream.sessionID, priorMessages, &stream, result); err != nil {
+			waitErr = err
+		}
+	}
 	metricsStartedAt := time.Time{}
 	if expectedSessionID == "" {
 		metricsStartedAt = s.startedAt
@@ -418,6 +474,160 @@ func (s *openCodeSession) readAttachedTurn(ctx context.Context, cmd *exec.Cmd, s
 		return stream.sessionID, fmt.Errorf("OpenCode attached turn emitted no valid task events")
 	}
 	return stream.sessionID, nil
+}
+
+func openCodeStreamNeedsTerminalRecovery(stream openCodeEventStream) bool {
+	return stream.validEvents > 0 && (!stream.usage.finished || len(stream.usage.starts) > len(stream.usage.steps))
+}
+
+func (s *openCodeSession) snapshotAssistantMessages(ctx context.Context, workDir, sessionID string) (map[string]bool, error) {
+	if sessionID == "" {
+		return map[string]bool{}, nil
+	}
+	messages, err := s.openCodeSessionMessages(ctx, workDir, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot OpenCode session %q messages before attached turn: %w", sessionID, err)
+	}
+	seen := make(map[string]bool, len(messages))
+	for _, message := range messages {
+		if message.Info.Role == "assistant" && message.Info.ID != "" {
+			seen[message.Info.ID] = true
+		}
+	}
+	return seen, nil
+}
+
+func (s *openCodeSession) recoverAttachedTurn(ctx context.Context, workDir, sessionID string, priorMessages map[string]bool, stream *openCodeEventStream, result *RunResult) error {
+	if err := s.waitForOpenCodeSessionIdle(ctx, workDir, sessionID); err != nil {
+		return err
+	}
+	messages, err := s.openCodeSessionMessages(ctx, workDir, sessionID)
+	if err != nil {
+		return fmt.Errorf("read completed OpenCode session %q messages: %w", sessionID, err)
+	}
+	for _, message := range messages {
+		if message.Info.Role != "assistant" || message.Info.ID == "" || priorMessages[message.Info.ID] {
+			continue
+		}
+		if message.Info.Error != nil {
+			recovered, err := json.Marshal(map[string]any{"type": "error", "error": message.Info.Error})
+			if err != nil {
+				return fmt.Errorf("encode recovered OpenCode provider error: %w", err)
+			}
+			consumeOpenCodeEvent(stream, result, recovered)
+		}
+		for _, part := range message.Parts {
+			if openCodeRecoveredPartAlreadyObserved(part, *stream) {
+				continue
+			}
+			recovered := map[string]any{"type": "message.part.updated", "properties": map[string]any{"sessionID": sessionID, "part": part}}
+			encoded, err := json.Marshal(recovered)
+			if err != nil {
+				return fmt.Errorf("encode recovered OpenCode message part: %w", err)
+			}
+			consumeOpenCodeEvent(stream, result, encoded)
+		}
+	}
+	if openCodeStreamNeedsTerminalRecovery(*stream) {
+		return fmt.Errorf("OpenCode session %q reached idle without complete terminal token usage", sessionID)
+	}
+	return nil
+}
+
+func openCodeRecoveredPartAlreadyObserved(part map[string]any, stream openCodeEventStream) bool {
+	// Tool parts retain their ID while their state changes, so replay them to upgrade
+	// a streamed running call to the completed server state.
+	if stringValue(part["type"]) == "tool" {
+		return false
+	}
+	id := stringValue(part["id"])
+	return id != "" && stream.partIDs[id]
+}
+
+type openCodeSessionMessage struct {
+	Info struct {
+		ID    string `json:"id"`
+		Role  string `json:"role"`
+		Error any    `json:"error"`
+	} `json:"info"`
+	Parts []map[string]any `json:"parts"`
+}
+
+func (s *openCodeSession) openCodeSessionMessages(ctx context.Context, workDir, sessionID string) (messages []openCodeSessionMessage, returnErr error) {
+	endpoint, err := url.Parse(s.serverURL + "/session/" + url.PathEscape(sessionID) + "/message")
+	if err != nil {
+		return nil, fmt.Errorf("build OpenCode session messages request: %w", err)
+	}
+	query := endpoint.Query()
+	query.Set("directory", workDir)
+	endpoint.RawQuery = query.Encode()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build OpenCode session messages request: %w", err)
+	}
+	response, err := (&http.Client{}).Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("read OpenCode session messages: %w", err)
+	}
+	defer func() {
+		if closeErr := response.Body.Close(); closeErr != nil {
+			returnErr = errors.Join(returnErr, fmt.Errorf("close OpenCode session messages response: %w", closeErr))
+		}
+	}()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("read OpenCode session messages: HTTP %d", response.StatusCode)
+	}
+	if err := json.NewDecoder(response.Body).Decode(&messages); err != nil {
+		return nil, fmt.Errorf("decode OpenCode session messages: %w", err)
+	}
+	return messages, nil
+}
+
+func (s *openCodeSession) waitForOpenCodeSessionIdle(ctx context.Context, workDir, sessionID string) error {
+	endpoint, err := url.Parse(s.serverURL + "/session/status")
+	if err != nil {
+		return fmt.Errorf("build OpenCode session status request: %w", err)
+	}
+	query := endpoint.Query()
+	query.Set("directory", workDir)
+	endpoint.RawQuery = query.Encode()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		if err != nil {
+			return fmt.Errorf("build OpenCode session status request: %w", err)
+		}
+		response, err := (&http.Client{}).Do(request)
+		if err != nil {
+			return fmt.Errorf("read OpenCode session status: %w", err)
+		}
+		var statuses map[string]struct {
+			Type string `json:"type"`
+		}
+		decodeErr := json.NewDecoder(response.Body).Decode(&statuses)
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("read OpenCode session status: HTTP %d", response.StatusCode)
+		}
+		if decodeErr != nil {
+			return fmt.Errorf("decode OpenCode session status: %w", decodeErr)
+		}
+		if status, found := statuses[sessionID]; found && status.Type == "idle" {
+			return nil
+		}
+		// OpenCode v1.18.30 removes idle sessions from this map. Recovery only
+		// starts after a streamed step-start, so an omitted entry here means the
+		// observed turn returned to idle rather than that its prompt has not begun.
+		if _, found := statuses[sessionID]; !found {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *openCodeSession) waitForServerExit() {

@@ -63,6 +63,32 @@ Provider adapters retain protocol-specific decoding. Every terminal job outcome,
 including setup failure and cancellation before dispatch, is retained. Progress
 uses completion order; final results retain plan order.
 
+Shared workspace code owns directory creation, atomic runtime file publication,
+Go cache preparation, and verification prewarm for every harness. The generic
+session invokes provider configuration preparation before taking the original
+workspace snapshot. Adapters select their protocol-specific paths and contents,
+process arguments, permissions, and event decoding. Acceptance test insertion,
+grading, selection of follow-up prompts, and semantic diagnostic interrogation
+remain generic and use the original session. Harness-created configuration must
+never be graded as an agent edit.
+
+Prepare Go production and test dependencies in each fixture's local cache before
+timed agent work, without changing module manifests. Apply this to every provider
+and arm. Bound preparation and each acceptance evaluation separately to five
+minutes while preserving parent cancellation. Task turns share the configured
+agent deadline. Oracle cancellation is an execution error, not a failed answer.
+Retain primary provider failures together with any cleanup failures. Configure
+local OpenCode models with their loaded context capacity so overflow handling
+can operate; output-token exhaustion is an explicit incomplete-task failure.
+
+Codex benchmark threads are ephemeral in the app-server protocol. Require the
+server to confirm this at thread creation. The original live thread remains
+available for all task turns, while the harness transcript is the durable
+record for human inspection and agent analysis. Native conversation persistence
+is not required, and benchmark jobs must not create stored app conversations
+or workspace groups. Preserve each job's isolated cwd rather than grouping
+jobs under a shared top-level project.
+
 Every coding harness retains its original live coding session and MCP service
 for the entire task. Initial work, corrective hints, staged turns, and diagnostic
 questions all use that original identity. Missing or changed identities and
@@ -89,6 +115,14 @@ the selected localhost listener port in addition to existing permissions.
 macOS 26 requires read access to the exact root directory vnode for loader
 startup; grant `(literal "/")` while retaining fixture and outside-file
 containment checks.
+OpenCode 1.18.30's attached client can exit successfully before its turn is
+complete. Client exit alone cannot finalize benchmark usage. For a truncated
+stream, wait for the retained server session to reach idle, then reconcile
+persisted parts from newly created assistant messages. Exclude prior-turn
+messages, deduplicate usage parts, retain completed tool outcomes and provider
+errors, and reject missing terminal counters. The sandbox permits read and
+execution access to the exact selected Go runtime and gopls dependencies;
+Go caches and other writes remain inside the fixture.
 Agy owns one process with stream-JSON input and output. Each prompt is a new
 input message in the original conversation. Normalize cumulative usage into
 per-turn differences and retain only newly appended transcript observations.

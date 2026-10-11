@@ -202,7 +202,7 @@ func executePlanJob(ctx context.Context, plan *BenchmarkPlan, job Job, execute J
 	case execute == nil:
 		err = fmt.Errorf("job executor is nil")
 	default:
-		jobCtx, cancel := context.WithTimeout(ctx, plan.Options.Timeout)
+		jobCtx, cancel := jobExecutionContext(ctx, plan.Options.Timeout, job)
 		result, err = execute(jobCtx, job)
 		cancel()
 		if result == nil && err == nil {
@@ -214,6 +214,13 @@ func executePlanJob(ctx context.Context, plan *BenchmarkPlan, job Job, execute J
 	}
 	populatePlanResult(plan, job, result, err)
 	return JobOutcome{Job: job, Result: result, Err: err}
+}
+
+func jobExecutionContext(ctx context.Context, timeout time.Duration, job Job) (context.Context, context.CancelFunc) {
+	if job.Arm == ArmControl {
+		return context.WithTimeout(ctx, timeout)
+	}
+	return withAgentTaskTimeout(ctx, timeout), func() {}
 }
 
 func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err error) {
@@ -252,7 +259,7 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	}
 	if err != nil {
 		result.Success = false
-		result.Error = err.Error()
+		result.Error = appendResultError(result.Error, err)
 	} else if result.Error != "" {
 		result.Success = false
 	}
