@@ -12,7 +12,6 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"maps"
 	"os"
 	"path/filepath"
 	"semedit/internal/astedit"
@@ -22,10 +21,9 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const insertCompositeElementToolName = "semantic_insert_composite_element"
-
 type compositeSelectorContinuation struct {
 	File             string `json:"file"`
+	Kind             string `json:"kind"`
 	InDeclaration    string `json:"in_declaration"`
 	Discriminator    string `json:"discriminator"`
 	ExpectedRevision string `json:"expected_revision"`
@@ -37,136 +35,120 @@ type compositeSelectorCandidate struct {
 	ElementSource string
 }
 
-type compositePlanResult struct {
-	Structural           structuralPlanResult
-	Candidate            compositeSelectorCandidate
-	SelectorContinuation *compositeSelectorContinuation
+func runInsertElementConstruct(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
+	raw := map[string]any{
+		"file": req.File, wireInDeclaration: req.InDeclaration, wireDiscriminator: req.Discriminator,
+		"source": req.Source, "placement": req.Placement,
+	}
+	if req.ExpectedRevision != "" {
+		raw[wireExpectedRevision] = req.ExpectedRevision
+	}
+	result, err := runStructuralPlan(ctx, cc, raw, insertElementPlanSpec())
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	canonical, err := canonicalCompositeElement(req.Source)
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	result.Edit.ReceiptDraft = result.Draft
+	result.Edit.Resolve = result.Resolve
+	result.Edit.ElementCandidate = &compositeSelectorCandidate{
+		File: result.Edit.Display, Declaration: req.InDeclaration, ElementSource: canonical,
+	}
+	return result.Edit, nil
 }
 
-func insertCompositeElementStructuralDef() Def[map[string]any, compositePlanResult] {
-	placement := structuralStringParam("placement", "Placement: append exactly one keyed element to the selected literal.", false, false, RolePolicy)
-	placement.Schema.Enum = []any{"append"}
-	placement.Default = "append"
-	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget,
-			"semantic_inspect_symbol.result.continuations[].file",
-			insertCompositeElementToolName+".result.selector_continuations[].file"),
-		structuralStringParam(wireInDeclaration, "Selector: exact top-level declaration that owns the selected literal; copy from an inspection record or this tool's finalized selector record.", true, true, RoleSelector,
-			"semantic_inspect_symbol.result.continuations[].in_declaration",
-			insertCompositeElementToolName+".result.selector_continuations[].in_declaration"),
-		structuralStringParam(wireDiscriminator, "Selector: exact current source text of one unique typed composite literal; after an edit, copy the refreshed discriminator from this tool's finalized selector record.", true, true, RoleSelector,
-			insertCompositeElementToolName+".result.selector_continuations[].discriminator"),
-		structuralStringParam("source", "Value: one caller-authored keyed element in key: value form, without braces, commas, or comments.", true, false, RoleValue),
-		placement,
-		structuralStringParam("expected_revision", "Precondition: optional opaque full-file revision copied verbatim from the same inspection or finalized selector record as file and in_declaration.", false, true, RoleTarget,
-			"semantic_inspect_symbol.result.continuations[].expected_revision",
-			insertCompositeElementToolName+".result.selector_continuations[].expected_revision"),
-	}
-	output := structuralOutputContract(false)
-	selectorItem := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":               {Kind: SchemaString},
-		wireInDeclaration:    {Kind: SchemaString},
-		wireDiscriminator:    {Kind: SchemaString},
-		wireExpectedRevision: {Kind: SchemaString},
-	}, Required: []string{"file", wireInDeclaration, wireDiscriminator, "expected_revision"}}
-	output.ResultSchema.Properties["selector_continuations"] = ValueSchema{Kind: SchemaArray, Items: &selectorItem}
-	for _, field := range []string{"file", wireInDeclaration, wireDiscriminator, "expected_revision"} {
-		output.Continuations = append(output.Continuations, OutputContinuation{
-			Path: "result.selector_continuations[]." + field, Schema: selectorItem.Properties[field],
-			Role: compositeContinuationRole(field), Consumers: []string{insertCompositeElementToolName},
-		})
-	}
-	spec := structuralPlanSpec{
-		Key: "insert_composite_element", CLIName: "insert-composite-element", MCPName: insertCompositeElementToolName,
-		Summary: "Use this tool instead of replacing a declaration or literal to append one keyed element to a unique typed Go struct or map literal owned by `in_declaration`. Select the exact literal with its full current source in `discriminator`; supply one key: value element in `source`. Repeated literals, positional elements, duplicate or unknown struct fields, duplicate or non-constant map keys, malformed elements, comments, and non-struct/map literal types are refused. A successful standalone result includes a refreshed selector record only when the final source still proves one live literal; batch results do not include selector continuations. Appending is structural and can change runtime behavior, including evaluation of the inserted value.",
-		Params:  params, ExampleRaw: map[string]any{"file": "routes.go", wireInDeclaration: "routes", wireDiscriminator: `map[string]Handler{"health": health}`, "source": `"metrics": metrics`},
+func insertElementPlanSpec() structuralPlanSpec {
+	return structuralPlanSpec{
+		Key: "insert_construct",
 		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 			if placement := stringParam(raw, "placement"); placement != "" && placement != "append" {
 				return astedit.SourcePlan{}, fmt.Errorf("placement must be append")
 			}
-			context, err := structuralTypedCompositeContext(snapshot, stringParam(raw, wireInDeclaration), stringParam(raw, wireDiscriminator), stringParam(raw, "source"))
+			typeContext, err := structuralTypedCompositeContext(snapshot, stringParam(raw, wireInDeclaration), stringParam(raw, wireDiscriminator), stringParam(raw, "source"))
 			if err != nil {
 				return astedit.SourcePlan{}, err
 			}
 			return astedit.PlanInsertCompositeElement(snapshot.Sources[snapshot.File], astedit.InsertElementIntent{
 				Declaration: stringParam(raw, wireInDeclaration), Discriminator: stringParam(raw, wireDiscriminator),
-				ExpectedRevision: rawOptionalString(raw, "expected_revision"), Source: stringParam(raw, "source"), TypeContext: context,
+				ExpectedRevision: rawOptionalString(raw, wireExpectedRevision), Source: stringParam(raw, "source"), TypeContext: typeContext,
 			})
 		},
 		Result: func(_ CallContext, _ map[string]any, _ astedit.SourcePlan, _ string) FileEditRes {
 			return FileEditRes{Detail: "Appended one keyed composite element."}
 		},
 	}
-	return compositeElementDef(spec, output)
+}
+
+func insertConstructOutputContract() *OperationOutputContract {
+	output := fileEditOutputContract(map[string]ValueSchema{
+		"file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "in_type": {Kind: SchemaString},
+		wireInFunction: {Kind: SchemaString}, wireDiscriminator: {Kind: SchemaString},
+		"line": {Kind: SchemaInteger}, "diff": {Kind: SchemaString},
+	}, []OutputContinuation{
+		outputContinuation("file", RoleTarget, fileOutputConsumers),
+		outputContinuation("symbol", RoleTarget, symbolOutputConsumers),
+		outputContinuation("in_type", RoleSelector, []string{insertFieldToolName, "semantic_extract_type", semanticInsertConstructToolName}),
+		outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers),
+		outputContinuation(wireDiscriminator, RoleSelector, discriminatorOutputConsumers),
+	})
+	selectorItem := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file": {Kind: SchemaString}, "kind": {Kind: SchemaString, Enum: []any{string(backend.ConstructElement)}},
+		wireInDeclaration: {Kind: SchemaString}, wireDiscriminator: {Kind: SchemaString}, wireExpectedRevision: {Kind: SchemaString},
+	}, Required: []string{"file", "kind", wireInDeclaration, wireDiscriminator, wireExpectedRevision}}
+	output.ResultSchema.Properties["selector_continuations"] = ValueSchema{Kind: SchemaArray, Items: &selectorItem}
+	for _, field := range []string{"file", wireInDeclaration, wireDiscriminator, wireExpectedRevision} {
+		output.Continuations = append(output.Continuations, OutputContinuation{
+			Path: "result.selector_continuations[]." + field, Schema: selectorItem.Properties[field],
+			Role: compositeContinuationRole(field), Consumers: []string{semanticInsertConstructToolName},
+		})
+	}
+	return output
 }
 
 func compositeContinuationRole(field string) ParameterRole {
-	if field == "file" || field == "expected_revision" {
+	if field == "file" || field == wireExpectedRevision {
 		return RoleTarget
 	}
 	return RoleSelector
 }
 
-func compositeElementDef(spec structuralPlanSpec, output OperationOutputContract) Def[map[string]any, compositePlanResult] {
-	return Def[map[string]any, compositePlanResult]{
-		Key: spec.Key, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
-		CLIName: spec.CLIName, MCPName: spec.MCPName, Batchable: true, BufferedBatch: true,
-		ExampleRaw: spec.ExampleRaw, Output: &output,
-		Parse: func(raw map[string]any) (map[string]any, error) { return maps.Clone(raw), nil },
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (compositePlanResult, error){
-			backend.LanguageGo: func(ctx context.Context, cc CallContext, raw map[string]any) (compositePlanResult, error) {
-				result, err := runStructuralPlan(ctx, cc, raw, spec)
-				if err != nil {
-					return compositePlanResult{}, err
-				}
-				canonical, err := canonicalCompositeElement(stringParam(raw, "source"))
-				if err != nil {
-					return compositePlanResult{}, err
-				}
-				return compositePlanResult{Structural: result, Candidate: compositeSelectorCandidate{
-					File: result.Edit.Display, Declaration: stringParam(raw, wireInDeclaration), ElementSource: canonical,
-				}}, nil
-			},
-		},
-		Format: func(result compositePlanResult) (string, error) { return formatFileEdit(result.Structural.Edit) },
-		FinalizeOutput: func(cc CallContext, _ map[string]any, result compositePlanResult) (compositePlanResult, error) {
-			ctx := cc.Ctx
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			receipt, err := finalizeCallReceipt(ctx, cc, cc.WorkDir, result.Structural.Draft, result.Structural.Resolve)
-			if err != nil {
-				return compositePlanResult{}, fmt.Errorf("finalize composite element edit receipt: %w", err)
-			}
-			result.Structural.Receipt = receipt
-			if receipt.Status != EditPersisted && receipt.Status != EditPersistedWithDiagnostics {
-				return result, nil
-			}
-			continuation, live, err := resolveCompositeSelectorContinuation(ctx, cc.WorkDir, result.Candidate, receipt)
-			if err != nil {
-				return compositePlanResult{}, fmt.Errorf("resolve composite selector continuation: %w", err)
-			}
-			if live {
-				result.SelectorContinuation = &continuation
-			}
-			return result, nil
-		},
-		ProjectOutput: func(result compositePlanResult) (any, error) {
-			projected := map[string]any{"result": result.Structural.Edit.Detail, editReceiptField: result.Structural.Receipt}
-			if result.Structural.Receipt.Status != EditAppliedWorking {
-				if result.Structural.Edit.Display != "" {
-					projected["file"] = result.Structural.Edit.Display
-				}
-			}
-			if result.Structural.Edit.Diff != "" {
-				projected["diff"] = result.Structural.Edit.Diff
-			}
-			if result.SelectorContinuation != nil {
-				projected["selector_continuations"] = []compositeSelectorContinuation{*result.SelectorContinuation}
-			}
-			return projected, nil
-		},
+func finalizeInsertConstructOutput(cc CallContext, result FileEditRes) (FileEditRes, error) {
+	result, err := finalizeFileEditOutput(cc, result)
+	if err != nil || result.ElementCandidate == nil || result.SuppressContinuations {
+		return result, err
 	}
+	if result.Receipt.Status != EditPersisted && result.Receipt.Status != EditPersistedWithDiagnostics {
+		return result, nil
+	}
+	ctx := cc.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	continuation, live, err := resolveCompositeSelectorContinuation(ctx, cc.WorkDir, *result.ElementCandidate, result.Receipt)
+	if err != nil {
+		return FileEditRes{}, fmt.Errorf("resolve composite selector continuation: %w", err)
+	}
+	if live {
+		result.SelectorContinuation = &continuation
+	}
+	return result, nil
+}
+
+func projectInsertConstructOutput(result FileEditRes) (any, error) {
+	projected, err := projectFileEditOutput(result, "file", "symbol", "in_type", wireInFunction, wireDiscriminator, "line", "diff")
+	if err != nil {
+		return nil, err
+	}
+	object, ok := projected.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("project insert construct: typed result has type %T: %w", projected, ErrInvalidDefinition)
+	}
+	if result.SelectorContinuation != nil && !result.SuppressContinuations {
+		object["selector_continuations"] = []compositeSelectorContinuation{*result.SelectorContinuation}
+	}
+	return object, nil
 }
 
 func structuralTypedCompositeContext(snapshot *structuralSnapshot, declaration, discriminator, source string) (astedit.CompositeTypeContext, error) {
@@ -463,7 +445,7 @@ func resolveCompositeSelectorContinuation(ctx context.Context, root string, cand
 		return compositeSelectorContinuation{}, false, nil
 	}
 	return compositeSelectorContinuation{
-		File: filepath.ToSlash(location.Relative), InDeclaration: candidate.Declaration,
+		File: filepath.ToSlash(location.Relative), Kind: string(backend.ConstructElement), InDeclaration: candidate.Declaration,
 		Discriminator: string(source.Content[selected.Start:selected.End]), ExpectedRevision: expectedRevision,
 	}, true, nil
 }

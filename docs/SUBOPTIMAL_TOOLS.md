@@ -6331,6 +6331,18 @@ failure remains the documented batch behavior.
 * Workaround: insert each helper function separately.
 * Root cause: the function construct kind accepts exactly one declaration.
 
+## 2026-10-11: Gemini review rejected repository root
+
+* Tool: `mcp__gemini_mcp__gemini_ask`.
+* Target: collection-element naming proposal; read-only review of `internal/operation/wire_structural_composite.go` and naming ADRs.
+* Observed failure: the endpoint rejected `/Users/alessandro/sources/semantic-editor` as outside its synthetic root `/Users/alessandro/sources/gemini-mcp/testdata`.
+* Workaround: attempt a review with repository evidence supplied directly and no repository-path override; do not claim a completed review without substantive reviewer output.
+* Root cause: the configured review server enforces a synthetic test-root boundary instead of this workspace.
+
+The evidence-only retry without a repository override failed with the same synthetic-root rejection. The endpoint defaults to the current workspace, so supplying evidence in the prompt does not bypass that configuration boundary. Check for an installed Gemini CLI before reporting review unavailable.
+
+A local stdio invocation of the installed bridge also failed: `sandbox-exec: sandbox_apply: Operation not permitted` (exit 71). The outer execution sandbox prevents applying the bridge's own read-only Seatbelt profile. Workaround: retry the same read-only review with outer sandbox escalation while retaining the bridge's repository-write denial. No review findings were produced by this attempt.
+
 ## 2026-10-11: field-name insertion rejected an unsupported selector
 
 * Tool: `semantic_insert_construct`.

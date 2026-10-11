@@ -8,13 +8,52 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"semedit/internal/mcptest"
+	"semedit/internal/operation"
 )
+
+func TestLegacyCompositeElementOperationIsRejected(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	for _, lookup := range []struct {
+		name string
+		find func(string) bool
+	}{
+		{name: "insert_composite_element", find: func(name string) bool { _, ok := registry.LookupKey(name); return ok }},
+		{name: "semantic_insert_composite_element", find: func(name string) bool { _, ok := registry.LookupMCP(name); return ok }},
+		{name: "insert-composite-element", find: func(name string) bool { _, ok := registry.LookupCLI(name); return ok }},
+	} {
+		if lookup.find(lookup.name) {
+			t.Errorf("legacy operation lookup %q remains registered", lookup.name)
+		}
+	}
+	if _, err := registry.Dispatch(operation.CallContext{}, "insert_composite_element", map[string]any{}); !errors.Is(err, operation.ErrUnknownOperation) {
+		t.Errorf("legacy batch action dispatch error = %v, want ErrUnknownOperation", err)
+	}
+	request, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "semantic_insert_composite_element", "arguments": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := mcptest.NewServer(t, "full", t.TempDir(), &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+		t.Fatal(err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("decode unknown legacy tool response: %v: %s", err, output.String())
+	}
+	if response["error"] == nil {
+		t.Fatalf("legacy MCP tool call was not rejected as unknown: %#v", response)
+	}
+}
 
 func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 	t.Parallel()
@@ -40,8 +79,8 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 	if inspectRecord["file"] != "routes.go" || inspectRecord["in_declaration"] != "routes" || inspectRecord["expected_revision"] == "" {
 		t.Fatalf("inspect did not provide same-record declaration evidence: %#v", inspectRecord)
 	}
-	first := callCompositeTool(t, root, 2, "semantic_insert_composite_element", map[string]any{
-		"file": inspectRecord["file"], "in_declaration": inspectRecord["in_declaration"],
+	first := callCompositeTool(t, root, 2, "semantic_insert_construct", map[string]any{
+		"file": inspectRecord["file"], "kind": "element", "in_declaration": inspectRecord["in_declaration"],
 		"expected_revision": inspectRecord["expected_revision"], "discriminator": `map[string]int{"health": 1}`,
 		"source": `"metrics": 2`, "placement": "append",
 	})
@@ -51,11 +90,11 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 		t.Fatalf("first insertion omitted live selector record: %#v", firstResult)
 	}
 	record := firstRecords[0].(map[string]any)
-	if record["file"] != "routes.go" || record["in_declaration"] != "routes" || !strings.Contains(record["discriminator"].(string), `"metrics": 2`) || record["expected_revision"] == "" {
+	if record["file"] != "routes.go" || record["kind"] != "element" || record["in_declaration"] != "routes" || !strings.Contains(record["discriminator"].(string), `"metrics": 2`) || record["expected_revision"] == "" {
 		t.Fatalf("first selector continuation is not refreshed: %#v", record)
 	}
-	second := callCompositeTool(t, root, 3, "semantic_insert_composite_element", map[string]any{
-		"file": record["file"], "in_declaration": record["in_declaration"], "discriminator": record["discriminator"],
+	second := callCompositeTool(t, root, 3, "semantic_insert_construct", map[string]any{
+		"file": record["file"], "kind": record["kind"], "in_declaration": record["in_declaration"], "discriminator": record["discriminator"],
 		"expected_revision": record["expected_revision"], "source": `"ready": 3`,
 	})
 	secondResult := second["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
@@ -77,8 +116,8 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 		t.Fatalf("introduce stale selector revision: %v", writeErr)
 	}
 	beforeStale := bytes.Clone(staleSource)
-	stale := callCompositeTool(t, root, 4, "semantic_insert_composite_element", map[string]any{
-		"file": secondRecord["file"], "in_declaration": secondRecord["in_declaration"],
+	stale := callCompositeTool(t, root, 4, "semantic_insert_construct", map[string]any{
+		"file": secondRecord["file"], "kind": secondRecord["kind"], "in_declaration": secondRecord["in_declaration"],
 		"discriminator": secondRecord["discriminator"], "expected_revision": secondRecord["expected_revision"],
 		"source": `"stale": 4`,
 	}, true)
@@ -103,8 +142,8 @@ func TestCompositeContinuationSelectsOuterLiteralWithNestedValue(t *testing.T) {
 	if err := os.WriteFile(path, initial, 0o600); err != nil {
 		t.Fatalf("write nested composite fixture: %v", err)
 	}
-	first := callCompositeTool(t, root, 1, "semantic_insert_composite_element", map[string]any{
-		"file": "routes.go", "in_declaration": "routes", "discriminator": `map[string]map[string]int{"health": map[string]int{"ready": 1}}`,
+	first := callCompositeTool(t, root, 1, "semantic_insert_construct", map[string]any{
+		"file": "routes.go", "kind": "element", "in_declaration": "routes", "discriminator": `map[string]map[string]int{"health": map[string]int{"ready": 1}}`,
 		"source": `"metrics": map[string]int{"count": 2}`, "placement": "append",
 	})
 	firstResult := first["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
@@ -117,8 +156,8 @@ func TestCompositeContinuationSelectsOuterLiteralWithNestedValue(t *testing.T) {
 	if !strings.HasPrefix(discriminator, "map[string]map[string]int{") || !strings.Contains(discriminator, `"metrics": map[string]int{"count": 2}`) {
 		t.Fatalf("continuation selected nested literal instead of outer literal: %q", discriminator)
 	}
-	second := callCompositeTool(t, root, 2, "semantic_insert_composite_element", map[string]any{
-		"file": record["file"], "in_declaration": record["in_declaration"], "discriminator": discriminator,
+	second := callCompositeTool(t, root, 2, "semantic_insert_construct", map[string]any{
+		"file": record["file"], "kind": record["kind"], "in_declaration": record["in_declaration"], "discriminator": discriminator,
 		"expected_revision": record["expected_revision"], "source": `"dashboard": map[string]int{"count": 3}`,
 	})
 	secondResult := second["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
@@ -158,8 +197,8 @@ func TestCompositeInsertionUsesLiteralLexicalScopeForMapKeys(t *testing.T) {
 				t.Fatalf("write lexical-scope fixture: %v", err)
 			}
 			before := []byte(test.source)
-			response := callCompositeTool(t, root, index+1, "semantic_insert_composite_element", map[string]any{
-				"file": "routes.go", "in_declaration": "routes", "discriminator": `map[string]int{"health": 1}`,
+			response := callCompositeTool(t, root, index+1, "semantic_insert_construct", map[string]any{
+				"file": "routes.go", "kind": "element", "in_declaration": "routes", "discriminator": `map[string]int{"health": 1}`,
 				"source": `elementKey: 2`, "placement": "append",
 			}, true)
 			result := response["result"].(map[string]any)

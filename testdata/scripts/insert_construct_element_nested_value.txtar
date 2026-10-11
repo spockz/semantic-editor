@@ -1,8 +1,8 @@
 # Nested composite values do not replace the outer literal in refreshed selectors.
-exec semedit insert-composite-element --file routes.go --in-declaration routes --discriminator 'map[string]map[string]int{"health": map[string]int{"ready": 1}}' --source '"metrics": map[string]int{"count": 2}'
+exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]map[string]int{"health": map[string]int{"ready": 1}}' --source '"metrics": map[string]int{"count": 2}'
 stdout 'Appended one keyed composite element.'
 cmp routes.go .scratch/want/metrics.go
-exec semedit insert-composite-element --file routes.go --in-declaration routes --discriminator 'map[string]map[string]int{"health": map[string]int{"ready": 1}, "metrics": map[string]int{"count": 2}}' --source '"dashboard": map[string]int{"count": 3}'
+exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]map[string]int{"health": map[string]int{"ready": 1}, "metrics": map[string]int{"count": 2}}' --source '"dashboard": map[string]int{"count": 3}'
 stdout 'Appended one keyed composite element.'
 cmp routes.go .scratch/want/dashboard.go
 

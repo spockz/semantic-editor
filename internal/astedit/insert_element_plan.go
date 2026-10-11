@@ -98,7 +98,7 @@ func findCompositeOwner(file *ast.File, name string) (ast.Node, error) {
 		var candidate ast.Node
 		switch value := decl.(type) {
 		case *ast.FuncDecl:
-			if value.Name.Name == name {
+			if compositeFunctionMatches(value, name) {
 				candidate = value
 			}
 		case *ast.GenDecl:
@@ -332,4 +332,37 @@ func CompositeElementKeySource(source string) (string, error) {
 		return "", fmt.Errorf("parse keyed composite element: %w", err)
 	}
 	return key, nil
+}
+
+func compositeFunctionMatches(function *ast.FuncDecl, selector string) bool {
+	if function.Recv == nil {
+		return selector == function.Name.Name
+	}
+	if len(function.Recv.List) != 1 {
+		return false
+	}
+	receiver := function.Recv.List[0].Type
+	pointer := false
+	if star, ok := receiver.(*ast.StarExpr); ok {
+		pointer = true
+		receiver = star.X
+	}
+	var receiverName string
+	switch expression := receiver.(type) {
+	case *ast.Ident:
+		receiverName = expression.Name
+	case *ast.IndexExpr:
+		if identifier, ok := expression.X.(*ast.Ident); ok {
+			receiverName = identifier.Name
+		}
+	case *ast.IndexListExpr:
+		if identifier, ok := expression.X.(*ast.Ident); ok {
+			receiverName = identifier.Name
+		}
+	}
+	if receiverName == "" {
+		return false
+	}
+	target := receiverName + "." + function.Name.Name
+	return (selector == target || pointer && selector == "(*"+receiverName+")."+function.Name.Name)
 }

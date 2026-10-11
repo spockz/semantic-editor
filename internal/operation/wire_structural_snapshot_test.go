@@ -44,28 +44,31 @@ func TestStructuralNoopRejectsManifestDrift(t *testing.T) {
 func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	source := []byte("package p\n\nvar (\n\tthing = []int{1}\n\tthing = []int{2}\n)\n")
+	source := []byte("package p\n\nvar (\n\tthing = map[string]int{\"key\": 1}\n\tthing = map[string]int{\"other\": 2}\n)\n")
 	path := filepath.Join(root, "value.go")
 	if err := os.WriteFile(path, source, 0o600); err != nil {
 		t.Fatalf("write duplicate declarations: %v", err)
 	}
 	hash := sha256.Sum256(source)
-	entry, ok := DefaultRegistry().LookupMCP(insertCompositeElementToolName)
+	entry, ok := DefaultRegistry().LookupMCP("semantic_insert_construct")
 	if !ok {
-		t.Fatal("composite insert operation is not registered")
+		t.Fatal("generic construct insert operation is not registered")
 	}
 	draft := EditReceiptDraft{
-		Operation: "insert_composite_element",
+		Operation: "insert_construct",
 		Status:    EditPersisted,
 		PlannedChanges: []FileRevision{{
 			Path: "value.go", Revision: hex.EncodeToString(hash[:]),
 		}},
 	}
-	result := compositePlanResult{
-		Structural: structuralPlanResult{Edit: FileEditRes{Detail: "Appended one keyed composite element."}, Draft: draft},
-		Candidate:  compositeSelectorCandidate{File: "value.go", Declaration: "thing", ElementSource: "1"},
+	result := FileEditRes{
+		Detail: "Appended one keyed composite element.", ReceiptDraft: draft,
+		ElementCandidate: &compositeSelectorCandidate{File: "value.go", Declaration: "thing", ElementSource: `"key": 1`},
 	}
-	finalized, err := entry.FinalizeOutput(CallContext{WorkDir: root}, map[string]any{}, result)
+	finalized, err := entry.FinalizeOutput(CallContext{WorkDir: root}, map[string]any{
+		"file": "value.go", "kind": "element", "source": `"key": 3`,
+		"in_declaration": "thing", "discriminator": `map[string]int{"key": 1}`,
+	}, result)
 	if err != nil {
 		t.Fatalf("finalize duplicate declaration result: %v", err)
 	}

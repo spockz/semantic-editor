@@ -279,8 +279,5 @@ func registerStructuralPlanOps(registry *Registry) error {
 			return fmt.Errorf("register structural plan %q: %w", definition.Key, err)
 		}
 	}
-	if err := Register(registry, insertCompositeElementStructuralDef()); err != nil {
-		return fmt.Errorf("register structural plan %q: %w", "insert_composite_element", err)
-	}
 	return nil
 }

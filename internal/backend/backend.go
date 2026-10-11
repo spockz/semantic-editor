@@ -60,6 +60,9 @@ const (
 	ConstructInclude          ConstructKind = "include"
 )
 
+// ConstructElement names one keyed map entry or struct literal field insertion.
+const ConstructElement ConstructKind = "element"
+
 const (
 	// LanguageAuto detects the language from project context.
 	LanguageAuto LanguageID = "auto"

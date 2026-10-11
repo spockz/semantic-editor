@@ -204,6 +204,14 @@ still receives the same schema validation. Never fill an absent continuation
 with an empty or inferred selector. Consumers copy a record only when its
 required same-record companions are present.
 
+Literal initializer elements use `insert_construct(kind="element")`, selected
+by `file`, `in_declaration`, and exact `discriminator`. They have no symbol
+target. A finalized live selector record carries those companions, canonical
+`kind: "element"`, and the final `expected_revision`. Inspection supplies the
+declaration and revision; it does not manufacture an element discriminator.
+Live element records are omitted from buffered batch children. Struct type
+field declarations instead use `kind="field"` and `in_type`.
+
 The whole-tool implementation review and repair evidence are in
 [RQ-0027](../research/RQ-0027-preventing-read-files.md). Presentation budgets
 remain open. Clients control forwarding and truncation; the server guarantees

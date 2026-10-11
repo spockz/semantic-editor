@@ -16,6 +16,17 @@ The lifecycle consists of insert_construct, replace_construct, remove_construct,
 
 The shared kind taxonomy includes statement/expression where implemented. Backend capability metadata is operation-specific: each backend advertises only kinds it can execute for that operation. MCP schemas consume those lists; no cross-language support is implied by the shared names. Repeated direct-statement insertion selection uses the reported construct_path and matching expected_revision; expression candidates are excluded from insertion anchors.
 
+Literal insertion uses `insert_construct(kind="element")` exclusively across
+MCP, CLI, and batch. The former `insert_composite_element` operation and all its
+registrations are removed without compatibility aliases. `element` denotes a
+literal initializer, while `field` denotes a struct type field declaration.
+The implemented Go scope appends one keyed map or struct literal element,
+selected by `in_declaration` and exact `discriminator`, with an optional
+`expected_revision` guard. Positional slices and arrays remain unsupported.
+The generic operation remains discoverable in the default base catalog;
+its descriptions name map/dictionary entries and struct/object initializer
+properties while stating the implemented Go bounds.
+
 semantic_replace_body remains a specialized Go operation that changes a function or method body and preserves its signature. It is not renamed to replace_construct_body. It is tagged replace:function for optional catalog discovery.
 
 move_construct expresses relocation only. It accepts destination placement, has no replacement source or overwrite option, and performs same-file reordering atomically. It does not sort declarations automatically.

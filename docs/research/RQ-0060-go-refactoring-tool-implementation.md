@@ -2392,9 +2392,9 @@ Existing declaration and body tools can replace large source units but cannot in
 
 ### Current evidence and limits
 
-* `semantic_insert_composite_element` is registered as Go-only, file-scoped, batchable, and buffered. It appends one typed keyed struct or map element over the current source overlay and refuses unsupported selectors and invalid typed keys.
+* The delivered Go planner appends one typed keyed struct or map element over the current source overlay and refuses unsupported selectors and invalid typed keys. The accepted consolidation exposes it solely as `semantic_insert_construct(kind="element")`, file-scoped, batchable, and buffered.
 * `docs/MANUAL_EDITS.md` ME-0050 records the delivered composite-element flow; ADR-0062 defines its operation-specific final-source selector continuation.
-* This operation has no standalone declaration `symbol`. The holder is selected with `in_declaration`, as required by the shared handover contract; `in_function` may be needed only when the literal is local and declaration selection is insufficient.
+* This operation has no standalone declaration `symbol`. The holder is selected with `in_declaration`, including an enclosing function or qualified receiver method for local literals; `in_function` is not accepted for element insertion.
 * Structural package loading reads the current source-buffer overlay, including earlier successful batch children; the public batch fixture replaces a literal and appends against that unsaved result.
 
 ### Outcomes and non-goals
@@ -2478,6 +2478,63 @@ Apply [RQ-0027's description audit](RQ-0027-preventing-read-files.md#model-facin
 For every remaining parameter, the shared description templates require its role, exact value format, required/default behavior, and named producer when it is receipt-fed. Caller-authored new names, source, mappings, and policy choices need no fabricated `SourceFields` edge. Proposed inspection projections, nested receipts, and revisions must be implemented before their copy instructions are advertised.
 
 **Description acceptance:** inspect generated `tools/list` and CLI help, not just registry summary strings. Prove one compatible producer→input edge and one live result→next-tool edge with verbatim values, assert historical/stale fields are absent from copy guidance, and verify the description does not promise broader support or intermediate disk publication. Batch child parameters stay static; copying a result means a subsequent request, not receipt interpolation.
+
+### Collection element naming proposal, 2026-10-11
+
+Status: Accepted for implementation in the user and Gemini handover of 2026-10-11. This section supersedes the earlier compatibility-retention and slice-delivery proposal. The overall RQ remains open for its other refactoring deliveries.
+
+#### Contract before consolidation
+
+Before consolidation, `semantic_insert_composite_element` / CLI `insert-composite-element` appended one keyed element to a typed Go map or keyed struct literal. It was registered for CLI and buffered batches, and required the full MCP catalog. The accepted handover below removes that separate operation.
+
+```json
+{
+  "file": "routes.go",
+  "in_declaration": "routes",
+  "discriminator": "map[string]int{\"health\": 1}",
+  "source": "\"metrics\": 2"
+}
+```
+
+For a struct initializer, the equivalent source is `Metrics: 2`. Adding a field to the struct type itself is a different operation, already served by field insertion.
+
+The public schema requires `file`, `in_declaration`, `discriminator`, and `source`; `placement` defaults to its only supported value, `append`, and `expected_revision` is optional. The holder is a top-level declaration, including an enclosing function for local literals. There is no public `in_function` or `construct_path` parameter. The exact literal text must match uniquely within that holder. Identical repeated literals are refused; the current operation cannot resolve them with a path.
+
+Current bounds: one single-line keyed element without comments, a completely typechecked selected package, known unused struct field or a new constant map key with typed identity. Positional struct literals, slice/array literals, dynamic map keys, comments inside the selected literal, and ambiguous selectors are refused. This adds an initializer for an existing struct field; it does not define a new field. Other language backends do not advertise this operation.
+
+Evidence: `internal/operation/wire_structural_composite.go`, `internal/astedit/insert_element_plan.go`, and the migrated CLI contracts `testdata/scripts/insert_construct_element.txtar`, `insert_construct_element_refusal.txtar`, `insert_construct_element_nested_value.txtar`, and `mcp_batch_insert_construct_element.txtar`.
+
+#### Accepted public vocabulary
+
+Recommend `semantic_insert_construct` with canonical `kind: "element"`. An element is one member of a literal: a map/dictionary entry, an object/struct initializer property, or a list/slice item. Supply one language-native `source` fragment, keyed where required, without surrounding container delimiters or a trailing separator. The backend owns the syntax, type, collision, and ordering rules.
+
+This extends ADR-0053's generic lifecycle and makes the intent visible in the base catalog. ADR-0007 requires descriptions to name the concrete use cases so planners can route requests such as "add a map entry" or "append a list item" to it. Advertise `insert:element` only for implemented backend combinations.
+
+| Name | Tradeoff |
+| :--- | :--- |
+| `element` | Broad enough for keyed and positional literals; descriptions must explicitly mention entries, properties, and items. Recommended canonical kind. |
+| `entry` | Familiar for maps and dictionaries; less natural for lists. |
+| `item` | Familiar for lists; understates keyed initializer syntax. |
+| `literal_element` | More explicit scope, but adds a qualifier compared with existing kinds. |
+| `composite_element` | Accurate Go terminology; less portable for dictionaries and object literals. |
+| `field` / `member` | Confuses literal initialization with type/class declarations. |
+
+Remove `semantic_insert_composite_element`, CLI `insert-composite-element`, and batch `insert_composite_element` completely. No compatibility aliases, deprecated registrations, or wrappers remain. Keep the typed planner as the implementation of the generic route. Do not introduce a separate `semantic_add_item`, `semantic_set_entry`, or upsert operation. Existing keys remain a refusal; insertion never silently becomes replacement. Unconstrained ingress normalizes `composite_element`, `literal_element`, `entry`, and `item` to canonical `element`, while schemas and continuation outputs advertise only `element`.
+
+#### Bounded delivery and proof obligations
+
+1. Route existing Go keyed struct/map support through `insert_construct(kind=element)` with the same holder, literal discriminator, revision, collision, and refusal rules. Reuse the existing planner; do not widen its semantic promises during routing.
+2. Preserve current keyed Go map/struct support during consolidation. Positional, non-indexed slice append is a later capability with its own contract and overlay proof. Insertion may introduce side effects and is not behavior-preserving.
+3. Defer fixed arrays and inferred-length arrays, indexed slice literals, relative placement, replacement/removal/movement of elements, dynamic key policies, and new language implementations. Arrays introduce length/type and implicit-index constraints; indexed slices introduce sparse-index behavior. Other languages add duplicate-property, computed-key, and spread semantics requiring their own contracts.
+4. Keep `in_declaration` as a holder selector, never fabricate an element `symbol`. Preserve exact-literal selection initially. If structural paths are added later, implement a compatible live producer and require its matching full-file revision; never guess the first literal or accept an unbound path.
+5. Extend ADR-0062's continuation consumer contract explicitly before copying specialized selector records to the generic operation. Generic results need copyable `kind: "element"` plus the compatible holder/literal selectors and revision. Emit live selectors only after final publication proves the exact planned revision and unique literal; buffered batch children do not emit them. Element plans run no post-plan formatting. Batch arguments remain static.
+6. Migrate public CLI txtar coverage to generic keyed insertion, sibling/order preservation, duplicate keys, wrong value type, unsupported families, ambiguity, comments, and stale revision with unchanged refusal state. Assert removed MCP/CLI/batch names are rejected. Prove buffered-overlay composition and finalized continuation reuse including canonical `kind` through MCP. Update operation-specific capabilities, generated help/catalog schemas, `skills/semedit/SKILL.md`, and `skills/semedit/references/golang.md` together. Test every language-operation pair before advertising it.
+
+#### Gemini and user handover
+
+Earlier review attempts from this session failed at the MCP synthetic-root and sandbox boundaries; their evidence remains in `.scratch/collection-gemini-review*` and `docs/SUBOPTIMAL_TOOLS.md`. They produced no substantive review output.
+
+The user subsequently supplied a complete plan created with Gemini at `/Users/alessandro/.gemini/antigravity/brain/b5b56ac4-536e-423d-b6d6-4f85bd13cc2c/handover_buffer_unification_and_element_insertion.md` and authorized execution. It specifies two sequential commits: first unify buffer staging and migrate every legacy output contract to typed projections and finalized receipts, then consolidate literal element insertion. Both require passing `make check`, complete caller migration, and synchronized skills. The handover is the accepted design evidence; no additional Gemini service call is needed for its execution.
 
 ## Go set doc comment
 

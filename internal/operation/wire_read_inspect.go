@@ -166,12 +166,12 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Output: &OperationOutputContract{
 			ResultSchema: &projectionSchema,
 			Continuations: []OutputContinuation{
-				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, insertCompositeElementToolName, extractTypeToolName, signatureChangeConsumer}},
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer}},
 				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, signatureChangeConsumer}},
-				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, insertCompositeElementToolName, extractTypeToolName, signatureChangeConsumer, semanticExtractConstantToolName, semanticExtractVariableToolName}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer, semanticExtractConstantToolName, semanticExtractVariableToolName}},
 				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractConstantToolName, semanticExtractVariableToolName, semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName, semanticRemoveConstructToolName}},
 				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName, extractTypeToolName, semanticInsertConstructToolName}},
-				{Path: "result.continuations[].in_declaration", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertCompositeElementToolName}},
+				{Path: "result.continuations[].in_declaration", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticInsertConstructToolName}},
 			},
 		},
 		ProjectOutput: func(result *backend.InspectResult) (any, error) { return ProjectInspectResult(result) },

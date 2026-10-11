@@ -435,3 +435,22 @@ func TestStructuralMethodSelectorCanonicalizesReceiverTypes(t *testing.T) {
 		}
 	}
 }
+
+func TestCompositeElementOwnerSelectsQualifiedReceiverMethod(t *testing.T) {
+	source := []byte("package p\ntype Server struct{}\nfunc (s *Server) Serve() { routes := map[string]int{\"a\": 1}; _ = routes }\n")
+	intent := InsertElementIntent{
+		Declaration: "(*Server).Serve", Discriminator: "map[string]int{\"a\": 1}", Source: "\"b\": 2",
+		TypeContext: CompositeTypeContext{
+			Family: LiteralMap, MapKeyType: "string",
+			ExistingMapKeys: []TypedKeyEvidence{{Expression: "\"a\"", Identity: "\"a\""}},
+			NewMapKey:       TypedKeyEvidence{Expression: "\"b\"", Identity: "\"b\""},
+		},
+	}
+	plan, err := PlanInsertCompositeElement(source, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(plan.Source), "map[string]int{\"a\": 1, \"b\": 2}") {
+		t.Fatalf("qualified receiver method literal was not selected: %s", plan.Source)
+	}
+}

@@ -1,0 +1,52 @@
+# Element selectors and placement are distinct from declaration/statement insertion.
+! exec semedit insert-construct --kind element --file routes.go --source '"metrics": 2' --discriminator 'map[string]int{"health": 1}'
+stderr 'in_declaration'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --source '"metrics": 2'
+stderr 'discriminator'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration ' ' --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
+stderr 'in_declaration'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator ' ' --source '"metrics": 2'
+stderr 'discriminator'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source ' '
+stderr 'source'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2' --placement first
+stderr 'append'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2' --in-function Handler
+stderr 'in_function'
+! exec semedit insert-construct --kind function --file routes.go --in-declaration routes --source 'func Handler() {}'
+stderr 'in_declaration'
+! exec semedit insert-construct --kind function --file routes.go --source 'func Handler() {}' --placement append
+stderr 'append'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration items --discriminator '[]int{1}' --source '0: 2'
+stderr 'only typed keyed struct and map literals'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": "wrong"'
+stderr 'validate structural plan output'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2' --expected-revision stale
+stderr 'expected_revision'
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2' --expected-revision ' '
+stderr 'expected_revision'
+cmp routes.go .scratch/want/unchanged.go
+
+# Unconstrained CLI ingress accepts vocabulary synonyms without restoring the old command.
+exec semedit insert-construct --kind entry --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2' --placement append
+cmp routes.go .scratch/want/added.go
+
+-- go.mod --
+module example.com/elementparams
+
+go 1.24
+-- routes.go --
+package routes
+
+var routes = map[string]int{"health": 1}
+var items = []int{1}
+-- .scratch/want/unchanged.go --
+package routes
+
+var routes = map[string]int{"health": 1}
+var items = []int{1}
+-- .scratch/want/added.go --
+package routes
+
+var routes = map[string]int{"health": 1, "metrics": 2}
+var items = []int{1}

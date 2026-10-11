@@ -7,11 +7,15 @@ func TestContractEnumsRejectUnknownValues(t *testing.T) {
 	if !VariantSet(0).Valid() || VariantSet(0).String() != "default" {
 		t.Fatal("zero variant selector must represent the default profile")
 	}
+	if VariantElement.String() != "element" {
+		t.Fatalf("element selector label = %q, want element", VariantElement)
+	}
 	for _, profile := range []VariantSet{
 		VariantSelectedFile | VariantNormalize,
 		VariantSelectedScope | VariantCheckOnly,
 		VariantSelectedFile | VariantSafeDelete,
 		VariantSelectedFile | VariantBatch,
+		VariantSelectedFile | VariantElement,
 	} {
 		if !profile.Valid() {
 			t.Errorf("valid composite selector %q was rejected", profile)
@@ -22,6 +26,7 @@ func TestContractEnumsRejectUnknownValues(t *testing.T) {
 		VariantSamePackage | VariantCrossPackage,
 		VariantInferPackage | VariantExplicitPackage,
 		VariantNormalize | VariantCheckOnly,
+		VariantField | VariantElement,
 	} {
 		if profile.Valid() {
 			t.Errorf("contradictory selector %q was accepted", profile)

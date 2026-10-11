@@ -105,7 +105,8 @@ When evolving package types, control flow branches, or struct elements:
 2. **Branching & Literal Construction**:
    - Use `semantic_insert_construct` to add inner control-flow constructs (loops, if-else, defer).
    - Use `semantic_insert_case` to add dispatch branches to existing switch statements.
-   - Use `semantic_insert_composite_element` to append keyed elements to struct or map literals.
+   - Use `semantic_insert_construct` with `kind: "element"`, `in_declaration`, exact `discriminator`, and `source` to append a keyed map entry or struct literal property. Copy inspection's `expected_revision` guard when available. Placement defaults to `append`; no other placement is accepted for elements.
+   - Struct type declarations use `kind: "field"` and `in_type`. Positional slice/array elements are unsupported; replace the enclosing construct or function body when that is the intended scope.
 3. **Declaration Reorganization & Deletion**:
    - Use `semantic_move_construct` to relocate declarations between files or packages.
    - Use `semantic_remove_construct` for safe, collision-checked deletion of unreferenced top-level declarations or switch cases.

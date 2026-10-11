@@ -1,8 +1,10 @@
 # Append one compiler-typed keyed map and struct element.
-exec semedit insert-composite-element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
+! exec semedit insert-composite-element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
+stderr 'unknown command'
+exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
 stdout 'Appended one keyed composite element.'
 cmp routes.go .scratch/want/map-added.go
-exec semedit insert-composite-element --file routes.go --in-declaration config --discriminator 'Config{Health: 1}' --source 'Metrics: 2'
+exec semedit insert-construct --kind element --file routes.go --in-declaration config --discriminator 'Config{Health: 1}' --source 'Metrics: 2'
 stdout 'Appended one keyed composite element.'
 cmp routes.go .scratch/want/elements-added.go
 

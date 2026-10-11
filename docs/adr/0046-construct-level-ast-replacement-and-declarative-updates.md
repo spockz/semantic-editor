@@ -17,6 +17,15 @@ Go also supports statement/expression replacement. A selector addresses an exact
 
 semantic_replace_body remains a specialized operation for changing a Go function or method body while preserving its signature. It is also available as the replace:function variant in full or filtered MCP catalogs. Generic whole-function replacement uses semantic_replace_construct.
 
+`insert_construct(kind="element")` appends one keyed element to a typed Go map
+or struct literal. `in_declaration` selects its top-level holder and
+`discriminator` is the complete exact current literal source. Placement is
+`append` only. Duplicate keys or fields, unknown fields, dynamic map keys,
+comments, positional literals, ambiguous selection, and stale revisions fail
+before mutation. The typed planner validates the package overlay and preserves
+its exact source splice without a second import-organizing pass. Struct type
+field insertion uses `kind="field"` and `in_type` instead.
+
 `move_construct` explicitly relocates one declaration. Use `semantic_insert_construct` to add a declaration or `semantic_replace_construct` to update it in place. Movement requires a destination and placement, carries no replacement source or overwrite flag, and does not sort declarations automatically.
 
 ## Invariants

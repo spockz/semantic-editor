@@ -27,6 +27,7 @@ We adopt the robustness principle (**Lenient In, Precise/Strict Out**) across al
 ### 2. Lenient Construct Vocabulary and Kind Normalization
 
 * **Kind Aliasing**: Construct operations (`semantic_insert_construct`, `semantic_replace_construct`, `semantic_remove_construct`) map standard synonyms to their canonical internal construct kinds (e.g., `variable` $\to$ `var`, `constant` $\to$ `const`, `procedure` $\to$ `function`).
+* **Literal Element Vocabulary**: Insertion normalizes `composite_element`, `literal_element`, `entry`, and `item` to `element` for unconstrained ingress. Advertised enums and output selectors use only `element`. These vocabulary synonyms do not retain the removed `insert_composite_element` operation or expand keyed Go map/struct support to positional lists.
 * **Receiver-Aware Function Kind Inference**: When a target symbol includes a receiver identifier (`Type.Method` or `(*Type).Method`), construct operations treat the target as a method even when `kind: "function"` was supplied.
 
 ### 3. Lenient Code Payload and Delimiter Ingestion

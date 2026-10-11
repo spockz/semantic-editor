@@ -43,25 +43,26 @@ func buildRegisteredEntry[Req any, Res any](def Def[Req, Res]) Entry {
 	}
 	slices.Sort(languages)
 	entry := Entry{
-		Key:           def.Key,
-		VariantVerb:   def.VariantVerb,
-		VariantKind:   def.VariantKind,
-		Summary:       def.Summary,
-		Params:        append([]ParameterContract(nil), def.Params...),
-		Level:         def.Level,
-		CLIName:       def.CLIName,
-		MCPName:       def.MCPName,
-		PlacementKey:  def.PlacementKey,
-		Batchable:     def.Batchable,
-		BufferedBatch: def.BufferedBatch,
-		ReadOnly:      def.ReadOnly,
-		Languages:     languages,
-		ExampleRaw:    cloneRaw(def.ExampleRaw),
-		Output:        def.Output,
-		ErrorOutput:   def.ErrorOutput,
-		Parse:         registeredParser(def),
-		Invoke:        registeredInvoker(def),
-		Format:        registeredFormatter(def),
+		Key:            def.Key,
+		VariantVerb:    def.VariantVerb,
+		VariantKind:    def.VariantKind,
+		Summary:        def.Summary,
+		Params:         append([]ParameterContract(nil), def.Params...),
+		Level:          def.Level,
+		CLIName:        def.CLIName,
+		MCPName:        def.MCPName,
+		PlacementKey:   def.PlacementKey,
+		Batchable:      def.Batchable,
+		BufferedBatch:  def.BufferedBatch,
+		ReadOnly:       def.ReadOnly,
+		Languages:      languages,
+		ExampleRaw:     cloneRaw(def.ExampleRaw),
+		NormalizeInput: def.NormalizeInput,
+		Output:         def.Output,
+		ErrorOutput:    def.ErrorOutput,
+		Parse:          registeredParser(def),
+		Invoke:         registeredInvoker(def),
+		Format:         registeredFormatter(def),
 	}
 	entry.FinalizeOutput = finalizeOutputHook(def)
 	entry.ProjectOutput = projectOutputHook(def)
@@ -81,10 +82,14 @@ func publishRegisteredEntry(registry *Registry, entry Entry) {
 
 func registeredParser[Req any, Res any](def Def[Req, Res]) func(map[string]any) (any, error) {
 	return func(raw map[string]any) (any, error) {
-		if err := ValidateParameterValues(raw, def.Params); err != nil {
+		normalized, err := normalizedInput(def.NormalizeInput, raw)
+		if err != nil {
+			return nil, fmt.Errorf("normalize %q input: %w", def.Key, err)
+		}
+		if err = ValidateParameterValues(normalized, def.Params); err != nil {
 			return nil, err
 		}
-		request, err := def.Parse(raw)
+		request, err := def.Parse(normalized)
 		if err != nil {
 			return nil, err
 		}
@@ -99,10 +104,14 @@ func registeredInvoker[Req any, Res any](def Def[Req, Res]) func(CallContext, ma
 }
 
 func invokeRegistered[Req any, Res any](def Def[Req, Res], cc CallContext, raw map[string]any) (any, error) {
-	if err := ValidateParameterValues(raw, def.Params); err != nil {
+	normalized, err := normalizedInput(def.NormalizeInput, raw)
+	if err != nil {
+		return nil, fmt.Errorf("normalize %q input: %w", def.Key, err)
+	}
+	if err = ValidateParameterValues(normalized, def.Params); err != nil {
 		return nil, err
 	}
-	request, err := def.Parse(raw)
+	request, err := def.Parse(normalized)
 	if err != nil {
 		return nil, err
 	}

@@ -17,13 +17,16 @@ An operation may expose a closed, operation-specific `selector_continuations`
 array alongside the generic `edit_receipt`. Each record contains only the
 selectors needed for a compatible follow-up and the matching full-file
 `expected_revision`. For composite-element insertion, the record is
-`{file, in_declaration, discriminator, expected_revision}` and only
-`semantic_insert_composite_element` consumes it.
+`{file, kind: "element", in_declaration, discriminator, expected_revision}` and
+`semantic_insert_construct` consumes it with `kind="element"`. The output kind
+schema admits only the canonical `element` value. The former specialized
+operation is removed from MCP, CLI, and batch without compatibility aliases.
 
-Before emitting a record, the finalizer reads the actual final source after
-formatting, resolves the original holder, proves exactly one supported literal
-is live, refreshes its exact source discriminator, and computes the full-file
-revision. It omits the record for buffered `applied_working` results, refusals,
+Before emitting a record, the finalizer reads the actual published source,
+proves its revision equals the planned final revision, resolves the original
+holder, proves exactly one supported literal is live, and refreshes its exact
+source discriminator. Element insertion preserves the planned byte splice
+without a later import or formatting rewrite. It omits the record for buffered `applied_working` results, refusals,
 or any outcome where identity or liveness cannot be established. The generic
 receipt continues to report publication status, changed files, and the
 analysis read set; it does not encode a synthetic symbol.

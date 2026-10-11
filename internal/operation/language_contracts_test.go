@@ -100,14 +100,14 @@ func TestTypedContractLabelsAndFaultProfilesRender(t *testing.T) {
 	}
 }
 
-func TestGoInsertConstructFieldCapabilityProfile(t *testing.T) {
+func TestGoInsertConstructStructuralCapabilityProfiles(t *testing.T) {
 	entry, ok := operation.DefaultRegistry().LookupKey("insert_construct")
 	if !ok {
 		t.Fatal("insert_construct is not registered")
 	}
 	contract := entry.LanguageContracts[backend.LanguageGo]
-	if len(contract.Variants) != 2 {
-		t.Fatalf("insert_construct variants = %d, want 2", len(contract.Variants))
+	if len(contract.Variants) != 3 {
+		t.Fatalf("insert_construct variants = %d, want 3", len(contract.Variants))
 	}
 	if _, baseExists := contract.Variant(capability.VariantSelectedFile); !baseExists {
 		t.Fatal("insert_construct is missing its base selected-file profile")
@@ -146,5 +146,16 @@ func TestGoInsertConstructFieldCapabilityProfile(t *testing.T) {
 	}
 	if support, err := field.ErrorTolerance.Classify(capability.FaultOtherPackageType); err != nil || support != capability.FaultUnknown {
 		t.Errorf("field other-package type support = (%v, %v), want unknown", support, err)
+	}
+	elementSelector := capability.VariantSelectedFile | capability.VariantElement
+	element, elementExists := contract.Variant(elementSelector)
+	if !elementExists {
+		t.Fatalf("insert_construct is missing %q profile", elementSelector)
+	}
+	wantElement := field
+	wantElement.When = elementSelector
+	wantElement.Capabilities = capability.FeatureASTEdit | capability.FeatureTypedRefactor
+	if !reflect.DeepEqual(element, wantElement) {
+		t.Errorf("element profile = %+v, want structural bounds %+v", element, wantElement)
 	}
 }

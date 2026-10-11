@@ -132,6 +132,8 @@ type FileEditRes struct {
 	SuppressContinuations bool
 	WorkingView           bool
 	Package               string
+	ElementCandidate      *compositeSelectorCandidate
+	SelectorContinuation  *compositeSelectorContinuation
 }
 
 func formatFileEdit(res FileEditRes) (string, error) {

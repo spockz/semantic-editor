@@ -18,7 +18,8 @@ When the request matches an operation exposed by the active semedit server, use 
 | Find usages, call sites, or references of a Go symbol | `semantic_find_references` | Broad text search or regex |
 | Rename a symbol and its references in Go, or in selected trusted Rust or Java files | `semantic_rename` | Built-in text replacement across files |
 | Replace one Go control-flow construct, clause, or statement/expression inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |
-| Insert one Go control-flow construct, loop, branch, clause, or statement/expression inside a function | `semantic_insert_construct` with `kind`, target placement (`before_line`, `after_line`, or `at_index`), and `source` | Built-in text edits or line insertion |
+| Insert one Go control-flow construct, loop, branch, clause, or statement/expression inside a function | `semantic_insert_construct` with `kind`, `in_function`, and `source`; statements use `anchor` (`start`, `end`, `before_return`, `before`, or `after`), while clauses use `placement` | Built-in text edits or line insertion |
+| Append a keyed map/dictionary entry or struct/object initializer property in Go | `semantic_insert_construct` with `kind: "element"`, `in_declaration`, exact `discriminator`, and `source`; copy `expected_revision` from inspection when available | `kind: "field"` changes struct type declarations; positional slice/array items are unsupported |
 | Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
 | Extract contiguous Go call statements with named-parameter data flow | `semantic_extract_function` with `kind`, `start_line`, and `end_line`; refusals include aliased inputs, direct `recover()`, and uncertain pointer-receiver dispatch | Copying statements into a new helper manually |
 | Extract one exact typed whole argument from a direct single-argument Go call statement | `semantic_extract_variable` with `symbol`, `in_function`, and exact-source `discriminator`; use `construct_path` when the expression repeats | Rewriting the call around an inferred local manually |
@@ -101,5 +102,14 @@ To conserve context budget across agent harnesses (OpenAI Codex, Google Antigrav
 - **Makefile**: Consult [references/make.md](references/make.md) only when inspecting or refactoring Makefiles.
 
 ## Keep examples discriminating
+
+To add `"metrics": metrics` to a Go map literal, use
+`semantic_insert_construct` with `kind: "element"`, the inspection record's
+`file`, `in_declaration`, and `expected_revision`, the exact current literal
+as `discriminator`, and only the new keyed entry as `source`. A successful
+standalone result may supply a refreshed `selector_continuations` record for
+the next insertion; copy all companions from that record. Batch children omit
+live records. Do not use `kind: "field"` for literal properties, or infer
+positional list support from the generic kind name.
 
 Pair a tempting wrong route with the operation that fits the intent. A symbol rename calls for `semantic_rename`; an inner control-flow construct or statement/expression insertion calls for `semantic_insert_construct`; a single construct, branch, clause, or statement/expression replacement calls for `semantic_replace_construct`; a package value update calls for `semantic_replace_decl`; a body-only change calls for `semantic_replace_body`. Use `semantic_insert_function`, `semantic_insert_type`, and `semantic_insert_decl` for their respective declaration kinds; use `semantic_insert_declaration` when its generic placement controls fit better. A source import change calls for `semantic_organize_imports`; a new module dependency calls for `semantic_add_build_dependency`. Text edits remain appropriate for documentation, comments, string content, and changes that have no supported semantic operation.

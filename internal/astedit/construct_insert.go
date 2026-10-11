@@ -47,7 +47,7 @@ var GoInsertConstructKinds = []ConstructKind{
 	backend.ConstructFunction, backend.ConstructMethod, backend.ConstructType,
 	backend.ConstructConst, backend.ConstructVar, backend.ConstructDecl,
 	backend.ConstructDeclaration, backend.ConstructCase, backend.ConstructField,
-	backend.ConstructStatementOrExpr,
+	backend.ConstructElement, backend.ConstructStatementOrExpr,
 }
 
 // InsertConstruct injects one declaration, field, case, or statement into filePath.

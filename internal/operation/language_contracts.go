@@ -264,17 +264,19 @@ func goInsertConstructContract() capability.OperationContract {
 
 	moduleScope := capability.ScopeActiveModule
 	packageScope := capability.ScopeSelectedPackage
-	fieldRequirements := append(contractRequirements(moduleScope, capability.RequireModuleSnapshot, capability.RequireTestVariants),
+	structuralRequirements := append(contractRequirements(moduleScope, capability.RequireModuleSnapshot, capability.RequireTestVariants),
 		capability.Requirement{Kind: capability.RequireExactSelector, Scope: packageScope},
 		capability.Requirement{Kind: capability.RequireBoundedSource, Scope: packageScope},
 		capability.Requirement{Kind: capability.RequirePackageTypes, Scope: packageScope},
 		capability.Requirement{Kind: capability.RequireOverlayTypes, Scope: packageScope},
 		capability.Requirement{Kind: capability.RequireSnippetParse, Scope: fileScope})
-	field := contractVariant(capability.VariantSelectedFile|capability.VariantField, moduleScope, fieldRequirements,
-		capability.FeatureASTEdit|capability.FeatureTypedRefactor|capability.FeatureFormat,
-		capability.GuaranteePackageOverlay|capability.GuaranteeAtomicWrites,
-		structuralSnapshotFaultSupport())
-	return typedContract(edit, field)
+	features := capability.FeatureASTEdit | capability.FeatureTypedRefactor | capability.FeatureFormat
+	guarantees := capability.GuaranteePackageOverlay | capability.GuaranteeAtomicWrites
+	field := contractVariant(capability.VariantSelectedFile|capability.VariantField, moduleScope, structuralRequirements,
+		features, guarantees, structuralSnapshotFaultSupport())
+	element := contractVariant(capability.VariantSelectedFile|capability.VariantElement, moduleScope, structuralRequirements,
+		capability.FeatureASTEdit|capability.FeatureTypedRefactor, guarantees, structuralSnapshotFaultSupport())
+	return typedContract(edit, field, element)
 }
 
 func goServerOperationContract(key string) (capability.OperationContract, bool) {
@@ -364,7 +366,7 @@ func goTypedOperationContract(key string) (capability.OperationContract, bool) {
 	case "inline_function", "migrate_type", "change_signature", "introduce_parameter",
 		"introduce_parameter_object", "extract_interface", "implement_contract":
 		return typedContract(moduleMutation), true
-	case "insert_field", "insert_composite_element", "extract_type", "set_doc_comment":
+	case "insert_field", "extract_type", "set_doc_comment":
 		structuralRequirements := append(contractRequirements(moduleScope, capability.RequireModuleSnapshot, capability.RequireTestVariants),
 			capability.Requirement{Kind: capability.RequireExactSelector, Scope: packageScope},
 			capability.Requirement{Kind: capability.RequireBoundedSource, Scope: packageScope},

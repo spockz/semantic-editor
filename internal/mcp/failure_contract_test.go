@@ -292,7 +292,6 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_inline_function":            "missing source file",
 		"semantic_inline_variable":            "missing source file",
 		"semantic_insert_case":                "unmatched enclosing-function selector",
-		"semantic_insert_composite_element":   "unmatched declaration selector",
 		"semantic_insert_construct":           "missing source file",
 		"semantic_insert_decl":                "missing source file",
 		"semantic_insert_declaration":         "missing source file",
@@ -518,7 +517,7 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 		if tool == "semantic_insert_case" {
 			args["case"] = "case \"missing\":\n\treturn"
 		}
-	case "semantic_move_construct", "semantic_insert_composite_element":
+	case "semantic_move_construct":
 		args["file"] = "main.go"
 		args["symbol"] = "MissingSymbol"
 	case "semantic_assertion_mode":

@@ -299,6 +299,36 @@ func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
 	if err := mcp.ValidateSourceFields(broken); err == nil || !strings.Contains(err.Error(), "semantic_lookup.offset") {
 		t.Fatalf("invalid SourceFields reference error = %v", err)
 	}
+	entry, ok := registry.LookupKey("insert_construct")
+	if !ok {
+		t.Fatal("registry omitted insert_construct")
+	}
+	for parameter, source := range map[string]string{
+		"file":              "semantic_insert_construct.result.selector_continuations[].file",
+		"in_declaration":    "semantic_insert_construct.result.selector_continuations[].in_declaration",
+		"discriminator":     "semantic_insert_construct.result.selector_continuations[].discriminator",
+		"expected_revision": "semantic_insert_construct.result.selector_continuations[].expected_revision",
+	} {
+		contract := sourceParameterByJSONName(t, entry, parameter)
+		if !slices.Contains(contract.SourceFields, source) {
+			t.Errorf("insert_construct.%s omits selector source %q: %v", parameter, source, contract.SourceFields)
+		}
+	}
+	kind := sourceParameterByJSONName(t, entry, "kind")
+	if len(kind.SourceFields) != 0 {
+		t.Errorf("informational selector kind must not create a consumer edge: %v", kind.SourceFields)
+	}
+}
+
+func sourceParameterByJSONName(t *testing.T, entry operation.Entry, name string) operation.ParameterContract {
+	t.Helper()
+	for _, parameter := range entry.Params {
+		if parameter.JSONName == name {
+			return parameter
+		}
+	}
+	t.Fatalf("%s has no %q parameter", entry.Key, name)
+	return operation.ParameterContract{}
 }
 
 func assertContractOutputSchema(t *testing.T, name string, schema any) {
@@ -349,8 +379,6 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertStructuralOutputSchema(t, output, name)
 	case fieldInsertionToolName:
 		assertInsertFieldOutputSchema(t, output)
-	case "semantic_insert_composite_element":
-		assertCompositeElementOutputSchema(t, output)
 	case "semantic_remove_construct":
 		assertRemoveConstructOutputSchema(t, output)
 	case "semantic_extract_interface", "semantic_implement_contract":
@@ -361,7 +389,10 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertTypedOutcomeOrLegacyStringSchema(t, name, output)
 	case "semantic_lookup":
 		assertRegisteredTypedOutputSchema(t, name, output)
-	case "semantic_insert_construct", "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+	case "semantic_insert_construct":
+		assertFileEditOutputSchema(t, name, output)
+		assertCompositeElementOutputSchema(t, output)
+	case "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_move_construct", "semantic_scaffold_file":
 		assertFileEditOutputSchema(t, name, output)
 	case "semantic_batch":
@@ -451,7 +482,7 @@ func assertFeedbackOutputSchema(t *testing.T, output any) {
 
 func assertCompositeElementOutputSchema(t *testing.T, raw any) {
 	t.Helper()
-	assertStructuralOutputSchema(t, raw, "semantic_insert_composite_element")
+	assertStructuralOutputSchema(t, raw, "semantic_insert_construct")
 	result := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
 	properties := result["properties"].(map[string]any)
 	selectors, ok := properties["selector_continuations"].(map[string]any)
@@ -463,12 +494,16 @@ func assertCompositeElementOutputSchema(t *testing.T, raw any) {
 		t.Fatalf("composite selector item is not a closed object: %#v", selectors["items"])
 	}
 	itemProperties := item["properties"].(map[string]any)
-	for _, field := range []string{"file", "in_declaration", "discriminator", "expected_revision"} {
+	for _, field := range []string{"file", "kind", "in_declaration", "discriminator", "expected_revision"} {
 		if itemProperties[field] == nil {
 			t.Errorf("composite selector omitted required field %q", field)
 		}
 	}
-	if got := item["required"]; !reflect.DeepEqual(got, []any{"file", "in_declaration", "discriminator", "expected_revision"}) {
+	kind := itemProperties["kind"].(map[string]any)
+	if got := kind["enum"]; !reflect.DeepEqual(got, []any{"element"}) {
+		t.Errorf("composite selector kind enum = %#v, want [element]", got)
+	}
+	if got := item["required"]; !reflect.DeepEqual(got, []any{"file", "kind", "in_declaration", "discriminator", "expected_revision"}) {
 		t.Errorf("composite selector required = %#v", got)
 	}
 }
@@ -990,6 +1025,19 @@ func assertConstructInsertionSchema(t *testing.T, byName map[string]map[string]a
 	}
 	if _, exists := byName["semantic_insert_decl"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"]; exists {
 		t.Fatal("semantic_insert_decl retained retired overwrite parameter")
+	}
+	kind := insertProperties["kind"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(kind, "element") {
+		t.Error("semantic_insert_construct kind schema omits canonical element")
+	}
+	for _, alias := range []string{"composite_element", "literal_element", "entry", "item"} {
+		if schemaEnumContains(kind, alias) {
+			t.Errorf("semantic_insert_construct kind schema advertises alias %q", alias)
+		}
+	}
+	placement := insertProperties["placement"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(placement, "append") {
+		t.Error("semantic_insert_construct placement schema omits append")
 	}
 }
 

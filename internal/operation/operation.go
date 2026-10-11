@@ -29,6 +29,7 @@ type Entry struct {
 	ReadOnly           bool
 	Languages          []backend.LanguageID
 	ExampleRaw         map[string]any
+	NormalizeInput     func(map[string]any) (map[string]any, error)
 	Output             *OperationOutputContract
 	ErrorOutput        *OperationErrorOutputContract
 	FinalizeOutput     func(CallContext, map[string]any, any) (any, error)
@@ -77,6 +78,8 @@ type Def[Req any, Res any] struct {
 	Batchable     bool
 	BufferedBatch bool
 	ReadOnly      bool
+	// NormalizeInput canonicalizes ingress spellings before parameter validation and parsing.
+	NormalizeInput func(map[string]any) (map[string]any, error)
 	// PrepareProject normalizes a concrete project after ambient context merges and before language dispatch.
 	// Operations should set this only when a selected path must be classified from that effective root.
 	PrepareProject func(backend.ProjectContext) (backend.ProjectContext, error)
@@ -312,7 +315,11 @@ func finalizeOutputHook[Req any, Res any](def Def[Req, Res]) func(CallContext, m
 		return nil
 	}
 	return func(cc CallContext, raw map[string]any, value any) (any, error) {
-		request, err := def.Parse(raw)
+		normalized, err := normalizedInput(def.NormalizeInput, raw)
+		if err != nil {
+			return nil, fmt.Errorf("normalize %q finalization input: %w", def.Key, err)
+		}
+		request, err := def.Parse(normalized)
 		if err != nil {
 			return nil, fmt.Errorf("finalize %q request: %w", def.Key, err)
 		}
