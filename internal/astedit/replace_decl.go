@@ -25,6 +25,15 @@ type ReplaceDeclOptions struct {
 
 // ReplaceDecl replaces one existing package constant, variable, or type alias.
 func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts ReplaceDeclOptions) (string, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		var result string
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			result, err = ReplaceDecl(editCtx, filePath, symbolQuery, source, opts)
+			return err
+		})
+		return result, err
+	}
 	target, err := loadDeclarationReplacementTarget(ctx, filePath)
 	if err != nil {
 		return "", err

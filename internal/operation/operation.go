@@ -376,22 +376,14 @@ func ValidateOutputMode(contract *OperationOutputContract, hasProjector bool) er
 		}
 		return nil
 	}
-	if err := ValidateOutputContract(*contract); err != nil {
-		return fmt.Errorf("output contract: %w", err)
+	if contract.ResultSchema == nil {
+		return fmt.Errorf("output contract requires a typed result schema: %w", ErrInvalidDefinition)
 	}
-	hasTypedResult := contract.ResultSchema != nil
-	hasLegacyEnvelope := len(contract.Metadata) > 0 || len(contract.EnvelopeContinuations) > 0
-	if hasLegacyEnvelope && (hasTypedResult || hasProjector) {
-		return fmt.Errorf("metadata and envelope continuations require the legacy result envelope: %w", ErrInvalidDefinition)
-	}
-	if hasTypedResult && !hasProjector {
+	if !hasProjector {
 		return fmt.Errorf("typed output requires a projector: %w", ErrInvalidDefinition)
 	}
-	if hasProjector && !hasTypedResult {
-		return fmt.Errorf("output projector requires a result schema: %w", ErrInvalidDefinition)
-	}
-	if len(contract.Continuations) > 0 && !hasTypedResult {
-		return fmt.Errorf("typed continuations require a result schema: %w", ErrInvalidDefinition)
+	if err := ValidateOutputContract(*contract); err != nil {
+		return fmt.Errorf("output contract: %w", err)
 	}
 	return nil
 }

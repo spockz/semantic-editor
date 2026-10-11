@@ -42,7 +42,7 @@ func signatureExpansionDef(key, cliName, mcpName, summary string, params []Param
 				ctx = context.Background()
 			}
 			result.Draft.Operation = key
-			receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, cc.InBatch, result.Draft, result.Resolve)
+			receipt, err := finalizeCallReceipt(ctx, cc, cc.WorkDir, result.Draft, result.Resolve)
 			if err != nil {
 				return structuralPlanResult{}, fmt.Errorf("finalize signature expansion receipt: %w", err)
 			}

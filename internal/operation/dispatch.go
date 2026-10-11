@@ -2,11 +2,13 @@
 package operation
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"semedit/internal/backend"
 	"semedit/internal/backends"
+	"semedit/internal/sourcebuf"
 )
 
 // ErrUnknownOperation indicates no operation is registered for a key.
@@ -25,17 +27,37 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 	if !ok {
 		return nil, fmt.Errorf("dispatch %q: %w", key, ErrUnknownOperation)
 	}
+	ctx := cc.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	buffer := sourcebuf.FromContext(ctx)
+	var checkpoint sourcebuf.Checkpoint
+	if buffer != nil {
+		checkpoint = buffer.Checkpoint()
+	}
 	result, err := entry.Invoke(cc, raw)
 	if err != nil {
-		return nil, err
+		return nil, rollbackDispatchError(ctx, buffer, checkpoint, !entry.ReadOnly, err)
 	}
 	if entry.FinalizeOutput != nil {
 		result, err = entry.FinalizeOutput(cc, raw, result)
 		if err != nil {
-			return nil, err
+			return nil, rollbackDispatchError(ctx, buffer, checkpoint, !entry.ReadOnly, err)
 		}
 	}
 	return result, nil
+}
+
+func rollbackDispatchError(ctx context.Context, buffer *sourcebuf.Buffer, checkpoint sourcebuf.Checkpoint, resyncObserver bool, cause error) error {
+	if buffer == nil {
+		return cause
+	}
+	buffer.Rollback(checkpoint)
+	if observer, ok := ctx.Value(mutationObserverContextKey{}).(func(context.Context) error); ok && observer != nil && resyncObserver {
+		return errors.Join(cause, observer(ctx))
+	}
+	return cause
 }
 
 // resolveLanguage selects the backend for project, mirroring ingress language detection,

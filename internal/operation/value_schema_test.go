@@ -471,7 +471,7 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 		},
 		ReadSet: []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
 	}
-	receipt, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	receipt, err := FinalizeEditReceipt(context.Background(), root, false, false, draft, nil)
 	if err != nil {
 		t.Fatalf("finalize partial receipt: %v", err)
 	}
@@ -484,14 +484,14 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 		PlannedChanges: []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(afterDigest[:])}},
 		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(afterDigest[:])}},
 	}
-	receipt, err = FinalizeEditReceipt(context.Background(), root, false, noOp, nil)
+	receipt, err = FinalizeEditReceipt(context.Background(), root, false, false, noOp, nil)
 	if err != nil {
 		t.Fatalf("finalize no-op receipt: %v", err)
 	}
 	if len(receipt.Changes) != 0 {
 		t.Fatalf("no-op receipt reports changes: %#v", receipt.Changes)
 	}
-	refused, err := FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{Operation: "replace-value", Status: EditRefused}, nil)
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, false, EditReceiptDraft{Operation: "replace-value", Status: EditRefused}, nil)
 	if err != nil {
 		t.Fatalf("finalize refused receipt: %v", err)
 	}
@@ -528,7 +528,7 @@ func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testin
 			{Path: "second.go", Revision: digest(beforeB)},
 		},
 	}
-	partial, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	partial, err := FinalizeEditReceipt(context.Background(), root, false, false, draft, nil)
 	if err != nil {
 		t.Fatalf("finalize partial publication: %v", err)
 	}
@@ -538,7 +538,7 @@ func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testin
 	if writeErr := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); writeErr != nil {
 		t.Fatalf("restore unchanged preimage: %v", writeErr)
 	}
-	refused, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, false, draft, nil)
 	if err != nil {
 		t.Fatalf("finalize fully unchanged publication: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	observedDigest := sha256.Sum256(observed)
 	expected := hex.EncodeToString(plannedDigest[:])
 	resolverCalls := 0
-	receipt, err := FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+	receipt, err := FinalizeEditReceipt(context.Background(), root, false, false, EditReceiptDraft{
 		Operation:      "replace-value",
 		Status:         EditPersisted,
 		PlannedChanges: []FileRevision{{Path: "main.go", Revision: expected}},
@@ -583,7 +583,7 @@ func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	}
 
 	liveExpected := observedRevision
-	receipt, err = FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+	receipt, err = FinalizeEditReceipt(context.Background(), root, false, false, EditReceiptDraft{
 		Operation:      "replace-value",
 		Status:         EditPersisted,
 		PlannedChanges: []FileRevision{{Path: "main.go", Revision: observedRevision}},
@@ -611,7 +611,7 @@ func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
 	revision := hex.EncodeToString(digest[:])
 	candidate := SymbolTarget{File: "main.go", Symbol: "Value", ExpectedRevision: &revision}
 	draft := EditReceiptDraft{Operation: "contract", Status: EditNoOp, ReadSet: []FileRevision{{Path: "main.go", Revision: revision}}, Continuations: []SymbolTarget{candidate}}
-	standalone, err := FinalizeEditReceipt(context.Background(), root, false, draft, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) { return target, true, nil })
+	standalone, err := FinalizeEditReceipt(context.Background(), root, false, false, draft, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) { return target, true, nil })
 	if err != nil {
 		t.Fatalf("finalize standalone no-op: %v", err)
 	}
@@ -626,7 +626,7 @@ func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
 	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
 		t.Fatal(authorizeErr)
 	}
-	working, err := FinalizeEditReceipt(ctx, root, true, draft, nil)
+	working, err := FinalizeEditReceipt(ctx, root, true, true, draft, nil)
 	if err != nil {
 		t.Fatalf("finalize buffered no-op: %v", err)
 	}
@@ -690,12 +690,10 @@ func TestProjectInspectResultAddsGoDeclarationOwnerAliases(t *testing.T) {
 	}
 }
 
-func TestOutputModeValidationSeparatesLegacyAndProjectedContracts(t *testing.T) {
+func TestOutputModeValidationRequiresTypedProjectedContracts(t *testing.T) {
 	text := ValueSchema{Kind: SchemaString}
 	object := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"value": text}}
-	legacy := &OperationOutputContract{Metadata: []OutputMetadataField{{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}}}}
 	projected := &OperationOutputContract{ResultSchema: &object}
-	legacyEnvelope := &OperationOutputContract{EnvelopeContinuations: []EnvelopeContinuationField{{Field: "file", Schema: text, Role: RoleTarget, Consumers: []string{"semantic_consumer"}}}}
 	cases := []struct {
 		name        string
 		contract    *OperationOutputContract
@@ -703,9 +701,6 @@ func TestOutputModeValidationSeparatesLegacyAndProjectedContracts(t *testing.T) 
 		wantInvalid bool
 	}{
 		{name: "no output", wantInvalid: false},
-		{name: "legacy metadata", contract: legacy},
-		{name: "legacy envelope", contract: legacyEnvelope},
-		{name: "legacy metadata cannot be projected", contract: legacy, projector: true, wantInvalid: true},
 		{name: "typed result needs projector", contract: projected, wantInvalid: true},
 		{name: "projector needs typed result", projector: true, wantInvalid: true},
 		{name: "typed result with projector", contract: projected, projector: true},

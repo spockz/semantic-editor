@@ -45,7 +45,7 @@ var insertConstructParams = []ParameterContract{
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private", Enums: accessEnum, DynamicEnums: supportedAccessModifiers},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier for declarations, fields, or cases", Enums: constructPlacementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol or anchor case identifier required for relative placement"},
-	{Name: "in_type", CLIName: "in-type", JSONName: "in_type", Type: ParamString, Role: RoleSelector, Description: "Selector: existing Go struct type that owns a field insertion", SourceFields: []string{"semantic_inspect_symbol.result.continuations[].in_type"}},
+	{Name: "in_type", CLIName: "in-type", JSONName: "in_type", Type: ParamString, Role: RoleSelector, Description: "Selector: existing locally declared, private, non-generic Go struct type that owns a field insertion", SourceFields: []string{"semantic_inspect_symbol.result.continuations[].in_type"}},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for declarations: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Role: RoleSelector, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
@@ -55,7 +55,7 @@ var insertConstructParams = []ParameterContract{
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
 
-var constructPlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "type_end", "first", "last", "before_default", "before", "after"}
+var constructPlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "type_start", "type_end", "first", "last", "before_default", "before", "after"}
 
 func executableInsertConstructKinds(candidate backend.Backend) []string {
 	return executableKinds(candidate, backend.OperationInsertConstruct)
@@ -149,6 +149,39 @@ func parseNonEmptyOptionalString(raw map[string]any, jsonName, cliName string) (
 }
 
 func runInsertConstruct(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
+	if req.Kind == backend.ConstructField {
+		fieldSymbol, err := constructFieldSymbol(req.TypeName, req.Source)
+		if err != nil {
+			return FileEditRes{}, err
+		}
+		fieldName := strings.TrimPrefix(fieldSymbol, req.TypeName+".")
+		if validateErr := astedit.ValidateAccess(astedit.GolangBackend{}, astedit.AccessModifier(req.AccessModifier), fieldName); validateErr != nil {
+			return FileEditRes{}, fmt.Errorf("validate field access modifier: %w: %w", validateErr, ErrInvalidParams)
+		}
+		raw := map[string]any{
+			"file": req.File, "in_type": req.TypeName, "symbol": fieldSymbol,
+			"source": req.Source, "placement": req.Placement,
+		}
+		if req.TargetSymbol != "" {
+			raw["target_symbol"] = req.TargetSymbol
+		}
+		if req.ExpectedRevision != "" {
+			raw["expected_revision"] = req.ExpectedRevision
+		}
+		field := insertFieldStructuralDef()
+		planned, err := field.Handlers[backend.LanguageGo](ctx, cc, raw)
+		if err != nil {
+			return FileEditRes{}, err
+		}
+		planned.Draft.Operation = "insert_construct"
+		planned.Edit.Detail = "Successfully inserted field construct."
+		return FileEditRes{
+			File: planned.Edit.File, Display: planned.Edit.Display, Symbol: planned.Edit.Symbol,
+			InType: planned.Edit.InType, Diff: planned.Edit.Diff, Detail: planned.Edit.Detail,
+			Delta: planned.Edit.Delta, DiagnosticStatus: planned.Edit.DiagnosticStatus, HasDelta: planned.Edit.HasDelta,
+			ReceiptDraft: planned.Draft, Resolve: planned.Resolve,
+		}, nil
+	}
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	res, err := astedit.InsertConstruct(ctx, targetPath, req.Source, astedit.InsertConstructOptions{
@@ -196,6 +229,17 @@ func runInsertConstruct(ctx context.Context, cc CallContext, req InsertConstruct
 	}, nil
 }
 
+func constructFieldSymbol(typeName, source string) (string, error) {
+	if typeName == "" {
+		return "", fmt.Errorf("in_type is required for field insertion: %w", ErrInvalidParams)
+	}
+	fieldName, err := astedit.InferInsertedFieldName(source)
+	if err != nil {
+		return "", fmt.Errorf("parse inserted field source: %w: %w", err, ErrInvalidParams)
+	}
+	return typeName + "." + fieldName, nil
+}
+
 func constructContinuationFunction(req InsertConstructReq) string {
 	if req.Kind == backend.ConstructCase || req.Kind == backend.ConstructStatementOrExpr {
 		return req.Function
@@ -213,23 +257,30 @@ func constructContinuationDiscriminator(req InsertConstructReq) string {
 func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 	return Def[InsertConstructReq, FileEditRes]{
 		Key:     "insert_construct",
-		Summary: "Use this tool instead of text replacement to add one backend-supported declaration, field, switch case, or anchored statement. Use semantic_replace_construct for existing targets; specialized insert tools are optional variants. Insertions fail closed on collisions." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text replacement to add one backend-supported declaration, field, switch case, or anchored statement. Field insertion requires an existing locally declared, private, non-generic Go struct. Use semantic_replace_construct for existing targets; specialized insert tools are optional variants. Insertions fail closed on collisions." + automaticVerificationGuidance,
 		Params:  insertConstructParams,
 		Level:   LevelFile,
 		CLIName: "insert-construct",
 		MCPName: semanticInsertConstructToolName,
 		Parse:   parseInsertConstruct,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertConstructReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertConstruct,
+			backend.LanguageGo: bufferedFileEditHandler("insert_construct", func(req InsertConstructReq) string { return req.File }, runInsertConstruct),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
-			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
-			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
-			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
-			legacyEnvelopeField(wireDiscriminator, RoleSelector, envelopeDiscriminatorConsumers),
-		}, OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output: fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "in_type": {Kind: SchemaString}, wireInFunction: {Kind: SchemaString}, wireDiscriminator: {Kind: SchemaString}, "line": {Kind: SchemaInteger}, "diff": {Kind: SchemaString}}, []OutputContinuation{
+			outputContinuation("file", RoleTarget, fileOutputConsumers),
+			outputContinuation("symbol", RoleTarget, symbolOutputConsumers),
+			outputContinuation("in_type", RoleSelector, []string{insertFieldToolName, "semantic_extract_type", semanticInsertConstructToolName}),
+			outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers),
+			outputContinuation(wireDiscriminator, RoleSelector, discriminatorOutputConsumers),
+		}),
+		FinalizeOutput: func(cc CallContext, _ InsertConstructReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: func(result FileEditRes) (any, error) {
+			return projectFileEditOutput(result, "file", "symbol", "in_type", wireInFunction, wireDiscriminator, "line", "diff")
+		},
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}

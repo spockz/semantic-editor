@@ -134,7 +134,7 @@ func compositeElementDef(spec structuralPlanSpec, output OperationOutputContract
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, cc.InBatch, result.Structural.Draft, result.Structural.Resolve)
+			receipt, err := finalizeCallReceipt(ctx, cc, cc.WorkDir, result.Structural.Draft, result.Structural.Resolve)
 			if err != nil {
 				return compositePlanResult{}, fmt.Errorf("finalize composite element edit receipt: %w", err)
 			}
@@ -152,7 +152,7 @@ func compositeElementDef(spec structuralPlanSpec, output OperationOutputContract
 			return result, nil
 		},
 		ProjectOutput: func(result compositePlanResult) (any, error) {
-			projected := map[string]any{"result": result.Structural.Edit.Detail, "edit_receipt": result.Structural.Receipt}
+			projected := map[string]any{"result": result.Structural.Edit.Detail, editReceiptField: result.Structural.Receipt}
 			if result.Structural.Receipt.Status != EditAppliedWorking {
 				if result.Structural.Edit.Display != "" {
 					projected["file"] = result.Structural.Edit.Display

@@ -72,7 +72,7 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 		CLIName:  "assertion-mode",
 		MCPName:  semanticAssertionModeToolName,
 		Parse:    parseAssertionMode,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, AssertionModeReq) (AssertionModeRes, error){backend.LanguageGo: runAssertionMode},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, AssertionModeReq) (AssertionModeRes, error){backend.LanguageGo: bufferedAssertionModeHandler},
 		Format: func(res AssertionModeRes) (string, error) {
 			if res.DryRun {
 				return fmt.Sprintf("%d swapped (dry run)", res.Swapped), nil
@@ -82,6 +82,24 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 		ExampleRaw:    map[string]any{"file": "api/api_test.go", "mode": "relax", "dry_run": true},
 		BufferedBatch: true, Batchable: true,
 	}
+}
+
+func bufferedAssertionModeHandler(ctx context.Context, cc CallContext, req AssertionModeReq) (AssertionModeRes, error) {
+	if req.DryRun {
+		return runAssertionMode(ctx, cc, req)
+	}
+	target := resolveWorkPath(cc.WorkDir, req.File)
+	root, err := structuralModuleRoot(target)
+	if err != nil {
+		return AssertionModeRes{}, fmt.Errorf("prepare assertion source buffer: %w", err)
+	}
+	var result AssertionModeRes
+	err = sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		var editErr error
+		result, editErr = runAssertionMode(editCtx, cc, req)
+		return editErr
+	})
+	return result, err
 }
 
 func runAssertionMode(ctx context.Context, cc CallContext, req AssertionModeReq) (AssertionModeRes, error) {

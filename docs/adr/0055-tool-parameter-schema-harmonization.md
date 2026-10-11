@@ -131,12 +131,12 @@ descriptive kinds, and historical paths do not acquire live continuation roles
 merely because they appear in a result. Typed result continuations retain their
 declared nested paths and same-record provenance.
 
-An operation with a formatted string result can explicitly declare typed sibling
-envelope continuations without manufacturing a typed object result. The provider
-index includes those live fields, with the same role, consumer, leaf-name, and
-assignability checks. Their runtime envelope contract rejects undeclared or
-mistyped fields and requires any non-optional continuation. Typed projected-result
-continuations retain the original result-schema and projector requirements.
+Every operation with an output contract declares a typed `ResultSchema` and
+`ProjectOutput`. Continuations belong to that projected result, with matching
+role, consumer, leaf-name, and assignability checks. Formatted text remains a
+presentation of the result; it does not carry a separate continuation envelope.
+Mutating operations finalize an `edit_receipt` against the published revision.
+Buffered child results report `applied_working` and omit live continuations.
 
 ### 9. Existing-Declaration Selector Provenance
 

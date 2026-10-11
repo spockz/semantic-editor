@@ -347,7 +347,7 @@ func finalizeContractOutput(cc CallContext, _ map[string]any, result contractOut
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	receipt, err := FinalizeEditReceipt(ctx, root, cc.InBatch, EditReceiptDraft{Operation: result.Operation, Status: status, PlannedChanges: planned, ReadSet: readSet, Continuations: result.ReceiptCandidates}, func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
+	receipt, err := finalizeCallReceipt(ctx, cc, root, EditReceiptDraft{Operation: result.Operation, Status: status, PlannedChanges: planned, ReadSet: readSet, Continuations: result.ReceiptCandidates}, func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
 		return resolveContractContinuation(resolveCtx, root, candidate)
 	})
 	if err != nil {

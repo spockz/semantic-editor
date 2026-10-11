@@ -114,12 +114,15 @@ func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 		MCPName: semanticInsertDeclarationToolName,
 		Parse:   parseInsertDeclaration,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclarationReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertDeclaration,
+			backend.LanguageGo: bufferedFileEditHandler("insert_declaration", func(req InsertDeclarationReq) string { return req.File }, runInsertDeclaration),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output:     declarationOutputContract(false),
+		FinalizeOutput: func(cc CallContext, _ InsertDeclarationReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: projectDeclarationOutput,
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -174,12 +177,15 @@ func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 		MCPName: semanticInsertFunctionToolName,
 		Parse:   parseInsertFunction,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertFunctionReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertFunction,
+			backend.LanguageGo: bufferedFileEditHandler("insert_function", func(req InsertFunctionReq) string { return req.File }, runInsertFunction),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output:     declarationOutputContract(false),
+		FinalizeOutput: func(cc CallContext, _ InsertFunctionReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: projectDeclarationOutput,
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -234,12 +240,15 @@ func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 		MCPName: semanticInsertTypeToolName,
 		Parse:   parseInsertType,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertTypeReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertType,
+			backend.LanguageGo: bufferedFileEditHandler("insert_type", func(req InsertTypeReq) string { return req.File }, runInsertType),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output:     declarationOutputContract(false),
+		FinalizeOutput: func(cc CallContext, _ InsertTypeReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: projectDeclarationOutput,
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -345,12 +354,15 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 		MCPName: semanticInsertDeclToolName,
 		Parse:   parseInsertDecl,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertDecl,
+			backend.LanguageGo: bufferedFileEditHandler("insert_decl", func(req InsertDeclReq) string { return req.File }, runInsertDecl),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output:     declarationOutputContract(false),
+		FinalizeOutput: func(cc CallContext, _ InsertDeclReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: projectDeclarationOutput,
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -439,12 +451,38 @@ func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 		MCPName: semanticReplaceDeclToolName,
 		Parse:   parseReplaceDecl,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceDeclReq) (FileEditRes, error){
-			backend.LanguageGo: runReplaceDecl,
+			backend.LanguageGo: bufferedFileEditHandler("replace_decl", func(req ReplaceDeclReq) string { return req.File }, runReplaceDecl),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
+		Output:     declarationOutputContract(true),
+		FinalizeOutput: func(cc CallContext, _ ReplaceDeclReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: projectReplaceDeclarationOutput,
 		BufferedBatch: true, Batchable: true,
 	}
+}
+
+func declarationOutputContract(includeDiff bool) *OperationOutputContract {
+	properties := map[string]ValueSchema{
+		"file":   nonEmptyStringSchema(),
+		"symbol": nonEmptyStringSchema(),
+		"line":   {Kind: SchemaInteger},
+	}
+	if includeDiff {
+		properties["diff"] = ValueSchema{Kind: SchemaString}
+	}
+	return fileEditOutputContract(properties, []OutputContinuation{
+		{Field: "file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: fileOutputConsumers, Optional: true},
+		{Field: "symbol", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: symbolOutputConsumers, Optional: true},
+	})
+}
+
+func projectDeclarationOutput(result FileEditRes) (any, error) {
+	return projectFileEditOutput(result, "file", "symbol", "line")
+}
+
+func projectReplaceDeclarationOutput(result FileEditRes) (any, error) {
+	return projectFileEditOutput(result, "file", "symbol", "line", "diff")
 }

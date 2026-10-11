@@ -1,8 +1,13 @@
 # Generic construct insertion adds one field and refuses an existing field name.
-exec semedit insert-construct --file model.go --kind field --in-type Config --source 'Port int' --placement type_end
+exec semedit insert-construct --file model.go --kind field --in-type config --source 'Port int' --placement type_end
 stdout 'Successfully inserted field construct'
-! exec semedit insert-construct --file model.go --kind field --in-type Config --source 'Port string' --placement type_end
+! exec semedit insert-construct --file model.go --kind field --in-type config --source 'Port string' --placement type_end
 stderr 'already exists|collision'
+! exec semedit insert-construct --file model.go --kind field --in-type Config --source 'Port int' --placement type_end
+stderr 'cannot prove positional-literal compatibility for exported owner'
+! exec semedit insert-construct --file model.go --kind field --in-type config --source 'Hidden int' --access private
+stderr 'private|unexported'
+exec semedit insert-construct --file model.go --kind field --in-type config --source 'Ready bool' --placement type_start --access public
 cmp model.go want/model.go
 
 -- go.mod --
@@ -12,13 +17,16 @@ go 1.24
 -- model.go --
 package model
 
-type Config struct {
+type config struct {
 	Host string
 }
+type Config struct{}
 -- want/model.go --
 package model
 
-type Config struct {
+type config struct {
+	Ready bool
 	Host string
 	Port int
 }
+type Config struct{}

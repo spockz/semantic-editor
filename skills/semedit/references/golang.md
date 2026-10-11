@@ -4,6 +4,22 @@ This reference provides concrete patterns and workflows for executing Go refacto
 
 ---
 
+## Publication and verification
+
+Standalone AST mutations stage source edits, formatting, and import organization
+in one working buffer before atomic publication. In a batch, children share that
+buffer and return `applied_working` receipts without live follow-up selectors.
+Use the finalized standalone result or perform discovery after batch publication
+before copying a continuation. A failed batch can preserve earlier edits; its
+persisted diff is authoritative. Successful editing operations already verify
+diagnostics, so a separate `semantic_verify` is needed only for a new explicit
+verification request or subsequent external changes.
+
+Generic `kind: "field"` insertion uses the typed field planner: its owner must
+be a private non-generic struct, and package-overlay validation must prove
+layout compatibility. An exported owner, duplicate field, or unsupported
+positional literal is refused before publication.
+
 ## 1. Macro Refactorings in Go
 
 `semedit` core AST operations for Go are indexed in the primary `SKILL.md` table. This reference defines idiomatic macro refactoring patterns composed from those primitives.

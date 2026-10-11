@@ -52,6 +52,15 @@ var GoInsertConstructKinds = []ConstructKind{
 
 // InsertConstruct injects one declaration, field, case, or statement into filePath.
 func InsertConstruct(ctx context.Context, filePath string, source string, opts InsertConstructOptions) (InsertConstructResult, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		var result InsertConstructResult
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			result, err = InsertConstruct(editCtx, filePath, source, opts)
+			return err
+		})
+		return result, err
+	}
 	kind := opts.Kind
 	if kind == "" {
 		kind = inferInsertConstructKind(source, opts)
@@ -219,9 +228,12 @@ func inferInsertConstructKind(source string, opts InsertConstructOptions) Constr
 }
 
 func insertFieldConstruct(ctx context.Context, filePath, source string, opts InsertConstructOptions) error {
-	fieldName, err := inferInsertedFieldName(source)
+	fieldName, err := InferInsertedFieldName(source)
 	if err != nil {
 		return err
+	}
+	if accessErr := ValidateAccess(GolangBackend{}, opts.AccessModifier, fieldName); accessErr != nil {
+		return accessErr
 	}
 	placement := FieldPlacement(opts.Placement)
 	if placement == "" {
@@ -258,11 +270,15 @@ func insertStatementConstruct(ctx context.Context, filePath, source string, opts
 	return writeConstructSource(ctx, filePath, plan.Source, opts.AutoOrganizeImports)
 }
 
-func inferInsertedFieldName(source string) (string, error) {
+// InferInsertedFieldName validates and returns the name of one inserted struct field.
+func InferInsertedFieldName(source string) (string, error) {
 	wrapped := "package p\ntype _ struct {\n" + source + "\n}"
 	file, err := parser.ParseFile(token.NewFileSet(), "field.go", []byte(wrapped), parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		return "", fmt.Errorf("parse inserted field: %w", err)
+	}
+	if len(file.Decls) != 1 {
+		return "", fmt.Errorf("field source must contain exactly one declaration")
 	}
 	decl, ok := file.Decls[0].(*ast.GenDecl)
 	if !ok || len(decl.Specs) != 1 {

@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 
 	"semedit/internal/gocache"
 	"semedit/internal/sourcebuf"
@@ -14,22 +16,18 @@ import (
 )
 
 func prepareExtractionBuffer(ctx context.Context, file string) (context.Context, *sourcebuf.Buffer, bool, error) {
-	if sourcebuf.FromContext(ctx) != nil {
-		return ctx, nil, false, nil
-	}
 	root, err := moveModuleRoot(file)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("locate extraction module: %w", err)
 	}
-	buffer, err := sourcebuf.New(root)
+	preparedCtx, buffer, owned, err := sourcebuf.Prepare(ctx, root)
 	if err != nil {
-		return nil, nil, false, fmt.Errorf("capture extraction workspace: %w", err)
+		return nil, nil, false, fmt.Errorf("prepare extraction buffer: %w", err)
 	}
-	ctx = sourcebuf.WithBuffer(ctx, buffer)
-	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
-		return nil, nil, false, fmt.Errorf("authorize extraction output: %w", err)
+	if !owned {
+		return preparedCtx, nil, false, nil
 	}
-	return ctx, buffer, true, nil
+	return preparedCtx, buffer, true, nil
 }
 
 func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte, tests bool) ([]*packages.Package, error) {
@@ -80,5 +78,31 @@ func loadExtractionPackages(ctx context.Context, dir string, overlay map[string]
 			return nil, fmt.Errorf("revalidate extraction compiler inputs: %w", err)
 		}
 		return loaded, nil
+	}
+}
+
+func runBufferedFile(ctx context.Context, file string, edit func(context.Context) error) error {
+	root, err := sourceBufferRoot(file)
+	if err != nil {
+		return err
+	}
+	return sourcebuf.Run(ctx, root, edit)
+}
+
+func sourceBufferRoot(file string) (string, error) {
+	absolute, err := filepath.Abs(file)
+	if err != nil {
+		return "", fmt.Errorf("resolve mutation file %q: %w", file, err)
+	}
+	for dir := filepath.Dir(absolute); ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("inspect mutation module at %s: %w", dir, err)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return filepath.Dir(absolute), nil
+		}
 	}
 }

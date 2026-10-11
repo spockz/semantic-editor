@@ -40,6 +40,7 @@ To conserve context budget and maintain architectural integrity, adhere strictly
 ## 3. Tooling & Workspace Invariants
 
 * **Verification Standard**: Always run `make check` prior to executing specific test or verification tools, ensuring automated formatters, fixers, and dependency tidying apply upfront. Verify all changes via `make check` before concluding work.
+* **Complete Migration & Zero-Cruft Invariant**: This is an agent-maintained codebase. Whenever introducing a new internal mechanism (such as buffer staging, output schemas, or dispatch contracts) or consolidating public operations, execute a complete migration across all affected tools and callers in the same effort. Eradicate transitional legacy wrappers, parallel code paths, and compatibility aliases rather than leaving technical debt to accumulate.
 * **Workspace Manifest Safety (ADR-0005)**: Never write `go.work` or mutate repository workspace manifests on disk without explicit user approval.
 * **Atomic Disk Updates (ADR-0010)**: All file mutations must follow atomic write semantics (temporary file $\to$ `fsync` $\to$ `os.Rename`) with advancing `mtime`.
 * **Temporary Work**: Place all temporary scratch files in the gitignored `.scratch/` directory.
@@ -101,12 +102,13 @@ For every operation advertised by more than one language backend, maintain compa
 
 ---
 
-## 7. Language Capability Expansion & Skill Reference Governance Invariant
+## 7. Tooling Interface, Capability Expansion, & Skill Synchronisation Invariant
 
-Automated test suites (`TestSupportedLanguagesHaveSkillReferences`) verify file existence and index links. However, formulating idiomatic refactoring patterns requires deliberate domain reasoning exceeding automated checks.
+Automated test suites (`TestSupportedLanguagesHaveSkillReferences`) verify file existence and index links. However, keeping agent skill routing and refactoring idioms accurate requires deliberate maintenance on every interface or capability change.
 
-Whenever expanding the operational scope of a supported language (introducing a new language backend or implementing new operations for an existing backend), agents and contributors must deliberately verify whether and how to update the corresponding language reference guide in [`skills/semedit/references/<lang>.md`](skills/semedit/references/):
+Whenever modifying any public tooling interface (operation names, parameter schemas, construct kinds, placement enums, output contracts) or expanding backend capabilities, agents and contributors must re-evaluate and update both [`skills/semedit/SKILL.md`](skills/semedit/SKILL.md) and the affected language reference guides in [`skills/semedit/references/<lang>.md`](skills/semedit/references/) in the same change:
 
-* Capture newly enabled macro refactoring patterns and architectural transformations.
+* Synchronise the primary operation routing table, parameter guidance, and discriminating examples in [`skills/semedit/SKILL.md`](skills/semedit/SKILL.md).
+* Capture newly enabled macro refactoring patterns and architectural transformations in [`skills/semedit/references/<lang>.md`](skills/semedit/references/).
 * Document compiler, build tool, or language-server verification practices.
-* Maintain language-specific idiom guides so agent planners execute high-level workflows cleanly without manual trial and error.
+* Maintain language-specific idiom guides and explicit negative-routing guardrails so agent planners execute high-level workflows cleanly without manual trial and error.

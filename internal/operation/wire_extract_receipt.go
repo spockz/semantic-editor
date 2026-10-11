@@ -132,7 +132,7 @@ func finalizeExtractionOutput(cc CallContext, result ExtractionResult) (Extracti
 		}
 		return SymbolTarget{}, false, nil
 	}
-	receipt, err := FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, result.Draft, resolver)
+	receipt, err := finalizeCallReceipt(cc.Ctx, cc, cc.WorkDir, result.Draft, resolver)
 	if err != nil {
 		return ExtractionResult{}, fmt.Errorf("finalize extraction receipt: %w", err)
 	}

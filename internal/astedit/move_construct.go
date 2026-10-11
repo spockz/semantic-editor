@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,11 +20,8 @@ import (
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 
-	"slices"
-
-	"golang.org/x/tools/go/packages"
-
 	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/packages"
 )
 
 // MoveConstructOptions configures declaration relocation.
@@ -47,6 +45,19 @@ func validateMoveConstructPlacement(opts MoveConstructOptions) error {
 
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
 func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveConstructOptions) (string, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		root, err := moveModuleRoot(filePath)
+		if err != nil {
+			return "", fmt.Errorf("locate move module: %w", err)
+		}
+		var diff string
+		err = sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+			var editErr error
+			diff, editErr = MoveConstruct(editCtx, filePath, symbolQuery, opts)
+			return editErr
+		})
+		return diff, err
+	}
 	if err := validateMoveConstructPlacement(opts); err != nil {
 		return "", err
 	}
@@ -463,20 +474,16 @@ func formatMoveDestination(file *ast.File, set *token.FileSet) ([]byte, error) {
 }
 
 func publishSamePackageMove(ctx context.Context, snapshot movePairSnapshot, plan movePairPlan, symbolQuery string, opts MoveConstructOptions) (string, error) {
-	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		cleanSource, err := cleanupMoveImports(ctx, snapshot.sourcePath, plan.source)
-		if err != nil {
-			return "", err
-		}
-		return applyBufferedMove(ctx, map[string][]byte{snapshot.sourcePath: snapshot.source, snapshot.destinationPath: snapshot.destination}, map[string][]byte{snapshot.sourcePath: cleanSource, snapshot.destinationPath: plan.destination})
+	if sourcebuf.FromContext(ctx) == nil {
+		return "", fmt.Errorf("same-package move requires a source buffer")
 	}
-	if err := verifyMoveFileUnchanged(ctx, snapshot.sourcePath, snapshot.source); err != nil {
+	cleanSource, err := cleanupMoveImports(ctx, snapshot.sourcePath, plan.source)
+	if err != nil {
 		return "", err
 	}
-	if err := verifyMoveFileUnchanged(ctx, snapshot.destinationPath, snapshot.destination); err != nil {
-		return "", err
-	}
-	if err := writeSamePackageMove(ctx, snapshot, plan); err != nil {
+	original := map[string][]byte{snapshot.sourcePath: snapshot.source, snapshot.destinationPath: snapshot.destination}
+	changes := map[string][]byte{snapshot.sourcePath: cleanSource, snapshot.destinationPath: plan.destination}
+	if _, err := applyBufferedMove(ctx, original, changes); err != nil {
 		return "", err
 	}
 	if opts.AutoOrganizeImports {
@@ -485,16 +492,6 @@ func publishSamePackageMove(ctx context.Context, snapshot movePairSnapshot, plan
 		}
 	}
 	return readMovedFileDiff(ctx, snapshot, symbolQuery)
-}
-
-func writeSamePackageMove(ctx context.Context, snapshot movePairSnapshot, plan movePairPlan) error {
-	if err := pipeline.WriteAtomicContext(ctx, snapshot.destinationPath, plan.destination); err != nil {
-		return fmt.Errorf("write destination atomically: %w", err)
-	}
-	if err := pipeline.WriteAtomicContext(ctx, snapshot.sourcePath, plan.source); err != nil {
-		return fmt.Errorf("destination %s was written but source %s remains unchanged: %w", snapshot.destinationPath, snapshot.sourcePath, err)
-	}
-	return nil
 }
 
 func organizeMovedFiles(ctx context.Context, snapshot movePairSnapshot) error {

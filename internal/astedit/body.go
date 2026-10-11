@@ -25,6 +25,15 @@ type BodyOptions struct {
 
 // ReplaceBody replaces the statements of an existing function or method body.
 func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, opts BodyOptions) (string, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		var result string
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			result, err = ReplaceBody(editCtx, filePath, symbolQuery, bodySource, opts)
+			return err
+		})
+		return result, err
+	}
 	cleanPath := filepath.Clean(filePath)
 	target, err := readBodyTarget(ctx, cleanPath, filePath, symbolQuery)
 	if err != nil {

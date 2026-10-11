@@ -359,9 +359,11 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertSemanticEditReceiptOutputSchema(t, name, output)
 	case "semantic_rename", "semantic_organize_imports", "semantic_maven_compile", "semantic_maven_test", "semantic_verify":
 		assertTypedOutcomeOrLegacyStringSchema(t, name, output)
-	case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
-		assertStandardOutputSchema(t, output, "string")
-		assertToolContinuationFields(t, name, output)
+	case "semantic_lookup":
+		assertRegisteredTypedOutputSchema(t, name, output)
+	case "semantic_insert_construct", "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_move_construct", "semantic_scaffold_file":
+		assertFileEditOutputSchema(t, name, output)
 	case "semantic_batch":
 		assertBatchOutputSchema(t, output)
 	case "semantic_metrics":
@@ -376,19 +378,46 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	}
 }
 
-func assertToolContinuationFields(t *testing.T, name string, output any) {
+func assertRegisteredTypedOutputSchema(t *testing.T, name string, output any) map[string]any {
 	t.Helper()
-	properties := output.(map[string]any)["properties"].(map[string]any)
+	assertStandardOutputSchema(t, output, "object")
+	entry, ok := operation.DefaultRegistry().LookupMCP(name)
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil || entry.ProjectOutput == nil {
+		t.Fatalf("%s omitted its typed output contract or projector", name)
+	}
+	result := nativeResultSchema(t, output)
+	assertResultSchemaMatchesRegistration(t, name, result, entry)
+	return result
+}
+
+func assertFileEditOutputSchema(t *testing.T, name string, output any) {
+	t.Helper()
+	result := assertRegisteredTypedOutputSchema(t, name, output)
+	properties := result["properties"].(map[string]any)
+	for _, field := range []string{"result", "edit_receipt"} {
+		if properties[field] == nil {
+			t.Errorf("%s typed result omitted %q", name, field)
+		}
+	}
+	if got := result["required"]; !reflect.DeepEqual(got, []any{"result", "edit_receipt"}) {
+		t.Errorf("%s typed result required = %#v", name, got)
+	}
 	fieldsByTool := map[string][]string{
-		"semantic_lookup":            {"symbol", "file", "kind", "line", "column"},
-		"semantic_rename":            {"symbol", "file"},
-		"semantic_replace_body":      {"symbol", "file"},
-		"semantic_replace_construct": {"file", "in_function"},
-		"semantic_insert_case":       {"file", "in_function", "discriminator"},
+		"semantic_insert_construct":   {"file", "symbol", "in_type", "in_function", "discriminator", "line", "diff"},
+		"semantic_insert_declaration": {"file", "symbol", "line"},
+		"semantic_insert_function":    {"file", "symbol", "line"},
+		"semantic_insert_type":        {"file", "symbol", "line"},
+		"semantic_insert_decl":        {"file", "symbol", "line"},
+		"semantic_replace_decl":       {"file", "symbol", "line", "diff"},
+		"semantic_replace_body":       {"file", "symbol", "diff"},
+		"semantic_replace_construct":  {"file", "in_function", "diff"},
+		"semantic_insert_case":        {"file", "in_function", "discriminator", "diff"},
+		"semantic_move_construct":     {"file", "symbol", "origin_file", "diff"},
+		"semantic_scaffold_file":      {"file", "package"},
 	}
 	for _, field := range fieldsByTool[name] {
-		if _, ok := properties[field]; !ok {
-			t.Errorf("%s outputSchema omitted continuation field %q", name, field)
+		if properties[field] == nil {
+			t.Errorf("%s typed result omitted %q", name, field)
 		}
 	}
 }
@@ -1391,12 +1420,21 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 			t.Errorf("move input property %s = %#v, want string", name, moveProperties[name])
 		}
 	}
-	moveOutput := move["outputSchema"].(map[string]any)["properties"].(map[string]any)
-	if file := moveOutput["file"].(map[string]any); !strings.Contains(file["description"].(string), "Live destination") {
-		t.Fatalf("standalone move file schema = %#v, want live destination semantics", file)
+	moveOutput := move["outputSchema"].(map[string]any)
+	envelope := moveOutput["properties"].(map[string]any)
+	for _, name := range []string{"file", "symbol"} {
+		if property, ok := envelope[name].(map[string]any); !ok || property["type"] != "string" {
+			t.Errorf("standalone move continuation %s = %#v, want string", name, envelope[name])
+		}
 	}
-	if origin := moveOutput["origin_file"].(map[string]any); !strings.Contains(origin["description"].(string), "evidence only") {
-		t.Fatalf("standalone move origin_file schema = %#v, want historical evidence", origin)
+	if _, exists := envelope["origin_file"]; exists {
+		t.Error("standalone move exposed historical origin_file as a live continuation")
+	}
+	resultProperties := nativeResultSchema(t, moveOutput)["properties"].(map[string]any)
+	for _, name := range []string{"file", "symbol", "origin_file"} {
+		if property, ok := resultProperties[name].(map[string]any); !ok || property["type"] != "string" {
+			t.Errorf("standalone move typed result property %s = %#v, want string", name, resultProperties[name])
+		}
 	}
 	batch := byName["semantic_batch"]
 	if batch == nil {
@@ -2085,7 +2123,7 @@ func receiptFinalizer(root string) func(operation.CallContext, map[string]any, o
 			ReadSet:        draft.ReadSet,
 			Continuations:  continuations,
 		}
-		return operation.FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, draftValue, receiptIdentityResolver(root, identity))
+		return operation.FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, cc.InBatch, draftValue, receiptIdentityResolver(root, identity))
 	}
 }
 

@@ -44,6 +44,15 @@ type CaseOptions struct {
 
 // InsertCase injects a case clause into an existing switch statement.
 func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource string, opts CaseOptions) (string, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		var result string
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			result, err = InsertCase(editCtx, filePath, funcName, switchOn, caseSource, opts)
+			return err
+		})
+		return result, err
+	}
 	res, err := InsertConstruct(ctx, filePath, caseSource, InsertConstructOptions{
 		Kind:                backend.ConstructCase,
 		Function:            funcName,

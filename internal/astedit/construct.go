@@ -81,6 +81,15 @@ const replaceConstructOperation = "replace_construct"
 
 // ReplaceConstruct replaces one selected Go construct without rewriting sibling statements.
 func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind ConstructKind, discriminator, source string, opts ConstructOptions) (string, error) {
+	if sourcebuf.FromContext(ctx) == nil {
+		var result string
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			result, err = ReplaceConstruct(editCtx, filePath, funcName, kind, discriminator, source, opts)
+			return err
+		})
+		return result, err
+	}
 	if selector := opts.Discriminator; selector != "" {
 		discriminator = selector
 	}

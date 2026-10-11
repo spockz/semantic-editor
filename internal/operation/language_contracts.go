@@ -196,7 +196,7 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 	}
 	switch key {
 	case "insert_declaration", "insert_function", "insert_type", "insert_decl", "insert_case",
-		"replace_decl", "replace_body", "replace_construct", "insert_construct", "remove_construct":
+		"replace_decl", "replace_body", "replace_construct", "remove_construct":
 		editRequirements := append([]capability.Requirement{}, targetParse...)
 		editRequirements = append(editRequirements, capability.Requirement{Kind: capability.RequireExactSelector, Scope: fileScope})
 		if key != "remove_construct" {
@@ -212,6 +212,8 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 			capability.FeatureASTEdit|capability.FeatureFormat, capability.GuaranteeASTEdit|capability.GuaranteeModuleProof|capability.GuaranteeAtomicWrites,
 			moduleProofFaultSupport())
 		return typedContract(edit, safeDelete), true
+	case "insert_construct":
+		return goInsertConstructContract(), true
 	case "organize_imports":
 		file := contractVariant(capability.VariantSelectedFile, fileScope,
 			append(targetParse, capability.Requirement{Kind: capability.RequireImportResolution, Scope: fileScope}),
@@ -248,6 +250,31 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 	default:
 		return capability.OperationContract{}, false
 	}
+}
+
+func goInsertConstructContract() capability.OperationContract {
+	fileScope := capability.ScopeSelectedFile
+	editRequirements := contractRequirements(fileScope,
+		capability.RequireTargetParse,
+		capability.RequireExactSelector,
+		capability.RequireSnippetParse)
+	edit := contractVariant(capability.VariantSelectedFile, fileScope, editRequirements,
+		capability.FeatureASTEdit|capability.FeatureFormat,
+		capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites, targetSyntaxRejectedSupport())
+
+	moduleScope := capability.ScopeActiveModule
+	packageScope := capability.ScopeSelectedPackage
+	fieldRequirements := append(contractRequirements(moduleScope, capability.RequireModuleSnapshot, capability.RequireTestVariants),
+		capability.Requirement{Kind: capability.RequireExactSelector, Scope: packageScope},
+		capability.Requirement{Kind: capability.RequireBoundedSource, Scope: packageScope},
+		capability.Requirement{Kind: capability.RequirePackageTypes, Scope: packageScope},
+		capability.Requirement{Kind: capability.RequireOverlayTypes, Scope: packageScope},
+		capability.Requirement{Kind: capability.RequireSnippetParse, Scope: fileScope})
+	field := contractVariant(capability.VariantSelectedFile|capability.VariantField, moduleScope, fieldRequirements,
+		capability.FeatureASTEdit|capability.FeatureTypedRefactor|capability.FeatureFormat,
+		capability.GuaranteePackageOverlay|capability.GuaranteeAtomicWrites,
+		structuralSnapshotFaultSupport())
+	return typedContract(edit, field)
 }
 
 func goServerOperationContract(key string) (capability.OperationContract, bool) {

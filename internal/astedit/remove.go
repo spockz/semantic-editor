@@ -60,8 +60,16 @@ type removeTarget struct {
 
 // Remove deletes one Go declaration or switch case after validating the resulting file syntax.
 func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
-	if opts.SafeDelete && sourcebuf.FromContext(ctx) == nil {
-		return removeWithOwnedBuffer(ctx, filePath, opts, autoOrganizeImports)
+	if sourcebuf.FromContext(ctx) == nil {
+		var diff string
+		var checks []string
+		var refusal string
+		err := runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			var err error
+			diff, checks, refusal, err = Remove(editCtx, filePath, opts, autoOrganizeImports)
+			return err
+		})
+		return diff, checks, refusal, err
 	}
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
@@ -698,22 +706,4 @@ func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte,
 		return fmt.Errorf("format file: %w", err)
 	}
 	return nil
-}
-
-func removeWithOwnedBuffer(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
-	buffer, err := sourcebuf.New(filepath.Dir(filePath))
-	if err != nil {
-		return "", nil, "", fmt.Errorf("prepare safe-delete source view: %w", err)
-	}
-	diff, checks, refusal, err := Remove(sourcebuf.WithBuffer(ctx, buffer), filePath, opts, autoOrganizeImports)
-	if err != nil || refusal != "" {
-		return diff, checks, refusal, err
-	}
-	if err := buffer.AssertDisk(); err != nil {
-		return "", checks, "", &SafeDeleteSnapshotError{Cause: err}
-	}
-	if err := buffer.Flush(ctx); err != nil {
-		return "", checks, "", fmt.Errorf("publish safe-delete source view: %w", err)
-	}
-	return diff, checks, "", nil
 }

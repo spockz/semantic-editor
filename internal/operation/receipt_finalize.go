@@ -26,17 +26,17 @@ type EditReceiptDraft struct {
 type ContinuationResolver func(context.Context, SymbolTarget) (SymbolTarget, bool, error)
 
 // FinalizeEditReceipt derives final revisions from the selected disk or batch working view.
-func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft EditReceiptDraft, resolve ContinuationResolver) (EditReceipt, error) {
-	receipt, complete, err := prepareReceipt(draft, inBatch)
+func FinalizeEditReceipt(ctx context.Context, root string, workingView, suppressLiveContinuations bool, draft EditReceiptDraft, resolve ContinuationResolver) (EditReceipt, error) {
+	receipt, complete, err := prepareReceipt(draft, workingView)
 	if err != nil || complete {
 		return receipt, err
 	}
-	changes, err := reconcileReceiptChanges(ctx, root, inBatch, draft.PlannedChanges, &receipt)
+	changes, err := reconcileReceiptChanges(ctx, root, workingView, draft.PlannedChanges, &receipt)
 	if err != nil {
 		return EditReceipt{}, err
 	}
-	setPublicationStatus(&receipt, inBatch, changes)
-	if shouldResolveContinuations(receipt, inBatch, resolve) {
+	setPublicationStatus(&receipt, workingView, changes)
+	if shouldResolveContinuations(receipt, suppressLiveContinuations, resolve) {
 		continuations, err := resolveReceiptContinuations(ctx, root, draft.Continuations, resolve)
 		if err != nil {
 			return EditReceipt{}, err
@@ -47,6 +47,13 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		return EditReceipt{}, fmt.Errorf("validate finalized receipt: %w", err)
 	}
 	return receipt, nil
+}
+
+func finalizeCallReceipt(ctx context.Context, cc CallContext, root string, draft EditReceiptDraft, resolve ContinuationResolver) (EditReceipt, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return FinalizeEditReceipt(ctx, root, sourcebuf.FromContext(ctx) != nil, cc.InBatch, draft, resolve)
 }
 
 func prepareReceipt(draft EditReceiptDraft, inBatch bool) (EditReceipt, bool, error) {
@@ -129,8 +136,8 @@ func reconcileReceiptChanges(ctx context.Context, root string, inBatch bool, pla
 	return summary, nil
 }
 
-func setPublicationStatus(receipt *EditReceipt, inBatch bool, changes receiptChangeSummary) {
-	if inBatch || changes.expectedChanges <= changes.confirmedChanges {
+func setPublicationStatus(receipt *EditReceipt, workingView bool, changes receiptChangeSummary) {
+	if workingView || changes.expectedChanges <= changes.confirmedChanges {
 		return
 	}
 	if changes.confirmedChanges > 0 || changes.publicationUnclear {
@@ -140,8 +147,8 @@ func setPublicationStatus(receipt *EditReceipt, inBatch bool, changes receiptCha
 	}
 }
 
-func shouldResolveContinuations(receipt EditReceipt, inBatch bool, resolve ContinuationResolver) bool {
-	return receipt.Status != EditRefused && receipt.Status != EditAppliedWorking && !inBatch && resolve != nil
+func shouldResolveContinuations(receipt EditReceipt, suppressLiveContinuations bool, resolve ContinuationResolver) bool {
+	return receipt.Status != EditRefused && receipt.Status != EditAppliedWorking && !suppressLiveContinuations && resolve != nil
 }
 
 func resolveReceiptContinuations(ctx context.Context, root string, candidates []SymbolTarget, resolve ContinuationResolver) ([]SymbolTarget, error) {

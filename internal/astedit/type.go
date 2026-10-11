@@ -9,6 +9,8 @@ import (
 	"go/parser"
 	"go/token"
 	"strings"
+
+	"semedit/internal/sourcebuf"
 )
 
 // TypeOptions configures type declaration insertion behavior.
@@ -21,6 +23,11 @@ type TypeOptions struct {
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.
 func InsertType(ctx context.Context, filePath string, source string, opts TypeOptions) error {
+	if sourcebuf.FromContext(ctx) == nil {
+		return runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			return InsertType(editCtx, filePath, source, opts)
+		})
+	}
 	return insertTypeImpl(ctx, filePath, source, opts)
 }
 

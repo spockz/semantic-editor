@@ -28,6 +28,11 @@ type DeclOptions struct {
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
+	if sourcebuf.FromContext(ctx) == nil {
+		return runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			return InsertDecl(editCtx, filePath, source, opts)
+		})
+	}
 	return insertDeclImpl(ctx, filePath, source, opts)
 }
 

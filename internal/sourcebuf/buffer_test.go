@@ -33,6 +33,119 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	assertPublishedRevision(t, root, first, final, before)
 }
 
+func TestRunPublishesOwnedBufferOnlyAfterSuccessfulEdit(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.go")
+	original := []byte("package sample\nfunc Value() int { return 1 }\n")
+	writeFiles(t, []string{path}, original)
+	updated := []byte("package sample\nfunc Value() int { return 2 }\n")
+	if err := sourcebuf.Run(t.Context(), root, func(ctx context.Context) error {
+		if err := sourcebuf.WriteFile(ctx, path, updated); err != nil {
+			return err
+		}
+		working, err := sourcebuf.ReadFile(ctx, path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(working, updated) {
+			return fmt.Errorf("working revision=%q", working)
+		}
+		disk, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(disk, original) {
+			return fmt.Errorf("edit reached disk before completion: %q", disk)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(disk, updated) {
+		t.Fatalf("published revision=%q", disk)
+	}
+}
+
+func TestRunRollsBackOnlyFailedSharedEdit(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.go")
+	original := []byte("package sample\nfunc Value() int { return 1 }\n")
+	prior := []byte("package sample\nfunc Value() int { return 2 }\n")
+	writeFiles(t, []string{path}, original)
+	buffer, err := sourcebuf.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if writeErr := sourcebuf.WriteFile(ctx, path, prior); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	wantErr := errors.New("refused after staging")
+	err = sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		if writeErr := sourcebuf.WriteFile(editCtx, path, []byte("package sample\nfunc Value() int { return 3 }\n")); writeErr != nil {
+			return writeErr
+		}
+		return wantErr
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Run error=%v", err)
+	}
+	working, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(working, prior) {
+		t.Fatalf("rolled back to %q; want prior batch revision %q", working, prior)
+	}
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(disk, original) {
+		t.Fatalf("shared edit reached disk: %q", disk)
+	}
+}
+
+func TestChangesSinceTracksChildRevertingPriorBatchEdit(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "a.go")
+	original := []byte("package sample\nfunc Value() int { return 1 }\n")
+	prior := []byte("package sample\nfunc Value() int { return 2 }\n")
+	writeFiles(t, []string{path}, original)
+	buffer, err := sourcebuf.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if writeErr := sourcebuf.WriteFile(ctx, path, prior); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	checkpoint := buffer.Checkpoint()
+	if runErr := sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		return sourcebuf.WriteFile(editCtx, path, original)
+	}); runErr != nil {
+		t.Fatal(runErr)
+	}
+	changes := buffer.ChangesSince(checkpoint)
+	if len(changes) != 1 || !bytes.Equal(changes[0].Before, prior) || !bytes.Equal(changes[0].After, original) {
+		t.Fatalf("child changes=%+v; want prior-to-original revision", changes)
+	}
+	if got := buffer.ChangedPaths(); len(got) != 0 {
+		t.Fatalf("net dirty paths=%v; want none", got)
+	}
+	disk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(disk, original) {
+		t.Fatalf("child unexpectedly published disk bytes: %q", disk)
+	}
+}
+
 func createBufferedSources(t *testing.T, first, second string, original []byte) os.FileInfo {
 	t.Helper()
 	for _, path := range []string{first, second} {

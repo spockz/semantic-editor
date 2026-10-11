@@ -23,10 +23,10 @@ diagnostic delta; live reload must reply before re-executing the server.
 
 Advertise MCP protocol revision `2025-06-18` and provide an `outputSchema` for
 every advertised tool. Registry-derived direct tools use one common successful
-envelope with a required `result` string and `metrics`, plus optional
-`session_metrics`. Their successful `structuredContent` places the existing
-formatted text in `result` while retaining the established timing shapes and
-human-readable `content` block.
+envelope with the operation's typed `result`. Their successful
+`structuredContent` uses the registered projector and schema; the formatted
+text remains in the human-readable `content` block. ADR-0052 defines the
+ordinary timing metadata boundary.
 
 `semantic_batch` uses the same envelope, but its `result` is the concrete
 `BatchResponse` shape: required `status` and ordered `results`, with an
@@ -41,9 +41,11 @@ output schema. RQ-0062 found that exempting error responses caused clients to
 reject otherwise useful errors.
 
 This decision records the original envelope. ADR-0052 later moved ordinary
-timing metrics out of direct results, and registered operations now use typed
-`ProjectOutput` projections where declared (including inspection). The legacy
-formatted-text result applies when an operation has no typed projection.
+timing metrics out of direct results. Every registered operation with an output
+contract now uses a typed `ResultSchema` and `ProjectOutput`. Formatted text is
+presentation only; no parallel legacy continuation envelope remains. Mutating
+results include a finalized `edit_receipt`, and buffered children omit live
+continuations until publication.
 
 Structured output is a server-produced representation, not a guarantee that a
 client or model will expose every field in its prompt. Follow the MCP
@@ -89,8 +91,8 @@ This leaves registry dispatch error semantics unchanged.
 
 The shared envelope uses mutually exclusive `oneOf` branches:
 
-- A native result requires the operation's typed `result` (or the legacy text
-  result) and forbids a top-level `error`.
+- A native result requires the operation's typed `result` and forbids a
+  top-level `error`.
 - A generic error requires `error` and `application_state` and forbids `result`.
 - A known error requires `error`, `application_state`, and a `result` validated
   against the registered error schema.
@@ -125,13 +127,11 @@ while mutable callers receive independent copies. Successful reinitialization
 and reload discard cached catalogs together with language snapshots. Catalog
 data is never shared across separate server instances or injected registries.
 
-Unprojected operations may explicitly declare envelope continuations alongside
-their formatted string result. These sibling fields use the same role, consumer,
-schema, and optionality rules as live projected continuations, but do not pretend
-to be fields of a typed result object. Before publication, the MCP adapter
-validates its actual envelope fields against the declared contract. A projected
-operation retains its typed result contract and never falls back to legacy
-envelope extraction. Informational metadata fields are declared separately.
+Every operation with an output contract declares a typed result schema and
+projector. Continuation aliases may be derived from declared typed result fields;
+their roles, consumers, schemas, and optionality remain registry-owned. The MCP
+adapter validates the projected result before publication. It has no ad hoc
+envelope extraction or separately declared informational metadata mode.
 
 ## Invariants
 
@@ -164,6 +164,6 @@ envelope extraction. Informational metadata fields are declared separately.
 
 MCP clients can discover and validate both native results and error envelopes without
 parsing human-readable text. The protocol response identifies the revision
-that supports structured tool output. Operations without typed projections
-retain compatibility with their existing formatters; declared projections
-provide operation-specific results through the same envelope.
+that supports structured tool output. Typed projections provide
+operation-specific results through the common transport envelope, while
+formatters supply the human-readable presentation.

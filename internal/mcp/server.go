@@ -827,68 +827,21 @@ func toolOutputAndContinuations(entry operation.Entry) (toolOutputAndContinuatio
 	return toolOutputAndContinuationsResult{schema: output, continuations: continuations}, nil
 }
 
-func toolSchemaDescription(entry operation.Entry, continuations map[string]any) string {
+func toolSchemaDescription(entry operation.Entry, _ map[string]any) string {
 	description := entry.Description()
-	if entry.Output != nil && len(entry.Output.Continuations) > 0 {
-		fieldNames := make([]string, 0, len(entry.Output.Continuations))
-		for _, continuation := range entry.Output.Continuations {
-			name := continuation.Field
-			if continuation.Path != "" {
-				name = continuation.Path
-			}
-			if name != "" {
-				fieldNames = append(fieldNames, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
-			}
-		}
-		slices.Sort(fieldNames)
-		description += " Structured results may expose declared continuations when resolved: " + strings.Join(fieldNames, "; ") + ". An absent continuation means there is no resolved continuation target."
-	} else if len(continuations) > 0 {
-		fieldNames := make([]string, 0, len(continuations))
-		for name := range continuations {
-			switch name {
-			case "origin_file":
-				fieldNames = append(fieldNames, "`origin_file` (historical origin evidence; not a continuation target)")
-			case "line", "column":
-				fieldNames = append(fieldNames, "`"+name+"` (navigation only)")
-			case "kind":
-				fieldNames = append(fieldNames, "`kind` (descriptive only)")
-			case "package":
-				fieldNames = append(fieldNames, "`"+name+"` (copyable resolved package name)")
-			default:
-				fieldNames = append(fieldNames, "`"+name+"` (copyable)")
-			}
-		}
-		slices.Sort(fieldNames)
-		description += " Successful structured results may include: " + strings.Join(fieldNames, ", ") + "."
-	}
-	if entry.Output == nil {
+	if entry.Output == nil || len(entry.Output.Continuations) == 0 {
 		return description
 	}
-	var fieldNames []string
-	for _, metadata := range entry.Output.Metadata {
-		label := "`" + metadata.Field + "`"
-		if metadata.Description != "" {
-			label += " (" + metadata.Description + ")"
-		}
-		fieldNames = append(fieldNames, label)
-	}
-	for _, continuation := range entry.Output.EnvelopeContinuations {
-		fieldNames = append(fieldNames, "`"+continuation.Field+"` copied to "+strings.Join(continuation.Consumers, ", "))
-	}
+	fields := make([]string, 0, len(entry.Output.Continuations))
 	for _, continuation := range entry.Output.Continuations {
-		name := continuation.Field
-		if continuation.Path != "" {
-			name = continuation.Path
+		name := continuation.Path
+		if name == "" {
+			name = continuation.Field
 		}
-		if name != "" {
-			fieldNames = append(fieldNames, "`"+name+"` copied to "+strings.Join(continuation.Consumers, ", "))
-		}
+		fields = append(fields, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
 	}
-	if len(fieldNames) == 0 {
-		return description
-	}
-	slices.Sort(fieldNames)
-	return description + " Structured results may expose declared output fields when resolved: " + strings.Join(fieldNames, "; ") + ". Metadata fields are informational; continuation fields are copyable inputs for their listed consumers."
+	slices.Sort(fields)
+	return description + " Structured results may expose declared continuations when resolved: " + strings.Join(fields, "; ") + ". An absent continuation means there is no resolved continuation target."
 }
 
 // ValidateSourceFields verifies every parameter continuation references an advertised top-level output field.
@@ -910,175 +863,6 @@ func ValidateSourceFields(entries []operation.Entry) error {
 		}
 	}
 	return nil
-}
-
-func moveConstructContinuationFields(result any, root string) map[string]any {
-	fields := map[string]any{}
-	edit, ok := result.(operation.FileEditRes)
-	if !ok {
-		return fields
-	}
-	if file := continuationPath(root, edit.DestinationFile); file != "" {
-		fields["file"] = file
-	}
-	if file := continuationPath(root, edit.File); file != "" {
-		fields["origin_file"] = file
-	}
-	if edit.Symbol != "" {
-		fields["symbol"] = edit.Symbol
-	}
-	return fields
-}
-
-func structuredContinuationFields(toolName string, result any, root string, arguments map[string]any) map[string]any {
-	fields := map[string]any{}
-	switch toolName {
-	case "semantic_lookup":
-		if lookup, ok := result.(*backend.LookupResult); ok {
-			addLookupContinuation(fields, lookup, root)
-		}
-	case "semantic_rename":
-		addRenameContinuation(fields, result, root, arguments)
-	case "semantic_replace_body", "semantic_replace_decl", "semantic_insert_function",
-		"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
-		"semantic_organize_imports", "semantic_extract_function", semanticExtractVariableTool:
-		addFileEditContinuationFields(fields, toolName, result, root)
-	case "semantic_remove_construct":
-		addRemoveContinuationFields(fields, result, root)
-	case "semantic_replace_construct", "semantic_insert_case", semanticInsertConstructTool, "semantic_inline_variable":
-		addConstructContinuation(fields, toolName, result, root)
-	case semanticMoveConstructTool:
-		maps.Copy(fields, moveConstructContinuationFields(result, root))
-	case "semantic_scaffold_file":
-		addScaffoldContinuation(fields, result, root)
-	}
-	return fields
-}
-
-func addLookupContinuation(fields map[string]any, lookup *backend.LookupResult, root string) {
-	if lookup == nil || lookup.Ambiguous {
-		return
-	}
-	if lookup.Symbol != "" {
-		fields["symbol"] = lookup.Symbol
-	}
-	if file := continuationPath(root, lookup.File); file != "" {
-		fields["file"] = file
-	}
-	if lookup.Kind != "" {
-		fields["kind"] = lookup.Kind
-	}
-	if lookup.Line > 0 {
-		fields["line"] = lookup.Line
-	}
-	if lookup.Column > 0 {
-		fields["column"] = lookup.Column
-	}
-}
-
-func addRenameContinuation(fields map[string]any, result any, root string, arguments map[string]any) {
-	rename, ok := result.(*backend.RenameResult)
-	if !ok || rename == nil || rename.Lookup == nil {
-		return
-	}
-	if symbol := renamedQualifiedSymbol(rename.Lookup.Symbol, rawString(arguments, "to")); symbol != "" {
-		fields["symbol"] = symbol
-	}
-	if file := continuationPath(root, rename.Lookup.File); file != "" {
-		fields["file"] = file
-	}
-}
-
-func addConstructContinuation(fields map[string]any, toolName string, result any, root string) {
-	edit, ok := result.(operation.FileEditRes)
-	if !ok {
-		return
-	}
-	if toolName == semanticInsertConstructTool && edit.Symbol != "" {
-		fields["symbol"] = edit.Symbol
-	}
-	if file := continuationPath(root, edit.File); file != "" {
-		fields["file"] = file
-	}
-	if toolName == semanticInsertConstructTool && edit.Line > 0 {
-		fields["line"] = edit.Line
-	}
-	if edit.InFunction != "" {
-		fields["in_function"] = edit.InFunction
-	}
-	if (toolName == "semantic_insert_case" || toolName == semanticInsertConstructTool) && edit.Discriminator != "" {
-		fields["discriminator"] = edit.Discriminator
-	}
-}
-
-func addScaffoldContinuation(fields map[string]any, result any, root string) {
-	file, ok := result.(operation.ScaffoldFileRes)
-	if !ok {
-		return
-	}
-	if resolved := continuationPath(root, file.File); resolved != "" {
-		fields["file"] = resolved
-	}
-	if file.Package != "" {
-		fields["package"] = file.Package
-	}
-}
-
-func addFileEditContinuationFields(fields map[string]any, toolName string, result any, root string) {
-	edit, ok := result.(operation.FileEditRes)
-	if !ok {
-		return
-	}
-	if edit.Symbol != "" {
-		fields["symbol"] = edit.Symbol
-	}
-	if file := continuationPath(root, edit.File); file != "" && (toolName != "semantic_organize_imports" || regularFile(edit.File)) {
-		fields["file"] = file
-	}
-	if edit.Line > 0 {
-		fields["line"] = edit.Line
-	}
-	if (toolName == "semantic_extract_function" || toolName == semanticExtractVariableTool) && edit.InFunction != "" {
-		fields["in_function"] = edit.InFunction
-	}
-
-}
-
-func addRemoveContinuationFields(fields map[string]any, result any, root string) {
-	edit, ok := result.(operation.RemoveRes)
-	if !ok {
-		return
-	}
-	if file := continuationPath(root, edit.File); file != "" {
-		fields["file"] = file
-	}
-
-}
-
-func regularFile(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular()
-}
-
-func rawString(arguments map[string]any, key string) string {
-	value, _ := arguments[key].(string)
-	return backend.NormalizeRenameInput(value)
-}
-
-func renamedQualifiedSymbol(previous, next string) string {
-	if previous == "" || next == "" {
-		return ""
-	}
-	separator := strings.LastIndex(previous, "::")
-	separatorWidth := 2
-	if dot := strings.LastIndex(previous, "."); dot > separator {
-		separator = dot
-		separatorWidth = 1
-	}
-	if separator < 0 {
-		return next
-	}
-	return previous[:separator+separatorWidth] + next
 }
 
 func continuationPath(root, source string) string {
@@ -1633,7 +1417,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendOperationToolErrorWithTiming(id, dispatchErr.Error(), timing, entry, dispatchErr)
 		return
 	}
-	s.sendToolDispatchResponse(ctx, id, timing, params.Name, entry, result, requestRoot, raw)
+	s.sendToolDispatchResponse(ctx, id, timing, entry, result, requestRoot)
 }
 
 func requestMutationObserver(requestServer *Server) func(context.Context) error {
@@ -1643,28 +1427,22 @@ func requestMutationObserver(requestServer *Server) func(context.Context) error 
 	return func(context.Context) error { return nil }
 }
 
-func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessage, timing *toolRequestTiming, toolName string, entry operation.Entry, result any, requestRoot string, raw map[string]any) {
-	fields := structuredContinuationFields(toolName, result, requestRoot, raw)
+func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessage, timing *toolRequestTiming, entry operation.Entry, result any, requestRoot string) {
+	fields := map[string]any{"workspace_root": requestRoot}
 	if entry.ProjectOutput != nil {
-		projected, projectErr := entry.ProjectOutput(result)
-		if projectErr != nil {
-			s.sendToolErrorWithTiming(id, projectErr.Error(), timing, projectErr)
-			return
-		}
-		fields = map[string]any{"result": projected}
-		continuationFields, continuationErr := operation.ProjectedContinuationFields(projected, entry.Output)
-		if continuationErr != nil {
-			s.sendToolErrorWithTiming(id, continuationErr.Error(), timing, continuationErr)
-			return
-		}
-		maps.Copy(fields, continuationFields)
-	} else if entry.Output != nil {
-		if err := validateLegacyEnvelopeFields(fields, entry.Output); err != nil {
+		projected, err := entry.ProjectOutput(result)
+		if err != nil {
 			s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 			return
 		}
+		fields["result"] = projected
+		continuations, err := operation.ProjectedContinuationFields(projected, entry.Output)
+		if err != nil {
+			s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+			return
+		}
+		maps.Copy(fields, continuations)
 	}
-	fields["workspace_root"] = requestRoot
 	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 	text, formatErr := entry.Format(result)
 	finishResponse()
@@ -1672,8 +1450,8 @@ func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessag
 		s.sendToolErrorWithTiming(id, formatErr.Error(), timing, formatErr)
 		return
 	}
-	verify, isFailedVerify := result.(operation.VerifyRes)
-	s.sendToolResultWithNative(id, text, timing, result, fields, isFailedVerify && verify.Failure != "")
+	verify, failedVerify := result.(operation.VerifyRes)
+	s.sendToolResultWithNative(id, text, timing, result, fields, failedVerify && verify.Failure != "")
 }
 
 func (s *Server) ensureInitialized(ctx context.Context, id json.RawMessage) bool {
@@ -2393,21 +2171,10 @@ func (s *Server) configurationSnapshot() serverConfiguration {
 	}
 }
 
-func schemaWithDescription(schema map[string]any, description string) map[string]any {
-	if description == "" {
-		return schema
-	}
-	copy := maps.Clone(schema)
-	copy[schemaDescriptionKey] = description
-	return copy
-}
-
 type sourceFieldProvider struct {
-	Schema       operation.ValueSchema
-	Role         operation.ParameterRole
-	Consumers    []string
-	Continuation bool
-	Metadata     bool
+	Schema    operation.ValueSchema
+	Role      operation.ParameterRole
+	Consumers []string
 }
 
 type sourceFieldIndex struct {
@@ -2426,8 +2193,8 @@ func buildSourceFieldIndex(entries []operation.Entry) (sourceFieldIndex, error) 
 }
 
 func validateIndexedSourceField(index sourceFieldIndex, entry operation.Entry, param operation.ParameterContract, source string) error {
-	tool, fieldPath, ok := strings.Cut(source, ".")
-	if !ok || tool == "" || fieldPath == "" {
+	tool, path, ok := strings.Cut(source, ".")
+	if !ok || tool == "" || path == "" {
 		return fmt.Errorf("operation %q parameter %q has invalid SourceFields entry %q; want tool.field", entry.MCPName, param.JSONName, source)
 	}
 	if _, exists := index.Tools[tool]; !exists {
@@ -2437,73 +2204,22 @@ func validateIndexedSourceField(index sourceFieldIndex, entry operation.Entry, p
 	if !exists {
 		return fmt.Errorf("operation %q parameter %q SourceFields entry %q is absent from %s output contract", entry.MCPName, param.JSONName, source, tool)
 	}
-	leaf := strings.TrimSuffix(fieldPath[strings.LastIndex(fieldPath, ".")+1:], "[]")
+	leaf := strings.TrimSuffix(path[strings.LastIndex(path, ".")+1:], "[]")
 	if leaf != param.JSONName {
 		return fmt.Errorf("operation %q parameter %q cannot copy field %q; source and parameter names must match", entry.MCPName, param.JSONName, leaf)
 	}
-	targetSchema, err := operation.ParameterValueSchema(param)
+	if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
+		return fmt.Errorf("operation %q parameter %q requires an explicit target or selector role", entry.MCPName, param.JSONName)
+	}
+	if provider.Role != param.Role || !slices.Contains(provider.Consumers, entry.MCPName) {
+		return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
+	}
+	target, err := operation.ParameterValueSchema(param)
 	if err != nil {
 		return fmt.Errorf("operation %q parameter %q schema: %w", entry.MCPName, param.JSONName, err)
 	}
-	if param.Role == "" {
-		if !provider.Metadata {
-			return fmt.Errorf("operation %q parameter %q SourceFields entry %q requires an explicit target or selector role", entry.MCPName, param.JSONName, source)
-		}
-		if !operation.SchemaAssignable(provider.Schema, targetSchema) {
-			return fmt.Errorf("operation %q parameter %q schema is incompatible with metadata provider %q field %q", entry.MCPName, param.JSONName, tool, fieldPath)
-		}
-		return nil
-	}
-	if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
-		return fmt.Errorf("operation %q parameter %q has invalid live continuation role %q", entry.MCPName, param.JSONName, param.Role)
-	}
-	if !provider.Continuation || provider.Metadata || provider.Role != param.Role || !slices.Contains(provider.Consumers, entry.MCPName) {
-		return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
-	}
-	if !operation.SchemaAssignable(provider.Schema, targetSchema) {
-		return fmt.Errorf("operation %q parameter %q schema is incompatible with provider %q field %q", entry.MCPName, param.JSONName, tool, fieldPath)
-	}
-	return nil
-}
-
-func validateLegacyEnvelopeFields(fields map[string]any, contract *operation.OperationOutputContract) error {
-	if contract == nil {
-		if len(fields) != 0 {
-			return fmt.Errorf("legacy structured output has no declared envelope contract")
-		}
-		return nil
-	}
-	declared := make(map[string]struct{}, len(contract.Metadata)+len(contract.EnvelopeContinuations))
-	for _, metadata := range contract.Metadata {
-		declared[metadata.Field] = struct{}{}
-		value, exists := fields[metadata.Field]
-		if !exists {
-			if !metadata.Optional {
-				return fmt.Errorf("legacy structured output omits required metadata field %q", metadata.Field)
-			}
-			continue
-		}
-		if err := operation.ValidateValue(metadata.Schema, value); err != nil {
-			return fmt.Errorf("legacy metadata field %q violates its declared schema: %w", metadata.Field, err)
-		}
-	}
-	for _, continuation := range contract.EnvelopeContinuations {
-		declared[continuation.Field] = struct{}{}
-		value, exists := fields[continuation.Field]
-		if !exists {
-			if !continuation.Optional {
-				return fmt.Errorf("legacy structured output omits required continuation %q", continuation.Field)
-			}
-			continue
-		}
-		if err := operation.ValidateValue(continuation.Schema, value); err != nil {
-			return fmt.Errorf("legacy continuation %q violates its declared schema: %w", continuation.Field, err)
-		}
-	}
-	for name := range fields {
-		if _, exists := declared[name]; !exists {
-			return fmt.Errorf("legacy structured output emitted undeclared field %q", name)
-		}
+	if !operation.SchemaAssignable(provider.Schema, target) {
+		return fmt.Errorf("operation %q parameter %q schema is incompatible with provider %q field %q", entry.MCPName, param.JSONName, tool, path)
 	}
 	return nil
 }
@@ -2561,20 +2277,9 @@ func requireDeclaredOutputFieldsOnNativeSuccess(schema map[string]any, contract 
 	if !ok {
 		return fmt.Errorf("structured output success branch has no required-field list")
 	}
-	require := func(field string, optional bool) {
-		if !optional && !slices.Contains(required, field) {
-			required = append(required, field)
-		}
-	}
-	for _, metadata := range contract.Metadata {
-		require(metadata.Field, metadata.Optional)
-	}
-	for _, continuation := range contract.EnvelopeContinuations {
-		require(continuation.Field, continuation.Optional)
-	}
 	for _, continuation := range contract.Continuations {
-		if continuation.Field != "" {
-			require(continuation.Field, continuation.Optional)
+		if continuation.Field != "" && !continuation.Optional && !slices.Contains(required, continuation.Field) {
+			required = append(required, continuation.Field)
 		}
 	}
 	success["required"] = required
@@ -2596,20 +2301,6 @@ func declaredOutputContinuationSchemas(entry operation.Entry) (map[string]any, e
 	fields := make(map[string]any)
 	if entry.Output == nil {
 		return fields, nil
-	}
-	for _, metadata := range entry.Output.Metadata {
-		schema, err := metadata.Schema.JSONSchema()
-		if err != nil {
-			return nil, fmt.Errorf("operation %q metadata %q schema: %w", entry.MCPName, metadata.Field, err)
-		}
-		fields[metadata.Field] = schemaWithDescription(schema, metadata.Description)
-	}
-	for _, continuation := range entry.Output.EnvelopeContinuations {
-		schema, err := continuation.Schema.JSONSchema()
-		if err != nil {
-			return nil, fmt.Errorf("operation %q envelope continuation %q schema: %w", entry.MCPName, continuation.Field, err)
-		}
-		fields[continuation.Field] = schemaWithDescription(schema, continuation.Description)
 	}
 	for _, continuation := range entry.Output.Continuations {
 		if continuation.Path != "" {
@@ -2666,24 +2357,12 @@ func indexSourceEntry(index *sourceFieldIndex, entry operation.Entry) error {
 }
 
 func indexOutputFields(index *sourceFieldIndex, entry operation.Entry) error {
-	for _, metadata := range entry.Output.Metadata {
-		provider := sourceFieldProvider{Schema: metadata.Schema, Metadata: true}
-		if err := addIndexedSourceField(index, entry.MCPName+"."+metadata.Field, provider); err != nil {
-			return err
-		}
-	}
-	for _, continuation := range entry.Output.EnvelopeContinuations {
-		provider := sourceFieldProvider{Schema: continuation.Schema, Role: continuation.Role, Consumers: continuation.Consumers, Continuation: true}
-		if err := addIndexedSourceField(index, entry.MCPName+"."+continuation.Field, provider); err != nil {
-			return err
-		}
-	}
 	for _, continuation := range entry.Output.Continuations {
-		suffix := continuation.Field
-		if continuation.Path != "" {
-			suffix = continuation.Path
+		suffix := continuation.Path
+		if suffix == "" {
+			suffix = continuation.Field
 		}
-		provider := sourceFieldProvider{Schema: continuation.Schema, Role: continuation.Role, Consumers: continuation.Consumers, Continuation: true}
+		provider := sourceFieldProvider{Schema: continuation.Schema, Role: continuation.Role, Consumers: continuation.Consumers}
 		if err := addIndexedSourceField(index, entry.MCPName+"."+suffix, provider); err != nil {
 			return err
 		}

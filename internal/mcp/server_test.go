@@ -276,22 +276,25 @@ func TestMCPStructuredContinuationFields(t *testing.T) {
 		t.Fatalf("tool calls failed: %s", out.String())
 	}
 	for label, content := range map[string]map[string]any{"lookup": lookup.Result.Structured, "replace_body": edit.Result.Structured} {
-		if content["result"] == nil {
+		native, ok := content["result"].(map[string]any)
+		if !ok {
 			t.Errorf("%s structuredContent omitted existing result: %#v", label, content)
+			continue
 		}
-		if content["symbol"] != "Hello" {
-			t.Errorf("%s structured symbol = %#v", label, content["symbol"])
+		if native["symbol"] != "Hello" || content["symbol"] != "Hello" {
+			t.Errorf("%s structured symbol = (%#v, alias %#v)", label, native["symbol"], content["symbol"])
 		}
-		if content["file"] != "main.go" {
-			t.Errorf("%s structured file = %#v", label, content["file"])
+		if native["file"] != "main.go" || content["file"] != "main.go" {
+			t.Errorf("%s structured file = (%#v, alias %#v)", label, native["file"], content["file"])
 		}
 		for _, hidden := range []string{"offset", "receiver"} {
-			if _, ok := content[hidden]; ok {
+			if _, hiddenExists := content[hidden]; hiddenExists || native[hidden] != nil {
 				t.Errorf("%s structuredContent contains %q: %#v", label, hidden, content)
 			}
 		}
 	}
-	if lookup.Result.Structured["line"] == nil || lookup.Result.Structured["column"] == nil || lookup.Result.Structured["kind"] != "function" {
+	lookupResult := lookup.Result.Structured["result"].(map[string]any)
+	if lookupResult["line"] == nil || lookupResult["column"] == nil || lookupResult["kind"] != "function" {
 		t.Errorf("lookup navigation fields = %#v", lookup.Result.Structured)
 	}
 }
@@ -505,8 +508,12 @@ func TestMCPInsertFunctionContinuationUsesInsertedTarget(t *testing.T) {
 	if response.Result.Structured["file"] != "main.go" {
 		t.Fatalf("continued file = %#v", response.Result.Structured["file"])
 	}
-	if line, ok := response.Result.Structured["line"].(float64); !ok || line < 1 {
-		t.Fatalf("continued line = %#v, want positive declaration line", response.Result.Structured["line"])
+	nativeResult, ok := response.Result.Structured["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("insert result = %#v, want typed result object", response.Result.Structured["result"])
+	}
+	if line, ok := nativeResult["line"].(float64); !ok || line < 1 {
+		t.Fatalf("continued line = %#v, want positive declaration line", nativeResult["line"])
 	}
 	if len(response.Result.Content) != 1 || !strings.Contains(response.Result.Content[0].Text, "symbol: Service.Added") || !strings.Contains(response.Result.Content[0].Text, "line (navigation only):") || !strings.Contains(response.Result.Content[0].Text, "diagnostic_status:") {
 		t.Fatalf("result omitted resolved target and declaration location: %s", out.String())
@@ -2103,8 +2110,12 @@ func assertMCPMoveReceipt(t *testing.T, responses []string, moveID int) {
 			continue
 		}
 		fields := response.Result.Structured
-		if fields["file"] != "moved.go" || fields["origin_file"] != "value.go" || fields["symbol"] != "emitOne" {
+		native, ok := fields["result"].(map[string]any)
+		if !ok || native["file"] != "moved.go" || native["origin_file"] != "value.go" || native["symbol"] != "emitOne" || fields["file"] != "moved.go" || fields["symbol"] != "emitOne" {
 			t.Fatalf("move continuation fields = %#v, want destination file, historical source, and live symbol", fields)
+		}
+		if _, exposed := fields["origin_file"]; exposed {
+			t.Fatalf("move exposed historical origin_file as a live continuation: %#v", fields)
 		}
 		return
 	}

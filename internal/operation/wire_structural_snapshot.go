@@ -209,19 +209,11 @@ func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string)
 	if err != nil {
 		return nil, err
 	}
-	buffer := sourcebuf.FromContext(ctx)
-	owned := false
-	if buffer == nil {
-		buffer, err = sourcebuf.New(cc.WorkDir)
-		if err != nil {
-			return nil, fmt.Errorf("bind structural workspace: %w", err)
-		}
-		ctx = sourcebuf.WithBuffer(ctx, buffer)
-		owned = true
+	preparedCtx, buffer, owned, err := sourcebuf.Prepare(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("prepare structural module buffer: %w", err)
 	}
-	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
-		return nil, fmt.Errorf("authorize structural module: %w", authorizeErr)
-	}
+	ctx = preparedCtx
 	selectedSource, err := sourcebuf.ReadFile(ctx, absolute)
 	if err != nil {
 		return nil, fmt.Errorf("read structural target %q: %w", file, err)

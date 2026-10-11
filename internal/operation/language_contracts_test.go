@@ -99,3 +99,52 @@ func TestTypedContractLabelsAndFaultProfilesRender(t *testing.T) {
 		}
 	}
 }
+
+func TestGoInsertConstructFieldCapabilityProfile(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupKey("insert_construct")
+	if !ok {
+		t.Fatal("insert_construct is not registered")
+	}
+	contract := entry.LanguageContracts[backend.LanguageGo]
+	if len(contract.Variants) != 2 {
+		t.Fatalf("insert_construct variants = %d, want 2", len(contract.Variants))
+	}
+	if _, baseExists := contract.Variant(capability.VariantSelectedFile); !baseExists {
+		t.Fatal("insert_construct is missing its base selected-file profile")
+	}
+
+	selector := capability.VariantSelectedFile | capability.VariantField
+	field, fieldExists := contract.Variant(selector)
+	if !fieldExists {
+		t.Fatalf("insert_construct is missing %q profile", selector)
+	}
+	if field.AnalysisScope != capability.ScopeActiveModule {
+		t.Errorf("field analysis scope = %q, want %q", field.AnalysisScope, capability.ScopeActiveModule)
+	}
+	wantRequirements := []capability.Requirement{
+		{Kind: capability.RequireModuleSnapshot, Scope: capability.ScopeActiveModule},
+		{Kind: capability.RequireTestVariants, Scope: capability.ScopeActiveModule},
+		{Kind: capability.RequireExactSelector, Scope: capability.ScopeSelectedPackage},
+		{Kind: capability.RequireBoundedSource, Scope: capability.ScopeSelectedPackage},
+		{Kind: capability.RequirePackageTypes, Scope: capability.ScopeSelectedPackage},
+		{Kind: capability.RequireOverlayTypes, Scope: capability.ScopeSelectedPackage},
+		{Kind: capability.RequireSnippetParse, Scope: capability.ScopeSelectedFile},
+	}
+	if !reflect.DeepEqual(field.Preconditions, wantRequirements) {
+		t.Errorf("field preconditions = %+v, want %+v", field.Preconditions, wantRequirements)
+	}
+	wantFeatures := capability.FeatureASTEdit | capability.FeatureTypedRefactor | capability.FeatureFormat
+	if field.Capabilities != wantFeatures {
+		t.Errorf("field capabilities = %v, want %v", field.Capabilities, wantFeatures)
+	}
+	wantGuarantees := capability.GuaranteePackageOverlay | capability.GuaranteeAtomicWrites
+	if field.Guarantees != wantGuarantees {
+		t.Errorf("field guarantees = %v, want %v", field.Guarantees, wantGuarantees)
+	}
+	if support, err := field.ErrorTolerance.Classify(capability.FaultTargetSyntax); err != nil || support != capability.FaultRejected {
+		t.Errorf("field target syntax support = (%v, %v), want rejected", support, err)
+	}
+	if support, err := field.ErrorTolerance.Classify(capability.FaultOtherPackageType); err != nil || support != capability.FaultUnknown {
+		t.Errorf("field other-package type support = (%v, %v), want unknown", support, err)
+	}
+}

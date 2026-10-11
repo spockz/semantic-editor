@@ -238,7 +238,7 @@ func finalizeInlineFunctionOutput(cc CallContext, _ InlineFunctionReq, res Seman
 }
 
 func finalizeSemanticEditResult(cc CallContext, res SemanticEditRes) (SemanticEditRes, error) {
-	receipt, err := FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, res.Draft, func(ctx context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+	receipt, err := finalizeCallReceipt(cc.Ctx, cc, cc.WorkDir, res.Draft, func(ctx context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
 		return resolveSemanticTarget(ctx, cc, target)
 	})
 	if err != nil {

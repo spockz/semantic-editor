@@ -73,10 +73,8 @@ type FileRevision struct {
 
 // OperationOutputContract declares a result value and typed live continuations.
 type OperationOutputContract struct {
-	ResultSchema          *ValueSchema                `json:"result_schema,omitempty"`
-	Metadata              []OutputMetadataField       `json:"metadata,omitempty"`
-	Continuations         []OutputContinuation        `json:"continuations,omitempty"`
-	EnvelopeContinuations []EnvelopeContinuationField `json:"envelope_continuations,omitempty"`
+	ResultSchema  *ValueSchema         `json:"result_schema,omitempty"`
+	Continuations []OutputContinuation `json:"continuations,omitempty"`
 }
 
 // OperationErrorOutputContract declares the typed result schema for known operation errors.
@@ -94,23 +92,7 @@ type OutputContinuation struct {
 	Optional  bool          `json:"optional,omitempty"`
 }
 
-// OutputMetadataField declares an informational top-level result field without copy semantics.
-type OutputMetadataField struct {
-	Field       string      `json:"field"`
-	Schema      ValueSchema `json:"schema"`
-	Description string      `json:"description,omitempty"`
-	Optional    bool        `json:"optional,omitempty"`
-}
-
-// EnvelopeContinuationField declares a live top-level field emitted beside a legacy string result.
-type EnvelopeContinuationField struct {
-	Field       string        `json:"field"`
-	Schema      ValueSchema   `json:"schema"`
-	Role        ParameterRole `json:"role"`
-	Consumers   []string      `json:"consumers"`
-	Description string        `json:"description,omitempty"`
-	Optional    bool          `json:"optional,omitempty"`
-}
+const editReceiptField = "edit_receipt"
 
 // ParameterRole classifies a parameter effect on target selection or caller policy.
 type ParameterRole string
@@ -478,33 +460,16 @@ func ValidateOutputContract(contract OperationOutputContract) error {
 			return fmt.Errorf("result schema: %w", err)
 		}
 	}
-	seenFields := make(map[string]struct{}, len(contract.Metadata)+len(contract.Continuations)+len(contract.EnvelopeContinuations))
-	for index, metadata := range contract.Metadata {
-		if metadata.Field == "" {
-			return fmt.Errorf("metadata field %d has an empty name", index)
-		}
-		if _, ok := seenFields[metadata.Field]; ok {
-			return fmt.Errorf("output field %q is repeated", metadata.Field)
-		}
-		seenFields[metadata.Field] = struct{}{}
-		if err := ValidateSchema(metadata.Schema); err != nil {
-			return fmt.Errorf("metadata field %q schema: %w", metadata.Field, err)
-		}
-	}
+	seenFields := make(map[string]struct{}, len(contract.Continuations))
 	seenContinuations := make(map[string]struct{}, len(contract.Continuations))
 	for index, continuation := range contract.Continuations {
 		if continuation.Field != "" {
 			if _, ok := seenFields[continuation.Field]; ok {
-				return fmt.Errorf("output field %q collides with metadata or another continuation", continuation.Field)
+				return fmt.Errorf("output field %q is repeated", continuation.Field)
 			}
 			seenFields[continuation.Field] = struct{}{}
 		}
 		if err := validateOutputContinuation(contract, continuation, index, seenContinuations); err != nil {
-			return err
-		}
-	}
-	for _, continuation := range contract.EnvelopeContinuations {
-		if err := validateEnvelopeContinuation(continuation, seenFields); err != nil {
 			return err
 		}
 	}
@@ -662,33 +627,3 @@ func validateFileRevisions(revisions []FileRevision, label string) error {
 
 // EditNoOp means the requested semantic state already held and no edit was published.
 const EditNoOp EditStatus = "no_op"
-
-func validateEnvelopeContinuation(continuation EnvelopeContinuationField, seen map[string]struct{}) error {
-	if continuation.Field == "" {
-		return fmt.Errorf("envelope continuation has an empty field name")
-	}
-	if _, ok := seen[continuation.Field]; ok {
-		return fmt.Errorf("output field %q is repeated", continuation.Field)
-	}
-	seen[continuation.Field] = struct{}{}
-	if err := ValidateSchema(continuation.Schema); err != nil {
-		return fmt.Errorf("envelope continuation %q schema: %w", continuation.Field, err)
-	}
-	if continuation.Role != RoleTarget && continuation.Role != RoleSelector {
-		return fmt.Errorf("envelope continuation %q has non-live role %q", continuation.Field, continuation.Role)
-	}
-	if len(continuation.Consumers) == 0 {
-		return fmt.Errorf("envelope continuation %q has no consumer tools", continuation.Field)
-	}
-	seenConsumers := make(map[string]struct{}, len(continuation.Consumers))
-	for _, consumer := range continuation.Consumers {
-		if consumer == "" {
-			return fmt.Errorf("envelope continuation %q has an empty consumer name", continuation.Field)
-		}
-		if _, ok := seenConsumers[consumer]; ok {
-			return fmt.Errorf("envelope continuation %q repeats consumer %q", continuation.Field, consumer)
-		}
-		seenConsumers[consumer] = struct{}{}
-	}
-	return nil
-}

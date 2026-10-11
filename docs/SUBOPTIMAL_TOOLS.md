@@ -1,5 +1,33 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-11: Incorrect selected file for lookup result inspection
+
+`semantic_inspect_symbol` refused `LookupResult` in `internal/backend/read.go`
+because that declaration is not in the selected file. No mutation occurred.
+Use workspace `semantic_lookup` to locate the declaration before inspection.
+The caller supplied an incorrect file constraint.
+
+## 2026-10-11: Output migration applies before configured verification fails
+
+* Tool: `semantic_batch` replacing and removing output-contract declarations in `internal/mcp/server.go`.
+* Observed: the serialized retry applied the requested declarations and published the source, then the configured `golangci-lint` verification hook exited with status 3.
+* Workaround: retain the applied semantic edits, finish the combined contract migration, and run repository `make check` with its configured plugin rebuild rather than replaying the mutation.
+* Root cause: mutation and post-publication verification are separate outcomes; an incomplete shared migration or hook environment can fail verification after successful publication.
+
+## 2026-10-11: Shared-workspace edits conflict with semantic batch snapshot
+
+* Tool: `semantic_batch` replacing output-contract functions in `internal/mcp/server.go`.
+* Observed: a concurrent update to `internal/operation/wire_structural_snapshot.go` invalidated the captured source preimage during the third child. Buffer publication refused; requested server replacements were not persisted.
+* Workaround: serialize the bounded semantic batch against other repository mutations, then retry from the actual on-disk revision.
+* Root cause: the batch deliberately observes the workspace source set and refuses concurrent source changes even outside the selected package.
+
+## 2026-10-11: Concurrent syntax blocks semantic declaration migration
+
+* Tool: `semantic_batch` with `semantic_replace_construct` on `internal/mcp/server.go`.
+* Observed: the first declaration replacement refused during collision checking because a concurrent edit temporarily left `internal/mcp/output_schema_required_test.go` syntactically invalid. No requested server replacement applied.
+* Workaround: wait for the test edit to reach a parseable state, then retry the bounded semantic batch.
+* Root cause: declaration collision checks parse sibling test files, so concurrent syntax errors prevent otherwise valid selected-file mutations.
+
 ## 2026-10-11: cancellation test loop selector
 
 `semantic_replace_construct` could not select the request loop in `internal/mcp/server_test.go` from its range expression. No source changed. Select the returned construct path `8`. The caller supplied a range expression rather than the backend's expected loop selector.
@@ -6215,6 +6243,22 @@ failure remains the documented batch behavior.
 - Workaround: use the available symbol inspection and structural editing operations; if unavailable, make the smallest manual edit.
 - Root cause: the current MCP tool registration omits the advertised workspace-outline operation.
 
+## 2026-10-11: semantic workspace outline invocation unavailable
+
+* Tool: `semantic_workspace_outline`.
+* Target: `internal/operation` output migration.
+* Observed failure: the configured tool inventory did not expose a callable `semantic_workspace_outline`; invoking it through the available runtime returned `TypeError` before any workspace operation ran.
+* Workaround: inspect the indexed ADR summaries and use read-only repository inventory commands to map the operation package.
+* Root cause: workspace outline is omitted from the current semantic MCP registration.
+
+## 2026-10-11: semantic outline rejected directory selector
+
+* Tool: `semantic_outline`.
+* Target: `internal/operation` output migration.
+* Observed failure: the call rejected `directory` and made no mutation; the registered contract accepts `path`.
+* Workaround: retry with the advertised `path` selector.
+* Root cause: the caller used a guessed selector instead of the tool's registered parameter name.
+
 ## 2026-10-11: grouped function insertion rejected
 
 - Tool: `semantic_insert_construct`.
@@ -6238,3 +6282,85 @@ failure remains the documented batch behavior.
 - Observed failure: the tool rejected the documented discovery-style `query` parameter and exposed only environment configuration parameters.
 - Workaround: inspect the file outline, then use read-only source inspection for the needed implementation details.
 - Root cause: the registered inspection endpoint does not expose the expected symbol-query contract.
+
+## 2026-10-11: semantic batch verification required workspace trust
+
+* Tool: `semantic_batch`.
+* Target: `internal/sourcebuf/buffer.go` buffered edit helper.
+* Observed failure: both semantic replacements applied, but automatic verification stopped because the configured `golangci-lint` hook requires explicit workspace trust.
+* Workaround: record the applied edits and rerun verification with `trust_workspace: true` for this selected repository.
+* Root cause: the batch omitted the hook trust parameter.
+
+## 2026-10-11: semantic verification blocked by stale plugin and concurrent edits
+
+* Tool: `semantic_verify`.
+* Target: `internal/sourcebuf` buffered edit helper.
+* Observed failure: the scoped verification reached configured hooks but failed loading the custom `packageclosure` analyzer because its plugin used a different Go package version; diagnostics also included unrelated operation and backend edits in progress.
+* Workaround: use the repository's `make check` after concurrent migrations finish and the configured plugin is rebuilt.
+* Root cause: the local analyzer plugin was stale, and workspace-wide semantic diagnostics observed concurrent changes outside this task's files.
+
+## 2026-10-11: semantic batch verification repeated stale plugin failure
+
+* Tool: `semantic_batch`.
+* Target: standalone buffer wrappers in `internal/astedit`.
+* Observed failure: the selected insertions completed, but batch verification again failed loading `.scratch/go/bin/packageclosure.so` because it was built with a different Go package version.
+* Workaround: retain the successful source edits and validate with `make check` after the parallel operation migration is complete.
+* Root cause: the same stale custom analyzer plugin still prevents verification.
+
+## 2026-10-11: semantic function removal left stale caller
+
+* Tool: `semantic_remove_construct`.
+* Target: `internal/astedit/remove.go`.
+* Observed failure: removing `removeWithOwnedBuffer` correctly deleted the obsolete helper but reported a remaining reference in `Remove` that became undefined.
+* Workaround: remove the now-unreachable call branch because `Remove`'s public entry now always binds a buffer before entering its implementation.
+* Root cause: the helper's caller was not part of the function-removal operation.
+
+## 2026-10-11: checkpoint batch verification requested trust
+
+* Tool: `semantic_batch`.
+* Target: `internal/sourcebuf` checkpoint API.
+* Observed failure: all checkpoint and rollback replacements were applied, but verification stopped because `golangci-lint` workspace trust was omitted.
+* Workaround: validate through the shared `make check` after concurrent edits stabilize.
+* Root cause: the batch did not pass the required verification trust flag.
+
+## 2026-10-11: grouped output-helper insertion rejected
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_engine_declarations.go` output helpers.
+* Observed failure: inserting three function declarations in one function construct was rejected before mutation.
+* Workaround: insert each helper function separately.
+* Root cause: the function construct kind accepts exactly one declaration.
+
+## 2026-10-11: field-name insertion rejected an unsupported selector
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/astedit/construct_insert.go`, `InferInsertedFieldName`.
+* Observed failure: the call was rejected before mutation because `language` is not a supported parameter.
+* Workaround: retry without the unsupported parameter or use a targeted edit if semantic insertion cannot express the required guard.
+* Root cause: a selected-file mutation request included a language selector that belongs to lookup/outline tools, not construct insertion.
+
+## 2026-10-11: field-name guard inserted before its binding
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/astedit/construct_insert.go`, `InferInsertedFieldName`.
+* Observed failure: an `anchor: start` insertion placed the `file.Decls` guard before `file` was declared, introducing an undefined identifier diagnostic.
+* Workaround: move the guard after `parser.ParseFile` with a targeted source edit.
+* Root cause: the tool honored the requested function anchor without accounting for the statement's dependency on a later local binding.
+
+## 2026-10-11: move publication replacement selected multiple statements
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/astedit/move_cross_package.go`, `moveConstructAcrossPackages`.
+* Observed failure: a discriminator spanning an `if` and following `return` matched no single statement/expression; the tool returned the candidate statement paths without mutating source.
+* Workaround: replace the selected `if` statement by its construct path and remove the legacy return as a separate statement edit.
+* Root cause: statement/expression replacement is scoped to one AST node.
+
+The construct-path retry was rejected before mutation because `semantic_replace_construct` still requires a discriminator for statement/expression targets. Use the exact single-statement discriminator with the selector.
+
+## 2026-10-11: top-level placement variable replacement rejected
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_engine_constructs.go`, `constructPlacementEnum`.
+* Observed failure: replacing the package-level variable was rejected because the tool interpreted `kind=variable` as requiring an enclosing function.
+* Workaround: apply a targeted edit to the enum literal; no source mutation occurred.
+* Root cause: the construct replacement tool does not support top-level variable declarations.

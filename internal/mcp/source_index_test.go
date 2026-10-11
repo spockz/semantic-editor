@@ -8,38 +8,46 @@ import (
 	"testing"
 )
 
-func TestSourceFieldIndexValidatesMetadataEdgesAndRawEntryModes(t *testing.T) {
+func TestSourceFieldIndexValidatesTypedContinuationEdgesAndRawEntryModes(t *testing.T) {
 	integer := operation.ValueSchema{Kind: operation.SchemaInteger}
-	stringSchema := operation.ValueSchema{Kind: operation.SchemaString}
+	resultSchema := operation.ValueSchema{
+		Kind:       operation.SchemaObject,
+		Properties: map[string]operation.ValueSchema{"file": integer},
+		Required:   []string{"file"},
+	}
 	provider := operation.Entry{
 		MCPName: "semantic_provider",
 		Output: &operation.OperationOutputContract{
-			Metadata: []operation.OutputMetadataField{{Field: "file", Schema: integer}},
+			ResultSchema: &resultSchema,
+			Continuations: []operation.OutputContinuation{{
+				Path: "result.file", Schema: integer, Role: operation.RoleTarget, Consumers: []string{"semantic_consumer"},
+			}},
 		},
+		ProjectOutput: func(any) (any, error) { return map[string]any{"file": 1}, nil },
 	}
 	cases := []struct {
 		name  string
 		param operation.ParameterContract
 	}{
 		{
-			name: "metadata cannot rename",
+			name: "continuation cannot rename",
 			param: operation.ParameterContract{
 				Name: "destination_file", JSONName: "destination_file", Type: operation.ParamString,
-				SourceFields: []string{"semantic_provider.file"},
+				Role: operation.RoleTarget, SourceFields: []string{"semantic_provider.result.file"},
 			},
 		},
 		{
-			name: "metadata schema must be assignable",
+			name: "continuation schema must be assignable",
 			param: operation.ParameterContract{
-				Name: "file", JSONName: "file", Type: operation.ParamString,
-				SourceFields: []string{"semantic_provider.file"},
+				Name: "file", JSONName: "file", Type: operation.ParamString, Role: operation.RoleTarget,
+				SourceFields: []string{"semantic_provider.result.file"},
 			},
 		},
 		{
-			name: "metadata is not a live continuation",
+			name: "typed source requires a live role",
 			param: operation.ParameterContract{
-				Name: "file", JSONName: "file", Type: operation.ParamInteger, Role: operation.RoleTarget,
-				SourceFields: []string{"semantic_provider.file"},
+				Name: "file", JSONName: "file", Type: operation.ParamInteger,
+				SourceFields: []string{"semantic_provider.result.file"},
 			},
 		},
 	}
@@ -47,20 +55,23 @@ func TestSourceFieldIndexValidatesMetadataEdgesAndRawEntryModes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			consumer := operation.Entry{MCPName: "semantic_consumer", Params: []operation.ParameterContract{tc.param}}
 			if err := mcp.ValidateSourceFields([]operation.Entry{provider, consumer}); err == nil {
-				t.Fatal("invalid metadata source edge was accepted")
+				t.Fatal("invalid typed source edge was accepted")
 			}
 		})
 	}
+}
 
+func TestSourceFieldIndexValidatesRawEntryModes(t *testing.T) {
+	stringSchema := operation.ValueSchema{Kind: operation.SchemaString}
 	for _, tc := range []struct {
 		name  string
 		entry operation.Entry
 	}{
 		{
-			name: "metadata with projector",
+			name: "projector without typed result",
 			entry: operation.Entry{
 				MCPName: "semantic_invalid_mode",
-				Output:  provider.Output,
+				Output:  &operation.OperationOutputContract{},
 				ProjectOutput: func(any) (any, error) {
 					return map[string]any{"result": "ok"}, nil
 				},
@@ -96,7 +107,7 @@ func TestSourceFieldIndexSkipsEntriesWithoutMCPNames(t *testing.T) {
 		Output: &operation.OperationOutputContract{
 			ResultSchema: &resultSchema,
 			Continuations: []operation.OutputContinuation{{
-				Field: "file", Schema: fileSchema, Role: operation.RoleTarget, Consumers: []string{"semantic_consumer"},
+				Path: "result.file", Schema: fileSchema, Role: operation.RoleTarget, Consumers: []string{"semantic_consumer"},
 			}},
 		},
 		ProjectOutput: func(any) (any, error) {
@@ -107,7 +118,7 @@ func TestSourceFieldIndexSkipsEntriesWithoutMCPNames(t *testing.T) {
 		Key: "cli-consumer",
 		Params: []operation.ParameterContract{{
 			Name: "file", JSONName: "file", Type: operation.ParamString, Role: operation.RoleTarget,
-			SourceFields: []string{"semantic_provider.file"},
+			SourceFields: []string{"semantic_provider.result.file"},
 		}},
 	}
 	entries := []operation.Entry{provider, {Key: "cli-first"}, cliConsumer, {Key: "cli-second"}}

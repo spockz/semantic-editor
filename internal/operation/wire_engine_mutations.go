@@ -199,11 +199,14 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of text replacement to relocate one supported declaration to an explicit destination and placement. Use semantic_insert_construct to add a declaration or semantic_replace_construct to update one in place.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true,
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
-			legacyEnvelopeFieldWithDescription("file", RoleTarget, envelopeFileConsumers, "Live destination file after the move; copy this target into later operations."),
-			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
-		}, OutputMetadataField{Field: "origin_file", Schema: ValueSchema{Kind: SchemaString}, Description: "Historical source location before the move; evidence only, not a continuation target.", Optional: true}),
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of text replacement to relocate one supported declaration to an explicit destination and placement. Use semantic_insert_construct to add a declaration or semantic_replace_construct to update one in place.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: bufferedFileEditHandler("move_construct", func(req MoveConstructReq) string { return req.File }, runMoveConstruct)}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true,
+		Output: fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "origin_file": {Kind: SchemaString}, "diff": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation("symbol", RoleTarget, symbolOutputConsumers)}),
+		FinalizeOutput: func(cc CallContext, _ MoveConstructReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: func(result FileEditRes) (any, error) {
+			return projectFileEditOutput(result, "file", "symbol", "origin_file", "diff")
+		},
 	}
 }
 
@@ -298,7 +301,7 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 		MCPName: replaceBodyTool,
 		Parse:   parseReplaceBody,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceBodyReq) (FileEditRes, error){
-			backend.LanguageGo: runReplaceBody,
+			backend.LanguageGo: bufferedFileEditHandler("replace_body", func(req ReplaceBodyReq) string { return req.File }, runReplaceBody),
 		},
 		Format: func(res FileEditRes) (string, error) {
 			text := fmt.Sprintf("Successfully replaced body of %s in %s.", res.Symbol, res.Display)
@@ -313,8 +316,12 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 			}
 			return text, nil
 		},
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
-		Output:        legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)}),
+		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
+		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "diff": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation("symbol", RoleTarget, symbolOutputConsumers)}),
+		FinalizeOutput: func(cc CallContext, _ ReplaceBodyReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: func(result FileEditRes) (any, error) { return projectFileEditOutput(result, "file", "symbol", "diff") },
 		BufferedBatch: true, Batchable: true,
 	}
 }
@@ -336,14 +343,16 @@ func (r *ScaffoldFileReq) SetProjectContext(project backend.ProjectContext) { r.
 
 // ScaffoldFileRes reports a created file for response rendering and batch post-processing.
 type ScaffoldFileRes struct {
-	File    string
-	Display string
-	Package string
+	File                  string
+	Display               string
+	Package               string
+	Receipt               EditReceipt
+	SuppressContinuations bool
 }
 
 var scaffoldFileParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: relative path for the new file", Required: true},
-	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')", SourceFields: []string{sourceScaffoldPackage}},
+	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')"},
 	{Name: "purpose_header", CLIName: "purpose-header", JSONName: "purpose_header", Type: ParamString, Description: "optional Go comment header explaining why the file exists"},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "replace existing file (default false)"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "no-op for new files; present for schema uniformity"},
@@ -400,8 +409,32 @@ func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 			return fmt.Sprintf("Successfully scaffolded %s with package %s.", res.Display, res.Package), nil
 		},
 		ExampleRaw: map[string]any{"file": wireExampleFile},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers)},
-			OutputMetadataField{Field: "package", Schema: ValueSchema{Kind: SchemaString}, Description: "Resolved package name for the created file.", Optional: true}),
+		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, "package": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers)}),
+		FinalizeOutput: func(cc CallContext, _ ScaffoldFileReq, result ScaffoldFileRes) (ScaffoldFileRes, error) {
+			content, err := os.ReadFile(result.File)
+			if err != nil {
+				return ScaffoldFileRes{}, fmt.Errorf("read scaffolded file for receipt: %w", err)
+			}
+			path := filepath.ToSlash(result.Display)
+			if path == "" {
+				return ScaffoldFileRes{}, fmt.Errorf("scaffolded file path is empty: %w", ErrInvalidDefinition)
+			}
+			revision := structuralRevision(content)
+			receipt, err := FinalizeEditReceipt(cc.Ctx, cc.WorkDir, false, cc.InBatch, EditReceiptDraft{Operation: "scaffold_file", Status: EditPersisted, PlannedChanges: []FileRevision{{Path: path, Revision: revision}}}, nil)
+			if err != nil {
+				return ScaffoldFileRes{}, err
+			}
+			result.Receipt = receipt
+			result.SuppressContinuations = cc.InBatch
+			return result, nil
+		},
+		ProjectOutput: func(result ScaffoldFileRes) (any, error) {
+			projected := map[string]any{"result": "Successfully scaffolded " + result.Display + " with package " + result.Package + ".", editReceiptField: result.Receipt, "package": result.Package}
+			if !result.SuppressContinuations {
+				projected["file"] = result.Display
+			}
+			return projected, nil
+		},
 		Batchable: true,
 	}
 }
@@ -496,15 +529,17 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 		MCPName: semanticInsertCaseToolName,
 		Parse:   parseInsertCase,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertCaseReq) (FileEditRes, error){
-			backend.LanguageGo: runInsertCase,
+			backend.LanguageGo: bufferedFileEditHandler("insert_case", func(req InsertCaseReq) string { return req.File }, runInsertCase),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
-			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
-			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
-			legacyEnvelopeField(wireDiscriminator, RoleSelector, envelopeDiscriminatorConsumers),
-		}),
+		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, wireInFunction: {Kind: SchemaString}, wireDiscriminator: {Kind: SchemaString}, "diff": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers), outputContinuation(wireDiscriminator, RoleSelector, discriminatorOutputConsumers)}),
+		FinalizeOutput: func(cc CallContext, _ InsertCaseReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: func(result FileEditRes) (any, error) {
+			return projectFileEditOutput(result, "file", wireInFunction, wireDiscriminator, "diff")
+		},
 		BufferedBatch: true, Batchable: true,
 	}
 }
@@ -588,14 +623,17 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 		MCPName: semanticReplaceConstructToolName,
 		Parse:   parseReplaceConstruct,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceConstructReq) (FileEditRes, error){
-			backend.LanguageGo: runReplaceConstruct,
+			backend.LanguageGo: bufferedFileEditHandler("replace_construct", func(req ReplaceConstructReq) string { return req.File }, runReplaceConstruct),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", wireDiscriminator: "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
-			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
-			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
-		}),
+		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, wireInFunction: {Kind: SchemaString}, "diff": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers)}),
+		FinalizeOutput: func(cc CallContext, _ ReplaceConstructReq, result FileEditRes) (FileEditRes, error) {
+			return finalizeFileEditOutput(cc, result)
+		},
+		ProjectOutput: func(result FileEditRes) (any, error) {
+			return projectFileEditOutput(result, "file", wireInFunction, "diff")
+		},
 		BufferedBatch: true, Batchable: true,
 	}
 }

@@ -25,6 +25,7 @@ When the request matches an operation exposed by the active semedit server, use 
 | Update an existing package-level Go constant, variable, or type alias | `semantic_replace_decl` | Built-in text replacement or duplicate insertion |
 | Add one Go function or method to an existing file | `semantic_insert_function` | Built-in text insertion or `replace_file_content` |
 | Add one Go struct, interface, or type alias | `semantic_insert_type` | Built-in text insertion or `replace_file_content` |
+| Add one field to a private non-generic Go struct type | `semantic_insert_construct` with `kind: "field"`, `in_type`, and one named field in `source`; typed overlay checks guard layout compatibility | Exported owners and duplicate fields are refused |
 | Add one Go constant or variable | `semantic_insert_decl` | Built-in text insertion or `replace_file_content` |
 | Add a top-level Go declaration when generic placement controls fit the task | `semantic_insert_declaration`; prefer the function, type, or constant/variable operation for those common kinds | Built-in text insertion by line number |
 | Create a Go source file and infer its package | `semantic_scaffold_file`, followed by a matching insertion operation | Built-in file writing for the package header |
@@ -51,6 +52,17 @@ Examples:
 - “Where is `Config.Port` declared?” → use `semantic_lookup`, with the file path if needed to disambiguate.
 
 For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration, and an exported name requires public access. Relative file and path parameters resolve from the active semedit MCP workspace root, not the task's current directory. If MCP is rooted at the repository and the target is an isolated worktree, include `.scratch/worktrees/<name>/...` in the path; for Rust or Java rename, the selected file must belong to the trusted active workspace. Maven `root` must be absolute and remain inside the trusted workspace; use an absolute worktree path to target an isolated worktree.
+
+### Copy typed results and respect publication
+
+Operations with declared output contracts return a typed `result` object. Copy
+target and selector fields only from its declared continuations and keep values
+from the same record together. Formatted text is presentation, not a parallel
+source of continuation fields. Mutations return `edit_receipt`; buffered batch
+children report `applied_working` and omit live continuations. A batch failure
+can retain earlier successful edits, so inspect its persisted diff before retrying.
+Standalone AST edits prepare edits, formatting, and imports in one source buffer
+and publish the prepared result once.
 
 ### Direct targeting over preliminary lookup
 

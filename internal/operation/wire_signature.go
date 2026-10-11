@@ -26,7 +26,7 @@ const signatureChangeConsumer = "semantic_change_signature"
 
 const signatureReplaceBodyConsumer = "semantic_replace_body"
 
-const signatureEditReceiptField = "edit_receipt"
+const signatureEditReceiptField = editReceiptField
 
 const introduceParameterConsumer = "semantic_introduce_parameter"
 
@@ -182,7 +182,7 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, cc.InBatch, result.Draft, result.Resolve)
+			receipt, err := finalizeCallReceipt(ctx, cc, cc.WorkDir, result.Draft, result.Resolve)
 			if err != nil {
 				return structuralPlanResult{}, fmt.Errorf("finalize change-signature receipt: %w", err)
 			}

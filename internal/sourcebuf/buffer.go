@@ -189,11 +189,58 @@ func (b *Buffer) Changes() []Change {
 	return changes
 }
 
+// ChangesSince reports this edit's changes relative to a checkpoint's working revision.
+func (b *Buffer) ChangesSince(checkpoint Checkpoint) []Change {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	changes := make([]Change, 0)
+	for _, path := range slices.Sorted(maps.Keys(b.files)) {
+		state := b.files[path]
+		before, exists := checkpoint.content[path]
+		if !exists {
+			before = state.original
+		}
+		if bytes.Equal(before, state.content) {
+			continue
+		}
+		changes = append(changes, Change{Path: path, Before: bytes.Clone(before), After: bytes.Clone(state.content)})
+	}
+	return changes
+}
+
 // AuthorizedRoots reports main module roots explicitly permitted for publication.
 func (b *Buffer) AuthorizedRoots() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return slices.Sorted(maps.Keys(b.writeRoots))
+}
+
+// Checkpoint captures the current working bytes so a failed child edit can be rolled back.
+func (b *Buffer) Checkpoint() Checkpoint {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	checkpoint := Checkpoint{
+		content:    make(map[string][]byte, len(b.files)),
+		writeRoots: maps.Clone(b.writeRoots),
+	}
+	for path, state := range b.files {
+		checkpoint.content[path] = bytes.Clone(state.content)
+	}
+	return checkpoint
+}
+
+// Rollback restores the captured bytes while retaining inputs observed by the failed edit.
+func (b *Buffer) Rollback(checkpoint Checkpoint) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for path, state := range b.files {
+		content, ok := checkpoint.content[path]
+		if !ok {
+			content = state.original
+		}
+		state.content = bytes.Clone(content)
+	}
+	b.writeRoots = maps.Clone(checkpoint.writeRoots)
 }
 
 // ErrConflict identifies stale disk inputs to a buffered transformation.
@@ -362,6 +409,53 @@ func ParseFile(ctx context.Context, fset *token.FileSet, path string, source any
 	return parser.ParseFile(fset, path, source, mode)
 }
 
+// Run binds an owned buffer for a standalone edit or rolls back a failed shared-buffer edit.
+func Run(ctx context.Context, root string, edit func(context.Context) error) error {
+	if edit == nil {
+		return fmt.Errorf("run buffered edit: nil edit")
+	}
+	buffer := FromContext(ctx)
+	var checkpoint Checkpoint
+	if buffer != nil {
+		checkpoint = buffer.Checkpoint()
+	}
+	editCtx, buffer, owned, err := Prepare(ctx, root)
+	if err != nil {
+		return err
+	}
+	if owned {
+		checkpoint = buffer.Checkpoint()
+	}
+	if err := edit(editCtx); err != nil {
+		buffer.Rollback(checkpoint)
+		return err
+	}
+	if owned {
+		if err := buffer.Flush(editCtx); err != nil {
+			return fmt.Errorf("publish buffered edit: %w", err)
+		}
+	}
+	return nil
+}
+
+// Prepare binds and authorizes an edit buffer, preserving any batch buffer already in context.
+func Prepare(ctx context.Context, root string) (context.Context, *Buffer, bool, error) {
+	buffer := FromContext(ctx)
+	owned := buffer == nil
+	if owned {
+		var err error
+		buffer, err = New(root)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("capture buffered edit workspace: %w", err)
+		}
+		ctx = WithBuffer(ctx, buffer)
+	}
+	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
+		return nil, nil, false, fmt.Errorf("authorize buffered edit: %w", err)
+	}
+	return ctx, buffer, owned, nil
+}
+
 func (b *Buffer) load(path string) (string, *fileState, error) {
 	path, err := filepath.Abs(path)
 	if err != nil {
@@ -490,4 +584,16 @@ func sourceSet(root string) (map[string]bool, error) {
 		return nil, err
 	}
 	return files, nil
+}
+
+// Checkpoint captures buffer state so a failed child edit can restore its parent revision.
+type Checkpoint struct {
+	content    map[string][]byte
+	writeRoots map[string]bool
+}
+
+// Content returns a copy of one source revision captured by the checkpoint.
+func (checkpoint Checkpoint) Content(path string) ([]byte, bool) {
+	content, ok := checkpoint.content[path]
+	return bytes.Clone(content), ok
 }

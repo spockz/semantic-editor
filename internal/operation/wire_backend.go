@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/backends"
 	"semedit/internal/capability"
 	"semedit/internal/navigation"
@@ -79,7 +80,6 @@ const (
 	sourceReplaceDeclFile              = "semantic_replace_decl.file"
 	sourceOrganizeImportsFile          = "semantic_organize_imports.file"
 	sourceScaffoldFile                 = "semantic_scaffold_file.file"
-	sourceScaffoldPackage              = "semantic_scaffold_file.package"
 	sourceReplaceConstructInFunction   = "semantic_replace_construct.in_function"
 	sourceInsertCaseInFunction         = "semantic_insert_case.in_function"
 	sourceInsertCaseDiscriminator      = "semantic_insert_case.discriminator"
@@ -352,7 +352,48 @@ func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*backend
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	return navigation.Lookup(ctx, service, project, request.Symbol)
+	result, err := navigation.Lookup(ctx, service, project, request.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	outputRoot := cc.WorkDir
+	if outputRoot == "" {
+		outputRoot = project.RootDir
+	}
+	normalizeLookupResultPaths(outputRoot, result)
+	return result, nil
+}
+
+func normalizeLookupResultPaths(root string, result *backend.LookupResult) {
+	if result == nil {
+		return
+	}
+	result.File = lookupWorkspacePath(root, result.File)
+	for _, candidate := range result.Candidates {
+		if candidate != nil {
+			candidate.File = lookupWorkspacePath(root, candidate.File)
+		}
+	}
+}
+
+func lookupWorkspacePath(root, source string) string {
+	if strings.TrimSpace(source) == "" {
+		return ""
+	}
+	root = pathutil.CanonicalWorkspaceRoot(root)
+	absolute := source
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(root, absolute)
+	}
+	absolute = filepath.Clean(absolute)
+	if !pathutil.PathWithin(root, absolute) {
+		return ""
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil || relative == "." {
+		return ""
+	}
+	return filepath.ToSlash(relative)
 }
 
 func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend.RenameResult, error) {
@@ -448,42 +489,86 @@ func formatVerify(result VerifyRes) (string, error) {
 }
 
 func lookupDef() Def[LookupReq, *backend.LookupResult] {
-	run := lookupRun
+	text := ValueSchema{Kind: SchemaString}
+	candidate := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"name": text, "qualified_name": text, "kind": text, "file": text,
+		"line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
+	}, Required: []string{"name", "kind"}}
+	schema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"symbol": text, "file": text, "kind": text, "line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
+		"ambiguous": {Kind: SchemaBoolean}, "candidates": {Kind: SchemaArray, Items: &candidate},
+	}, Required: []string{"ambiguous"}}
 	return Def[LookupReq, *backend.LookupResult]{
 		Key:     capability.OpLookup,
 		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed. Returns symbol, file, kind, line, and column. Pass symbol and file to follow-up semedit calls. Use line and column only for file-navigation reads; they are not accepted as semedit tool parameters.",
-		Params:  lookupParams,
-		Level:   LevelSymbol,
-		// Lookup is read-only; edit and verification operations can change source.
-		ReadOnly: true,
-		CLIName:  "lookup",
-		MCPName:  semanticLookupToolName,
-		Parse:    parseLookup,
+		Params:  lookupParams, Level: LevelSymbol, ReadOnly: true,
+		CLIName: "lookup", MCPName: semanticLookupToolName, Parse: parseLookup,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, LookupReq) (*backend.LookupResult, error){
-			backend.LanguageGo:      run,
-			backend.LanguageRust:    run,
-			backend.LanguageJava:    run,
-			backend.LanguageScala:   run,
-			backend.LanguageHaskell: run,
-			backend.LanguageKotlin:  run,
-			backend.LanguageBash:    run,
-			backend.LanguageMake:    run,
+			backend.LanguageGo: lookupRun, backend.LanguageRust: lookupRun, backend.LanguageJava: lookupRun,
+			backend.LanguageScala: lookupRun, backend.LanguageHaskell: lookupRun, backend.LanguageKotlin: lookupRun,
+			backend.LanguageBash: lookupRun, backend.LanguageMake: lookupRun,
 		},
 		Format: formatLookup,
-		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
-			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
-			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
-		},
-			OutputMetadataField{Field: "kind", Schema: ValueSchema{Kind: SchemaString}, Description: "Descriptive symbol category; its vocabulary differs from mutation kind inputs.", Optional: true},
-			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true},
-			OutputMetadataField{Field: "column", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true},
-		),
-		ExampleRaw: map[string]any{
-			"symbol":           "Server.Start",
-			"file":             wireExampleFile,
-			"language":         "auto",
-			wireTrustWorkspace: false,
-		},
+		Output: &OperationOutputContract{ResultSchema: &schema, Continuations: []OutputContinuation{
+			outputContinuation("symbol", RoleTarget, symbolOutputConsumers), outputContinuation("file", RoleTarget, fileOutputConsumers),
+		}},
+		ProjectOutput: projectLookupResult,
+		ExampleRaw:    map[string]any{"symbol": "Server.Start", "file": wireExampleFile, "language": "auto", wireTrustWorkspace: false},
+	}
+}
+
+func projectLookupResult(result *backend.LookupResult) (any, error) {
+	if result == nil {
+		return nil, fmt.Errorf("project lookup: missing result: %w", ErrInvalidDefinition)
+	}
+	projected := map[string]any{"ambiguous": result.Ambiguous}
+	if !result.Ambiguous {
+		projectResolvedLookup(result, projected)
+		return projected, nil
+	}
+	candidates := make([]map[string]any, 0, len(result.Candidates))
+	for _, item := range result.Candidates {
+		if item == nil {
+			return nil, fmt.Errorf("project lookup: nil candidate: %w", ErrInvalidDefinition)
+		}
+		value := map[string]any{"name": item.Name, "kind": item.Kind}
+		projectLookupCandidate(item, value)
+		candidates = append(candidates, value)
+	}
+	projected["candidates"] = candidates
+	return projected, nil
+}
+
+func projectResolvedLookup(result *backend.LookupResult, projected map[string]any) {
+	if result.Symbol != "" {
+		projected["symbol"] = result.Symbol
+	}
+	if result.File != "" {
+		projected["file"] = result.File
+	}
+	if result.Kind != "" {
+		projected["kind"] = result.Kind
+	}
+	if result.Line > 0 {
+		projected["line"] = result.Line
+	}
+	if result.Column > 0 {
+		projected["column"] = result.Column
+	}
+}
+
+func projectLookupCandidate(item *backend.SymbolCandidate, projected map[string]any) {
+	if item.QualifiedName != "" {
+		projected["qualified_name"] = item.QualifiedName
+	}
+	if item.File != "" {
+		projected["file"] = item.File
+	}
+	if item.Line > 0 {
+		projected["line"] = item.Line
+	}
+	if item.Column > 0 {
+		projected["column"] = item.Column
 	}
 }
 

@@ -15,12 +15,10 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
 	"errors"
-	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
 
 	"golang.org/x/tools/go/ast/astutil"
@@ -207,7 +205,6 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if err != nil {
 		return "", err
 	}
-	sourcePath, destinationPath, original := snapshot.sourcePath, snapshot.destinationPath, snapshot.files
 
 	target, err := resolveCrossPackageMoveTarget(ctx, snapshot, symbolQuery)
 	if err != nil {
@@ -217,15 +214,15 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if err != nil {
 		return "", err
 	}
-	if sourcebuf.FromContext(ctx) != nil {
-		return applyBufferedMove(ctx, original, changes.contents)
+	if sourcebuf.FromContext(ctx) == nil {
+		return "", fmt.Errorf("cross-package move requires a source buffer")
 	}
-	return publishCrossPackageMove(changes, original, sourcePath, destinationPath)
+	return applyBufferedMove(ctx, snapshot.files, changes.contents)
+
 }
 
 type crossPackageMoveChangeSet struct {
 	contents map[string][]byte
-	paths    []string
 }
 
 func buildCrossPackageMoveChanges(ctx context.Context, snapshot crossPackageMoveSnapshot, target crossPackageMoveTarget, opts MoveConstructOptions) (crossPackageMoveChangeSet, error) {
@@ -251,8 +248,8 @@ func buildCrossPackageMoveChanges(ctx context.Context, snapshot crossPackageMove
 	if err := validateCrossPackageMoveOverlay(ctx, snapshot, target, changes, expectations); err != nil {
 		return crossPackageMoveChangeSet{}, err
 	}
-	paths := sortedMoveChangePaths(changes)
-	return crossPackageMoveChangeSet{contents: changes, paths: paths}, nil
+
+	return crossPackageMoveChangeSet{contents: changes}, nil
 }
 
 func insertMovedDeclaration(destinationPath string, destinationBase, declarationText []byte, neededImports *ast.File, opts MoveConstructOptions) ([]byte, error) {
@@ -346,54 +343,6 @@ func validateMoveSourceAndDestination(changes map[string][]byte, sourcePath, des
 		return fmt.Errorf("validate destination after move: %w", err)
 	}
 	return nil
-}
-
-func sortedMoveChangePaths(changes map[string][]byte) []string {
-	paths := make([]string, 0, len(changes))
-	for path := range changes {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	return paths
-}
-
-func publishCrossPackageMove(changes crossPackageMoveChangeSet, original map[string][]byte, sourcePath, destinationPath string) (string, error) {
-	// Compare all snapshots immediately before publication. New declaration first,
-	// references second, and source removal last keeps every partial state explicit.
-	for _, path := range changes.paths {
-		before := original[path]
-		// #nosec G304 -- each changed path was resolved from the preflight module snapshot.
-		current, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return "", fmt.Errorf("recheck file before move publication %s: %w", path, readErr)
-		}
-		if !bytes.Equal(current, before) {
-			return "", fmt.Errorf("file changed during move preflight: %s", path)
-		}
-	}
-	order := publicationOrder(changes.paths, destinationPath, sourcePath)
-	written := make([]string, 0, len(order))
-	for _, path := range order {
-		if err := pipeline.WriteAtomic(path, changes.contents[path]); err != nil {
-			if len(written) != 0 {
-				return "", fmt.Errorf("partial cross-package move: wrote %s; failed writing %s: %w", strings.Join(written, ", "), path, err)
-			}
-			return "", fmt.Errorf("write move file %s atomically: %w", path, err)
-		}
-		written = append(written, path)
-	}
-	var diffs []string
-	for _, path := range changes.paths {
-		persisted, readErr := os.ReadFile(path) // #nosec G304 -- path is a validated in-module Go file from the preflight snapshot.
-		if readErr != nil {
-			return "", fmt.Errorf("cross-package move wrote %s but could not read persisted result %s: %w", strings.Join(written, ", "), path, readErr)
-		}
-		diff := UnifiedDiff(path, string(original[path]), string(persisted))
-		if diff != "" {
-			diffs = append(diffs, diff)
-		}
-	}
-	return strings.Join(diffs, "\n"), nil
 }
 
 func rejectUntypedMoveReferences(snapshot map[string][]byte, pkgs []*packages.Package, symbolName string) error {
@@ -1105,18 +1054,6 @@ func validMoveReferenceResolution(resolved types.Object, kind moveReferenceKind,
 	default:
 		return false
 	}
-}
-
-func publicationOrder(paths []string, destination, source string) []string {
-	order := make([]string, 0, len(paths))
-	order = append(order, destination)
-	for _, path := range paths {
-		if path != source && path != destination {
-			order = append(order, path)
-		}
-	}
-	order = append(order, source)
-	return order
 }
 
 func strconvUnquote(s string) (string, error) { return strconv.Unquote(s) }

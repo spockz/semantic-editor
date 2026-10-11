@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"path/filepath"
 	"strings"
 
@@ -109,22 +110,28 @@ func surroundingDelta(ctx context.Context, workDir string, deferVerification boo
 
 // FileEditRes reports a single-file mutation for response rendering and batch post-processing.
 type FileEditRes struct {
-	File               string
-	DestinationFile    string
-	DestinationDisplay string
-	Display            string
-	ChangedFiles       []string
-	ApplicationState   string
-	Symbol             string
-	InType             string
-	Line               int
-	InFunction         string
-	Discriminator      string
-	DiagnosticStatus   string
-	Diff               string
-	Detail             string
-	Delta              pipeline.DiagnosticDelta
-	HasDelta           bool
+	File                  string
+	DestinationFile       string
+	DestinationDisplay    string
+	Display               string
+	ChangedFiles          []string
+	ApplicationState      string
+	Symbol                string
+	InType                string
+	Line                  int
+	InFunction            string
+	Discriminator         string
+	DiagnosticStatus      string
+	Diff                  string
+	Detail                string
+	Delta                 pipeline.DiagnosticDelta
+	HasDelta              bool
+	ReceiptDraft          EditReceiptDraft
+	Receipt               EditReceipt
+	Resolve               ContinuationResolver
+	SuppressContinuations bool
+	WorkingView           bool
+	Package               string
 }
 
 func formatFileEdit(res FileEditRes) (string, error) {
@@ -463,4 +470,159 @@ func goExistingTargetAfterEdit(ctx context.Context, filePath, symbol string) (st
 		return "", 0, nil
 	}
 	return symbol, line, nil
+}
+
+func runBufferedEdit[T any](ctx context.Context, cc CallContext, root, operationName string, edit func(context.Context, CallContext) (T, error)) (T, error) {
+	var result T
+	err := sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		before := sourcebuf.FromContext(editCtx).Checkpoint()
+		editCC := cc
+		editCC.Ctx = editCtx
+		value, err := edit(editCtx, editCC)
+		if err != nil {
+			return err
+		}
+		result, err = attachBufferedReceipt(value, sourcebuf.FromContext(editCtx), before, cc, operationName)
+		return err
+	})
+	return result, err
+}
+
+func attachBufferedReceipt[T any](value T, buffer *sourcebuf.Buffer, before sourcebuf.Checkpoint, cc CallContext, operationName string) (T, error) {
+	fileEdit, ok := any(value).(FileEditRes)
+	if !ok {
+		return value, nil
+	}
+	fileEdit.WorkingView = sourcebuf.FromContext(cc.Ctx) != nil
+	fileEdit.SuppressContinuations = cc.InBatch || fileEdit.WorkingView
+	if fileEdit.ReceiptDraft.Operation == "" {
+		draft, err := bufferedReceiptDraft(buffer, before, cc, operationName, fileEdit)
+		if err != nil {
+			return value, err
+		}
+		fileEdit.ReceiptDraft = draft
+		fileEdit.Resolve = passthroughContinuation
+	}
+	return any(fileEdit).(T), nil
+}
+
+func bufferedReceiptDraft(buffer *sourcebuf.Buffer, before sourcebuf.Checkpoint, cc CallContext, operationName string, result FileEditRes) (EditReceiptDraft, error) {
+	workspaceRoot, err := filepath.Abs(cc.WorkDir)
+	if err != nil {
+		return EditReceiptDraft{}, fmt.Errorf("resolve receipt workspace %q: %w", cc.WorkDir, err)
+	}
+	draft := EditReceiptDraft{Operation: operationName, Status: EditNoOp}
+	for _, change := range buffer.ChangesSince(before) {
+		preimage := change.Before
+		relative, err := filepath.Rel(workspaceRoot, change.Path)
+		if err != nil {
+			return EditReceiptDraft{}, fmt.Errorf("derive receipt path for %q: %w", change.Path, err)
+		}
+		if !filepath.IsLocal(relative) {
+			return EditReceiptDraft{}, fmt.Errorf("receipt path %q escapes workspace %q", change.Path, workspaceRoot)
+		}
+		path := filepath.ToSlash(relative)
+		draft.ReadSet = append(draft.ReadSet, FileRevision{Path: path, Revision: structuralRevision(preimage)})
+		draft.PlannedChanges = append(draft.PlannedChanges, FileRevision{Path: path, Revision: structuralRevision(change.After)})
+	}
+	if len(draft.PlannedChanges) > 0 {
+		draft.Status = EditPersisted
+		if result.DiagnosticStatus == "changed" {
+			draft.Status = EditPersistedWithDiagnostics
+		}
+	}
+	if target, ok := bufferedContinuationTarget(result, draft.PlannedChanges); ok {
+		draft.Continuations = []SymbolTarget{target}
+	}
+	return draft, nil
+}
+
+func bufferedContinuationTarget(result FileEditRes, changes []FileRevision) (SymbolTarget, bool) {
+	file := result.DestinationDisplay
+	if file == "" {
+		file = result.Display
+	}
+	if file == "" || result.Symbol == "" {
+		return SymbolTarget{}, false
+	}
+	for _, change := range changes {
+		if change.Path == filepath.ToSlash(file) {
+			revision := change.Revision
+			return SymbolTarget{File: change.Path, Symbol: result.Symbol, ExpectedRevision: &revision}, true
+		}
+	}
+	return SymbolTarget{}, false
+}
+
+func passthroughContinuation(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+	return target, true, nil
+}
+
+func bufferedFileEditHandler[Req any](operationName string, requestFile func(Req) string, handler func(context.Context, CallContext, Req) (FileEditRes, error)) func(context.Context, CallContext, Req) (FileEditRes, error) {
+	return func(ctx context.Context, cc CallContext, request Req) (FileEditRes, error) {
+		target := resolveWorkPath(cc.WorkDir, requestFile(request))
+		root, err := structuralModuleRoot(target)
+		if err != nil {
+			return FileEditRes{}, fmt.Errorf("prepare %s source buffer: %w", operationName, err)
+		}
+		return runBufferedEdit(ctx, cc, root, operationName, func(editCtx context.Context, editCC CallContext) (FileEditRes, error) {
+			return handler(editCtx, editCC, request)
+		})
+	}
+}
+
+func fileEditOutputContract(properties map[string]ValueSchema, continuations []OutputContinuation) *OperationOutputContract {
+	allProperties := map[string]ValueSchema{
+		"result":         {Kind: SchemaString},
+		editReceiptField: EditReceiptSchema(),
+	}
+	maps.Copy(allProperties, properties)
+	resultSchema := ValueSchema{Kind: SchemaObject, Properties: allProperties, Required: []string{"result", editReceiptField}}
+	return &OperationOutputContract{ResultSchema: &resultSchema, Continuations: continuations}
+}
+
+func projectFileEditOutput(result FileEditRes, fields ...string) (any, error) {
+	projected := map[string]any{"result": result.Detail, editReceiptField: result.Receipt}
+	allowed := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		allowed[field] = true
+	}
+	put := func(name string, value any) {
+		if allowed[name] && value != nil && value != "" && value != 0 {
+			projected[name] = value
+		}
+	}
+	file := result.Display
+	if result.DestinationDisplay != "" {
+		file = result.DestinationDisplay
+	}
+	if !result.SuppressContinuations {
+		put("file", file)
+		put("symbol", result.Symbol)
+		put("in_type", result.InType)
+		put(wireInFunction, result.InFunction)
+		put(wireDiscriminator, result.Discriminator)
+	}
+	put("line", result.Line)
+	put("origin_file", result.Display)
+	put("package", result.Package)
+	put("diff", result.Diff)
+	if result.DiagnosticStatus != "" {
+		put("diagnostic_status", result.DiagnosticStatus)
+	}
+	return projected, nil
+}
+
+func finalizeFileEditOutput(cc CallContext, result FileEditRes) (FileEditRes, error) {
+	ctx := cc.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, result.WorkingView, cc.InBatch || result.SuppressContinuations, result.ReceiptDraft, result.Resolve)
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	result.Receipt = receipt
+	result.SuppressContinuations = result.SuppressContinuations || cc.InBatch
+	return result, nil
 }

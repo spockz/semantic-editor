@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -40,6 +41,11 @@ type Options struct {
 
 // InsertDeclaration parses and injects one or more top-level declarations into filePath.
 func InsertDeclaration(ctx context.Context, filePath string, source string, opts Options) error {
+	if sourcebuf.FromContext(ctx) == nil {
+		return runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			return InsertDeclaration(editCtx, filePath, source, opts)
+		})
+	}
 	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
 		Kind:                backend.ConstructDeclaration,
 		Placement:           opts.Placement,

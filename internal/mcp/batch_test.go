@@ -106,6 +106,7 @@ func assertSuccessfulBatchContinuations(t *testing.T, results []mcp.BatchResult)
 			t.Errorf("expected all results ok: %+v", results)
 			return
 		}
+		assertBatchChildHasNoLiveTargets(t, result)
 	}
 	if results[0].File != "file1.go" || results[0].Symbol != "Foo" || results[0].DiagnosticStatus != "deferred" {
 		t.Errorf("replace_body batch continuation = %+v", results[0])
@@ -118,6 +119,30 @@ func assertSuccessfulBatchContinuations(t *testing.T, results []mcp.BatchResult)
 	}
 	if results[3].File != "generated.go" || results[3].Package != "testpkg" || results[3].Symbol != "" {
 		t.Errorf("scaffold_file batch continuation = %+v", results[3])
+	}
+}
+
+func assertBatchChildHasNoLiveTargets(t *testing.T, child mcp.BatchResult) {
+	t.Helper()
+	encoded, err := json.Marshal(child.Result)
+	if err != nil {
+		t.Fatalf("encode %s projected batch result: %v", child.Tool, err)
+	}
+	var projected map[string]any
+	if err := json.Unmarshal(encoded, &projected); err != nil {
+		t.Fatalf("decode %s projected batch result: %v", child.Tool, err)
+	}
+	for _, field := range []string{"file", "symbol", "in_function", "discriminator"} {
+		if _, exists := projected[field]; exists {
+			t.Errorf("%s batch child exposed live %s: %#v", child.Tool, field, projected)
+		}
+	}
+	receipt, ok := projected["edit_receipt"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s batch child omitted typed edit_receipt: %#v", child.Tool, projected)
+	}
+	if continuations, exists := receipt["continuations"].([]any); exists && len(continuations) != 0 {
+		t.Errorf("%s batch child exposed receipt continuations: %#v", child.Tool, continuations)
 	}
 }
 

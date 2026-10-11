@@ -1,6 +1,8 @@
 # This CLI contract refuses a field insertion when any same-package source uses positional literals.
 ! exec semedit insert-field --file config.go --in-type config --symbol config.timeout --source 'timeout int' --placement type_end
 stderr 'unkeyed config literal'
+! exec semedit insert-construct --kind field --file config.go --in-type config --source 'port int' --placement type_end
+stderr 'unkeyed config literal'
 cmp config.go .scratch/want/config.go
 
 -- go.mod --

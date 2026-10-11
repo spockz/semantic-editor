@@ -51,6 +51,14 @@ plans and state-journaled staging transactions.
 
 ### 1. Direct Batch Mode (`semantic_batch`)
 
+Standalone AST mutations use the same source-buffer mechanism. The operation
+owns a buffer only when the caller supplies none, authorizes its write scope,
+and prepares edits, import organization, and formatting against that working
+revision before flushing once. An operation using a caller-owned batch buffer
+does not flush it. Preparation failure discards the failed operation's changes
+while preserving successful earlier batch edits. New-file scaffolding may use
+a single atomic publication at its existing batch barrier.
+
 Keep `semantic_batch` as the direct mode for single-turn batched plans. The
 mutating request is its own authorization. Eligible Go operations share a
 request-scoped source buffer with the retained gopls session. AST reads, sibling

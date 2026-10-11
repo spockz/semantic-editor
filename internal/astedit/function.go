@@ -26,6 +26,11 @@ type FunctionOptions struct {
 
 // InsertFunction injects a function or method declaration into filePath.
 func InsertFunction(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
+	if sourcebuf.FromContext(ctx) == nil {
+		return runBufferedFile(ctx, filePath, func(editCtx context.Context) error {
+			return InsertFunction(editCtx, filePath, source, opts)
+		})
+	}
 	return insertFunctionImpl(ctx, filePath, source, opts)
 }
 

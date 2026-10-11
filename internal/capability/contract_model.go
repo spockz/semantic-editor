@@ -165,9 +165,10 @@ const (
 	VariantNormalize
 	VariantDryRun
 	VariantBatch
+	VariantField
 )
 
-const allVariants = VariantSelectedFile | VariantSelectedScope | VariantSamePackage | VariantCrossPackage | VariantSafeDelete | VariantInferPackage | VariantExplicitPackage | VariantCheckOnly | VariantNormalize | VariantDryRun | VariantBatch
+const allVariants = VariantSelectedFile | VariantSelectedScope | VariantSamePackage | VariantCrossPackage | VariantSafeDelete | VariantInferPackage | VariantExplicitPackage | VariantCheckOnly | VariantNormalize | VariantDryRun | VariantBatch | VariantField
 
 // Valid reports whether v contains only known, mutually compatible selector bits.
 func (v VariantSet) Valid() bool {
@@ -194,7 +195,7 @@ func (v VariantSet) String() string {
 	labels := []struct {
 		flag VariantSet
 		name string
-	}{{VariantSelectedFile, "selected_file"}, {VariantSelectedScope, "selected_scope"}, {VariantSamePackage, "same_package"}, {VariantCrossPackage, "cross_package"}, {VariantSafeDelete, "safe_delete"}, {VariantInferPackage, "infer_package"}, {VariantExplicitPackage, "explicit_package"}, {VariantCheckOnly, "check_only"}, {VariantNormalize, "normalize"}, {VariantDryRun, "dry_run"}, {VariantBatch, "batch"}}
+	}{{VariantSelectedFile, "selected_file"}, {VariantSelectedScope, "selected_scope"}, {VariantSamePackage, "same_package"}, {VariantCrossPackage, "cross_package"}, {VariantSafeDelete, "safe_delete"}, {VariantInferPackage, "infer_package"}, {VariantExplicitPackage, "explicit_package"}, {VariantCheckOnly, "check_only"}, {VariantNormalize, "normalize"}, {VariantDryRun, "dry_run"}, {VariantBatch, "batch"}, {VariantField, "field"}}
 	parts := make([]string, 0, len(labels))
 	for _, x := range labels {
 		if v.Has(x.flag) {

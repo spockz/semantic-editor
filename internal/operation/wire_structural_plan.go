@@ -58,7 +58,7 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, cc.InBatch, result.Draft, result.Resolve)
+			receipt, err := finalizeCallReceipt(ctx, cc, cc.WorkDir, result.Draft, result.Resolve)
 			if err != nil {
 				return structuralPlanResult{}, fmt.Errorf("finalize structural edit receipt: %w", err)
 			}
@@ -66,7 +66,7 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 			return result, nil
 		},
 		ProjectOutput: func(result structuralPlanResult) (any, error) {
-			projected := map[string]any{"result": result.Edit.Detail, "edit_receipt": result.Receipt}
+			projected := map[string]any{"result": result.Edit.Detail, editReceiptField: result.Receipt}
 			if result.Receipt.Status != EditAppliedWorking {
 				if result.Edit.Display != "" {
 					projected["file"] = result.Edit.Display
@@ -258,9 +258,9 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 		wireInFunction:    {Kind: SchemaString},
 		wireDiscriminator: {Kind: SchemaString},
 		"diff":            {Kind: SchemaString},
-		"edit_receipt":    EditReceiptSchema(),
+		editReceiptField:  EditReceiptSchema(),
 	}
-	schema := ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"result", "edit_receipt"}}
+	schema := ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"result", editReceiptField}}
 	contract := OperationOutputContract{ResultSchema: &schema}
 	if includeContinuations {
 		targetProperties := SymbolTargetSchema().Properties
