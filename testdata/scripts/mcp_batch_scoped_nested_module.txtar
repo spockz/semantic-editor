@@ -1,0 +1,49 @@
+# A selected main-module edit skips an unrelated nested module with an unavailable dependency.
+env GOPROXY=off
+stdin input.json
+exec semedit mcp
+stdout '"status":"ok"'
+stdout '"package_pattern":"./app"'
+cmp app/app.go want/app/app.go
+cmp go.mod want/go.mod
+cmp tools/goctl/go.mod want/tools/goctl/go.mod
+! exists go.sum
+! exists tools/goctl/go.sum
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"app/app.go","symbol":"Value","body":"return 2"}}]}}}
+-- go.mod --
+module example.test/main
+
+go 1.23
+-- app/app.go --
+package app
+
+func Value() int { return 1 }
+-- tools/goctl/go.mod --
+module example.test/goctl
+
+go 1.23
+
+require example.invalid/missing v0.0.1
+-- tools/goctl/main.go --
+package goctl
+
+import _ "example.invalid/missing"
+-- want/app/app.go --
+package app
+
+func Value() int {
+	return 2
+}
+-- want/go.mod --
+module example.test/main
+
+go 1.23
+-- want/tools/goctl/go.mod --
+module example.test/goctl
+
+go 1.23
+
+require example.invalid/missing v0.0.1

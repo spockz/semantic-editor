@@ -187,7 +187,7 @@ var organizeImportsFileConsumers = []string{
 	semanticInsertConstructToolName, semanticReplaceDeclToolName, semanticExtractFunctionToolName,
 	semanticExtractConstantToolName,
 	semanticExtractVariableToolName, semanticInlineVariableToolName,
-	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticAssertionModeToolName,
+	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticInspectConstructToolName, semanticAssertionModeToolName,
 }
 
 // AddBuildDependencyReq fetches one external module into the build (go get + go mod tidy).
@@ -257,7 +257,9 @@ func addBuildDependencyDef() Def[AddBuildDependencyReq, BuildDependencyRes] {
 		Format: func(res BuildDependencyRes) (string, error) {
 			return fmt.Sprintf("Successfully added dependency %s and tidied go.mod.", res.Package), nil
 		},
-		ExampleRaw: map[string]any{"package": "github.com/google/uuid@latest"},
-		Batchable:  true,
+		Output:        &OperationOutputContract{ResultSchema: dependencyOutputSchema()},
+		ProjectOutput: projectDependencyOutput,
+		ExampleRaw:    map[string]any{"package": "github.com/google/uuid@latest"},
+		Batchable:     true,
 	}
 }

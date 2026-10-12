@@ -159,8 +159,7 @@ func TestJavaSessionFingerprintReusesAndRestarts(t *testing.T) {
 		t.Fatalf("config change sessions=%d closed=%d", len(created), created[1].closed)
 	}
 	aliasProject := trustedJavaProject(root, file)
-	aliasProject.Java = backend.JavaConfig{}
-	aliasProject.JDTLSHome = "alias-jdtls"
+	aliasProject.Java.JDTLSHome = "alias-jdtls"
 	if _, err := underTest.Lookup(context.Background(), aliasProject, "Thing"); err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +226,7 @@ func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
-	if result.Kind != "field" || result.Offset == 0 || result.Location.Range.Start.Character != 6 || result.Location.Range.End.Character != 11 {
+	if result.Definition == nil || result.Definition.Kind != "field" || result.Definition.Location.Range.Start.Character != 6 || result.Definition.Location.Range.End.Character != 11 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if len(session.methods) < 4 || session.methods[0] != "initialize" || session.methods[1] != "initialized" || session.methods[2] != "workspace/didChangeConfiguration" || session.methods[3] != "textDocument/didOpen" {

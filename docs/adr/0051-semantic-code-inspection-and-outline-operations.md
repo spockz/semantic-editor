@@ -51,3 +51,17 @@ We extend cross-language parity for these read capabilities:
 - Agents operating under read restrictions inspect and discover code structure through semantic tools without falling back to unconstrained shell commands.
 - Context window consumption remains compact due to body-elided structural outlines.
 - Language backends maintain consistent read and inspection contracts across Go, Java, Kotlin, Rust, Scala, Make, and Bash.
+
+## Restored construct inspection and canonical coordinates: 2026-10-12
+
+Go construct inspection returns ordered matching candidates, normalized syntax,
+structural paths, and a selection revision. Guarded replacement rejects a stale
+revision before writing and returns current typed candidate choices. A selection
+revision describes that candidate set rather than the whole file.
+
+Neutral backend locations use captured source and zero-based UTF-16 ranges.
+Public lookup line and column fields use one-based UTF-16 coordinates; field names
+remain stable, but Go byte-column behavior is deliberately canonicalized. Go
+compiler and AST positions stay byte-based internally. Conversion to a byte
+position uses captured source, never a best-effort disk reread. Staged lookup and
+inspection therefore observe the same unpublished revision.

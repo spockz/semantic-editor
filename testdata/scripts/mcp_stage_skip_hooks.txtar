@@ -1,0 +1,34 @@
+# A retained commit can skip configured hooks while still publishing and running built-in final verification.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"Status":"skipped"'
+! exists hook.log
+cmp value.go want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 2"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_commit","arguments":{"trust_workspace":true,"skip_hooks":true}}}
+-- go.mod --
+module example.com/stageskiphooks
+
+go 1.24
+-- value.go --
+package stageskiphooks
+
+func Value() int { return 1 }
+-- .semedit.yaml --
+version: 1
+verify:
+  check:
+    - id: check
+      languages: [go]
+      exec: [sh, -c, 'printf "check\\n" >> hook.log']
+-- want/value.go --
+package stageskiphooks
+
+func Value() int {
+	return 2
+}

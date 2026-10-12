@@ -104,7 +104,7 @@ func TestRustLookupStreamsInitializeOpenAndSymbolsWithUTF16(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Offset != 3 || result.Line != 1 || result.Column != 4 || result.Kind != "function" {
+	if result.Definition == nil || result.Definition.Kind != "function" || result.Definition.Location.Range.Start.Character != 3 || result.Definition.Location.Range.End.Character != 10 {
 		t.Fatalf("lookup result = %+v", result)
 	}
 	if len(session.calls) != 6 || session.calls[0] != "initialize" || session.calls[1] != "initialized" || session.calls[2] != "workspace/didChangeConfiguration" || session.calls[3] != "textDocument/didOpen" || session.calls[4] != "textDocument/documentSymbol" || session.calls[5] != "textDocument/didClose" {
@@ -156,11 +156,11 @@ func TestRustLookupReturnsAllHierarchicalAmbiguityCandidates(t *testing.T) {
 		return session, nil
 	})
 	result, err := backendUnderTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "run")
-	if err != nil || !result.Ambiguous || len(result.Candidates) != 2 {
+	if err != nil || !result.IsAmbiguous() || len(result.Candidates) != 2 {
 		t.Fatalf("ambiguity result = %+v, %v", result, err)
 	}
 	qualified, err := backendUnderTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "a::run")
-	if err != nil || qualified.Ambiguous || qualified.Symbol != "a::run" {
+	if err != nil || qualified.IsAmbiguous() || qualified.Definition == nil || qualified.Definition.QualifiedName != "a::run" {
 		t.Fatalf("qualified result = %+v, %v", qualified, err)
 	}
 }
@@ -195,8 +195,8 @@ func TestRustLookupUsesAbsoluteUTF8ByteOffsetOnLaterLine(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if result.Offset != 17 {
-			t.Fatalf("offset = %d for %q, want 17", result.Offset, source)
+		if result.Definition == nil || result.Definition.Location.Range.Start.Line != 1 || result.Definition.Location.Range.Start.Character != 9 {
+			t.Fatalf("location = %#v for %q, want UTF-16 line 1 character 9", result.Definition, source)
 		}
 	}
 }
@@ -354,7 +354,7 @@ func TestRustCommittedRenameSurvivesCloseFailureAndNextReadStartsFresh(t *testin
 		t.Fatalf("committed source = %q, err %v", source, readErr)
 	}
 	lookup, err := b.Lookup(context.Background(), project, "bravo")
-	if err != nil || lookup.Symbol != "bravo" || factoryCalls != 2 {
+	if err != nil || lookup.Definition == nil || lookup.Definition.QualifiedName != "bravo" || factoryCalls != 2 {
 		t.Fatalf("next read = %+v, error %v, factory calls %d", lookup, err, factoryCalls)
 	}
 }

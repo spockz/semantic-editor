@@ -119,10 +119,11 @@ const (
 	RequireIncludeUnexported      RequirementKind = "include_unexported"
 	RequireBoundedSource          RequirementKind = "bounded_source"
 	RequireResolvableDependencies RequirementKind = "resolvable_dependencies"
+	RequireStageSession           RequirementKind = "stage_session"
 )
 
 var requirementDescriptions = map[RequirementKind]string{
-	RequireTargetParse: "the target must parse", RequireScopeParse: "the selected scope must parse", RequireSnippetParse: "the supplied snippet must parse", RequireExactSelector: "the selector must identify exactly one target", RequirePackageTypes: "package type information must be available", RequireModuleTypes: "module type information must be available", RequireModuleSnapshot: "the module snapshot must be available", RequireOverlayTypes: "overlay type information must be available", RequireTestVariants: "test variants must be available", RequireDocumentSymbols: "hierarchical, valid document symbols must be available", RequireServerRename: "the language server must support rename", RequireBaselineDiagnostics: "baseline diagnostics must be available", RequireDiagnosticsReceipt: "a timely diagnostics receipt matching the current file must be available; silence is not a receipt", RequireImportResolution: "imports must resolve", RequireWorkspaceTrust: "the workspace must be trusted", RequireHookTrust: "project hooks must be trusted", RequireSelectedFile: "a file must be selected", RequireModuleRoot: "a module root must be discoverable", RequireToolchain: "the language toolchain must be available", RequireGopls: "gopls must be available", RequireRustAnalyzer: "rust-analyzer must be available", RequireJDTLS: "JDT LS must be available", RequireJava21: "Java 21 or newer must be available", RequireMetals: "Metals must be available", RequireHLS: "HLS matching the selected GHC toolchain must be available", RequireKotlinServer: "the Kotlin language server must be available", RequireBashServer: "the Bash language server must be available", RequireMakeServer: "the Make language server must be available", RequireMaven: "Maven must be available", RequireMavenRoot: "a Maven root must be discoverable", RequireCargoRoot: "a Cargo root must be discoverable", RequireJavaRoot: "an explicit, unambiguous Java project root must be selected", RequireScalaRoot: "a Scala project root must be discoverable", RequireStandaloneHaskell: "standalone Haskell mode with matching GHC and HLS must be selected", RequireNoHaskellProject: "no Haskell project markers may be present", RequireSourceStable: "the source must remain stable", RequireWritableDestination: "the destination must be writable", RequireSnapshot: "a snapshot must be available", RequireSnapshotState: "the snapshot state must be available", RequireLabel: "a label must be supplied", RequireSiblingPackageClause: "a valid non-test sibling package clause must be available; the first eligible sibling is selected", RequireSourceOrChecks: "source or project checks must be available", RequireDiagnosticsOnly: "the operation must be diagnostics-only", RequireIncludeUnexported: "unexported declarations must be included", RequireBoundedSource: "the source must fit configured bounds", RequireResolvableDependencies: "dependencies must be resolvable",
+	RequireTargetParse: "the target must parse", RequireScopeParse: "the selected scope must parse", RequireSnippetParse: "the supplied snippet must parse", RequireExactSelector: "the selector must identify exactly one target", RequirePackageTypes: "package type information must be available", RequireModuleTypes: "module type information must be available", RequireModuleSnapshot: "the module snapshot must be available", RequireOverlayTypes: "overlay type information must be available", RequireTestVariants: "test variants must be available", RequireDocumentSymbols: "hierarchical, valid document symbols must be available", RequireServerRename: "the language server must support rename", RequireBaselineDiagnostics: "baseline diagnostics must be available", RequireDiagnosticsReceipt: "a timely diagnostics receipt matching the current file must be available; silence is not a receipt", RequireImportResolution: "imports must resolve", RequireWorkspaceTrust: "the workspace must be trusted", RequireHookTrust: "project hooks must be trusted", RequireSelectedFile: "a file must be selected", RequireModuleRoot: "a module root must be discoverable", RequireToolchain: "the language toolchain must be available", RequireGopls: "gopls must be available", RequireRustAnalyzer: "rust-analyzer must be available", RequireJDTLS: "JDT LS must be available", RequireJava21: "Java 21 or newer must be available", RequireMetals: "Metals must be available", RequireHLS: "HLS matching the selected GHC toolchain must be available", RequireKotlinServer: "the Kotlin language server must be available", RequireBashServer: "the Bash language server must be available", RequireMakeServer: "the Make language server must be available", RequireMaven: "Maven must be available", RequireMavenRoot: "a Maven root must be discoverable", RequireCargoRoot: "a Cargo root must be discoverable", RequireJavaRoot: "an explicit, unambiguous Java project root must be selected", RequireScalaRoot: "a Scala project root must be discoverable", RequireStandaloneHaskell: "standalone Haskell mode with matching GHC and HLS must be selected", RequireNoHaskellProject: "no Haskell project markers may be present", RequireSourceStable: "the source must remain stable", RequireWritableDestination: "the destination must be writable", RequireSnapshot: "a snapshot must be available", RequireSnapshotState: "the snapshot state must be available", RequireLabel: "a label must be supplied", RequireSiblingPackageClause: "a valid non-test sibling package clause must be available; the first eligible sibling is selected", RequireSourceOrChecks: "source or project checks must be available", RequireDiagnosticsOnly: "the operation must be diagnostics-only", RequireIncludeUnexported: "unexported declarations must be included", RequireBoundedSource: "the source must fit configured bounds", RequireResolvableDependencies: "dependencies must be resolvable", RequireStageSession: "an active retained staging session must exist",
 }
 
 // Requirement combines a known precondition with its optional analysis scope.
@@ -233,8 +234,10 @@ const (
 	FeatureScaffold
 	FeatureAssertions
 	FeatureRepairImports
+	FeatureStaging     FeatureSet = 1 << 19
+	FeaturePublication FeatureSet = 1 << 20
 )
-const allFeatures = FeatureLookup | FeatureOutline | FeatureInspect | FeatureASTEdit | FeatureTypedRefactor | FeatureRename | FeatureFormat | FeatureOrganizeImports | FeatureDiagnostics | FeatureProjectHooks | FeatureCompile | FeatureTest | FeatureSnapshot | FeatureRestore | FeatureAddDependency | FeatureScaffold | FeatureAssertions | FeatureRepairImports | FeatureReferences
+const allFeatures = FeatureLookup | FeatureOutline | FeatureInspect | FeatureASTEdit | FeatureTypedRefactor | FeatureRename | FeatureFormat | FeatureOrganizeImports | FeatureDiagnostics | FeatureProjectHooks | FeatureCompile | FeatureTest | FeatureSnapshot | FeatureRestore | FeatureAddDependency | FeatureScaffold | FeatureAssertions | FeatureRepairImports | FeatureReferences | FeatureStaging | FeaturePublication
 
 // FeatureReferences reports references using the active module build scope.
 const FeatureReferences FeatureSet = 1 << 18
@@ -267,6 +270,8 @@ func (f FeatureSet) Descriptions() []string {
 		{uint64(FeatureAssertions), "assertions"},
 		{uint64(FeatureRepairImports), "repair imports"},
 		{uint64(FeatureReferences), "references"},
+		{uint64(FeatureStaging), "volatile staging"},
+		{uint64(FeaturePublication), "publication"},
 	})
 }
 
@@ -284,8 +289,10 @@ const (
 	GuaranteeDiagnosticDelta
 	GuaranteeConflictChecked
 	GuaranteeAtomicWrites
+	GuaranteeVolatileState      GuaranteeSet = 1 << 10
+	GuaranteePublicationOutcome GuaranteeSet = 1 << 11
 )
-const allGuarantees = GuaranteeReadOnly | GuaranteeASTEdit | GuaranteePackageOverlay | GuaranteeModuleProof | GuaranteeServerEdit | GuaranteeDiagnostics | GuaranteeDiagnosticDelta | GuaranteeConflictChecked | GuaranteeAtomicWrites | GuaranteeSelectedFileOnly
+const allGuarantees = GuaranteeReadOnly | GuaranteeASTEdit | GuaranteePackageOverlay | GuaranteeModuleProof | GuaranteeServerEdit | GuaranteeDiagnostics | GuaranteeDiagnosticDelta | GuaranteeConflictChecked | GuaranteeAtomicWrites | GuaranteeSelectedFileOnly | GuaranteeVolatileState | GuaranteePublicationOutcome
 
 // GuaranteeSelectedFileOnly limits edits to the selected file.
 const GuaranteeSelectedFileOnly GuaranteeSet = 1 << 9
@@ -309,6 +316,8 @@ func (g GuaranteeSet) Descriptions() []string {
 		{uint64(GuaranteeConflictChecked), "conflict checked"},
 		{uint64(GuaranteeAtomicWrites), "atomic writes"},
 		{uint64(GuaranteeSelectedFileOnly), "edits confined to the selected file"},
+		{uint64(GuaranteeVolatileState), "volatile state only"},
+		{uint64(GuaranteePublicationOutcome), "explicit publication outcome"},
 	})
 }
 

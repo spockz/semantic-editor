@@ -20,8 +20,21 @@ type CallContext struct {
 	DeferVerification bool
 	// GoFormattingPaths scopes batch built-in Go formatting; nil preserves standalone scope and empty skips formatting.
 	GoFormattingPaths []string
+	// GoPackagePatterns freezes Go diagnostics to the packages selected before batch publication.
+	GoPackagePatterns map[string][]string
+	// GoPackageScopeDetail explains whether frozen verification fell back to a broader scope.
+	GoPackageScopeDetail string
 	// AllowedLanguages applies an ingress language policy to verification; nil leaves CLI calls unrestricted.
 	AllowedLanguages []backend.LanguageID
+	StageRuntime     StageRuntime
+}
+
+// StageRuntime owns volatile MCP-only retained staging state.
+type StageRuntime interface {
+	Start(context.Context, string) (StageReceipt, error)
+	Drop(context.Context, string, string) (StageReceipt, error)
+	Abort(context.Context, string) (StageReceipt, error)
+	Commit(context.Context, string, bool, bool) (StageCommitResult, error)
 }
 
 // AllowsLanguage reports whether the ingress policy permits one language.

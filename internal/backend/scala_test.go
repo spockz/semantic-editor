@@ -65,7 +65,7 @@ func TestScalaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
-	if result.Kind != "field" || result.Offset == 0 || result.Location.Range.Start.Character != 6 || result.Location.Range.End.Character != 11 {
+	if result.Definition == nil || result.Definition.Kind != "field" || result.Definition.Location.Range.Start.Character != 6 || result.Definition.Location.Range.End.Character != 11 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	if len(session.methods) < 4 || session.methods[0] != "initialize" || session.methods[1] != "initialized" || session.methods[2] != "workspace/didChangeConfiguration" || session.methods[3] != "textDocument/didOpen" {

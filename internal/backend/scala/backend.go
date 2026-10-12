@@ -224,25 +224,13 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project neutralbackend.Projec
 		return nil, &ScalaError{Op: "lookup", File: file, Symbol: query, Err: ErrScalaMalformedResponse}
 	}
 	config := project.Scala
-	if config.MetalsHome == "" {
-		config.MetalsHome = project.MetalsHome
-	}
-	if config.MetalsBin == "" {
-		config.MetalsBin = project.MetalsBin
-	}
-	if config.JavaBin == "" {
-		config.JavaBin = project.JavaBin
-	}
-	if config.JavaVersion == "" {
-		config.JavaVersion = project.JavaVersion
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	symbols, err := b.readScalaDocumentSymbolsLocked(ctx, root, file, source, config, query, "lookup")
 	if err != nil {
 		return nil, err
 	}
-	return selectScalaSymbol(query, root, file, source, symbols)
+	return selectScalaSymbol(query, file, symbols)
 }
 
 // Rename is intentionally unavailable for the Scala lookup-only slice.
@@ -637,7 +625,7 @@ func scalaKindName(kind int) string {
 }
 func scalaKindSupported(kind int) bool { return scalaKindName(kind) != "" }
 
-func selectScalaSymbol(query, root, file string, source []byte, symbols []scalaDocumentSymbol) (*neutralbackend.LookupResult, error) {
+func selectScalaSymbol(query, file string, symbols []scalaDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -664,30 +652,21 @@ func selectScalaSymbol(query, root, file string, source []byte, symbols []scalaD
 	if len(matches) == 0 {
 		return nil, &ScalaError{Op: "lookup", File: file, Symbol: query, Err: ErrScalaSymbolNotFound}
 	}
-	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.NamedTarget, 0, len(matches))
 	for _, item := range matches {
-		converted = append(converted, scalaCandidate(root, file, source, item.symbol, item.path))
+		converted = append(converted, scalaCandidate(file, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &neutralbackend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &neutralbackend.LookupResult{Definition: candidate}, nil
 }
 
-func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
+func scalaCandidate(file string, symbol scalaDocumentSymbol, path []string) *neutralbackend.NamedTarget {
 	start := symbol.SelectionRange.Start
-	offset, _ := scalaByteOffset(source, start)
-	receiver := ""
-	if len(path) > 1 {
-		receiver = strings.Join(path[:len(path)-1], ".")
-	}
-	relative, err := filepath.Rel(root, file)
-	if err != nil {
-		relative = file
-	}
 	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
-	return &neutralbackend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: scalaKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: scalaKindName(symbol.Kind), Location: location}
 }
 
 func scalaByteOffset(source []byte, position scalaPosition) (int, error) {
@@ -903,18 +882,5 @@ func resolveScalaOutlineTarget(request neutralbackend.OutlineRequest) (scalaOutl
 }
 
 func scalaOutlineConfig(project neutralbackend.ProjectContext) neutralbackend.ScalaConfig {
-	config := project.Scala
-	if config.MetalsHome == "" {
-		config.MetalsHome = project.MetalsHome
-	}
-	if config.MetalsBin == "" {
-		config.MetalsBin = project.MetalsBin
-	}
-	if config.JavaBin == "" {
-		config.JavaBin = project.JavaBin
-	}
-	if config.JavaVersion == "" {
-		config.JavaVersion = project.JavaVersion
-	}
-	return config
+	return project.Scala
 }

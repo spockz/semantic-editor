@@ -112,9 +112,6 @@ func insertConstructByKind(ctx context.Context, filePath, source string, opts In
 		})
 		return InsertConstructResult{}, err
 
-	case backend.ConstructField:
-		return InsertConstructResult{}, insertFieldConstruct(ctx, filePath, source, opts)
-
 	case backend.ConstructStatementOrExpr:
 		return InsertConstructResult{}, insertStatementConstruct(ctx, filePath, source, opts)
 
@@ -225,32 +222,6 @@ func inferInsertConstructKind(source string, opts InsertConstructOptions) Constr
 		return backend.ConstructDecl
 	}
 	return backend.ConstructDeclaration
-}
-
-func insertFieldConstruct(ctx context.Context, filePath, source string, opts InsertConstructOptions) error {
-	fieldName, err := InferInsertedFieldName(source)
-	if err != nil {
-		return err
-	}
-	if accessErr := ValidateAccess(GolangBackend{}, opts.AccessModifier, fieldName); accessErr != nil {
-		return accessErr
-	}
-	placement := FieldPlacement(opts.Placement)
-	if placement == "" {
-		placement = FieldAtEnd
-	}
-	content, err := sourcebuf.ReadFile(ctx, filepath.Clean(filePath))
-	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
-	}
-	plan, err := PlanInsertField(content, InsertFieldIntent{
-		TypeName: opts.TypeName, FieldName: fieldName, FieldSource: source,
-		Placement: placement, TargetField: opts.TargetSymbol,
-	})
-	if err != nil {
-		return fmt.Errorf("plan field insertion: %w", err)
-	}
-	return writeConstructSource(ctx, filePath, plan.Source, opts.AutoOrganizeImports)
 }
 
 func insertStatementConstruct(ctx context.Context, filePath, source string, opts InsertConstructOptions) error {

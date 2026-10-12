@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -38,6 +37,8 @@ func (GoBackend) SupportedConstructs(operation backend.Operation) []backend.Cons
 		kinds = astedit.GoInsertConstructKinds
 	case backend.OperationReplaceConstruct:
 		kinds = astedit.GoReplaceConstructKinds
+	case backend.OperationInspectConstruct:
+		kinds = astedit.GoInspectConstructKinds
 	case backend.OperationRemoveConstruct:
 		kinds = astedit.GoRemoveConstructKinds
 	case backend.OperationMoveConstruct:
@@ -50,7 +51,7 @@ func (GoBackend) SupportedConstructs(operation backend.Operation) []backend.Cons
 
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationOutline, backend.OperationFindReferences)
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationInspectConstruct, backend.OperationOutline, backend.OperationFindReferences)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Go backend.
@@ -228,12 +229,12 @@ func goCapabilityLimitations() []backend.Constraint {
 }
 
 // Lookup resolves a Go symbol and converts its location to the neutral contract.
-func (GoBackend) Lookup(_ context.Context, project backend.ProjectContext, query string) (*backend.LookupResult, error) {
-	result, err := symbol.Resolve(project.RootDir, project.File, query)
+func (GoBackend) Lookup(ctx context.Context, project backend.ProjectContext, query string) (*backend.LookupResult, error) {
+	snapshot, err := symbol.ResolveSnapshotWithContext(ctx, project.RootDir, project.File, query)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("resolve Go lookup snapshot: %w", err)
 	}
-	return convertLookup(project.RootDir, result), nil
+	return convertLookup(project.RootDir, snapshot)
 }
 
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
@@ -242,18 +243,20 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 	if err != nil {
 		return nil, err
 	}
-	lookup := convertLookup(request.Project.RootDir, snapshot.Result)
-	if lookup.Ambiguous {
-		candidateLocs := make([]string, 0, len(snapshot.Result.Candidates))
-		for _, candidate := range snapshot.Result.Candidates {
-			candidateLocs = append(candidateLocs, fmt.Sprintf("%s (%s)", candidate.File, candidate.BuildQualifiedName()))
-		}
-		return nil, fmt.Errorf("%w: symbol %q matches %d candidates: [%s]. Specify 'file' or a receiver qualification (e.g. 'TypeName.%s') to disambiguate directly", backend.ErrAmbiguous, request.Symbol, len(candidateLocs), strings.Join(candidateLocs, ", "), request.Symbol)
+	lookup, err := convertLookup(request.Project.RootDir, snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("capture Go rename lookup: %w", err)
+	}
+	if lookup.IsAmbiguous() {
+		return nil, renameAmbiguity(request.Project.RootDir, request.Symbol, lookup.Candidates)
 	}
 	if lookup.Definition == nil {
 		return nil, fmt.Errorf("rename lookup lacks a declaration identity")
 	}
-	sourcePath := lookup.Definition.File
+	sourcePath, err := pathutil.FilePathFromURI(lookup.Definition.Location.URI)
+	if err != nil {
+		return nil, fmt.Errorf("resolve rename lookup location: %w", err)
+	}
 	if !filepath.IsAbs(sourcePath) {
 		sourcePath = filepath.Join(request.Project.RootDir, sourcePath)
 	}
@@ -319,7 +322,7 @@ func (GoBackend) Verify(ctx context.Context, request backend.VerifyRequest) ([]b
 			return nil, err
 		}
 	}
-	diagnostics, err := pipeline.CheckDiagnosticDetails(ctx, project.RootDir)
+	diagnostics, err := pipeline.CheckDiagnosticDetailsForPatterns(ctx, project.RootDir, request.GoPackagePatterns...)
 	if err != nil {
 		return nil, err
 	}
@@ -381,59 +384,72 @@ func (GoBackend) Outline(_ context.Context, request backend.OutlineRequest) (*ba
 	return astedit.OutlineGo(request.Project.RootDir, request.Path, request.Kinds, request.IncludeUnexported, request.IncludeTests)
 }
 
-func convertCandidate(root string, candidate *symbol.Symbol) *backend.SymbolCandidate {
-	converted := &backend.SymbolCandidate{
-		Name:          candidate.Name,
-		Receiver:      candidate.Receiver,
-		QualifiedName: candidate.QualifiedName,
-		Kind:          candidate.Kind,
-		File:          candidate.File,
-		Line:          candidate.Line,
-		Column:        candidate.Column,
-		Offset:        candidate.Offset,
+func convertCandidate(root string, candidate *symbol.Symbol, sources map[string][]byte) (*backend.NamedTarget, error) {
+	location, err := sourceLocation(root, candidate.File, candidate.Offset, candidate.Name, sources)
+	if err != nil {
+		return nil, fmt.Errorf("capture Go lookup candidate: %w", err)
 	}
-	converted.Location = sourceLocation(root, candidate.File, candidate.Offset)
-	return converted
+	return &backend.NamedTarget{Name: candidate.Name, QualifiedName: candidate.BuildQualifiedName(), Kind: candidate.Kind, Location: location}, nil
 }
 
-func sourceLocation(root, file string, offset int) backend.SourceLocation {
+func sourceLocation(root, file string, offset int, name string, sources map[string][]byte) (backend.SourceLocation, error) {
 	path := file
-	if !filepath.IsAbs(path) && root != "" {
+	if !filepath.IsAbs(path) {
 		path = filepath.Join(root, path)
 	}
-	// #nosec G304 -- path is derived from the selected project and resolved symbol.
-	source, err := os.ReadFile(path)
-	if err != nil {
-		return backend.SourceLocation{URI: pathutil.FileURI(path)}
+	path = filepath.Clean(path)
+	source, ok := sources[path]
+	if !ok {
+		return backend.SourceLocation{}, fmt.Errorf("lookup snapshot lacks source for %s", path)
 	}
-	position := backend.PositionFromByteOffset(source, offset)
+	if offset < 0 || offset > len(source) || name == "" || !strings.HasPrefix(string(source[offset:]), name) {
+		return backend.SourceLocation{}, fmt.Errorf("lookup snapshot has invalid identifier offset for %s in %s", name, path)
+	}
 	return backend.SourceLocation{
 		URI:   pathutil.FileURI(path),
-		Range: backend.Range{Start: position, End: position},
-	}
+		Range: backend.Range{Start: backend.PositionFromByteOffset(source, offset), End: backend.PositionFromByteOffset(source, offset+len(name))},
+	}, nil
 }
 
-func convertLookup(root string, result *symbol.LookupResult) *backend.LookupResult {
-	converted := &backend.LookupResult{
-		Symbol: result.Symbol, File: result.File, Line: result.Line, Column: result.Column,
-		Offset: result.Offset, Kind: result.Kind, Receiver: result.Receiver,
-		Ambiguous: result.Ambiguous,
-	}
+func convertLookup(root string, snapshot *symbol.ResolutionSnapshot) (*backend.LookupResult, error) {
+	result := snapshot.Result
+	converted := &backend.LookupResult{}
+	var err error
 	if result.Definition != nil {
-		converted.Definition = convertCandidate(root, result.Definition)
-		converted.Location = converted.Definition.Location
-	}
-	if result.Usages != nil {
-		converted.Usages = make([]*backend.SymbolCandidate, 0, len(result.Usages))
-		for _, usage := range result.Usages {
-			converted.Usages = append(converted.Usages, convertCandidate(root, usage))
+		converted.Definition, err = convertCandidate(root, result.Definition, snapshot.Files)
+		if err != nil {
+			return nil, err
 		}
 	}
-	if result.Candidates != nil {
-		converted.Candidates = make([]*backend.SymbolCandidate, 0, len(result.Candidates))
-		for _, candidate := range result.Candidates {
-			converted.Candidates = append(converted.Candidates, convertCandidate(root, candidate))
+	for _, usage := range result.Usages {
+		candidate, convertErr := convertCandidate(root, usage, snapshot.Files)
+		if convertErr != nil {
+			return nil, convertErr
 		}
+		converted.Usages = append(converted.Usages, candidate)
 	}
-	return converted
+	for _, choice := range result.Candidates {
+		candidate, convertErr := convertCandidate(root, choice, snapshot.Files)
+		if convertErr != nil {
+			return nil, convertErr
+		}
+		converted.Candidates = append(converted.Candidates, candidate)
+	}
+	return converted, nil
+}
+
+func renameAmbiguity(root, query string, candidates []*backend.NamedTarget) error {
+	locations := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		file, err := pathutil.FilePathFromURI(candidate.Location.URI)
+		if err != nil {
+			return fmt.Errorf("resolve ambiguous rename candidate location: %w", err)
+		}
+		relative, err := filepath.Rel(root, file)
+		if err != nil {
+			return fmt.Errorf("project ambiguous rename candidate location: %w", err)
+		}
+		locations = append(locations, fmt.Sprintf("%s (%s)", filepath.ToSlash(relative), candidate.Identity()))
+	}
+	return fmt.Errorf("%w: symbol %q matches %d candidates: [%s]. Specify 'file' or a receiver qualification (e.g. 'TypeName.%s') to disambiguate directly", backend.ErrAmbiguous, query, len(locations), strings.Join(locations, ", "), query)
 }

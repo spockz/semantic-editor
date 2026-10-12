@@ -271,6 +271,12 @@ The experiment investigates whether semedit's extra time and tool cycles come fr
 
 ## OpenCode AMD Beast smoke run
 
+The shared fixture Go environment sets `GOFLAGS=-buildvcs=false` for every
+harness and oracle. Builds and tests validate code without embedding Git revision
+metadata. This avoids invoking the macOS Git launcher and its developer-tool
+lookup solely for revision stamping inside the fixture sandbox. It does not
+disable compilation or test assertions, nor make direct Git commands available.
+
 Use `opencode/qwen36-iq4-xs` without an effort suffix. The provider defaults to
 `http://192.168.1.122:1234/v1`; `SEMEDIT_OPENCODE_QWEN_BASE_URL` overrides the endpoint.
 The adapter selects the configured `amdbeast` provider internally and passes
@@ -289,6 +295,17 @@ the relay port and the session's loopback port, including for attached clients.
 The configured desktop endpoint must use HTTP with a numeric IP and explicit
 port; unsupported endpoints fail before jobs start. See
 [ADR-0067](../../docs/adr/0067-opencode-run-owned-model-relay.md).
+
+Local model sessions automatically compact at 75% of the discovered context
+capacity, rounded down to whole tokens. For Saluki's 65,536-token context this
+means 49,152 tokens. The generated configuration sets `limit.input` to the
+context capacity and `compaction.reserved` to the remaining quarter, because
+OpenCode 1.18.30 ignores that reserve without an explicit input limit. If the
+output limit exceeds a quarter of context, compaction happens earlier to leave
+enough output capacity. The policy applies equally to all local benchmark arms;
+catalog-backed OpenRouter models retain their existing compaction settings.
+This does not change the per-response output limit. See the
+[versioned overflow implementation](https://github.com/anomalyco/opencode/blob/v1.18.30/packages/opencode/src/session/overflow.ts).
 
 OpenCode 1.18.30 emits disjoint input, cache-read, cache-write, output, and reasoning
 counters in each `step_finish`. Total input includes all three input buckets;

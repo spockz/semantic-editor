@@ -94,15 +94,24 @@ func sourceBufferRoot(file string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve mutation file %q: %w", file, err)
 	}
-	for dir := filepath.Dir(absolute); ; dir = filepath.Dir(dir) {
+	if root, found, err := findGoModuleRoot(absolute, "mutation module"); err != nil {
+		return "", err
+	} else if found {
+		return root, nil
+	}
+	return filepath.Dir(absolute), nil
+}
+
+func findGoModuleRoot(absPath, errContext string) (string, bool, error) {
+	for dir := filepath.Dir(absPath); ; dir = filepath.Dir(dir) {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
+			return dir, true, nil
 		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("inspect mutation module at %s: %w", dir, err)
+			return "", false, fmt.Errorf("inspect %s at %s: %w", errContext, dir, err)
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return filepath.Dir(absolute), nil
+			return "", false, nil
 		}
 	}
 }

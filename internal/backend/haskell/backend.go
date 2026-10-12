@@ -225,9 +225,6 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project neutralbackend.Proj
 			return nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
 		}
 		config := project.Haskell
-		if project.HaskellStandalone {
-			config.Standalone = true
-		}
 		runtimeConfig := haskellRuntimeConfig{HaskellConfig: config, workingDir: filepath.Dir(file)}
 		session, factoryErr := b.factory(ctx, root, runtimeConfig)
 		if factoryErr != nil {
@@ -256,7 +253,7 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project neutralbackend.Proj
 	if err != nil {
 		return nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
-	return selectHaskellSymbol(query, root, file, source, symbols)
+	return selectHaskellSymbol(query, file, symbols)
 }
 
 // Rename is intentionally unavailable for the Haskell lookup-only slice.
@@ -439,7 +436,7 @@ func resolveHaskellProject(project neutralbackend.ProjectContext) (string, strin
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".hs") || strings.HasSuffix(strings.ToLower(project.File), ".hs-boot") {
 		return "", "", nil, &HaskellError{Op: "project", File: project.File, Err: ErrHaskellFileRequired}
 	}
-	if !project.Haskell.Standalone && !project.HaskellStandalone {
+	if !project.Haskell.Standalone {
 		return "", "", nil, &HaskellError{Op: "project", File: project.File, Err: ErrHaskellStandaloneRequired}
 	}
 	base := project.RootDir
@@ -613,7 +610,7 @@ func haskellKindName(kind int, name string) string {
 	}
 }
 
-func selectHaskellSymbol(query, root, file string, source []byte, symbols []haskellDocumentSymbol) (*neutralbackend.LookupResult, error) {
+func selectHaskellSymbol(query, file string, symbols []haskellDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -642,31 +639,21 @@ func selectHaskellSymbol(query, root, file string, source []byte, symbols []hask
 	if len(matches) == 0 {
 		return nil, &HaskellError{Op: "lookup", File: file, Symbol: query, Err: ErrHaskellSymbolNotFound}
 	}
-	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.NamedTarget, 0, len(matches))
 	for _, item := range matches {
-		converted = append(converted, haskellCandidate(root, file, source, item.symbol, item.path))
+		converted = append(converted, haskellCandidate(file, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &neutralbackend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &neutralbackend.LookupResult{Definition: candidate}, nil
 }
 
-func haskellCandidate(root, file string, source []byte, symbol haskellDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
+func haskellCandidate(file string, symbol haskellDocumentSymbol, path []string) *neutralbackend.NamedTarget {
 	start := symbol.SelectionRange.Start
-	offset, _ := haskellByteOffset(source, start)
-	receiver := ""
-	if len(path) > 1 {
-		receiver = strings.Join(path[:len(path)-1], ".")
-	}
-	relative, err := filepath.Rel(root, file)
-	if err != nil {
-		relative = file
-	}
 	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
-	selection := neutralbackend.Range{Start: neutralbackend.Position(symbol.SelectionRange.Start), End: neutralbackend.Position(symbol.SelectionRange.End)}
-	return &neutralbackend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, SelectionRange: &selection, Location: location}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), Location: location}
 }
 
 func haskellByteOffset(source []byte, position haskellPosition) (int, error) {

@@ -169,7 +169,11 @@ func (state *execution) runNormalizeHooks(ctx context.Context) hookOutcome {
 	if hookID != "" && !state.project.WorkspaceTrust.Allows(state.project.RootDir) {
 		return hookOutcome{Finished: true, Failure: fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)}
 	}
-	report, err := projectverify.RunPhase(ctx, state.allowedPlan, projectverify.PhaseNormalize, state.scope,
+	plan := state.allowedPlan
+	if state.request.SkipHooks {
+		plan = planWithoutExternalCommands(plan)
+	}
+	report, err := projectverify.RunPhase(ctx, plan, projectverify.PhaseNormalize, state.scope,
 		verificationLSPRunner(state.service, state.project, projectverify.PhaseNormalize, state.request.AllowedLanguages))
 	state.response.NormalizeReport = report
 	if err != nil {
@@ -225,7 +229,11 @@ func (state *execution) runChecks(ctx context.Context) checkOutcome {
 		state.response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
 		return checkOutcome{}
 	}
-	state.response.CheckReport, err = projectverify.RunPhase(ctx, state.allowedPlan, projectverify.PhaseCheck, state.scope,
+	plan := state.allowedPlan
+	if state.request.SkipHooks {
+		plan = planWithoutExternalCommands(plan)
+	}
+	state.response.CheckReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseCheck, state.scope,
 		verificationLSPRunner(state.service, state.project, projectverify.PhaseCheck, state.request.AllowedLanguages))
 	if err != nil {
 		state.response.Failure = err.Error()
@@ -235,6 +243,24 @@ func (state *execution) runChecks(ctx context.Context) checkOutcome {
 
 func allowsLanguage(allowed []backend.LanguageID, language backend.LanguageID) bool {
 	return allowed == nil || slices.Contains(allowed, language)
+}
+
+func planWithoutExternalCommands(plan projectverify.Plan) projectverify.Plan {
+	plan.Normalize = slices.Clone(plan.Normalize)
+	plan.Checks = slices.Clone(plan.Checks)
+	for index := range plan.Normalize {
+		hook := &plan.Normalize[index]
+		if hook.LSP == nil && (hook.Shell != nil || len(hook.Exec) > 0) {
+			hook.Disabled = true
+		}
+	}
+	for index := range plan.Checks {
+		hook := &plan.Checks[index]
+		if hook.LSP == nil && (hook.Shell != nil || len(hook.Exec) > 0) {
+			hook.Disabled = true
+		}
+	}
+	return plan
 }
 
 func shouldRunGofmt(project backend.ProjectContext, path string) bool {

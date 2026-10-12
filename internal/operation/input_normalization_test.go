@@ -236,22 +236,28 @@ func assertInvalidInput(t *testing.T, entry operation.Entry, raw map[string]any)
 }
 
 func TestRegisteredIngressPathsNormalizeBeforeValidationAndParsing(t *testing.T) {
-	type request struct{ Kind string }
+	type request struct {
+		Kind string
+		Path any
+	}
 	registry := operation.NewRegistry()
 	var parsedKinds []string
+	var parsedPaths []any
 	var finalizedKinds []string
+	var finalizedPaths []any
 	def := operation.Def[request, string]{
 		Key:           "normalize_input_probe",
 		BufferedBatch: true,
-		Params: []operation.ParameterContract{{
-			Name: "kind", JSONName: "kind", Type: operation.ParamString,
-			Required: true, Enums: []string{"element"},
-		}},
+		Params: []operation.ParameterContract{
+			{Name: "kind", JSONName: "kind", Type: operation.ParamString, Required: true, Enums: []string{"element"}},
+			{Name: "path", CLIName: "path", JSONName: "path", InputAliases: []string{"file"}, Type: operation.ParamString},
+		},
 		NormalizeInput: operation.NormalizeConstructKindInput,
 		Parse: func(raw map[string]any) (request, error) {
 			kind, _ := raw["kind"].(string)
 			parsedKinds = append(parsedKinds, kind)
-			return request{Kind: kind}, nil
+			parsedPaths = append(parsedPaths, raw["path"])
+			return request{Kind: kind, Path: raw["path"]}, nil
 		},
 		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, request) (string, error){
 			backend.LanguageGo: func(_ context.Context, _ operation.CallContext, req request) (string, error) {
@@ -260,6 +266,7 @@ func TestRegisteredIngressPathsNormalizeBeforeValidationAndParsing(t *testing.T)
 		},
 		FinalizeOutput: func(_ operation.CallContext, req request, result string) (string, error) {
 			finalizedKinds = append(finalizedKinds, req.Kind)
+			finalizedPaths = append(finalizedPaths, req.Path)
 			return result, nil
 		},
 	}
@@ -270,16 +277,16 @@ func TestRegisteredIngressPathsNormalizeBeforeValidationAndParsing(t *testing.T)
 	if !ok {
 		t.Fatal("registered entry missing")
 	}
-
-	if _, err := entry.Parse(map[string]any{"kind": "item"}); err != nil {
-		t.Fatalf("Parse rejected alias before canonicalizing it: %v", err)
+	if _, err := entry.Parse(map[string]any{"kind": "item", "file": "input.go"}); err != nil {
+		t.Fatalf("Parse rejected aliases: %v", err)
 	}
-	if eligible, err := entry.SupportsBufferedBatch(operation.CallContext{Project: backend.ProjectContext{Language: backend.LanguageGo}}, map[string]any{"kind": "entry"}); err != nil || !eligible {
+	if eligible, err := entry.SupportsBufferedBatch(operation.CallContext{Project: backend.ProjectContext{Language: backend.LanguageGo}}, map[string]any{"kind": "entry", "file": "batch.go"}); err != nil || !eligible {
 		t.Fatalf("SupportsBufferedBatch = %v, %v; want true, nil", eligible, err)
 	}
-	result, err := registry.Dispatch(operation.CallContext{Ctx: context.Background(), Project: backend.ProjectContext{Language: backend.LanguageGo}}, def.Key, map[string]any{"kind": "literal_element"})
+	result, err := registry.Dispatch(operation.CallContext{Ctx: context.Background(), Project: backend.ProjectContext{Language: backend.LanguageGo}}, def.Key,
+		map[string]any{"kind": "literal_element", "file": "run.go"})
 	if err != nil {
-		t.Fatalf("Dispatch rejected alias: %v", err)
+		t.Fatalf("Dispatch rejected aliases: %v", err)
 	}
 	if result != "element" {
 		t.Fatalf("Dispatch result = %v, want canonical kind element", result)
@@ -287,8 +294,76 @@ func TestRegisteredIngressPathsNormalizeBeforeValidationAndParsing(t *testing.T)
 	if !reflect.DeepEqual(parsedKinds, []string{"element", "element", "element", "element"}) {
 		t.Fatalf("parsed kinds = %v, want Parse, batch eligibility, invocation, and finalization all canonical", parsedKinds)
 	}
-	if !reflect.DeepEqual(finalizedKinds, []string{"element"}) {
-		t.Fatalf("finalized kinds = %v, want [element]", finalizedKinds)
+	if !reflect.DeepEqual(parsedPaths, []any{"input.go", "batch.go", "run.go", "run.go"}) {
+		t.Fatalf("parsed paths = %#v, want aliases folded before every registered ingress path", parsedPaths)
+	}
+	if !reflect.DeepEqual(finalizedKinds, []string{"element"}) || !reflect.DeepEqual(finalizedPaths, []any{"run.go"}) {
+		t.Fatalf("finalized values = (%v, %#v), want ([element], [run.go])", finalizedKinds, finalizedPaths)
+	}
+	parse := func(raw map[string]any) error {
+		_, parseErr := entry.Parse(raw)
+		return parseErr
+	}
+	assertRegisteredPathAliases(t, parse, &parsedPaths)
+}
+
+func TestNormalizeConstructKindVocabularyAndMethods(t *testing.T) {
+	for alias, want := range map[string]string{
+		" Variable ":        "var",
+		"CONSTANT":          "const",
+		"procedure":         "function",
+		" Element ":         "element",
+		"composite_element": "element",
+		"literal_element":   "element",
+		"entry":             "element",
+		"item":              "element",
+	} {
+		got, err := operation.NormalizeConstructKindInput(map[string]any{"kind": alias})
+		if err != nil {
+			t.Fatalf("NormalizeConstructKindInput(%q): %v", alias, err)
+		}
+		if got["kind"] != want {
+			t.Errorf("NormalizeConstructKindInput(%q).kind = %v, want %q", alias, got["kind"], want)
+		}
+	}
+	for _, test := range []struct {
+		name   string
+		symbol string
+		source string
+		want   string
+	}{
+		{name: "qualified pointer method", symbol: "(*Server).Start", source: "func (s *Server) Start() {}", want: "method"},
+		{name: "qualified value method", symbol: "worker.Flush", source: "func (w worker) Flush() {}", want: "method"},
+		{name: "ordinary function", symbol: "Normalize", source: "func Normalize() {}", want: "function"},
+		{name: "receiverless source", symbol: "(*Server).Start", source: "func Start() {}", want: "function"},
+		{name: "different declaration name", symbol: "(*Server).Start", source: "func (s *Server) Stop() {}", want: "function"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := operation.NormalizeConstructKindInput(map[string]any{
+				"kind": " FUNCTION ", "symbol": test.symbol, "source": test.source,
+			})
+			if err != nil {
+				t.Fatalf("NormalizeConstructKindInput: %v", err)
+			}
+			if got["kind"] != test.want {
+				t.Errorf("normalized kind = %v, want %q", got["kind"], test.want)
+			}
+		})
+	}
+	if _, err := operation.NormalizeConstructKindInput(map[string]any{
+		"kind": "function", "symbol": "(*Server).Start", "source": "func (",
+	}); !errors.Is(err, operation.ErrInvalidParams) {
+		t.Fatalf("malformed replacement source error = %v, want ErrInvalidParams", err)
+	}
+}
+
+func TestNormalizeConstructKindRejectsMalformedSymbolSelector(t *testing.T) {
+	for _, selector := range []string{"(*Server).", ".Start", "pkg..Start", "(*).Start"} {
+		if _, err := operation.NormalizeConstructKindInput(map[string]any{
+			"kind": "function", "symbol": selector, "source": "func Start() {}",
+		}); !errors.Is(err, operation.ErrInvalidParams) {
+			t.Fatalf("malformed symbol selector %q error = %v, want ErrInvalidParams", selector, err)
+		}
 	}
 }
 
@@ -307,4 +382,32 @@ func cloneInput(input map[string]any) map[string]any {
 	cloned := make(map[string]any, len(input))
 	maps.Copy(cloned, input)
 	return cloned
+}
+
+func assertRegisteredPathAliases(t *testing.T, parse func(map[string]any) error, parsedPaths *[]any) {
+	t.Helper()
+	if err := parse(map[string]any{"kind": "element", "path": "canonical.go", "file": "alias.go"}); !errors.Is(err, operation.ErrInvalidParams) {
+		t.Fatalf("conflicting canonical and alias values error = %v, want ErrInvalidParams", err)
+	}
+	if err := parse(map[string]any{"kind": "element", "path": "same.go", "file": "same.go"}); err != nil {
+		t.Fatalf("equal canonical and alias values rejected: %v", err)
+	}
+	if err := parse(map[string]any{"kind": "element", "path": nil, "file": "ignored.go"}); err != nil {
+		t.Fatalf("explicit null canonical value rejected: %v", err)
+	}
+	if (*parsedPaths)[len(*parsedPaths)-1] != nil {
+		t.Fatalf("explicit null canonical value fell through to alias: %#v", (*parsedPaths)[len(*parsedPaths)-1])
+	}
+	if err := parse(map[string]any{"kind": "element", "file": nil}); err != nil {
+		t.Fatalf("null alias rejected before validation: %v", err)
+	}
+	if (*parsedPaths)[len(*parsedPaths)-1] != nil {
+		t.Fatalf("null alias did not reach canonical parser value: %#v", (*parsedPaths)[len(*parsedPaths)-1])
+	}
+	if err := parse(map[string]any{"kind": "element", "path": " ", "file": "pkg"}); err != nil {
+		t.Fatalf("blank canonical value with nonblank alias rejected: %v", err)
+	}
+	if (*parsedPaths)[len(*parsedPaths)-1] != "pkg" {
+		t.Fatalf("blank canonical value did not adopt nonblank alias: %#v", (*parsedPaths)[len(*parsedPaths)-1])
+	}
 }

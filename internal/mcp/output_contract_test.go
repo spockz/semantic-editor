@@ -247,6 +247,7 @@ func assertBatchOutputSchemaFailures(t *testing.T, schemas map[string]json.RawMe
 	assertOutputSchemaValue(t, schema, "success batch containing error child", batchOutput("ok", []any{genericError}, nil), false)
 	assertOutputSchemaValue(t, schema, "error batch containing only success children", batchOutput("error", []any{removeSuccess}, nil), false)
 	assertOutputSchemaValue(t, schema, "failed batch retaining diagnostic delta", batchOutput("error", []any{genericError}, diagnostics), false)
+	assertOutputSchemaValue(t, schema, "applied batch retaining diagnostic delta", batchOutput("applied_with_diagnostics", []any{removeSuccess}, diagnostics), true)
 	badKnownError := map[string]any{
 		"tool": "semantic_remove_construct", "status": "error",
 		"error": "safe deletion refused", "application_state": "persisted",

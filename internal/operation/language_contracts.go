@@ -99,6 +99,9 @@ func autoOperationContract(key string) (capability.OperationContract, bool) {
 }
 
 func goOperationContract(key string) (capability.OperationContract, bool) {
+	if contract, ok := goStageOperationContract(key); ok {
+		return contract, true
+	}
 	if contract, ok := goASTOperationContract(key); ok {
 		return contract, true
 	}
@@ -106,6 +109,28 @@ func goOperationContract(key string) (capability.OperationContract, bool) {
 		return contract, true
 	}
 	return goTypedOperationContract(key)
+}
+
+func goStageOperationContract(key string) (capability.OperationContract, bool) {
+	module := capability.ScopeActiveModule
+	phaseRequirements := contractRequirements(module, capability.RequireModuleRoot, capability.RequireModuleSnapshot)
+	phase := singleContract(0, module, phaseRequirements,
+		capability.FeatureStaging, capability.GuaranteeVolatileState, allFaultSupport())
+	sessionRequirements := append(append([]capability.Requirement{}, phaseRequirements...), capability.Requirement{Kind: capability.RequireStageSession, Scope: capability.ScopeServerScope})
+	switch key {
+	case "stage_start":
+		return phase, true
+	case "stage_drop", "stage_abort":
+		return singleContract(0, module, sessionRequirements,
+			capability.FeatureStaging, capability.GuaranteeVolatileState, allFaultSupport()), true
+	case "stage_commit":
+		return singleContract(0, module, sessionRequirements,
+			capability.FeaturePublication|capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics|capability.FeatureProjectHooks,
+			capability.GuaranteeConflictChecked|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics|capability.GuaranteePublicationOutcome,
+			conditionalFaultSupport(capability.RecoveryDiagnostics)), true
+	default:
+		return capability.OperationContract{}, false
+	}
 }
 
 func externalOperationContract(key string, language backend.LanguageID) (capability.OperationContract, bool) {
@@ -195,6 +220,11 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 			conditionalFaultSupport(capability.RecoveryGoCommand)), true
 	}
 	switch key {
+	case "inspect_construct":
+		inspectRequirements := append([]capability.Requirement{}, targetParse...)
+		inspectRequirements = append(inspectRequirements, capability.Requirement{Kind: capability.RequireExactSelector, Scope: fileScope})
+		return singleContract(capability.VariantSelectedFile, fileScope, inspectRequirements,
+			capability.FeatureInspect, capability.GuaranteeReadOnly, localTolerance), true
 	case "insert_declaration", "insert_function", "insert_type", "insert_decl", "insert_case",
 		"replace_decl", "replace_body", "replace_construct", "remove_construct":
 		editRequirements := append([]capability.Requirement{}, targetParse...)

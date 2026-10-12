@@ -35,17 +35,15 @@ func parseReadProject(raw map[string]any, file string) (backend.ProjectContext, 
 		return backend.ProjectContext{}, err
 	}
 	return backend.ProjectContext{
-		File:              file,
-		Language:          config.language,
-		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: config.trusted},
-		Java:              config.java,
-		Scala:             config.scala,
-		Haskell:           config.haskell,
-		HaskellStandalone: config.haskell.Standalone,
-		Kotlin:            config.kotlin,
-		Bash:              config.bash,
-		Make:              config.make,
-		KotlinBin:         config.kotlin.KotlinBin,
+		File:           file,
+		Language:       config.language,
+		WorkspaceTrust: backend.WorkspaceTrust{Trusted: config.trusted},
+		Java:           config.java,
+		Scala:          config.scala,
+		Haskell:        config.haskell,
+		Kotlin:         config.kotlin,
+		Bash:           config.bash,
+		Make:           config.make,
 	}, nil
 }
 

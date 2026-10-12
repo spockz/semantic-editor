@@ -89,8 +89,10 @@ func snapshotDef() Def[SnapshotReq, SnapshotRes] {
 			}
 			return string(data), nil
 		},
-		ExampleRaw: map[string]any{"label": "before-rename-server"},
-		Batchable:  false,
+		Output:        &OperationOutputContract{ResultSchema: snapshotOutputSchema()},
+		ProjectOutput: projectSnapshotOutput,
+		ExampleRaw:    map[string]any{"label": "before-rename-server"},
+		Batchable:     false,
 	}
 }
 
@@ -112,7 +114,7 @@ type UndoRes struct {
 }
 
 var undoParams = []ParameterContract{
-	{Name: "snapshot_id", CLIName: "id", JSONName: "snapshot_id", Type: ParamString, Description: "The unique snapshot ID to restore (e.g. 'snap-20260917-123456-abcdef' or 'latest')", Required: true},
+	{Name: outputSnapshotIDField, CLIName: "id", JSONName: outputSnapshotIDField, Type: ParamString, Description: "The unique snapshot ID to restore (e.g. 'snap-20260917-123456-abcdef' or 'latest')", Required: true},
 }
 
 func parseUndo(raw map[string]any) (UndoReq, error) {
@@ -121,12 +123,12 @@ func parseUndo(raw map[string]any) (UndoReq, error) {
 		return req, err
 	}
 	var err error
-	if req.SnapshotID, err = ParseString(raw, "snapshot_id", "", true); err != nil {
+	if req.SnapshotID, err = ParseString(raw, outputSnapshotIDField, "", true); err != nil {
 		return req, err
 	}
 	req.SnapshotID = strings.TrimSpace(req.SnapshotID)
 	if req.SnapshotID == "" {
-		return req, fmt.Errorf("param %q is required: %w", "snapshot_id", ErrInvalidParams)
+		return req, fmt.Errorf("param %q is required: %w", outputSnapshotIDField, ErrInvalidParams)
 	}
 	return req, nil
 }
@@ -158,8 +160,10 @@ func undoDef() Def[UndoReq, UndoRes] {
 			}
 			return string(data), nil
 		},
-		ExampleRaw: map[string]any{"snapshot_id": "latest"},
-		Batchable:  false,
+		Output:        &OperationOutputContract{ResultSchema: undoOutputSchema()},
+		ProjectOutput: projectUndoOutput,
+		ExampleRaw:    map[string]any{outputSnapshotIDField: "latest"},
+		Batchable:     false,
 	}
 }
 

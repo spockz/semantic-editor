@@ -107,14 +107,7 @@ const lspDocumentSymbolKey = "documentSymbol"
 const lspTextDocumentKey = "textDocument"
 
 func effectiveJavaConfig(project backend.ProjectContext) backend.JavaConfig {
-	config := project.Java
-	if config.JDTLSHome == "" {
-		config.JDTLSHome = project.JDTLSHome
-	}
-	if config.JavaBin == "" {
-		config.JavaBin = project.JavaBin
-	}
-	return config
+	return project.Java
 }
 
 type javaDiagnosticsSelector interface {
@@ -351,7 +344,7 @@ func (b *JavaBackend) Lookup(ctx context.Context, project backend.ProjectContext
 	if err != nil {
 		return nil, err
 	}
-	return selectJavaSymbol(query, root, file, source, symbols)
+	return selectJavaSymbol(query, file, symbols)
 }
 
 // Rename executes one trusted, file-scoped JDT LS rename transaction.
@@ -390,7 +383,7 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	if err != nil {
 		return nil, err
 	}
-	if writeErr := pipeline.WriteAtomic(file, edit.source); writeErr != nil {
+	if writeErr := pipeline.WriteAtomicContext(ctx, file, edit.source); writeErr != nil {
 		return nil, &JavaError{Op: "write", File: file, Err: writeErr}
 	}
 	// Preserve the committed rename result if only session cleanup fails.
@@ -418,18 +411,22 @@ func prepareJavaRenameEdit(ctx context.Context, session JavaSession, root, file 
 	if uriErr := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); uriErr != nil {
 		return javaRenameEdit{}, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: uriErr}
 	}
-	lookup, err := selectJavaSymbol(symbol, root, file, source, symbols)
+	lookup, err := selectJavaSymbol(symbol, file, symbols)
 	if err != nil {
 		return javaRenameEdit{}, err
 	}
-	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
+	if lookup.IsAmbiguous() || lookup.Definition == nil {
+		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: errors.New("rename requires one unique target")}
+	}
+	position := lookup.Definition.Location.Range.Start
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": position})
 	if err != nil || !validJavaPrepareRename(prepRaw) {
 		if err == nil {
 			err = ErrJavaRenameInvalidEdit
 		}
 		return javaRenameEdit{}, &JavaError{Op: "prepareRename", File: file, Err: err}
 	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": newName})
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": position, "newName": newName})
 	if err != nil {
 		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Err: err}
 	}
@@ -764,7 +761,7 @@ func publishJavaVerifyEdits(ctx context.Context, session JavaSession, file strin
 	if bytes.Equal(verified.content, source) {
 		return diagnosticsVersion, nil
 	}
-	if err := pipeline.WriteAtomic(file, verified.content); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, file, verified.content); err != nil {
 		return 0, err
 	}
 	version := verified.version + 1
@@ -1487,7 +1484,7 @@ func javaKindName(kind int) string {
 }
 func javaKindSupported(kind int) bool { return javaKindName(kind) != "" }
 
-func selectJavaSymbol(query, root, file string, source []byte, symbols []javaDocumentSymbol) (*backend.LookupResult, error) {
+func selectJavaSymbol(query, file string, symbols []javaDocumentSymbol) (*backend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -1514,30 +1511,21 @@ func selectJavaSymbol(query, root, file string, source []byte, symbols []javaDoc
 	if len(matches) == 0 {
 		return nil, &JavaError{Op: "lookup", File: file, Symbol: query, Err: ErrJavaSymbolNotFound}
 	}
-	converted := make([]*backend.SymbolCandidate, 0, len(matches))
+	converted := make([]*backend.NamedTarget, 0, len(matches))
 	for _, item := range matches {
-		converted = append(converted, javaCandidate(root, file, source, item.symbol, item.path))
+		converted = append(converted, javaCandidate(file, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &backend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &backend.LookupResult{Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &backend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &backend.LookupResult{Definition: candidate}, nil
 }
 
-func javaCandidate(root, file string, source []byte, symbol javaDocumentSymbol, path []string) *backend.SymbolCandidate {
+func javaCandidate(file string, symbol javaDocumentSymbol, path []string) *backend.NamedTarget {
 	start := symbol.SelectionRange.Start
-	offset, _ := javaByteOffset(source, start)
-	receiver := ""
-	if len(path) > 1 {
-		receiver = strings.Join(path[:len(path)-1], ".")
-	}
-	relative, err := filepath.Rel(root, file)
-	if err != nil {
-		relative = file
-	}
 	location := backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: backend.Position(start), End: backend.Position(symbol.SelectionRange.End)}}
-	return &backend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: javaKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
+	return &backend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: javaKindName(symbol.Kind), Location: location}
 }
 
 func javaByteOffset(source []byte, position javaPosition) (int, error) {

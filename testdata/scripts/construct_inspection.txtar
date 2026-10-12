@@ -1,0 +1,28 @@
+# Inspect a concrete candidate, copy its opaque selection revision and path into replacement, and verify the selected write.
+exec semedit inspect-construct --file api/sample.go --in-function Check --kind if --discriminator ready
+stdout '"construct_path": "0"'
+stdout '"expected_selection_revision": "c950c86b12ee00875c2b2320365ce498ef2049cf70e5f8d69ae828cfd15a05d5"'
+exec semedit replace-construct --file api/sample.go --in-function Check --kind if --discriminator ready --construct-path 0 --expected-selection-revision c950c86b12ee00875c2b2320365ce498ef2049cf70e5f8d69ae828cfd15a05d5 --source 'if ready { use(2) }'
+cmp api/sample.go want/sample.go
+
+-- go.mod --
+module example.com/inspection
+
+go 1.23
+
+-- api/sample.go --
+package sample
+
+func Check() {
+	if ready {
+		use(1)
+	}
+}
+-- want/sample.go --
+package sample
+
+func Check() {
+	if ready {
+		use(2)
+	}
+}

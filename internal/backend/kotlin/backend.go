@@ -239,7 +239,7 @@ func (b *KotlinBackend) Lookup(ctx context.Context, project neutralbackend.Proje
 	if err != nil {
 		return nil, &KotlinError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
-	return selectKotlinSymbol(query, root, file, source, symbols)
+	return selectKotlinSymbol(query, file, symbols)
 }
 
 // Rename is intentionally unavailable for the Kotlin lookup-only slice.
@@ -819,7 +819,7 @@ func kotlinKindName(kind int) string {
 }
 func kotlinKindSupported(kind int) bool { return kotlinKindName(kind) != "" }
 
-func selectKotlinSymbol(query, root, file string, source []byte, symbols []kotlinDocumentSymbol) (*neutralbackend.LookupResult, error) {
+func selectKotlinSymbol(query, file string, symbols []kotlinDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -846,30 +846,21 @@ func selectKotlinSymbol(query, root, file string, source []byte, symbols []kotli
 	if len(matches) == 0 {
 		return nil, &KotlinError{Op: "lookup", File: file, Symbol: query, Err: ErrKotlinSymbolNotFound}
 	}
-	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.NamedTarget, 0, len(matches))
 	for _, item := range matches {
-		converted = append(converted, kotlinCandidate(root, file, source, item.symbol, item.path))
+		converted = append(converted, kotlinCandidate(file, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &neutralbackend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &neutralbackend.LookupResult{Definition: candidate}, nil
 }
 
-func kotlinCandidate(root, file string, source []byte, symbol kotlinDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
+func kotlinCandidate(file string, symbol kotlinDocumentSymbol, path []string) *neutralbackend.NamedTarget {
 	start := symbol.SelectionRange.Start
-	offset, _ := kotlinByteOffset(source, start)
-	receiver := ""
-	if len(path) > 1 {
-		receiver = strings.Join(path[:len(path)-1], ".")
-	}
-	relative, err := filepath.Rel(root, file)
-	if err != nil {
-		relative = file
-	}
 	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
-	return &neutralbackend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: kotlinKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: kotlinKindName(symbol.Kind), Location: location}
 }
 
 func kotlinByteOffset(source []byte, position kotlinPosition) (int, error) {

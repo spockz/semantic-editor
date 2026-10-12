@@ -98,6 +98,8 @@ const (
 	OperationInsertConstruct Operation = "insert_construct"
 	// OperationReplaceConstruct replaces one selected syntax construct.
 	OperationReplaceConstruct Operation = "replace_construct"
+	// OperationInspectConstruct inspects candidates for one nested replacement selector.
+	OperationInspectConstruct Operation = "inspect_construct"
 	// OperationRemoveConstruct removes one selected syntax construct.
 	OperationRemoveConstruct Operation = "remove_construct"
 	// OperationMoveConstruct moves one existing syntax construct.
@@ -290,24 +292,16 @@ type ConstructCapabilityProvider interface {
 
 // ProjectContext identifies the project and optional source file selected by an ingress.
 type ProjectContext struct {
-	RootDir           string
-	File              string
-	Language          LanguageID
-	WorkspaceTrust    WorkspaceTrust
-	Java              JavaConfig
-	Scala             ScalaConfig
-	Haskell           HaskellConfig
-	Kotlin            KotlinConfig
-	Bash              BashConfig
-	Make              MakeConfig
-	KotlinBin         string
-	HaskellStandalone bool
-	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
-	JDTLSHome   string
-	JavaBin     string
-	MetalsHome  string
-	MetalsBin   string
-	JavaVersion string
+	RootDir        string
+	File           string
+	Language       LanguageID
+	WorkspaceTrust WorkspaceTrust
+	Java           JavaConfig
+	Scala          ScalaConfig
+	Haskell        HaskellConfig
+	Kotlin         KotlinConfig
+	Bash           BashConfig
+	Make           MakeConfig
 }
 
 // BashConfig identifies an explicitly preinstalled Bash language server.
@@ -320,35 +314,35 @@ type MakeConfig struct {
 	MakeBin string `json:"make_bin,omitempty"`
 }
 
-// SymbolCandidate is the neutral representation of an ambiguous symbol.
-type SymbolCandidate struct {
-	Name           string         `json:"name"`
-	Receiver       string         `json:"-"`
-	QualifiedName  string         `json:"qualified_name,omitempty"`
-	Kind           string         `json:"kind"`
-	File           string         `json:"file"`
-	Line           int            `json:"line,omitempty"`
-	Column         int            `json:"column,omitempty"`
-	Offset         int            `json:"-"`
-	SelectionRange *Range         `json:"selection_range,omitempty"`
-	Location       SourceLocation `json:"-"`
+// NamedTarget identifies a named source target by its exact identifier range.
+type NamedTarget struct {
+	Name          string         `json:"-"`
+	QualifiedName string         `json:"-"`
+	Kind          string         `json:"-"`
+	Location      SourceLocation `json:"-"`
 }
 
-// LookupResult retains legacy fields for CLI/MCP compatibility and adds a neutral location.
+// Identity returns the qualified identity when present, falling back to the simple name.
+func (target *NamedTarget) Identity() string {
+	if target == nil {
+		return ""
+	}
+	if target.QualifiedName != "" {
+		return target.QualifiedName
+	}
+	return target.Name
+}
+
+// LookupResult represents a resolved target or the available ambiguous targets.
 type LookupResult struct {
-	Symbol     string           `json:"symbol,omitempty"`
-	File       string           `json:"file,omitempty"`
-	Line       int              `json:"line,omitempty"`
-	Column     int              `json:"column,omitempty"`
-	Offset     int              `json:"-"`
-	Kind       string           `json:"kind,omitempty"`
-	Receiver   string           `json:"-"`
-	Definition *SymbolCandidate `json:"definition,omitempty"`
-	// Usages are syntactic local binding declarations, not semantic references.
-	Usages     []*SymbolCandidate `json:"usages,omitempty"`
-	Ambiguous  bool               `json:"ambiguous,omitempty"`
-	Candidates []*SymbolCandidate `json:"candidates,omitempty"`
-	Location   SourceLocation     `json:"-"`
+	Definition *NamedTarget   `json:"-"`
+	Usages     []*NamedTarget `json:"-"`
+	Candidates []*NamedTarget `json:"-"`
+}
+
+// IsAmbiguous reports whether lookup found multiple candidate targets.
+func (result *LookupResult) IsAmbiguous() bool {
+	return result != nil && len(result.Candidates) >= 2
 }
 
 // RenameRequest describes a semantic rename without language-specific coordinates.
@@ -411,6 +405,7 @@ type VerifyRequest struct {
 	FormatSelectedFile bool
 	OrganizeImports    bool
 	CheckOnly          bool
+	GoPackagePatterns  []string
 }
 
 // VerifyResult contains diagnostics in their protocol-neutral form.

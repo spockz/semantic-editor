@@ -431,7 +431,11 @@ func renameControlSymbol(ctx context.Context, workDir, file, symbolName, replace
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", symbolName, err)
 	}
-	if err := golang.Rename(ctx, workDir, resolved.File, resolved.Line, resolved.Column, replacement); err != nil {
+	if resolved.Definition == nil || resolved.IsAmbiguous() {
+		return nil, fmt.Errorf("resolve %s: expected a unique definition", symbolName)
+	}
+	definition := resolved.Definition
+	if err := golang.Rename(ctx, workDir, definition.File, definition.Line, definition.Column, replacement); err != nil {
 		return nil, fmt.Errorf("rename %s: %w", symbolName, err)
 	}
 	if err := pipeline.Format(ctx, workDir, formatPath); err != nil {

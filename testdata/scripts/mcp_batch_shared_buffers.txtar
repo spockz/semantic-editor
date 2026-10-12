@@ -1,7 +1,8 @@
-# A public MCP batch resolves inserted and renamed declarations in one working source revision, including after a scaffold publication barrier.
+# A public MCP batch resolves inserted and renamed declarations in one buffered working revision, including a scaffold receipt and final generated file.
 stdin input.json
 exec semedit mcp
-stdout '"status":\s*"persisted"'
+stdout '"tool":\s*"semantic_scaffold_file"'
+stdout '"tool":"semantic_scaffold_file","file":"generated.go","package":"sample","status":"ok","result":\{"edit_receipt":\{"changes":\[\{"path":"generated.go","revision":"[a-f0-9]{64}"\}\],"operation":"scaffold_file","schema_version":"semedit.edit-receipt/v1","status":"applied_working"\},"package":"sample"'
 stdout '"isError":false'
 ! stdout '"isError":true'
 cmp value.go .scratch/want/value.go

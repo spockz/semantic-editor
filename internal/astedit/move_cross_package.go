@@ -370,16 +370,10 @@ func moveModuleRoot(sourcePath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("resolve source path: %w", err)
 	}
-	for dir := filepath.Dir(abs); ; dir = filepath.Dir(dir) {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir, nil
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("inspect module root: %w", err)
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
+	if root, found, err := findGoModuleRoot(abs, "module root"); err != nil {
+		return "", err
+	} else if found {
+		return root, nil
 	}
 	return "", fmt.Errorf("cross-package move requires a Go module")
 }

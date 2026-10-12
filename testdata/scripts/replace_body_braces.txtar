@@ -1,0 +1,31 @@
+# Replace a function body from an enclosing block while preserving braces in literals and comments.
+stdin body.txt
+exec semedit replace-body --file api/run.go --symbol Run --body -
+cmp api/run.go want/api/run.go
+
+-- go.mod --
+module example.com/body
+go 1.23
+
+-- api/run.go --
+package api
+
+func Run() {
+	return
+}
+
+-- body.txt --
+{
+	value := "}"
+	// }
+	_ = value
+}
+
+-- want/api/run.go --
+package api
+
+func Run() {
+	value := "}"
+	// }
+	_ = value
+}

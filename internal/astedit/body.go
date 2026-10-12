@@ -127,7 +127,8 @@ func readBodyTarget(ctx context.Context, cleanPath, filePath, symbolQuery string
 
 func validateBodySnippet(bodySource string) (string, error) {
 	bodyTrimmed := strings.TrimSpace(bodySource)
-	synthetic := "package dummy\n\nfunc _() {\n" + bodyTrimmed + "\n}\n"
+	prefix := "package dummy\n\nfunc _() {\n"
+	synthetic := prefix + bodyTrimmed + "\n}\n"
 	synthFset := token.NewFileSet()
 	file, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments)
 	if err != nil {
@@ -150,7 +151,17 @@ func validateBodySnippet(bodySource string) (string, error) {
 	if !ok || function.Name.Name != "_" || function.Body == nil {
 		return "", fmt.Errorf("replacement body wrapper is not one complete function")
 	}
-
+	if len(function.Body.List) == 1 {
+		if block, ok := function.Body.List[0].(*ast.BlockStmt); ok {
+			start := synthFset.Position(block.Lbrace).Offset - len(prefix)
+			end := synthFset.Position(block.Rbrace).Offset - len(prefix)
+			if start >= 0 && end >= start && end < len(bodyTrimmed) &&
+				strings.TrimSpace(bodyTrimmed[:start]) == "" &&
+				strings.TrimSpace(bodyTrimmed[end+1:]) == "" {
+				bodyTrimmed = strings.TrimSpace(bodyTrimmed[start+1 : end])
+			}
+		}
+	}
 	return bodyTrimmed, nil
 }
 

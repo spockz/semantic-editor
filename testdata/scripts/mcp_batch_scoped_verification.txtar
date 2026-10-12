@@ -1,0 +1,46 @@
+# A Go batch verifies the edited package, transitive importers, and external-test importers.
+stdin input.json
+exec semedit mcp
+stdout '"status":"ok"'
+stdout '"package_pattern":"./consumer ./lib ./testconsumer"'
+cmp lib/lib.go want/lib/lib.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"lib/lib.go","symbol":"Value","body":"return 2"}}]}}}
+-- go.mod --
+module example.test/scope
+
+go 1.23
+-- lib/lib.go --
+package lib
+
+func Value() int { return 1 }
+-- consumer/consumer.go --
+package consumer
+
+import "example.test/scope/lib"
+
+func Value() int { return lib.Value() }
+-- testconsumer/anchor.go --
+package testconsumer
+-- testconsumer/anchor_test.go --
+package testconsumer_test
+
+import (
+	"testing"
+
+	"example.test/scope/lib"
+)
+
+func TestValue(t *testing.T) {
+	if lib.Value() != 1 {
+		t.Fatal("value")
+	}
+}
+-- want/lib/lib.go --
+package lib
+
+func Value() int {
+	return 2
+}

@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"semedit/internal/pipeline"
@@ -158,11 +159,15 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 		checks = append(checks, "special_directive_scan")
 		return nil, checks, "safe_delete refuses modules containing Go generation or link-name directives"
 	}
-	checks = append(checks, "special_directive_scan")
+	checks = append(checks, "special_directive_scan", "target_package_dynamic_import_scan")
+	if scan.targetPackageDynamicImportFound {
+		return nil, checks, "safe_delete refuses dynamic imports in the target package"
+	}
+	ignoreUnrelatedDynamicImports := target.kind == "function"
 	if scan.referenceFound {
 		return nil, checks, fmt.Sprintf("safe_delete found another Go identifier named %q in the module source set", target.name)
 	}
-	if refusal, err := verifySafeDeleteTarget(ctx, root, cleanPath, target); err != nil {
+	if refusal, err := verifySafeDeleteTargetWithImportPolicy(ctx, root, cleanPath, target, ignoreUnrelatedDynamicImports); err != nil {
 		return nil, checks, "cannot complete compiler reference preflight: " + err.Error()
 	} else if refusal != "" {
 		return nil, checks, refusal
@@ -205,9 +210,11 @@ func nearestModuleRoot(directory string) (string, error) {
 }
 
 type moduleSourceScan struct {
-	revisions      map[string][32]byte
-	referenceFound bool
-	directiveFound bool
+	revisions                       map[string][32]byte
+	referenceFound                  bool
+	directiveFound                  bool
+	targetPackageName               string
+	targetPackageDynamicImportFound bool
 }
 
 type moduleSourcePath struct {
@@ -217,6 +224,13 @@ type moduleSourcePath struct {
 
 func scanModuleSources(ctx context.Context, root, target string, targetOffset int, targetName string, targetContent []byte) (moduleSourceScan, error) {
 	scan := moduleSourceScan{revisions: make(map[string][32]byte)}
+	if targetContent != nil {
+		file, err := parser.ParseFile(token.NewFileSet(), target, targetContent, parser.ParseComments|parser.AllErrors)
+		if err != nil {
+			return moduleSourceScan{}, fmt.Errorf("parse selected package file: %w", err)
+		}
+		scan.targetPackageName = file.Name.Name
+	}
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
 		return moduleSourceScan{}, fmt.Errorf("open module root %s: %w", root, err)
@@ -342,6 +356,15 @@ func inspectModuleSource(data []byte, path, target string, targetOffset int, tar
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
 	collectModuleDirectives(file, scan)
+	if filepath.Dir(path) == filepath.Dir(target) && file.Name.Name == scan.targetPackageName {
+		hasDynamicImport, err := moduleSourceHasDynamicImport(file)
+		if err != nil {
+			return fmt.Errorf("inspect package imports in %s: %w", path, err)
+		}
+		if hasDynamicImport {
+			scan.targetPackageDynamicImportFound = true
+		}
+	}
 	collectModuleReferences(file, fset, path, target, targetOffset, targetName, scan)
 	return nil
 }
@@ -515,7 +538,13 @@ func isSelectedFunction(fn *ast.FuncDecl, kind, receiver, name string) bool {
 	if (kind != "function" && kind != "method") || fn.Name.Name != name || extractReceiverName(fn.Recv) != receiver {
 		return false
 	}
-	return (kind == "method") == (fn.Recv != nil)
+	if kind == "method" {
+		return fn.Recv != nil
+	}
+	if receiver == "" {
+		return fn.Recv == nil
+	}
+	return fn.Recv != nil
 }
 
 func matchesDeclarationSpec(tok token.Token, spec ast.Spec, kind, name string) bool {
@@ -706,4 +735,18 @@ func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte,
 		return fmt.Errorf("format file: %w", err)
 	}
 	return nil
+}
+
+func moduleSourceHasDynamicImport(file *ast.File) (bool, error) {
+	for _, spec := range file.Imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return false, fmt.Errorf("decode import path %s: %w", spec.Path.Value, err)
+		}
+		switch importPath {
+		case "reflect", "plugin", "unsafe":
+			return true, nil
+		}
+	}
+	return false, nil
 }

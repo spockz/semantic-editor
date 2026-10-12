@@ -82,7 +82,7 @@ func publishRegisteredEntry(registry *Registry, entry Entry) {
 
 func registeredParser[Req any, Res any](def Def[Req, Res]) func(map[string]any) (any, error) {
 	return func(raw map[string]any) (any, error) {
-		normalized, err := normalizedInput(def.NormalizeInput, raw)
+		normalized, err := normalizedInput(def.NormalizeInput, raw, def.Params)
 		if err != nil {
 			return nil, fmt.Errorf("normalize %q input: %w", def.Key, err)
 		}
@@ -104,7 +104,7 @@ func registeredInvoker[Req any, Res any](def Def[Req, Res]) func(CallContext, ma
 }
 
 func invokeRegistered[Req any, Res any](def Def[Req, Res], cc CallContext, raw map[string]any) (any, error) {
-	normalized, err := normalizedInput(def.NormalizeInput, raw)
+	normalized, err := normalizedInput(def.NormalizeInput, raw, def.Params)
 	if err != nil {
 		return nil, fmt.Errorf("normalize %q input: %w", def.Key, err)
 	}

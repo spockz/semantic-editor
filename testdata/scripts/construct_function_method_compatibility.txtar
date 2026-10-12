@@ -1,0 +1,40 @@
+# Function replacement accepts receiver-bearing source while preserving the selected method and receiver syntax.
+exec semedit replace-construct --file request.go --kind function --symbol Request.Validate --source 'func (r *Request) Validate() string { return "qualified" }'
+grep 'return "qualified"' request.go
+exec semedit replace-construct --file request.go --kind function --symbol Validate --source 'func (r *Request) Validate() string { return "unqualified" }'
+grep 'return "unqualified"' request.go
+grep 'func Validate\(\) string.*return "package"' request.go
+grep 'func \(Other\) Validate\(\) string.*return "other"' request.go
+cp request.go .scratch/expected.go
+! exec semedit replace-construct --file request.go --kind function --symbol Request.Validate --source 'func (r *Other) Validate() string { return "wrong" }'
+stderr 'receiver.*Request'
+cmp request.go .scratch/expected.go
+! exec semedit replace-construct --file request.go --kind function --symbol Request.Validate --source 'func (r Request) Validate() string { return "value" }'
+stderr 'receiver syntax'
+cmp request.go .scratch/expected.go
+! exec semedit replace-construct --file request.go --kind function --symbol Request.Validate --source 'func Validate() string { return "lost receiver" }'
+stderr 'receiver.*Request'
+cmp request.go .scratch/expected.go
+! exec semedit replace-construct --file request.go --kind method --symbol Validate --source 'func (r *Request) Validate() string { return "unqualified method" }'
+stderr 'receiver'
+cmp request.go .scratch/expected.go
+! exec semedit replace-construct --file request.go --kind method --symbol Request.Validate --source 'func Validate() string { return "lost receiver" }'
+stderr 'preserve.*method'
+cmp request.go .scratch/expected.go
+exec semedit replace-construct --file request.go --kind method --symbol '(*Request).Validate' --source 'func (r *Request) Validate() string { return "method" }'
+grep 'return "method"' request.go
+exec go test ./...
+
+-- go.mod --
+module example.com/methodcompat
+
+go 1.24
+-- request.go --
+package request
+
+type Request struct{}
+type Other struct{}
+
+func (*Request) Validate() string { return "request" }
+func (Other) Validate() string { return "other" }
+func Validate() string { return "package" }

@@ -48,6 +48,96 @@ func (b *Buffer) ChangedPaths() []string {
 	return paths
 }
 
+// DirtySourceBytes reports the retained original and working bytes for changed paths.
+func (b *Buffer) DirtySourceBytes() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	var total int64
+	for _, state := range b.files {
+		if !bytes.Equal(state.original, state.content) {
+			total += int64(len(state.original) + len(state.content))
+		}
+	}
+	return total
+}
+
+func (b *Buffer) forkLocked(original bool) *Buffer {
+	fork := &Buffer{
+		root:       b.root,
+		writeRoots: maps.Clone(b.writeRoots),
+		files:      make(map[string]*fileState, len(b.files)),
+		trees:      make(map[string]map[string]bool, len(b.trees)),
+		aliases:    maps.Clone(b.aliases),
+	}
+	for path, state := range b.files {
+		preimage := bytes.Clone(state.original)
+		content := bytes.Clone(state.content)
+		if original {
+			content = bytes.Clone(preimage)
+		}
+		fork.files[path] = &fileState{original: preimage, content: content, info: state.info, parents: maps.Clone(state.parents)}
+	}
+	for root, files := range b.trees {
+		fork.trees[root] = maps.Clone(files)
+	}
+	return fork
+}
+
+// Fork returns an independent retained working revision.
+func (b *Buffer) Fork() *Buffer {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.forkLocked(false)
+}
+
+// ForkOriginal returns an independent retained baseline with working bytes reset to preimages.
+func (b *Buffer) ForkOriginal() *Buffer {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.forkLocked(true)
+}
+
+// MergeReadSetFrom retains source inputs observed by candidate without accepting its edits.
+func (b *Buffer) MergeReadSetFrom(candidate *Buffer) error {
+	candidate.mu.Lock()
+	snapshot := candidate.forkLocked(false)
+	candidate.mu.Unlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.root != snapshot.root {
+		return errors.New("merge buffered read set: roots differ")
+	}
+	for alias, resolved := range snapshot.aliases {
+		if prior, ok := b.aliases[alias]; ok && prior != resolved {
+			return fmt.Errorf("%w: source alias %s changed", ErrConflict, alias)
+		}
+	}
+	for root, files := range snapshot.trees {
+		if prior, ok := b.trees[root]; ok && !maps.Equal(prior, files) {
+			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root)
+		}
+	}
+	for path, state := range snapshot.files {
+		if prior, ok := b.files[path]; ok && !bytes.Equal(prior.original, state.original) {
+			return fmt.Errorf("%w: source preimage differs for %s", ErrConflict, path)
+		}
+	}
+	for path, state := range snapshot.files {
+		if _, ok := b.files[path]; !ok {
+			b.files[path] = &fileState{original: bytes.Clone(state.original), content: bytes.Clone(state.original), info: state.info, parents: maps.Clone(state.parents)}
+		}
+	}
+	for root, files := range snapshot.trees {
+		b.trees[root] = maps.Clone(files)
+	}
+	maps.Copy(b.aliases, snapshot.aliases)
+	if b.writeRoots == nil {
+		b.writeRoots = make(map[string]bool)
+	}
+	maps.Copy(b.writeRoots, snapshot.writeRoots)
+	return nil
+}
+
 // AssertDisk rejects changed source sets and disk preimages used by semantic analysis.
 func (b *Buffer) AssertDisk() error {
 	b.mu.Lock()
@@ -55,59 +145,203 @@ func (b *Buffer) AssertDisk() error {
 	return b.assertDisk()
 }
 
-// Flush stages every output before publishing; a late failure reports the published count.
+// Flush stages every output before publishing and then discards the working revision.
 func (b *Buffer) Flush(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	defer func() { clear(b.files); clear(b.trees); clear(b.aliases) }()
-	if err := b.assertDisk(); err != nil {
-		return err
+	_, err := b.publishLocked(ctx)
+	return err
+}
+
+// PublishRetained publishes changed files while retaining the buffer for explicit lifecycle handling.
+func (b *Buffer) PublishRetained(ctx context.Context) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.publishLocked(ctx)
+}
+
+func (b *Buffer) publishLocked(ctx context.Context) (published int, err error) {
+	diskErr := b.assertDisk()
+	if diskErr != nil {
+		return 0, diskErr
 	}
-	paths := make([]string, 0)
+	paths := b.changedPathsLocked()
+	parentErr := b.assertNewFileParents()
+	if parentErr != nil {
+		return 0, parentErr
+	}
+	publication, stageErr := b.stagePublication(ctx, paths)
+	defer func() {
+		for _, file := range publication.files {
+			file.Discard()
+		}
+		if published == 0 {
+			cleanupErr := removeUnpublishedDirectories(publication.createdDirs)
+			if cleanupErr != nil {
+				err = errors.Join(err, cleanupErr)
+			}
+		}
+	}()
+	if stageErr != nil {
+		return 0, stageErr
+	}
+	return b.publishStaged(ctx, publication)
+}
+
+type stagedPublication struct {
+	paths       []string
+	files       []*atomicfile.StagedFile
+	createdDirs []string
+}
+
+func (b *Buffer) changedPathsLocked() []string {
+	paths := make([]string, 0, len(b.files))
 	for path, state := range b.files {
 		if !bytes.Equal(state.original, state.content) {
 			paths = append(paths, path)
 		}
 	}
 	slices.Sort(paths)
-	staged := make([]*atomicfile.StagedFile, 0, len(paths))
-	defer func() {
-		for _, file := range staged {
-			file.Discard()
-		}
-	}()
+	return paths
+}
+
+func (b *Buffer) stagePublication(ctx context.Context, paths []string) (stagedPublication, error) {
+	publication := stagedPublication{paths: paths, files: make([]*atomicfile.StagedFile, 0, len(paths))}
+	created := make(map[string]bool)
 	for _, path := range paths {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("stage buffered batch: %w", err)
+		if contextErr := ctx.Err(); contextErr != nil {
+			return publication, fmt.Errorf("stage retained buffer: %w", contextErr)
 		}
-		file, err := atomicfile.Stage(path, b.files[path].content)
-		if err != nil {
-			return fmt.Errorf("stage buffered batch: %w", err)
+		if parentErr := b.createPublicationParents(path, created, &publication.createdDirs); parentErr != nil {
+			return publication, parentErr
 		}
-		staged = append(staged, file)
+		if parentErr := b.assertNewFileParents(); parentErr != nil {
+			return publication, parentErr
+		}
+		file, stageErr := atomicfile.Stage(path, b.files[path].content)
+		if stageErr != nil {
+			return publication, fmt.Errorf("stage retained buffer: %w", stageErr)
+		}
+		publication.files = append(publication.files, file)
 	}
-	if err := b.assertDisk(); err != nil {
+	return publication, nil
+}
+
+func (b *Buffer) createPublicationParents(path string, created map[string]bool, createdDirs *[]string) error {
+	missingDirs, err := missingPublicationParents(path)
+	if err != nil {
 		return err
 	}
-	for index, file := range staged {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("batch published %d of %d files: %w", index, len(staged), err)
+	for _, directory := range slices.Backward(missingDirs) {
+		mkdirErr := os.Mkdir(directory, 0o750)
+		switch {
+		case mkdirErr == nil:
+			if ownedErr := b.recordOwnedNewFileParent(directory); ownedErr != nil {
+				return ownedErr
+			}
+			if !created[directory] {
+				*createdDirs = append(*createdDirs, directory)
+				created[directory] = true
+			}
+		case errors.Is(mkdirErr, os.ErrExist):
+			if err := regularOutputDirectory(directory); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("create retained output directory: %w", mkdirErr)
 		}
-		if err := b.assertDisk(); err != nil {
-			return fmt.Errorf("batch published %d of %d files: %w", index, len(staged), err)
-		}
-		if err := file.Publish(); err != nil {
-			return fmt.Errorf("batch published %d of %d files: %w", index, len(staged), err)
-		}
-		state := b.files[paths[index]]
-		state.original = bytes.Clone(state.content)
-		info, err := os.Stat(paths[index])
-		if err != nil {
-			return fmt.Errorf("batch published %d of %d files: stat published output: %w", index+1, len(staged), err)
-		}
-		state.info = info
 	}
 	return nil
+}
+
+func missingPublicationParents(path string) ([]string, error) {
+	missing := make([]string, 0)
+	for directory := filepath.Dir(path); ; directory = filepath.Dir(directory) {
+		statErr := regularOutputDirectory(directory)
+		if statErr == nil {
+			return missing, nil
+		}
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return nil, statErr
+		}
+		missing = append(missing, directory)
+		if parent := filepath.Dir(directory); parent == directory {
+			return nil, fmt.Errorf("find existing output parent for %s", path)
+		}
+	}
+}
+
+func regularOutputDirectory(directory string) error {
+	info, err := os.Stat(directory)
+	if err != nil {
+		return fmt.Errorf("inspect retained output directory: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("output parent %s is not a directory", directory)
+	}
+	return nil
+}
+
+func (b *Buffer) publishStaged(ctx context.Context, publication stagedPublication) (int, error) {
+	if diskErr := b.assertDisk(); diskErr != nil {
+		return 0, diskErr
+	}
+	for index, file := range publication.files {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), contextErr)
+		}
+		if parentErr := b.assertNewFileParents(); parentErr != nil {
+			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), parentErr)
+		}
+		if diskErr := b.assertDisk(); diskErr != nil {
+			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), diskErr)
+		}
+		if publishErr := file.Publish(); publishErr != nil {
+			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), publishErr)
+		}
+		if stateErr := b.recordPublishedFile(publication.paths[index]); stateErr != nil {
+			return index + 1, fmt.Errorf("retained buffer published %d of %d files: %w", index+1, len(publication.files), stateErr)
+		}
+	}
+	return len(publication.files), nil
+}
+
+func (b *Buffer) recordPublishedFile(path string) error {
+	state := b.files[path]
+	state.original = bytes.Clone(state.content)
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("stat output: %w", err)
+	}
+	state.info = info
+	for root, files := range b.trees {
+		rel, relErr := filepath.Rel(root, path)
+		if relErr == nil && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			files[path] = true
+		}
+	}
+	return nil
+}
+
+func removeUnpublishedDirectories(directories []string) error {
+	slices.SortFunc(directories, func(left, right string) int {
+		leftDepth := strings.Count(left, string(filepath.Separator))
+		rightDepth := strings.Count(right, string(filepath.Separator))
+		if leftDepth != rightDepth {
+			return rightDepth - leftDepth
+		}
+		return strings.Compare(left, right)
+	})
+	var cleanupErr error
+	for _, directory := range directories {
+		removeErr := os.Remove(directory)
+		if removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+			continue
+		}
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove unpublished output directory %s: %w", directory, removeErr))
+	}
+	return cleanupErr
 }
 
 // AuthorizeWrites binds the main module before semantic analysis and permits its outputs.
@@ -152,7 +386,7 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 		if err != nil {
 			return err
 		}
-		if canonical != absolute || !b.writable(canonical) || filepath.Ext(canonical) != ".go" || state.info == nil {
+		if canonical != absolute || !b.writable(canonical) || filepath.Ext(canonical) != ".go" || (state.info == nil && state.content == nil) {
 			return fmt.Errorf("invalid buffered output %q", change.Path)
 		}
 		if _, exists := pending[canonical]; exists {
@@ -299,9 +533,44 @@ func ReadFile(ctx context.Context, path string) ([]byte, error) {
 		return nil, err
 	}
 	if state.info == nil {
+		if state.content != nil {
+			return bytes.Clone(state.content), nil
+		}
 		return nil, &os.PathError{Op: "read", Path: path, Err: os.ErrNotExist}
 	}
 	return bytes.Clone(state.content), nil
+}
+
+// CanonicalPath resolves an existing source path or an accepted buffered new Go source without creating parent directories.
+func CanonicalPath(ctx context.Context, path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve buffered source path %q: %w", path, err)
+	}
+	canonical, canonicalErr := filepath.EvalSymlinks(absolute)
+	if canonicalErr == nil {
+		return canonical, nil
+	}
+	if !errors.Is(canonicalErr, os.ErrNotExist) {
+		return "", fmt.Errorf("canonicalize buffered source path %q: %w", path, canonicalErr)
+	}
+	buffer := FromContext(ctx)
+	if buffer == nil {
+		return "", fmt.Errorf("canonicalize buffered source path %q: %w", path, canonicalErr)
+	}
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+	canonical, state, err := buffer.load(absolute)
+	if err != nil {
+		return "", err
+	}
+	if state.info == nil && state.content != nil {
+		if parentErr := buffer.assertNewFileParents(); parentErr != nil {
+			return "", parentErr
+		}
+		return canonical, nil
+	}
+	return "", fmt.Errorf("canonicalize buffered source path %q: %w", path, canonicalErr)
 }
 
 // WriteFile buffers existing Go sources during a batch and publishes directly otherwise.
@@ -333,8 +602,15 @@ func WriteFileChecked(ctx context.Context, path string, data []byte, check func(
 	if err != nil {
 		return err
 	}
-	if !buffer.writable(canonical) || filepath.Ext(canonical) != ".go" || state.info == nil || canonical != originalPath {
-		return fmt.Errorf("buffered output %q must be an existing regular Go file beneath the workspace without symlink aliases", path)
+	if !buffer.writable(canonical) || filepath.Ext(canonical) != ".go" || canonical != originalPath {
+		return fmt.Errorf("buffered output %q must be a Go file beneath the workspace without symlink aliases", path)
+	}
+	if state.info == nil && state.content == nil {
+		parents, err := buffer.captureNewFileParents(canonical)
+		if err != nil {
+			return err
+		}
+		state.parents = parents
 	}
 	state.content = bytes.Clone(data)
 	return nil
@@ -350,7 +626,7 @@ func Overlay(ctx context.Context) map[string][]byte {
 	defer buffer.mu.Unlock()
 	overlay := make(map[string][]byte)
 	for path, state := range buffer.files {
-		if state.info != nil && filepath.Ext(path) == ".go" {
+		if (state.info != nil || state.content != nil) && filepath.Ext(path) == ".go" {
 			overlay[path] = bytes.Clone(state.content)
 		}
 	}
@@ -466,7 +742,13 @@ func (b *Buffer) load(path string) (string, *fileState, error) {
 			b.aliases[path] = canonical
 		}
 		path = canonical
-	} else if !errors.Is(canonicalErr, os.ErrNotExist) {
+	} else if errors.Is(canonicalErr, os.ErrNotExist) {
+		missingCanonical, missingErr := canonicalMissingPath(path)
+		if missingErr != nil {
+			return "", nil, missingErr
+		}
+		path = missingCanonical
+	} else {
 		return "", nil, fmt.Errorf("canonicalize buffered path: %w", canonicalErr)
 	}
 	if state, ok := b.files[path]; ok {
@@ -499,6 +781,106 @@ func (b *Buffer) load(path string) (string, *fileState, error) {
 	state := &fileState{original: bytes.Clone(data), content: data, info: info}
 	b.files[path] = state
 	return path, state, nil
+}
+
+func canonicalMissingPath(path string) (string, error) {
+	missing := make([]string, 0)
+	for current := path; ; current = filepath.Dir(current) {
+		canonical, err := filepath.EvalSymlinks(current)
+		if err == nil {
+			for _, m := range slices.Backward(missing) {
+				canonical = filepath.Join(canonical, m)
+			}
+			return canonical, nil
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("canonicalize missing buffered path: %w", err)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return "", fmt.Errorf("find existing parent of buffered path %s", path)
+		}
+		missing = append(missing, filepath.Base(current))
+	}
+}
+
+func (b *Buffer) captureNewFileParents(path string) (map[string]os.FileInfo, error) {
+	root := b.root
+	for writeRoot := range b.writeRoots {
+		relative, err := filepath.Rel(writeRoot, path)
+		if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && len(writeRoot) > len(root) {
+			root = writeRoot
+		}
+	}
+	parents := make(map[string]os.FileInfo)
+	for directory := filepath.Dir(path); ; directory = filepath.Dir(directory) {
+		info, err := os.Lstat(directory)
+		switch {
+		case err == nil:
+			if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+				return nil, fmt.Errorf("new buffered output parent %s is not a regular directory", directory)
+			}
+			parents[directory] = info
+		case errors.Is(err, os.ErrNotExist):
+			parents[directory] = nil
+		default:
+			return nil, fmt.Errorf("inspect new buffered output parent %s: %w", directory, err)
+		}
+		if directory == root {
+			return parents, nil
+		}
+		if parent := filepath.Dir(directory); parent == directory {
+			return nil, fmt.Errorf("new buffered output %s is outside an authorized root", path)
+		}
+	}
+}
+
+func (b *Buffer) assertNewFileParents() error {
+	for path, state := range b.files {
+		if state.info != nil || state.content == nil || state.parents == nil {
+			continue
+		}
+		for directory, expected := range state.parents {
+			actual, err := os.Lstat(directory)
+			if expected == nil {
+				if errors.Is(err, os.ErrNotExist) {
+					continue
+				}
+				if err != nil {
+					return fmt.Errorf("inspect new buffered output parent %s: %w", directory, err)
+				}
+				return fmt.Errorf("%w: new output parent %s appeared", ErrConflict, directory)
+			}
+			if err != nil {
+				return fmt.Errorf("%w: stat new output parent %s: %w", ErrConflict, directory, err)
+			}
+			if !actual.IsDir() || actual.Mode()&os.ModeSymlink != 0 || !os.SameFile(expected, actual) || actual.Mode() != expected.Mode() {
+				return fmt.Errorf("%w: new output parent %s changed", ErrConflict, directory)
+			}
+		}
+		if filepath.Ext(path) != ".go" {
+			return fmt.Errorf("new buffered output %s is not Go source", path)
+		}
+	}
+	return nil
+}
+
+func (b *Buffer) recordOwnedNewFileParent(directory string) error {
+	info, err := os.Lstat(directory)
+	if err != nil {
+		return fmt.Errorf("inspect created buffered output parent %s: %w", directory, err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("created buffered output parent %s is not a regular directory", directory)
+	}
+	for _, state := range b.files {
+		if state.parents != nil {
+			if expected, ok := state.parents[directory]; ok && expected == nil {
+				state.parents[directory] = info
+			}
+		}
+	}
+	return nil
 }
 
 func (b *Buffer) assertDisk() error {
@@ -561,6 +943,7 @@ type contextKey struct{}
 type fileState struct {
 	original, content []byte
 	info              os.FileInfo
+	parents           map[string]os.FileInfo
 }
 
 func sourceSet(root string) (map[string]bool, error) {

@@ -17,7 +17,12 @@ import (
 )
 
 func fixtureGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
-	return gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
+	env, err := gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare fixture Go environment: %w", err)
+	}
+	// Fixture builds measure code correctness, not Git revision stamping.
+	return replaceEnvironment(env, map[string]string{"GOFLAGS": ("-mod=readonly -buildvcs=false")}), nil
 }
 
 func runSemeditVerifyWarmup(ctx context.Context, workDir, file, binaryPath string) (time.Duration, error) {

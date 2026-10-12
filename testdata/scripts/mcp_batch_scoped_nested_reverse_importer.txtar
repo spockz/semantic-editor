@@ -1,0 +1,37 @@
+# Editing a nested module verifies that module and its reverse importer without verifying the parent module.
+stdin input.json
+exec semedit mcp
+stdout '"status":"ok"'
+stdout '"module_root":"tools/goctl"'
+stdout '"package_pattern":"./consumer ./lib"'
+cmp tools/goctl/lib/lib.go want/tools/goctl/lib/lib.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"tools/goctl/lib/lib.go","symbol":"Value","body":"return 2"}}]}}}
+-- go.mod --
+module example.test/main
+
+go 1.23
+-- main.go --
+package main
+-- tools/goctl/go.mod --
+module example.test/goctl
+
+go 1.23
+-- tools/goctl/lib/lib.go --
+package lib
+
+func Value() int { return 1 }
+-- tools/goctl/consumer/consumer.go --
+package consumer
+
+import "example.test/goctl/lib"
+
+func Value() int { return lib.Value() }
+-- want/tools/goctl/lib/lib.go --
+package lib
+
+func Value() int {
+	return 2
+}

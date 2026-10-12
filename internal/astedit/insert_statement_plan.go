@@ -177,7 +177,7 @@ func selectDirectStatementAnchor(source []byte, fset *token.FileSet, file *ast.F
 func matchingDirectStatementCandidates(candidates []constructCandidate, intent InsertStatementIntent) []constructCandidate {
 	matches := make([]constructCandidate, 0, 1)
 	for _, candidate := range candidates {
-		if isDirectOwnerStatementCandidate(candidate) && candidate.key == normalizeConstructSelector(intent.Discriminator) {
+		if candidate.class == "statement" && candidate.key == normalizeConstructSelector(intent.Discriminator) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -201,7 +201,11 @@ func buildInsertStatementPlan(source []byte, fset *token.FileSet, owner *ast.Fun
 		updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.Source)+newline))
 		return newSourcePlan(source, updated, PlanSelection{Kind: "statement", Owner: intent.Function}, ProofCompleteSourceSet), nil
 	}
-	if err := requireDedicatedStatementLine(source, fset, owner.Body, selection.statement); err != nil {
+	block := statementContainingBlock(owner.Body, selection.statement)
+	if block == nil {
+		return SourcePlan{}, fmt.Errorf("selected statement does not belong to a block in %q", intent.Function)
+	}
+	if err := requireDedicatedStatementLine(source, fset, block, selection.statement); err != nil {
 		return SourcePlan{}, err
 	}
 	var offset int
@@ -307,4 +311,20 @@ func parseSingleDirectStatement(source string) (int, error) {
 	}
 	endOffset := fset.Position(fn.Body.List[0].End()).Offset - len(wrapperPrefix)
 	return endOffset, nil
+}
+
+func statementContainingBlock(root *ast.BlockStmt, target ast.Stmt) *ast.BlockStmt {
+	var selected *ast.BlockStmt
+	ast.Inspect(root, func(node ast.Node) bool {
+		block, ok := node.(*ast.BlockStmt)
+		if !ok {
+			return true
+		}
+		if slices.Contains(block.List, target) {
+			selected = block
+			return false
+		}
+		return selected == nil
+	})
+	return selected
 }

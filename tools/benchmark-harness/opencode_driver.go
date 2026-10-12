@@ -264,6 +264,7 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		return nil, fmt.Errorf("OpenCode target %q must use provider/model form", model)
 	}
 	var providerConfig map[string]any
+	compactionReserve := 0
 	switch provider {
 	case "openrouter":
 		providerConfig = map[string]any{"models": map[string]any{providerModel: map[string]any{"name": providerModel}}}
@@ -279,16 +280,16 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		if limits.Context <= 0 || limits.Output <= 0 || limits.Output >= limits.Context {
 			return nil, fmt.Errorf("AMD Beast model limits are invalid: context=%d output=%d", limits.Context, limits.Output)
 		}
+		// Preserve output capacity if a small context requires compaction before 75%.
+		compactionReserve = max(limits.Context-limits.Context/4*3-limits.Context%4*3/4, limits.Output)
 		providerConfig = map[string]any{
 			"name": "AMD Beast", "npm": "@ai-sdk/openai-compatible",
 			"options": map[string]any{"baseURL": baseURL},
 			"models": map[string]any{providerModel: map[string]any{
 				"name": providerModel,
 				"id":   providerModel,
-				"limit": map[string]int{
-					"context": limits.Context,
-					"output":  limits.Output,
-				},
+				// OpenCode 1.18.30 ignores compaction.reserved unless limit.input is set.
+				"limit": map[string]int{"context": limits.Context, "input": limits.Context, "output": limits.Output},
 			}},
 		}
 	default:
@@ -299,6 +300,9 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		"tools":      map[string]bool{"task": false},
 		"permission": map[string]any{"external_directory": "deny"},
 		"provider":   map[string]any{provider: providerConfig},
+	}
+	if compactionReserve > 0 {
+		config["compaction"] = map[string]any{"auto": true, "reserved": compactionReserve}
 	}
 	if provider == "openrouter" {
 		config["model"] = model
@@ -323,6 +327,7 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		"codemode":    false,
 	}}}
 	return config, nil
+
 }
 
 func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {

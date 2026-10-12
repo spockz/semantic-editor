@@ -1,0 +1,18 @@
+# A staged scaffold remains an in-memory overlay and abort leaves no source directory behind.
+stdin input.json
+exec semedit mcp
+stdout '"stage_receipt"'
+stdout '"step_count":1'
+stdout '"status":"aborted"'
+! exists generated
+! exists generated/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"generated/model.go","package":"stage"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_stage_abort","arguments":{}}}
+-- go.mod --
+module example.com/stagescaffold
+
+go 1.24

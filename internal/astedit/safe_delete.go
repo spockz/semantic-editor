@@ -83,66 +83,6 @@ func classifySafeDeleteValueGroup(group *ast.GenDecl, value *ast.ValueSpec) safe
 	return safeDeleteValueClassification{}
 }
 
-func verifySafeDeleteTarget(ctx context.Context, root, targetPath string, target safeDeleteTarget) (string, error) {
-	pkgs, err := loadMovePackages(ctx, root, nil)
-	if err != nil {
-		return "", err
-	}
-	if problem := safeDeletePackageProblem(pkgs, root); problem != "" {
-		return "cannot prove safe deletion across active Go packages: " + problem, nil
-	}
-	definition := safeDeleteDefinition(pkgs, root, targetPath, target)
-	if definition.initializerRefusal != "" {
-		return definition.initializerRefusal, nil
-	}
-	if definition.object == nil {
-		return "target is not present in an active, successfully type-checked package", nil
-	}
-	if target.kind == "function" {
-		if _, ok := definition.object.(*types.Func); !ok {
-			return "target does not resolve to a free function", nil
-		}
-	}
-	if safeDeleteHasReference(pkgs, root, targetPath, target, definition.object, definition.packagePath) {
-		return fmt.Sprintf("safe_delete found a compiler-resolved reference to %q", target.name), nil
-	}
-	if problem := safeDeleteImportProblem(pkgs, targetPath, target); problem != "" {
-		return problem, nil
-	}
-	return "", nil
-}
-
-func safeDeletePackageProblem(pkgs []*packages.Package, root string) string {
-	problem := ""
-	packages.Visit(pkgs, func(pkg *packages.Package) bool {
-		if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
-			return true
-		}
-		for _, item := range pkg.Errors {
-			if problem == "" {
-				problem = item.Error()
-			}
-		}
-		moduleSource := false
-		for _, file := range pkg.GoFiles {
-			if safeDeleteModuleSource(root, file) {
-				moduleSource = true
-				break
-			}
-		}
-		if !moduleSource {
-			return true
-		}
-		for _, imported := range pkg.Imports {
-			if imported.PkgPath == "reflect" || imported.PkgPath == "plugin" || imported.PkgPath == "unsafe" {
-				problem = "module imports reflect, plugin, or unsafe, so dynamic references cannot be excluded"
-			}
-		}
-		return true
-	}, nil)
-	return problem
-}
-
 type safeDeleteTargetDefinition struct {
 	object             types.Object
 	packagePath        string
@@ -423,4 +363,66 @@ func safeDeleteModuleSource(root, path string) bool {
 		}
 	}
 	return true
+}
+
+func safeDeletePackageProblemWithImportPolicy(pkgs []*packages.Package, root string, ignoreModuleDynamicImports bool) string {
+	problem := ""
+	packages.Visit(pkgs, func(pkg *packages.Package) bool {
+		if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
+			return true
+		}
+		for _, item := range pkg.Errors {
+			if problem == "" {
+				problem = item.Error()
+			}
+		}
+		moduleSource := false
+		for _, file := range pkg.GoFiles {
+			if safeDeleteModuleSource(root, file) {
+				moduleSource = true
+				break
+			}
+		}
+		if !moduleSource {
+			return true
+		}
+		if !ignoreModuleDynamicImports {
+			for _, imported := range pkg.Imports {
+				if imported.PkgPath == "reflect" || imported.PkgPath == "plugin" || imported.PkgPath == "unsafe" {
+					problem = "module imports reflect, plugin, or unsafe, so dynamic references cannot be excluded"
+				}
+			}
+		}
+		return true
+	}, nil)
+	return problem
+}
+
+func verifySafeDeleteTargetWithImportPolicy(ctx context.Context, root, targetPath string, target safeDeleteTarget, ignoreModuleDynamicImports bool) (string, error) {
+	pkgs, err := loadMovePackages(ctx, root, nil)
+	if err != nil {
+		return "", err
+	}
+	if problem := safeDeletePackageProblemWithImportPolicy(pkgs, root, ignoreModuleDynamicImports); problem != "" {
+		return "cannot prove safe deletion across active Go packages: " + problem, nil
+	}
+	definition := safeDeleteDefinition(pkgs, root, targetPath, target)
+	if definition.initializerRefusal != "" {
+		return definition.initializerRefusal, nil
+	}
+	if definition.object == nil {
+		return "target is not present in an active, successfully type-checked package", nil
+	}
+	if target.kind == "function" {
+		if _, ok := definition.object.(*types.Func); !ok {
+			return "target does not resolve to a free function", nil
+		}
+	}
+	if safeDeleteHasReference(pkgs, root, targetPath, target, definition.object, definition.packagePath) {
+		return fmt.Sprintf("safe_delete found a compiler-resolved reference to %q", target.name), nil
+	}
+	if problem := safeDeleteImportProblem(pkgs, targetPath, target); problem != "" {
+		return problem, nil
+	}
+	return "", nil
 }

@@ -1,0 +1,22 @@
+# Staging commands require one retained MCP session and refuse standalone CLI calls without changing source.
+mkdir .scratch
+cp model.go .scratch/before.go
+! exec semedit stage
+stderr 'staging requires a retained MCP session'
+! exec semedit stage-drop --step-id step_example
+stderr 'staging requires a retained MCP session'
+! exec semedit stage-abort
+stderr 'staging requires a retained MCP session'
+! exec semedit commit
+stderr 'staging requires a retained MCP session'
+cmp model.go .scratch/before.go
+
+-- go.mod --
+module example.test/stagecli
+
+go 1.24
+
+-- model.go --
+package sample
+
+func Value() int { return 1 }

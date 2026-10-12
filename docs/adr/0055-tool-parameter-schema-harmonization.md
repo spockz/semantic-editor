@@ -255,3 +255,16 @@ error projections.
   require txtar fixtures to be updated in the same change. Essential fields
   appear in both representations; shared projection and bounded presentation
   must prevent divergence and unnecessary bulk duplication.
+
+## Restored input and continuation integration: 2026-10-12
+
+Ingress aliases fold into canonical fields before custom normalization, validation,
+and parsing. Conflicting supplied values remain errors; explicit null remains
+distinct from omission. Advertised schemas and emitted selectors remain canonical.
+All ordinary operations use declared typed output contracts.
+
+The optional native `stage_receipt.step_id` selector is a typed companion outside
+`result`, indexed separately and consumed by stage drop. Remaining step IDs are
+available from `semantic_stage_drop.result.steps[].step_id`. Buffered working results
+omit disk-liveness selectors. Construct inspection supplies same-record structural
+paths and selection revisions without restoring the removed metadata envelope.

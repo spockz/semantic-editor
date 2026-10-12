@@ -3,14 +3,13 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 )
-
-import "archive/zip"
 
 func TestPreparedFixtureBuildsOfflineWithoutManifestChanges(t *testing.T) {
 	root := t.TempDir()
@@ -63,6 +62,63 @@ func TestPreparedFixtureBuildsOfflineWithoutManifestChanges(t *testing.T) {
 	offline.Env = replaceEnvironment(env, map[string]string{"GOPROXY": "off", "GOSUMDB": "off"})
 	if output, offlineErr := offline.CombinedOutput(); offlineErr != nil {
 		t.Fatalf("offline fixture test: %v: %s", offlineErr, output)
+	}
+}
+
+func TestFixtureBuildSkipsUnavailableGitStamping(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "fixture")
+	binDir := filepath.Join(root, "bin")
+	for _, dir := range []string{workDir, binDir, filepath.Join(workDir, ".git")} {
+		if err := os.Mkdir(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	marker := filepath.Join(root, "git-called")
+	for name, content := range map[string]string{
+		"go.mod":  "module example.com/fixture\ngo 1.21\n",
+		"main.go": "package main\nfunc main() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(workDir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gitPath := filepath.Join(binDir, "git")
+	if err := os.WriteFile(gitPath, []byte("#!/bin/sh\nprintf called > \"$SEMEDIT_TEST_GIT_MARKER\"\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_TEST_GIT_MARKER", marker)
+	env, err := fixtureGoEnvironment(t.Context(), workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanFixtureModuleCache(t, workDir, env) })
+	build := func(flags []string) ([]byte, error) {
+		cmd := exec.CommandContext(t.Context(), "go", "build", "./...")
+		cmd.Dir, cmd.Env = workDir, flags
+		return cmd.CombinedOutput()
+	}
+	if output, err := build(replaceEnvironment(env, map[string]string{"GOFLAGS": ""})); err == nil {
+		t.Fatalf("negative control unexpectedly built with unavailable Git: %s", output)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("negative control did not invoke Git: %v", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := build(env); err != nil {
+		t.Fatalf("fixture build depended on Git: %v: %s", err, output)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("fixture build invoked Git: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package main\nfunc main() { undefined() }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := build(env); err == nil {
+		t.Fatalf("fixture build ignored a compilation error: %s", output)
 	}
 }
 

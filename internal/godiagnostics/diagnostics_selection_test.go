@@ -2,6 +2,7 @@
 package godiagnostics
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +35,7 @@ func TestAssembleDiagnosticsScopeCanonicalizesSymlinkedGoFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scope, err := assembleDiagnosticsScope(root, []*packages.Package{{
+	scope, err := assembleDiagnosticsScope(context.Background(), root, []*packages.Package{{
 		Module:  &packages.Module{Dir: root},
 		GoFiles: []string{filepath.Join(aliasRoot, "source.go")},
 	}})

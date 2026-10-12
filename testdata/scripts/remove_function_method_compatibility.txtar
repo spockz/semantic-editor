@@ -1,0 +1,17 @@
+# A qualified method selector remains valid when callers use the function construct kind.
+exec semedit remove-construct --file request.go --kind function --symbol Request.Validate
+! grep 'func \(Request\) Validate' request.go
+grep 'func Validate\(\) string' request.go
+exec go test ./...
+
+-- go.mod --
+module example.com/remove-method-compatibility
+
+go 1.24
+-- request.go --
+package request
+
+type Request struct{}
+
+func (Request) Validate() string { return "method" }
+func Validate() string          { return "function" }

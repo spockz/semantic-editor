@@ -594,7 +594,7 @@ func TestFixtureGoEnvironmentIsWorkspaceLocal(t *testing.T) {
 		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
 		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
 		"GOPATH":     filepath.Join(root, ".scratch", "go"),
-		"GOFLAGS":    "",
+		"GOFLAGS":    ("-mod=readonly -buildvcs=false"),
 		"GOWORK":     "off",
 	}
 	for key, path := range want {
@@ -1335,7 +1335,7 @@ test "$GOCACHE" = "$PWD/.scratch/go/build"
 test "$GOMODCACHE" = "$PWD/.scratch/go/mod"
 test "$GOTMPDIR" = "$PWD/.scratch/go/tmp"
 test "$GOPATH" = "$PWD/.scratch/go"
-test "$GOFLAGS" = ""
+test "$GOFLAGS" = "-mod=readonly -buildvcs=false"
 test "$GOWORK" = "off"
 printf ok > "$SEMEDIT_TEST_CAPTURE"
 `

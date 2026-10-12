@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"semedit/internal/symbol"
@@ -29,6 +30,12 @@ func TestParseIdentifier(t *testing.T) {
 		{"api.(*Server).Start", "Server", "Start", false},
 		{"", "", "", true},
 		{"a.b.c.d", "", "", true},
+		{"(*Server).", "", "", true},
+		{".Start", "", "", true},
+		{"pkg..Start", "", "", true},
+		{"(*).Start", "", "", true},
+		{"pkg.(*).Start", "", "", true},
+		{"pkg.Server. ", "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -115,14 +122,17 @@ func (s *Server) Start() {}
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	if res.Line != 5 {
-		t.Errorf("expected Line 5, got %d", res.Line)
+	if res.Definition == nil {
+		t.Fatal("Resolve returned no definition")
 	}
-	if res.Column != 18 {
-		t.Errorf("expected Column 18, got %d", res.Column)
+	if res.Definition.Line != 5 {
+		t.Errorf("expected Line 5, got %d", res.Definition.Line)
 	}
-	if res.Kind != "method" {
-		t.Errorf("expected Kind 'method', got %q", res.Kind)
+	if res.Definition.Column != 18 {
+		t.Errorf("expected Column 18, got %d", res.Definition.Column)
+	}
+	if res.Definition.Kind != "method" {
+		t.Errorf("expected Kind 'method', got %q", res.Definition.Kind)
 	}
 }
 
@@ -147,14 +157,17 @@ type Config struct {
 		t.Fatalf("Resolve failed: %v", err)
 	}
 
-	if res.Symbol != "Config.Port" {
-		t.Errorf("expected Symbol Config.Port, got %q", res.Symbol)
+	if res.Definition == nil {
+		t.Fatal("Resolve returned no definition")
 	}
-	if res.Line != 5 || res.Column != 2 {
-		t.Errorf("expected Port at 5:2, got %d:%d", res.Line, res.Column)
+	if res.Definition.BuildQualifiedName() != "Config.Port" {
+		t.Errorf("expected Symbol Config.Port, got %q", res.Definition.BuildQualifiedName())
 	}
-	if res.Kind != "field" {
-		t.Errorf("expected Kind field, got %q", res.Kind)
+	if res.Definition.Line != 5 || res.Definition.Column != 2 {
+		t.Errorf("expected Port at 5:2, got %d:%d", res.Definition.Line, res.Definition.Column)
+	}
+	if res.Definition.Kind != "field" {
+		t.Errorf("expected Kind field, got %q", res.Definition.Kind)
 	}
 }
 
@@ -221,10 +234,7 @@ func TestResolveInterfaceMethods(t *testing.T) {
 	if result.Definition.Receiver != "Outer" || result.Definition.Kind != "method" || result.Definition.Name != "Write" {
 		t.Fatalf("definition = %#v, want Outer.Write method", result.Definition)
 	}
-	if result.Symbol != "Outer.Write" || result.File != result.Definition.File || result.Line != result.Definition.Line || result.Kind != result.Definition.Kind || result.Receiver != result.Definition.Receiver {
-		t.Fatalf("legacy fields do not mirror definition: %#v", result)
-	}
-	if result.Ambiguous || len(result.Candidates) != 0 {
+	if result.IsAmbiguous() || len(result.Candidates) != 0 {
 		t.Fatalf("diamond embedding produced ambiguity: %#v", result)
 	}
 
@@ -259,7 +269,7 @@ func TestLookupDefinitionAndUsages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve qualified field: %v", err)
 	}
-	if qualified.Definition == nil || qualified.Definition.Kind != "field" || qualified.Ambiguous {
+	if qualified.Definition == nil || qualified.Definition.Kind != "field" || qualified.IsAmbiguous() {
 		t.Fatalf("qualified result = %#v, want field definition", qualified)
 	}
 	if len(qualified.Usages) != 0 {
@@ -270,14 +280,11 @@ func TestLookupDefinitionAndUsages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve unqualified declaration: %v", err)
 	}
-	if unqualified.Definition == nil || unqualified.Definition.Kind != "function" || unqualified.Ambiguous {
+	if unqualified.Definition == nil || unqualified.Definition.Kind != "function" || unqualified.IsAmbiguous() {
 		t.Fatalf("unqualified result = %#v, want function definition", unqualified)
 	}
 	if len(unqualified.Usages) != 1 || unqualified.Usages[0].Kind != "parameter" {
 		t.Fatalf("unqualified usages = %#v, want the constructor parameter", unqualified.Usages)
-	}
-	if unqualified.Symbol != unqualified.Definition.BuildQualifiedName() || unqualified.File != unqualified.Definition.File || unqualified.Line != unqualified.Definition.Line {
-		t.Fatalf("legacy fields do not mirror canonical definition: %#v", unqualified)
 	}
 }
 
@@ -292,8 +299,8 @@ func TestResolveLocalOnlyLookupPromotesDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve local binding: %v", err)
 	}
-	if result.Definition == nil || result.Definition.Kind != "parameter" || result.Symbol != "value" || result.File != "local.go" {
-		t.Fatalf("local result = %#v, want promoted parameter with legacy coordinates", result)
+	if result.Definition == nil || result.Definition.Kind != "parameter" {
+		t.Fatalf("local result = %#v, want promoted parameter", result)
 	}
 	if len(result.Usages) != 1 || result.Usages[0] != result.Definition {
 		t.Fatalf("local usages = %#v, want promoted binding", result.Usages)
@@ -336,7 +343,7 @@ func TestResolveInterfaceMethodAmbiguity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve ambiguous interface method: %v", err)
 	}
-	if !result.Ambiguous || len(result.Candidates) != 2 {
+	if !result.IsAmbiguous() || len(result.Candidates) != 2 {
 		t.Fatalf("ambiguous result = %#v, want two physical method declarations", result)
 	}
 	for _, candidate := range result.Candidates {
@@ -464,7 +471,7 @@ func TestResolveDefinedInterfaceIndirection(t *testing.T) {
 		if result.Definition == nil || result.Definition.Name != "Write" || result.Definition.Receiver != query.receiver || result.Definition.Line != 2 {
 			t.Fatalf("Resolve %s = %#v, want Write at line 2 with receiver %s", query.name, result.Definition, query.receiver)
 		}
-		if result.Ambiguous || len(result.Candidates) != 0 {
+		if result.IsAmbiguous() || len(result.Candidates) != 0 {
 			t.Fatalf("Resolve %s = %#v, want one definition", query.name, result)
 		}
 	}
@@ -520,5 +527,73 @@ func TestResolveSnapshotCapturesSelectedAndInheritedSources(t *testing.T) {
 	}
 	if got := string(snapshot.Files[filepath.Clean(inheritedKey)]); got != string(inheritedSource) {
 		t.Errorf("inherited snapshot changed after disk mutation: %q", got)
+	}
+}
+
+func TestResolveDirectoryScope(t *testing.T) {
+	root := t.TempDir()
+	for name, source := range map[string]string{
+		"pkg/a.go":        "package pkg\n\nfunc Start() {}\n",
+		"pkg/b.go":        "package pkg\n\nfunc Stop() {}\n",
+		"pkg/nested/c.go": "package nested\n\nfunc Start() {}\n",
+		"pkg/pkg_test.go": "package pkg\n\nfunc Start() {}\n",
+	} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create fixture directory: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+	}
+	result, err := symbol.Resolve(root, "pkg", "Start")
+	if err != nil {
+		t.Fatalf("Resolve directory: %v", err)
+	}
+	if result.Definition == nil || result.Definition.File != "pkg/a.go" || result.IsAmbiguous() {
+		t.Fatalf("Resolve directory = %#v, want pkg/a.go declaration", result)
+	}
+	for name, source := range map[string]string{
+		"pkg/c.go": "package pkg\n\ntype helper struct{}\n",
+		"pkg/d.go": "package pkg\n\ntype helper struct{}\n",
+	} {
+		err = os.WriteFile(filepath.Join(root, name), []byte(source), 0o600)
+		if err != nil {
+			t.Fatalf("write ambiguous fixture: %v", err)
+		}
+	}
+	result, err = symbol.Resolve(root, "pkg", "helper")
+	if err != nil {
+		t.Fatalf("Resolve ambiguous directory: %v", err)
+	}
+	if !result.IsAmbiguous() || len(result.Candidates) != 2 {
+		t.Fatalf("ambiguous directory result = %#v, want two candidates", result)
+	}
+	empty := filepath.Join(root, "empty")
+	if err := os.Mkdir(empty, 0o700); err != nil {
+		t.Fatalf("create empty directory: %v", err)
+	}
+	if _, err := symbol.Resolve(root, "empty", "Missing"); err == nil || !strings.Contains(err.Error(), "no Go source files") {
+		t.Fatalf("Resolve empty directory error = %v, want clear no-Go-files error", err)
+	}
+}
+
+func TestResolveDirectoryRejectsGoSymlinkOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	packageDir := filepath.Join(root, "pkg")
+	if err := os.Mkdir(packageDir, 0o700); err != nil {
+		t.Fatalf("create package directory: %v", err)
+	}
+	outsideRoot := t.TempDir()
+	outside := filepath.Join(outsideRoot, "outside.go")
+	if err := os.WriteFile(outside, []byte("package pkg\n\nfunc External() {}\n"), 0o600); err != nil {
+		t.Fatalf("write external source: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(packageDir, "external.go")); err != nil {
+		t.Skipf("create external source symlink: %v", err)
+	}
+	_, err := symbol.Resolve(root, "pkg", "External")
+	if err == nil || !strings.Contains(err.Error(), "resolves outside the workspace") {
+		t.Fatalf("Resolve directory symlink error = %v, want outside-workspace refusal", err)
 	}
 }

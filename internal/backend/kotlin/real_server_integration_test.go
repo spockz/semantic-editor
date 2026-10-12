@@ -8,7 +8,6 @@ import (
 	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
 	"semedit/internal/pipeline"
-	"strings"
 	"testing"
 )
 
@@ -68,9 +67,9 @@ func TestRealKotlinLanguageServerIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("real Kotlin lookup: %v", err)
 	}
-	if result == nil || result.Symbol != "Widget.launch" || result.Kind != "function" ||
-		result.Offset != strings.Index(string(source), "launch") ||
-		result.Location.URI != pathutil.FileURI(file) {
+	if result == nil || result.Definition == nil || result.Definition.QualifiedName != "Widget.launch" || result.Definition.Kind != "function" ||
+		result.Definition.Location.Range.Start.Line != 1 || result.Definition.Location.Range.Start.Character != 19 ||
+		result.Definition.Location.URI != pathutil.FileURI(file) {
 		t.Fatalf("real Kotlin lookup result: %+v", result)
 	}
 	diagnostics, err := adapter.Verify(context.Background(), neutralbackend.VerifyRequest{Project: project})

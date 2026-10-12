@@ -328,6 +328,11 @@ func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
 
 // CheckDiagnosticDetails returns root-wide typed gopls diagnostics under the selected project root.
 func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostics.Diagnostic, error) {
+	return CheckDiagnosticDetailsForPatterns(ctx, workDir)
+}
+
+// CheckDiagnosticDetailsForPatterns returns diagnostics for explicit Go package patterns; no patterns preserves workspace-wide behavior.
+func CheckDiagnosticDetailsForPatterns(ctx context.Context, workDir string, patterns ...string) ([]godiagnostics.Diagnostic, error) {
 	finish := telemetry.Start(ctx, telemetry.PhaseVerificationDiagnostics)
 	defer finish()
 
@@ -346,7 +351,7 @@ func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostic
 	if err != nil {
 		return nil, fmt.Errorf("prepare gopls diagnostics environment: %w", err)
 	}
-	diagnostics, err := godiagnostics.CheckDetailedWithContext(ctx, effectiveDir, goplsPath, environment)
+	diagnostics, err := godiagnostics.CheckDetailedWithPatternsWithContext(ctx, effectiveDir, goplsPath, environment, patterns)
 	if err != nil {
 		return nil, fmt.Errorf("check Go diagnostics with gopls: %w", err)
 	}
@@ -355,6 +360,11 @@ func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostic
 
 // GoFiles selects source files using shared formatting and verification exclusions. Explicit file symlinks are honored; recursive discovery skips all symlinks.
 func GoFiles(workDir string, paths ...string) ([]string, error) {
+	return GoFilesContext(context.Background(), workDir, paths...)
+}
+
+// GoFilesContext selects source files from the active disk or buffered source view.
+func GoFilesContext(ctx context.Context, workDir string, paths ...string) ([]string, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
@@ -374,7 +384,7 @@ func GoFiles(workDir string, paths ...string) ([]string, error) {
 
 	selected := make(map[string]string)
 	for _, source := range paths {
-		if err := collectGoPath(base, source, cacheRoots, selected); err != nil {
+		if err := collectGoPath(ctx, base, source, cacheRoots, selected); err != nil {
 			return nil, err
 		}
 	}
@@ -387,7 +397,7 @@ func GoFiles(workDir string, paths ...string) ([]string, error) {
 	return files, nil
 }
 
-func collectGoPath(base, source string, cacheRoots []string, selected map[string]string) error {
+func collectGoPath(ctx context.Context, base, source string, cacheRoots []string, selected map[string]string) error {
 	if source == "" {
 		return fmt.Errorf("empty Go source path")
 	}
@@ -402,6 +412,15 @@ func collectGoPath(base, source string, cacheRoots []string, selected map[string
 	}
 	info, err := os.Lstat(target)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			canonical, canonicalErr := sourcebuf.CanonicalPath(ctx, target)
+			if canonicalErr == nil {
+				if filepath.Ext(canonical) == ".go" {
+					addGoFile(selected, canonical, source)
+				}
+				return nil
+			}
+		}
 		return fmt.Errorf("stat Go source path %q: %w", source, err)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
@@ -466,7 +485,7 @@ func OrganizeImportsWithOptionsReport(ctx context.Context, workDir string, opts 
 	finishTelemetry := telemetry.Start(ctx, telemetry.PhaseFormattingImports)
 	defer finishTelemetry()
 
-	goFiles, err := selectImportFiles(workDir, paths)
+	goFiles, err := selectImportFiles(ctx, workDir, paths)
 	if err != nil {
 		return finish(report, err)
 	}
@@ -483,54 +502,28 @@ func OrganizeImportsWithOptionsReport(ctx context.Context, workDir string, opts 
 	return finish(report, nil)
 }
 
-func selectImportFiles(workDir string, paths []string) ([]string, error) {
+func selectImportFiles(ctx context.Context, workDir string, paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
-	var goFiles []string
-	for _, path := range paths {
-		target := path
-		if workDir != "" && !filepath.IsAbs(target) {
-			target = filepath.Join(workDir, target)
-		}
-		info, err := os.Stat(target)
-		if err != nil {
-			return nil, fmt.Errorf("stat path %s: %w", path, err)
-		}
-		if err := appendImportFiles(target, info, &goFiles); err != nil {
-			return nil, err
-		}
-	}
-	return goFiles, nil
-}
-
-func appendImportFiles(target string, info os.FileInfo, goFiles *[]string) error {
-	if !info.IsDir() {
-		if strings.HasSuffix(target, ".go") {
-			*goFiles = append(*goFiles, target)
-		}
-		return nil
-	}
-	err := filepath.Walk(target, func(path string, entry os.FileInfo, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() && excludedImportDirectory(entry.Name()) {
-			return filepath.SkipDir
-		}
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
-			*goFiles = append(*goFiles, path)
-		}
-		return nil
-	})
+	files, err := GoFilesContext(ctx, workDir, paths...)
 	if err != nil {
-		return fmt.Errorf("walk dir %s: %w", target, err)
+		return nil, err
 	}
-	return nil
-}
-
-func excludedImportDirectory(name string) bool {
-	return name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules"
+	root := workDir
+	if root == "" {
+		root = "."
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve import workspace %q: %w", workDir, err)
+	}
+	for index, file := range files {
+		if !filepath.IsAbs(file) {
+			files[index] = filepath.Join(root, file)
+		}
+	}
+	return files, nil
 }
 
 func organizeImportFile(ctx context.Context, file string, opts ImportOptions) (string, error) {
@@ -546,6 +539,9 @@ func organizeImportFile(ctx context.Context, file string, opts ImportOptions) (s
 	result, err := imports.Process(cleanFile, modifiedData, nil)
 	if err != nil {
 		return "", fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err)
+	}
+	if result, err = applyExplicitImports(cleanFile, result, ImportOptions{Add: opts.Add}); err != nil {
+		return "", fmt.Errorf("preserve explicit imports for %s: %w", file, err)
 	}
 	if bytes.Equal(data, result) {
 		return "", nil
@@ -736,7 +732,7 @@ func cacheRootsForGoDirectory(target string, roots []string) ([]string, error) {
 }
 
 func formatBuffered(ctx context.Context, workDir string, paths ...string) error {
-	files, err := GoFiles(workDir, paths...)
+	files, err := GoFilesContext(ctx, workDir, paths...)
 	if err != nil {
 		return fmt.Errorf("%w: select buffered Go files: %w", ErrFormatFailed, err)
 	}

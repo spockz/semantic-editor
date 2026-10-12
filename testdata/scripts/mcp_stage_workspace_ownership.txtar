@@ -1,0 +1,33 @@
+# Retained stages reject an ancestor and descendant request root that share one Go module.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"isError":true'
+stdout 'overlaps active staging workspace'
+cmp value.go want/value.go
+cmp child/value.go want/child.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_stage","arguments":{"workspace_root":"child"}}}
+-- go.mod --
+module example.com/stageownership
+
+go 1.23
+-- value.go --
+package stageownership
+
+func Value() int { return 1 }
+-- child/value.go --
+package stageownership
+
+func Child() int { return 2 }
+-- want/value.go --
+package stageownership
+
+func Value() int { return 1 }
+-- want/child.go --
+package stageownership
+
+func Child() int { return 2 }

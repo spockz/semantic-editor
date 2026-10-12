@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 )
 
 // RenameRequest carries execution inputs and publication context for one backend rename.
@@ -105,27 +106,40 @@ func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, pr
 		result.ContinuationUnavailable = "post-rename lookup failed: " + err.Error()
 		return result
 	}
-	if resolved == nil || resolved.Ambiguous || resolved.Definition == nil {
+	if resolved == nil || resolved.IsAmbiguous() || resolved.Definition == nil {
 		result.ContinuationUnavailable = "post-rename lookup did not resolve one declaration"
 		return result
 	}
-	resolvedSymbol := resolved.Definition.QualifiedName
+	resolvedSymbol := resolved.Definition.Identity()
 	if resolvedSymbol == "" || resolvedSymbol != identity.ExpectedSymbol {
 		result.ContinuationUnavailable = "post-rename lookup did not resolve the expected qualified identity"
 		return result
 	}
-	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, result.Source.Definition.File, resolved.Definition.File) {
+	if result.Source.Definition == nil {
+		result.ContinuationUnavailable = "rename source did not contain a qualified identity"
+		return result
+	}
+	sourceFile, err := pathutil.FilePathFromURI(result.Source.Definition.Location.URI)
+	if err != nil {
+		result.ContinuationUnavailable = "rename source location was invalid: " + err.Error()
+		return result
+	}
+	resolvedFile, err := pathutil.FilePathFromURI(resolved.Definition.Location.URI)
+	if err != nil {
+		result.ContinuationUnavailable = "post-rename location was invalid: " + err.Error()
+		return result
+	}
+	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, sourceFile, resolvedFile) {
 		result.ContinuationUnavailable = "post-rename lookup resolved a different source file"
 		return result
 	}
-	resolved.Symbol = resolvedSymbol
 	result.Lookup = resolved
-	return resolvePostRenameRevision(ctx, service, project, resolvedSymbol, resolved, result)
+	return resolvePostRenameRevision(ctx, service, project, resolvedSymbol, resolvedFile, result)
 }
 
-func resolvePostRenameRevision(ctx context.Context, service *backend.Service, project backend.ProjectContext, symbol string, resolved *backend.LookupResult, result *backend.RenameResult) *backend.RenameResult {
+func resolvePostRenameRevision(ctx context.Context, service *backend.Service, project backend.ProjectContext, symbol, file string, result *backend.RenameResult) *backend.RenameResult {
 	inspectProject := project
-	inspectProject.File = resolved.Definition.File
+	inspectProject.File = file
 	inspection, err := service.Inspect(ctx, backend.InspectRequest{Project: inspectProject, Symbol: symbol})
 	if err != nil || inspection == nil {
 		if err != nil {
@@ -135,7 +149,7 @@ func resolvePostRenameRevision(ctx context.Context, service *backend.Service, pr
 		}
 		return result
 	}
-	match := matchingRevision(project.RootDir, symbol, resolved.Definition.File, inspection.Matches)
+	match := matchingRevision(project.RootDir, symbol, file, inspection.Matches)
 	result.Revision = match.Revision
 	if match.Count > 1 {
 		result.Revision = ""
@@ -165,9 +179,9 @@ func postRenameLookupName(source *backend.LookupResult, requestedName string) po
 	if source == nil {
 		return postRenameIdentity{}
 	}
-	oldIdentity := source.Symbol
-	if source.Definition != nil && source.Definition.QualifiedName != "" {
-		oldIdentity = source.Definition.QualifiedName
+	oldIdentity := ""
+	if source.Definition != nil {
+		oldIdentity = source.Definition.Identity()
 	}
 	newLeaf := backend.NormalizeRenameInput(requestedName)
 	if oldIdentity == "" || newLeaf == "" {
@@ -195,6 +209,8 @@ func cloneRenameLookup(source *backend.LookupResult) *backend.LookupResult {
 		definition := *source.Definition
 		clone.Definition = &definition
 	}
+	clone.Usages = append([]*backend.NamedTarget(nil), source.Usages...)
+	clone.Candidates = append([]*backend.NamedTarget(nil), source.Candidates...)
 	return &clone
 }
 

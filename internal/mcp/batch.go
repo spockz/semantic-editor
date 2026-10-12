@@ -263,8 +263,12 @@ func batchEntryResult(tool string, result BatchResult, err error) BatchResult {
 	return result
 }
 
+type batchSkipHooksKey struct{}
+
+const batchStatusAppliedWithDiagnostics = "applied_with_diagnostics"
+
 var batchVerificationOptionKeys = []string{
-	"trust_workspace", "jdtls_home", "java_bin", "import_maven", "metals_home", "metals_bin",
+	trustWorkspaceField, "skip_hooks", "jdtls_home", "java_bin", "import_maven", "metals_home", "metals_bin",
 	"java_version", "standalone_haskell", "ghc_bin", "hls_bin", "ghc_version", "hls_version",
 	"kotlin_bin", "bash_bin", "make_bin",
 }
@@ -596,12 +600,9 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
-	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root))
-	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(request.root))
-	requestServer := requestViewFromConfiguration(configuration, request.root, request.trustWorkspace)
-	request.request.Edits, err = prepareBatchEntries(configuration.workDir, request.root, request.request.Edits)
-	if err != nil {
-		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+	ctx, requestServer, prepareErr := s.prepareBatchStageContext(ctx, configuration, &request)
+	if prepareErr != nil {
+		s.sendToolErrorWithTiming(id, prepareErr.Error(), timing, prepareErr)
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
@@ -639,7 +640,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		}
 	}
 	s.recordToolMetrics(timing)
-	if response.Status == "error" {
+	if response.Status != "ok" {
 		s.sendResult(id, map[string]any{
 			"content": []map[string]any{{"type": "text", "text": critical}},
 			"isError": true, structuredContentKey: structured,
@@ -652,9 +653,28 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	})
 }
 
+func (s *Server) prepareBatchStageContext(ctx context.Context, configuration serverConfiguration, request *parsedBatchToolRequest) (context.Context, *Server, error) {
+	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root))
+	if request.request.SkipHooks {
+		ctx = context.WithValue(ctx, batchSkipHooksKey{}, true)
+	}
+	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(request.root))
+	requestServer := requestViewFromConfiguration(configuration, request.root, request.trustWorkspace)
+	edits, prepareErr := prepareBatchEntries(configuration.workDir, request.root, request.request.Edits)
+	if prepareErr != nil {
+		return nil, nil, prepareErr
+	}
+	request.request.Edits = edits
+	if stageErr := s.stages.BlockBatch(ctx, request.root); stageErr != nil {
+		return nil, nil, stageErr
+	}
+	return ctx, requestServer, nil
+}
+
 type batchToolPayload struct {
 	Edits               []BatchEntry    `json:"edits"`
 	AutoOrganizeImports bool            `json:"auto_organize_imports"`
+	SkipHooks           bool            `json:"skip_hooks"`
 	WorkspaceRoot       json.RawMessage `json:"workspace_root"`
 	TrustWorkspace      json.RawMessage `json:"trust_workspace"`
 }
@@ -683,6 +703,9 @@ func parseBatchToolRequest(configuredRoot string, raw []byte) (parsedBatchToolRe
 func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	response := &BatchResponse{Status: "ok", WorkspaceRoot: s.workDir, Results: make([]BatchResult, 0, len(edits))}
 	verifyOptions := make(map[string]any)
+	if batchSkipsHooks(ctx) {
+		verifyOptions["skip_hooks"] = true
+	}
 	for index, batchEntry := range edits {
 		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
 		if !ok || !entry.Batchable {
@@ -722,7 +745,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			return response, nil
 		}
 	}
-	snapshot, err := s.captureBatchExecutionSnapshot(ctx)
+	snapshot, err := s.captureBatchExecutionSnapshot(ctx, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -766,7 +789,7 @@ type batchExecutionSnapshot struct {
 	baseline  batchVerificationBaseline
 }
 
-func (s *Server) captureBatchExecutionSnapshot(ctx context.Context) (batchExecutionSnapshot, error) {
+func (s *Server) captureBatchExecutionSnapshot(ctx context.Context, edits []BatchEntry) (batchExecutionSnapshot, error) {
 	workspace, err := snapshotBatchWorkspace(s.workDir)
 	if err != nil {
 		return batchExecutionSnapshot{}, fmt.Errorf("snapshot workspace before batch: %w", err)
@@ -775,7 +798,7 @@ func (s *Server) captureBatchExecutionSnapshot(ctx context.Context) (batchExecut
 	if err != nil {
 		return batchExecutionSnapshot{}, fmt.Errorf("discover batch verification plan: %w", err)
 	}
-	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan, s.enabledLanguages)
+	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan, s.enabledLanguages, edits)
 	if err != nil {
 		return batchExecutionSnapshot{}, err
 	}
@@ -783,48 +806,83 @@ func (s *Server) captureBatchExecutionSnapshot(ctx context.Context) (batchExecut
 }
 
 func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchResponse, workspaceBefore map[string]string, baseline batchVerificationBaseline, verifyOptions map[string]any, normalizationPaths []string) (*BatchResponse, error) {
+	reconcilePublishedGoScope(s.workDir, workspaceBefore, &baseline)
 	verifyEntry, ok := s.registry.LookupMCP(semanticVerifyToolName)
 	if !ok {
-		response.Status = "error"
+		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: "verification operation is not registered"})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
-	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
+	verifyRaw := map[string]any{"path": ".", "language": "auto", trustWorkspaceField: s.workspaceTrust.Trusted}
 	maps.Copy(verifyRaw, verifyOptions)
-	verifyRaw["trust_workspace"] = s.workspaceTrust.Trusted
+	verifyRaw[trustWorkspaceField] = s.workspaceTrust.Trusted
 	goFormattingPaths := batchGoFormattingPaths(normalizationPaths, s.goEnabled())
+	goPackagePatterns := cloneGoPatterns(baseline.GoPatterns)
 	verified, err := s.registry.Dispatch(operation.CallContext{
 		Ctx: ctx, WorkDir: s.workDir,
 		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
-		Registry: s.registry, Service: s.service, GoFormattingPaths: goFormattingPaths, AllowedLanguages: s.enabledLanguages,
+		Registry: s.registry, Service: s.service, GoFormattingPaths: goFormattingPaths,
+		AllowedLanguages: s.enabledLanguages, GoPackagePatterns: goPackagePatterns,
+		GoPackageScopeDetail: baseline.ScopeReason,
 	}, verifyEntry.Key, verifyRaw)
 	if err != nil {
-		response.Status = "error"
+		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: err.Error()})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
 	}
 	verifyResult, ok := verified.(operation.VerifyRes)
 	if !ok {
-		response.Status = "error"
+		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	response.Verification = &verifyResult
 	if verifyResult.Failure != "" {
-		response.Status = "error"
+		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: verifyResult.Failure})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	recordBatchDiagnosticDelta(response, baseline, verifyResult)
-	if err := captureBatchDiff(response, s.workDir, workspaceBefore); err != nil {
-		response.Status = "error"
-		return response, nil //nolint:nilerr // Final diff errors are carried in the response.
+	if response.DiagnosticDelta != nil && hasNetNewGoErrors(baseline, verifyResult) {
+		response.Status = batchStatusAppliedWithDiagnostics
 	}
+	markUnbaselinedGoErrors(response, baseline, verifyResult)
+	captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
 	return response, nil
+}
+
+func cloneGoPatterns(patterns map[string][]string) map[string][]string {
+	if patterns == nil {
+		return nil
+	}
+	cloned := make(map[string][]string, len(patterns))
+	for root, selected := range patterns {
+		cloned[root] = slices.Clone(selected)
+	}
+	return cloned
+}
+
+func markUnbaselinedGoErrors(response *BatchResponse, baseline batchVerificationBaseline, verification operation.VerifyRes) {
+	if baseline.OmittedReason == "" {
+		return
+	}
+	for _, diagnostic := range verification.Diagnostics {
+		if isGoDiagnostic(diagnostic) && diagnostic.Severity == 1 {
+			response.Status = batchStatusAppliedWithDiagnostics
+			response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: "final Go compiler errors are unbaselined because diagnostic delta comparison was omitted"})
+			return
+		}
+	}
+}
+
+func captureAppliedBatchDiff(response *BatchResponse, root string, before map[string]string) {
+	if err := captureBatchDiff(response, root, before); err != nil {
+		response.Status = batchStatusAppliedWithDiagnostics
+	}
 }
 
 func (s *Server) executeBatchForConfiguration(ctx context.Context, configuration serverConfiguration, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
@@ -856,7 +914,7 @@ func batchGoFormattingPaths(paths []string, goEnabled bool) []string {
 
 func mergeBatchVerificationOptions(options, raw map[string]any) error {
 	for _, key := range batchVerificationOptionKeys {
-		if key == "trust_workspace" {
+		if key == trustWorkspaceField {
 			continue
 		}
 		value, present := raw[key]

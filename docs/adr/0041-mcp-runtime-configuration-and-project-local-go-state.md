@@ -125,3 +125,15 @@ setup, but callers no longer need bespoke cache exports for semantic tool
 calls. Fixtures begin with isolated Go state. The default verify preflight is an explicit per-fixture cache seed; it does
 not fall back to a mutable host cache. ADR-0038 governs its provenance. The inherited
 `GOPROXY` and `GOTOOLCHAIN` policy remains benchmark provenance.
+
+## Restored module safeguards: 2026-10-12
+
+Ordinary Go subprocesses receive `GOFLAGS=-mod=readonly`; the explicit dependency
+operation enables writable module changes for its own request. Benchmark builds
+also retain `-buildvcs=false`. Dynamic workspace routing remains supported; the
+archived restriction to one startup module is not restored.
+
+The optional MCP `--go-module-cache-seed` source seeds a private managed cache
+through bounded, symlink-safe, atomic copies. It requires explicit offline
+`GOPROXY=off`, reports copy/conflict failures, and never makes the source cache
+writable. An unset seed preserves current cache selection.

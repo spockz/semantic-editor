@@ -186,3 +186,17 @@ execution form. Direct `exec` arguments remain separate; `shell` identifies its
 executable, argument list, and script. Named LSP commands retain structured
 arguments. Unknown fields, unsupported versions, and invalid combinations fail.
 RQ-0029 records the schema and remaining backend capability boundaries.
+
+## Restored scoped verification: 2026-10-12
+
+Known Go batch targets select their owning modules and freeze affected packages
+plus reverse importers and test variants. Unrelated discovered modules are not
+verified merely because they share a containing workspace. Unknown targets,
+changed module/header scope, unresolved graphs, or external normalization expand
+verification conservatively and explain the fallback; diagnostic deltas require
+matching before and after coverage.
+
+`skip_hooks` skips external commands while preserving deterministic formatting
+and language diagnostics, including staged commit. Published mutations followed
+by verification errors report `applied_with_diagnostics` with the persisted diff;
+mutation failures retain an error outcome and their actual publication evidence.

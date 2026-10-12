@@ -74,6 +74,9 @@ func findPackageDeclarationCollisions(ctx context.Context, targetPath string, ta
 func declarationNames(declarations []ast.Decl) map[string]struct{} {
 	wanted := make(map[string]struct{})
 	for _, decl := range declarations {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "init" {
+			continue
+		}
 		for _, name := range extractDeclNames(decl) {
 			if name != "_" {
 				wanted[name] = struct{}{}

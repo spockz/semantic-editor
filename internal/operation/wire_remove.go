@@ -196,14 +196,15 @@ func runRemove(ctx context.Context, cc CallContext, req RemoveReq) (RemoveRes, e
 
 func removeDef() Def[RemoveReq, RemoveRes] {
 	return Def[RemoveReq, RemoveRes]{
-		Key:      "remove_construct",
-		Summary:  "Use this tool instead of replace_file_content to remove exactly one Go top-level declaration or switch case. Top-level kinds are function, method, type, constant, and variable, selected by symbol; case uses in_function plus optional discriminator, target_case, and construct_path selectors. Syntax is validated and diagnostics are reported. Structural removal does not prove behavioral equivalence. safe_delete=true supports unexported standalone constants, free functions other than main/init, and basic package variables with no initializer or a constant-valued initializer after fail-closed compiler and full-source preflights; other cases are refused with checks run.",
-		Params:   removeParams,
-		Level:    LevelFile,
-		CLIName:  "remove-construct",
-		MCPName:  semanticRemoveConstructToolName,
-		Parse:    parseRemove,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, RemoveReq) (RemoveRes, error){backend.LanguageGo: runRemove},
+		Key:            "remove_construct",
+		Summary:        "Use this tool instead of replace_file_content to remove exactly one Go top-level declaration or switch case. Top-level kinds are function, method, type, constant, and variable, selected by symbol; case uses in_function plus optional discriminator, target_case, and construct_path selectors. Syntax is validated and diagnostics are reported. Structural removal does not prove behavioral equivalence. safe_delete=true supports unexported standalone constants, free functions other than main/init, and basic package variables with no initializer or a constant-valued initializer after fail-closed compiler and full-source preflights; other cases are refused with checks run.",
+		Params:         removeParams,
+		Level:          LevelFile,
+		CLIName:        "remove-construct",
+		MCPName:        semanticRemoveConstructToolName,
+		Parse:          parseRemove,
+		NormalizeInput: NormalizeConstructKindInput,
+		Handlers:       map[backend.LanguageID]func(context.Context, CallContext, RemoveReq) (RemoveRes, error){backend.LanguageGo: runRemove},
 		Format: func(res RemoveRes) (string, error) {
 			if res.Status == "refused" {
 				return fmt.Sprintf("Safe deletion refused for %s: %s (checks run: %s).", res.Display, res.Refusal, strings.Join(res.ChecksRun, ", ")), nil

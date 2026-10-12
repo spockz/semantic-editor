@@ -379,7 +379,7 @@ func planSamePackageMove(ctx context.Context, snapshot movePairSnapshot, symbolQ
 	if err := validateMovePairTarget(snapshot, declaration, symbolQuery); err != nil {
 		return movePairPlan{}, err
 	}
-	cut, err := cutCrossFileMove(snapshot, declaration)
+	cut, err := cutCrossFileMove(snapshot, declaration, symbolQuery)
 	if err != nil {
 		return movePairPlan{}, err
 	}
@@ -387,7 +387,11 @@ func planSamePackageMove(ctx context.Context, snapshot movePairSnapshot, symbolQ
 	if err != nil {
 		return movePairPlan{}, err
 	}
-	imports, err := moveImportsForDeclaration(ctx, filepath.Dir(snapshot.sourcePath), declaration, snapshot.sourceAST)
+	moveDeclaration, err := selectedMoveDeclaration(declaration, symbolQuery)
+	if err != nil {
+		return movePairPlan{}, err
+	}
+	imports, err := moveImportsForDeclaration(ctx, filepath.Dir(snapshot.sourcePath), moveDeclaration, snapshot.sourceAST)
 	if err != nil {
 		return movePairPlan{}, err
 	}
@@ -413,9 +417,15 @@ func validateMovePairTarget(snapshot movePairSnapshot, declaration ast.Decl, sym
 		return &symbol.SymbolError{Op: "move_construct", File: snapshot.sourcePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
 	}
 	if group, ok := declaration.(*ast.GenDecl); ok && len(group.Specs) > 1 {
-		return fmt.Errorf("cannot move one member of a grouped declaration; split the group first")
+		if _, err := findGroupedMoveSpec(group, symbolQuery); err != nil {
+			return err
+		}
 	}
-	if declarationNameCollision(snapshot.destinationAST, declaration) {
+	selected, err := selectedMoveDeclaration(declaration, symbolQuery)
+	if err != nil {
+		return err
+	}
+	if declarationNameCollision(snapshot.destinationAST, selected) {
 		return fmt.Errorf("destination already declares a name from %q", symbolQuery)
 	}
 	if moveBuildConstraint(snapshot.sourceAST)+moveFilenameBuildConstraint(snapshot.sourcePath) != moveBuildConstraint(snapshot.destinationAST)+moveFilenameBuildConstraint(snapshot.destinationPath) {
@@ -429,7 +439,29 @@ type crossFileMoveCut struct {
 	declaration string
 }
 
-func cutCrossFileMove(snapshot movePairSnapshot, declaration ast.Decl) (crossFileMoveCut, error) {
+func cutCrossFileMove(snapshot movePairSnapshot, declaration ast.Decl, symbolQuery string) (crossFileMoveCut, error) {
+	if group, ok := declaration.(*ast.GenDecl); ok && len(group.Specs) > 1 {
+		spec, err := findGroupedMoveSpec(group, symbolQuery)
+		if err != nil {
+			return crossFileMoveCut{}, err
+		}
+		start, end, err := groupedMoveSpecOffsets(snapshot, spec)
+		if err != nil {
+			return crossFileMoveCut{}, err
+		}
+		if err = validateGroupedMoveSpecLine(snapshot, start, end); err != nil {
+			return crossFileMoveCut{}, err
+		}
+		declarationText, err := groupedMoveSpecSource(snapshot, group, spec, start, end)
+		if err != nil {
+			return crossFileMoveCut{}, err
+		}
+		remaining := append(append([]byte(nil), snapshot.source[:start]...), snapshot.source[end:]...)
+		if _, err := parser.ParseFile(token.NewFileSet(), snapshot.sourcePath, remaining, parser.ParseComments|parser.AllErrors); err != nil {
+			return crossFileMoveCut{}, fmt.Errorf("validate source after grouped move: %w", err)
+		}
+		return crossFileMoveCut{remaining: remaining, declaration: declarationText}, nil
+	}
 	start, end := moveDeclOffsets(snapshot.sourceSet, declaration, snapshot.sourceAST, snapshot.source)
 	declarationText := string(snapshot.source[start:end])
 	remaining := append(append([]byte(nil), snapshot.source[:start]...), snapshot.source[end:]...)
@@ -843,4 +875,168 @@ func cleanupMoveImports(ctx context.Context, path string, content []byte) ([]byt
 		return nil, fmt.Errorf("format move imports: %w", err)
 	}
 	return formatted, nil
+}
+
+func findGroupedMoveSpec(group *ast.GenDecl, symbolQuery string) (ast.Spec, error) {
+	if group.Tok != token.VAR && group.Tok != token.CONST && group.Tok != token.TYPE {
+		return nil, fmt.Errorf("cannot move one member of a grouped declaration kind %q", group.Tok)
+	}
+	var selected ast.Spec
+	for _, spec := range group.Specs {
+		matches, err := groupedMoveSpecMatches(group.Tok, spec, symbolQuery)
+		if err != nil {
+			return nil, err
+		}
+		if matches {
+			selected = spec
+		}
+	}
+	if selected == nil {
+		return nil, fmt.Errorf("grouped declaration does not contain %q", symbolQuery)
+	}
+	if group.Tok == token.CONST {
+		if err := validateGroupedMoveConstants(group); err != nil {
+			return nil, err
+		}
+	}
+	if group.Tok == token.VAR {
+		if err := validateGroupedMoveVariable(selected, symbolQuery); err != nil {
+			return nil, err
+		}
+	}
+	return selected, nil
+}
+
+func groupedMoveSpecMatches(kind token.Token, spec ast.Spec, symbolQuery string) (bool, error) {
+	switch item := spec.(type) {
+	case *ast.ValueSpec:
+		if kind == token.TYPE {
+			return false, fmt.Errorf("cannot move unsupported member of grouped type declaration")
+		}
+		for _, name := range item.Names {
+			if name.Name != symbolQuery {
+				continue
+			}
+			if len(item.Names) != 1 {
+				return false, fmt.Errorf("cannot move %q from a multi-name value specification", symbolQuery)
+			}
+			return true, nil
+		}
+		return false, nil
+	case *ast.TypeSpec:
+		if kind != token.TYPE {
+			return false, fmt.Errorf("cannot move unsupported member of grouped value declaration")
+		}
+		return item.Name.Name == symbolQuery, nil
+	default:
+		return false, fmt.Errorf("cannot move unsupported member of grouped declaration")
+	}
+}
+
+func validateGroupedMoveConstants(group *ast.GenDecl) error {
+	for _, spec := range group.Specs {
+		value, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			return fmt.Errorf("cannot move unsupported member of grouped constant declaration")
+		}
+		if len(value.Values) == 0 || containsMoveIota(value) {
+			return fmt.Errorf("cannot move a grouped constant with implicit expressions or iota")
+		}
+	}
+	return nil
+}
+
+func validateGroupedMoveVariable(spec ast.Spec, symbolQuery string) error {
+	value, ok := spec.(*ast.ValueSpec)
+	if !ok {
+		return fmt.Errorf("cannot move unsupported member of grouped variable declaration")
+	}
+	if len(value.Values) > 1 || len(value.Values) == 1 && !isMoveLiteral(value.Values[0]) {
+		return fmt.Errorf("cannot move %q because its initializer may affect package initialization order", symbolQuery)
+	}
+	return nil
+}
+
+func isMoveLiteral(expression ast.Expr) bool {
+	_, ok := expression.(*ast.BasicLit)
+	return ok
+}
+
+func containsMoveIota(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(node ast.Node) bool {
+		if ident, ok := node.(*ast.Ident); ok && ident.Name == "iota" {
+			found = true
+			return false
+		}
+		return !found
+	})
+	return found
+}
+
+func selectedMoveDeclaration(declaration ast.Decl, symbolQuery string) (ast.Decl, error) {
+	group, ok := declaration.(*ast.GenDecl)
+	if !ok || len(group.Specs) <= 1 {
+		return declaration, nil
+	}
+	spec, err := findGroupedMoveSpec(group, symbolQuery)
+	if err != nil {
+		return nil, err
+	}
+	return &ast.GenDecl{Tok: group.Tok, Specs: []ast.Spec{spec}}, nil
+}
+
+func groupedMoveSpecOffsets(snapshot movePairSnapshot, spec ast.Spec) (int, int, error) {
+	startPosition, endPosition := spec.Pos(), spec.End()
+	switch item := spec.(type) {
+	case *ast.ValueSpec:
+		if item.Doc != nil {
+			startPosition = item.Doc.Pos()
+		}
+		if item.Comment != nil {
+			endPosition = item.Comment.End()
+		}
+	case *ast.TypeSpec:
+		if item.Doc != nil {
+			startPosition = item.Doc.Pos()
+		}
+		if item.Comment != nil {
+			endPosition = item.Comment.End()
+		}
+	default:
+		return 0, 0, fmt.Errorf("unsupported grouped declaration member %T", spec)
+	}
+	start := snapshot.sourceSet.Position(startPosition).Offset
+	end := snapshot.sourceSet.Position(endPosition).Offset
+	if start < 0 || end > len(snapshot.source) || start >= end {
+		return 0, 0, fmt.Errorf("grouped declaration member has an invalid source span")
+	}
+	return start, end, nil
+}
+
+func groupedMoveSpecSource(snapshot movePairSnapshot, group *ast.GenDecl, spec ast.Spec, start, end int) (string, error) {
+	specStart := snapshot.sourceSet.Position(spec.Pos()).Offset
+	if start > specStart || specStart >= end {
+		return "", fmt.Errorf("grouped declaration member has an invalid source span")
+	}
+	var source strings.Builder
+	source.Write(snapshot.source[start:specStart])
+	source.WriteString(group.Tok.String())
+	source.WriteByte(' ')
+	source.Write(snapshot.source[specStart:end])
+	return source.String(), nil
+}
+
+func validateGroupedMoveSpecLine(snapshot movePairSnapshot, start, end int) error {
+	lineStart := bytes.LastIndexByte(snapshot.source[:start], '\n') + 1
+	lineEnd := bytes.IndexByte(snapshot.source[end:], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(snapshot.source)
+	} else {
+		lineEnd += end
+	}
+	if len(bytes.TrimSpace(snapshot.source[lineStart:start])) != 0 || len(bytes.TrimSpace(snapshot.source[end:lineEnd])) != 0 {
+		return fmt.Errorf("cannot move a grouped declaration member that shares a line with another token")
+	}
+	return nil
 }

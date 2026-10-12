@@ -63,11 +63,12 @@ func GoConstructKindNames() []string {
 
 // ConstructOptions configures construct-level replacement.
 type ConstructOptions struct {
-	AutoOrganizeImports bool
-	ConstructPath       string
-	Symbol              string
-	InFunction          string
-	Discriminator       string
+	AutoOrganizeImports       bool
+	ConstructPath             string
+	ExpectedSelectionRevision string
+	Symbol                    string
+	InFunction                string
+	Discriminator             string
 }
 
 type constructCandidate struct {
@@ -92,6 +93,9 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	}
 	if selector := opts.Discriminator; selector != "" {
 		discriminator = selector
+	}
+	if opts.ExpectedSelectionRevision != "" && !containsConstructKind(GoInspectConstructKinds, kind) {
+		return "", fmt.Errorf("expected_selection_revision is supported only for nested construct kinds")
 	}
 	if kind == ConstructStatementOrExpr {
 		owner := opts.InFunction
@@ -128,9 +132,20 @@ func replaceControlConstruct(ctx context.Context, filePath, funcName string, kin
 	if err != nil {
 		return "", err
 	}
-	selected, err := selectControlConstruct(fileSet, target.Body, funcName, kind, discriminator, opts.ConstructPath)
+	candidateSet, err := inspectConstructCandidatesFromSource(cleanPath, content, funcName, kind, discriminator)
 	if err != nil {
 		return "", err
+	}
+	if opts.ExpectedSelectionRevision != "" && opts.ExpectedSelectionRevision != candidateSet.SelectionRevision {
+		return "", selectionError("selection_revision_mismatch", candidateSet, nil, opts.ExpectedSelectionRevision)
+	}
+	selected, err := selectControlConstruct(fileSet, target.Body, funcName, kind, discriminator, opts.ConstructPath)
+	if err != nil {
+		status := constructSelectionErrorStatus(err)
+		if status == "" {
+			return "", err
+		}
+		return "", selectionError(status, candidateSet, err, "")
 	}
 	replacement, err := parseConstructReplacement(kind, source)
 	if err != nil {
@@ -163,14 +178,14 @@ func selectControlConstruct(fset *token.FileSet, body *ast.BlockStmt, owner stri
 	if path != "" {
 		matches = candidatesAtPath(matches, path)
 		if len(matches) == 0 {
-			return constructCandidate{}, fmt.Errorf("construct_path %q does not select %s %q in %s; available candidates:\n%s", path, kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind))
+			return constructCandidate{}, selectionOutcome("invalid_path", fmt.Errorf("construct_path %q does not select %s %q in %s; available candidates:\n%s", path, kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind)))
 		}
 	}
 	if len(matches) == 0 {
-		return constructCandidate{}, fmt.Errorf("%s %q not found in %s; available candidates (select an if by its condition or short initializer, or set construct_path):\n%s", kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind))
+		return constructCandidate{}, selectionOutcome("not_found", fmt.Errorf("%s %q not found in %s; available candidates (select an if by its condition or short initializer, or set construct_path):\n%s", kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind)))
 	}
 	if len(matches) > 1 {
-		return constructCandidate{}, fmt.Errorf("ambiguous %s %q in %s; set construct_path to one of:\n%s", kind, discriminator, owner, formatConstructCandidates(fset, matches, kind))
+		return constructCandidate{}, selectionOutcome("ambiguous", fmt.Errorf("ambiguous %s %q in %s; set construct_path to one of:\n%s", kind, discriminator, owner, formatConstructCandidates(fset, matches, kind)))
 	}
 	return matches[0], nil
 }
@@ -335,32 +350,32 @@ func (walker *constructCandidateWalker) add(node ast.Node, key, path string) {
 }
 
 func candidateMatches(fset *token.FileSet, c constructCandidate, kind ConstructKind, selector string) bool {
-	needle := strings.TrimSpace(selector)
-	if c.key == needle {
+	needle := normalizeConstructSelector(selector)
+	if normalizeConstructSelector(c.key) == needle {
 		return true
 	}
 	if kind == ConstructLoop {
 		return loopMatches(c.node, fset, needle)
 	}
 	if kind == ConstructElse {
-		return c.key == needle
+		return false
 	}
 	if conditional, ok := c.node.(*ast.IfStmt); ok {
-		return conditional.Init != nil && nodeText(fset, conditional.Init) == needle
+		return conditional.Init != nil && normalizeConstructSelector(nodeText(fset, conditional.Init)) == needle
 	}
 	if kind == ConstructIf {
 		return false
 	}
 	if clause, ok := c.node.(*ast.CaseClause); ok {
 		for _, expression := range clause.List {
-			if nodeText(fset, expression) == needle {
+			if normalizeConstructSelector(nodeText(fset, expression)) == needle {
 				return true
 			}
 		}
 		return false
 	}
 	if clause, ok := c.node.(*ast.CommClause); ok {
-		return clause.Comm != nil && nodeText(fset, clause.Comm) == needle
+		return clause.Comm != nil && normalizeConstructSelector(nodeText(fset, clause.Comm)) == needle
 	}
 	var found bool
 	ast.Inspect(c.node, func(node ast.Node) bool {
@@ -617,8 +632,8 @@ func loopHeader(fset *token.FileSet, node ast.Node) string {
 }
 
 func loopMatches(node ast.Node, fset *token.FileSet, discriminator string) bool {
-	needle := strings.TrimSpace(discriminator)
-	if needle == loopHeader(fset, node) {
+	needle := normalizeConstructSelector(discriminator)
+	if needle == normalizeConstructSelector(loopHeader(fset, node)) {
 		return true
 	}
 	var parts []ast.Node
@@ -632,7 +647,7 @@ func loopMatches(node ast.Node, fset *token.FileSet, discriminator string) bool 
 		if part == nil {
 			continue
 		}
-		if nodeText(fset, part) == needle {
+		if normalizeConstructSelector(nodeText(fset, part)) == needle {
 			return true
 		}
 		found := false

@@ -49,6 +49,7 @@ type Server struct {
 	liveReload            bool
 	instructions          string
 	goBaseDir             string
+	goModuleCacheSeed     string
 	explicitGoBaseDir     bool
 	workspaceTrust        backend.WorkspaceTrust
 	initializationFailed  bool
@@ -70,6 +71,8 @@ type Server struct {
 	out                   io.Writer
 	verificationPlan      projectverify.Plan
 	catalog               *catalogCache
+	stageLimits           stageLimits
+	stages                *stageManager
 }
 
 type serverConfiguration struct {
@@ -87,6 +90,7 @@ type serverConfiguration struct {
 	liveReload            bool
 	instructions          string
 	goBaseDir             string
+	goModuleCacheSeed     string
 	explicitGoBaseDir     bool
 	workspaceTrust        backend.WorkspaceTrust
 	enabledLanguageText   string
@@ -121,6 +125,13 @@ var errNoRegisteredParameterChoices = errors.New("no parameter choices for regis
 
 // Option configures a Server instance.
 type Option func(*Server)
+
+// WithStageLimits configures immutable retained-stage resource policy for one MCP server.
+func WithStageLimits(steps int, requestBytes, dirtySourceBytes int64, maxAge time.Duration) Option {
+	return func(s *Server) {
+		s.stageLimits = stageLimits{steps: steps, requestBytes: requestBytes, dirtySourceBytes: dirtySourceBytes, maxAge: maxAge}
+	}
+}
 
 // WithLiveReload enables in-place re-exec and dynamic tool updates.
 func WithLiveReload(enabled bool) Option {
@@ -158,6 +169,11 @@ func WithGoBaseDir(baseDir string) Option {
 			s.explicitGoBaseDir = true
 		}
 	}
+}
+
+// WithGoModuleCacheSeed selects an offline module cache copied into managed Go state.
+func WithGoModuleCacheSeed(seedDir string) Option {
+	return func(s *Server) { s.goModuleCacheSeed = strings.TrimSpace(seedDir) }
 }
 
 // WithExpectedRoot rejects client initialization that selects a different workspace.
@@ -213,6 +229,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 		out:          out,
 		catalog:      newCatalogCache(),
 		instructions: PrescriptiveInstructions,
+		stageLimits:  stageLimits{steps: defaultStageStepLimit, requestBytes: defaultStageByteLimit, dirtySourceBytes: defaultStageByteLimit, maxAge: defaultStageAge},
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -220,6 +237,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	if !s.registryProvided {
 		s.registry = operation.DefaultRegistry()
 	}
+	s.stages = newStageManager(s)
 	if s.toolProfile == "" {
 		s.toolProfile = "base"
 	}
@@ -403,7 +421,7 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 	if !s.explicitGoBaseDir || initGoBaseDir == "" {
 		initGoBaseDir = filepath.Join(actualRoot, ".scratch", "go")
 	}
-	initCtx := gocache.WithBaseDir(ctx, initGoBaseDir)
+	initCtx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, initGoBaseDir), s.goModuleCacheSeed)
 	if _, cacheErr := gocache.Environment(initCtx, actualRoot); cacheErr != nil {
 		return nil, fmt.Errorf("prepare MCP Go base directory: %w", cacheErr)
 	}
@@ -414,6 +432,9 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 	languages, err := s.detectActiveLanguages(actualRoot)
 	if err != nil {
 		return nil, err
+	}
+	if resetErr := s.resetStagesForInitialization(ctx); resetErr != nil {
+		return nil, resetErr
 	}
 
 	if s.catalog == nil {
@@ -439,6 +460,23 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		result["instructions"] = s.instructions
 	}
 	return result, nil
+}
+
+func (s *Server) resetStagesForInitialization(ctx context.Context) error {
+	if s.initializedAt.IsZero() || s.stages == nil {
+		return nil
+	}
+	if resetErr := s.stages.reset(ctx); resetErr != nil {
+		return fmt.Errorf("invalidate diagnostics before MCP reinitialization: %w", resetErr)
+	}
+	if s.diagnostics == nil {
+		return nil
+	}
+	if closeErr := s.diagnostics.Close(); closeErr != nil {
+		return fmt.Errorf("close diagnostics before MCP reinitialization: %w", closeErr)
+	}
+	s.diagnostics = godiagnostics.NewSessionManager()
+	return nil
 }
 
 type initializeParams struct {
@@ -614,7 +652,7 @@ func (s *Server) buildToolCatalog(root string) ([]map[string]any, error) {
 		batchSchema := batchTool[toolFieldInputSchema].(map[string]any)
 		properties := batchSchema[schemaPropertiesKey].(map[string]any)
 		properties["workspace_root"] = workspaceRootParameterSchema()
-		properties["trust_workspace"] = map[string]any{"type": "boolean", "default": false, "description": "Explicitly trust this selected workspace for configured verification hooks; applies only to this batch request."}
+		properties[trustWorkspaceField] = map[string]any{"type": "boolean", "default": false, "description": "Explicitly trust this selected workspace for configured verification hooks; applies only to this batch request."}
 		tools = append(tools, batchTool)
 	}
 	if s.toolProfile == "full" {
@@ -813,6 +851,11 @@ func toolOutputAndContinuations(entry operation.Entry) (toolOutputAndContinuatio
 	}
 	output := standardOutputSchema(resultSchema, errorSchema)
 	properties := output[schemaPropertiesKey].(map[string]any)
+	stageReceiptSchema, err := operation.StageReceiptSchema().JSONSchema()
+	if err != nil {
+		return toolOutputAndContinuationsResult{}, fmt.Errorf("stage receipt schema: %w", err)
+	}
+	properties["stage_receipt"] = stageReceiptSchema
 	for name, schema := range continuations {
 		if _, reserved := properties[name]; reserved {
 			return toolOutputAndContinuationsResult{}, fmt.Errorf("operation %q output field %q collides with a reserved envelope field", entry.MCPName, name)
@@ -963,7 +1006,7 @@ func batchOutputSchemaForEntries(entries []operation.Entry, verificationOutput *
 		return nil, err
 	}
 	properties := map[string]any{
-		"status":                map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+		"status":                map[string]any{"type": "string", "enum": []string{"ok", batchStatusAppliedWithDiagnostics, "error"}},
 		"workspace_root":        map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used by every child in this batch."},
 		"results":               map[string]any{"type": "array", "items": items},
 		diagnosticDeltaField:    diagnosticDeltaSchema(),
@@ -1010,6 +1053,12 @@ func batchOutputSchemaForEntries(entries []operation.Entry, verificationOutput *
 				},
 				"required": []string{"status", "results"},
 				"not":      map[string]any{"required": []string{diagnosticDeltaField}},
+			},
+			map[string]any{
+				schemaPropertiesKey: map[string]any{
+					"status": map[string]any{"const": batchStatusAppliedWithDiagnostics},
+				},
+				"required": []string{"status", "results"},
 			},
 		},
 	}, nil
@@ -1337,7 +1386,7 @@ func batchToolSchemaForLanguages(entries []operation.Entry, _ []backend.Backend,
 				},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 				"workspace_root":        workspaceRootParameterSchema(),
-				"trust_workspace":       map[string]any{"type": "boolean", "description": "Trust configured verification hooks for this batch request and its selected workspace root."},
+				trustWorkspaceField:     map[string]any{"type": "boolean", "description": "Trust configured verification hooks for this batch request and its selected workspace root."},
 			},
 			"required":              []string{"edits"},
 			additionalPropertiesKey: false,
@@ -1397,27 +1446,49 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	observer := requestMutationObserver(requestServer)
 	ctx = operation.WithMutationObserver(ctx, observer)
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(requestRoot))
-	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, requestRoot))
+	ctx = gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, requestRoot)), configuration.goModuleCacheSeed)
 	finishArguments()
 	if err := requestServer.validateLanguageAllowed(entry, raw); err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
-	result, dispatchErr := requestServer.registry.Dispatch(operation.CallContext{
+	call := operation.CallContext{
 		Ctx:              ctx,
 		WorkDir:          requestRoot,
 		Project:          backend.ProjectContext{RootDir: requestRoot, WorkspaceTrust: projectTrust},
 		Registry:         requestServer.registry,
 		Service:          requestServer.service,
 		AllowedLanguages: requestServer.enabledLanguages,
-	}, entry.Key, raw)
+		StageRuntime:     s.stages,
+	}
+	result, dispatchErr := s.dispatchStagedToolCall(ctx, requestRoot, entry, raw, call, requestServer)
 	finishDispatch()
 	if dispatchErr != nil {
 		s.sendOperationToolErrorWithTiming(id, dispatchErr.Error(), timing, entry, dispatchErr)
 		return
 	}
 	s.sendToolDispatchResponse(ctx, id, timing, entry, result, requestRoot)
+}
+
+func (s *Server) dispatchStagedToolCall(ctx context.Context, root string, entry operation.Entry, raw map[string]any, call operation.CallContext, requestServer *Server) (any, error) {
+	result, handled, dispatchErr := s.stages.Execute(ctx, root, entry, raw, call)
+	if handled || dispatchErr != nil {
+		return result, dispatchErr
+	}
+	if isStageControl(entry.Key) {
+		call.Project.Language = backend.LanguageGo
+	}
+	return requestServer.registry.Dispatch(call, entry.Key, raw)
+}
+
+func isStageControl(key string) bool {
+	switch key {
+	case "stage_start", "stage_drop", "stage_abort", "stage_commit":
+		return true
+	default:
+		return false
+	}
 }
 
 func requestMutationObserver(requestServer *Server) func(context.Context) error {
@@ -1428,7 +1499,15 @@ func requestMutationObserver(requestServer *Server) func(context.Context) error 
 }
 
 func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessage, timing *toolRequestTiming, entry operation.Entry, result any, requestRoot string) {
+	var stageReceipt *operation.StageReceipt
+	if staged, ok := result.(stagedOperationResult); ok {
+		result = staged.Result
+		stageReceipt = &staged.Receipt
+	}
 	fields := map[string]any{"workspace_root": requestRoot}
+	if stageReceipt != nil {
+		fields["stage_receipt"] = stageReceipt
+	}
 	if entry.ProjectOutput != nil {
 		projected, err := entry.ProjectOutput(result)
 		if err != nil {
@@ -1546,6 +1625,12 @@ func (s *Server) handleReload(id json.RawMessage) {
 		return
 	}
 	s.catalog.invalidate()
+	if s.stages != nil {
+		if err := s.stages.reset(context.Background()); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalidate diagnostics before reload: %v", err), err)
+			return
+		}
+	}
 	if _, err := s.activeLanguages(); err != nil {
 		s.sendToolError(id, fmt.Sprintf("refresh language catalog before reload: %v", err), err)
 		return
@@ -2160,6 +2245,7 @@ func (s *Server) configurationSnapshot() serverConfiguration {
 		liveReload:            s.liveReload,
 		instructions:          s.instructions,
 		goBaseDir:             s.goBaseDir,
+		goModuleCacheSeed:     s.goModuleCacheSeed,
 		explicitGoBaseDir:     s.explicitGoBaseDir,
 		workspaceTrust:        s.workspaceTrust,
 		enabledLanguageText:   s.enabledLanguageText,
@@ -2255,6 +2341,7 @@ func requestViewFromConfiguration(configuration serverConfiguration, root string
 		liveReload:            configuration.liveReload,
 		workspaceTrust:        CanonicalTrust(workspaceRoot, trusted),
 		goBaseDir:             selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, workspaceRoot),
+		goModuleCacheSeed:     configuration.goModuleCacheSeed,
 		explicitGoBaseDir:     configuration.explicitGoBaseDir,
 		enabledLanguages:      slices.Clone(configuration.enabledLanguages),
 		enabledLanguageText:   configuration.enabledLanguageText,
@@ -2357,7 +2444,9 @@ func indexSourceEntry(index *sourceFieldIndex, entry operation.Entry) error {
 }
 
 func indexOutputFields(index *sourceFieldIndex, entry operation.Entry) error {
-	for _, continuation := range entry.Output.Continuations {
+	continuations := append([]operation.OutputContinuation(nil), entry.Output.Continuations...)
+	continuations = append(continuations, operation.StageOutputContinuations(entry)...)
+	for _, continuation := range continuations {
 		suffix := continuation.Path
 		if suffix == "" {
 			suffix = continuation.Field

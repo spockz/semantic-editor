@@ -32,9 +32,32 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 	if err != nil {
 		return "", err
 	}
-	selected, err := selectStatementExpressionCandidate(target, discriminator, opts.ConstructPath)
-	if err != nil {
-		return "", err
+	var candidateSet ConstructCandidateSet
+	candidateSetInspected := false
+	if opts.ExpectedSelectionRevision != "" {
+		candidateSet, err = inspectConstructCandidatesFromSource(target.cleanPath, target.content, ownerName, ConstructStatementOrExpr, discriminator)
+		if err != nil {
+			return "", err
+		}
+		candidateSetInspected = true
+		if opts.ExpectedSelectionRevision != candidateSet.SelectionRevision {
+			return "", selectionError("selection_revision_mismatch", candidateSet, nil, opts.ExpectedSelectionRevision)
+		}
+	}
+	selected, selectionErr := selectStatementExpressionCandidate(target, discriminator, opts.ConstructPath)
+	if selectionErr != nil {
+		status := constructSelectionErrorStatus(selectionErr)
+		if status == "" {
+			return "", selectionErr
+		}
+		if !candidateSetInspected {
+			var inspectErr error
+			candidateSet, inspectErr = inspectConstructCandidatesFromSource(target.cleanPath, target.content, ownerName, ConstructStatementOrExpr, discriminator)
+			if inspectErr != nil {
+				return "", selectionErr
+			}
+		}
+		return "", selectionError(status, candidateSet, selectionErr, "")
 	}
 	replacement, err := parseSpanReplacement(selected.class, source)
 	if err != nil {
@@ -98,7 +121,7 @@ func selectStatementExpressionCandidate(target *statementExpressionTarget, discr
 					return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, []constructCandidate{candidate})
 				}
 			}
-			return constructCandidate{}, fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", constructPath, discriminator, ownerName, formatSpanCandidates(fset, matches))
+			return constructCandidate{}, selectionOutcome("invalid_path", fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", constructPath, discriminator, ownerName, formatSpanCandidates(fset, matches)))
 		}
 		matches = selected
 		unresolved = nil
@@ -107,13 +130,13 @@ func selectStatementExpressionCandidate(target *statementExpressionTarget, discr
 		if len(unresolved) > 0 {
 			return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, unresolved)
 		}
-		return constructCandidate{}, fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", discriminator, ownerName, formatSpanCandidates(fset, target.candidates))
+		return constructCandidate{}, selectionOutcome("not_found", fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", discriminator, ownerName, formatSpanCandidates(fset, target.candidates)))
 	}
 	if len(unresolved) > 0 {
 		return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, unresolved)
 	}
 	if len(matches) > 1 {
-		return constructCandidate{}, fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", discriminator, ownerName, formatSpanCandidates(fset, matches))
+		return constructCandidate{}, selectionOutcome("ambiguous", fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", discriminator, ownerName, formatSpanCandidates(fset, matches)))
 	}
 	return matches[0], nil
 }
@@ -195,7 +218,7 @@ func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, fi
 	walkStmt = func(stmt ast.Stmt, path string) {
 		start, end := fset.Position(stmt.Pos()).Offset, fset.Position(stmt.End()).Offset
 		if start >= 0 && end <= len(source) {
-			candidates = append(candidates, constructCandidate{node: stmt, path: path, key: strings.TrimSpace(nodeText(fset, stmt)), class: "statement"})
+			candidates = append(candidates, constructCandidate{node: stmt, path: path, key: normalizeConstructSelector(nodeText(fset, stmt)), class: "statement"})
 		}
 		addStatementExpressionRoots(stmt, path, addExprRoot)
 		walkConstructStatementChildren(stmt, path, walkBlock, walkStmt, addExprRoot)
@@ -288,14 +311,14 @@ func makeSpanExpressionAdder(fset *token.FileSet, candidates *[]constructCandida
 		if !isSyntacticType(root) && !isKnownType(info, root) {
 			if _, excluded := root.(*ast.KeyValueExpr); !excluded {
 				if _, excluded := root.(*ast.Ellipsis); !excluded {
-					*candidates = append(*candidates, constructCandidate{node: root, path: path, key: strings.TrimSpace(nodeText(fset, root)), class: "expression"})
+					*candidates = append(*candidates, constructCandidate{node: root, path: path, key: normalizeConstructSelector(nodeText(fset, root)), class: "expression"})
 				}
 			}
 		}
 		if indexed, ok := root.(*ast.IndexExpr); ok && !isKnownType(info, indexed.Index) && !isKnownValue(info, indexed.Index) {
 			indexPath := childLoopPath(path, 1)
 			*candidates = append(*candidates, constructCandidate{
-				node: indexed.Index, path: indexPath, key: strings.TrimSpace(nodeText(fset, indexed.Index)), class: unresolvedExpressionClass,
+				node: indexed.Index, path: indexPath, key: normalizeConstructSelector(nodeText(fset, indexed.Index)), class: unresolvedExpressionClass,
 			})
 		}
 		for index, child := range expressionChildren(root, info) {

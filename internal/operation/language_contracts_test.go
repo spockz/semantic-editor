@@ -64,6 +64,80 @@ func TestLanguageContractsMatchMatrixSupport(t *testing.T) {
 
 }
 
+func TestGoStageContractsSeparateVolatilePhasesFromPublication(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	module := capability.ScopeActiveModule
+	phaseRequirements := []capability.Requirement{
+		{Kind: capability.RequireModuleRoot, Scope: module},
+		{Kind: capability.RequireModuleSnapshot, Scope: module},
+	}
+	sessionRequirements := append(append([]capability.Requirement{}, phaseRequirements...), capability.Requirement{Kind: capability.RequireStageSession, Scope: capability.ScopeServerScope})
+	for _, key := range []string{"stage_start", "stage_drop", "stage_abort"} {
+		entry, ok := registry.LookupKey(key)
+		if !ok {
+			t.Fatalf("%s is not registered", key)
+		}
+		profile, ok := entry.LanguageContracts[backend.LanguageGo].Variant(0)
+		if !ok {
+			t.Fatalf("%s is missing its default lifecycle profile", key)
+		}
+		wantRequirements := phaseRequirements
+		if key != "stage_start" {
+			wantRequirements = sessionRequirements
+		}
+		if profile.AnalysisScope != module || !reflect.DeepEqual(profile.Preconditions, wantRequirements) {
+			t.Errorf("%s lifecycle profile = %+v, want module workflow requirements %+v", key, profile, wantRequirements)
+		}
+		if profile.Capabilities != capability.FeatureStaging || profile.Guarantees != capability.GuaranteeVolatileState {
+			t.Errorf("%s lifecycle profile = %+v, want volatile staging without disk publication", key, profile)
+		}
+	}
+	entry, ok := registry.LookupKey("stage_commit")
+	if !ok {
+		t.Fatal("stage_commit is not registered")
+	}
+	profile, ok := entry.LanguageContracts[backend.LanguageGo].Variant(0)
+	if !ok {
+		t.Fatal("stage_commit is missing its default publication profile")
+	}
+	wantFeatures := capability.FeaturePublication | capability.FeatureFormat | capability.FeatureOrganizeImports | capability.FeatureDiagnostics | capability.FeatureProjectHooks
+	wantGuarantees := capability.GuaranteeConflictChecked | capability.GuaranteeAtomicWrites | capability.GuaranteeDiagnostics | capability.GuaranteePublicationOutcome
+	if profile.AnalysisScope != module || !reflect.DeepEqual(profile.Preconditions, sessionRequirements) || profile.Capabilities != wantFeatures || profile.Guarantees != wantGuarantees {
+		t.Errorf("stage_commit profile = %+v, want explicit publication with final verification", profile)
+	}
+	if profile.Capabilities.Has(capability.FeatureASTEdit) || profile.Guarantees.Has(capability.GuaranteeASTEdit) {
+		t.Errorf("stage_commit must not advertise AST mutation: %+v", profile)
+	}
+}
+
+func TestGoInspectConstructReadOnlyProfile(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupKey("inspect_construct")
+	if !ok {
+		t.Fatal("inspect_construct is not registered")
+	}
+	contract := entry.LanguageContracts[backend.LanguageGo]
+	profile, ok := contract.Variant(capability.VariantSelectedFile)
+	if !ok {
+		t.Fatal("inspect_construct is missing its selected-file profile")
+	}
+	if profile.AnalysisScope != capability.ScopeSelectedFile {
+		t.Errorf("analysis scope = %q, want %q", profile.AnalysisScope, capability.ScopeSelectedFile)
+	}
+	wantRequirements := []capability.Requirement{
+		{Kind: capability.RequireTargetParse, Scope: capability.ScopeSelectedFile},
+		{Kind: capability.RequireExactSelector, Scope: capability.ScopeSelectedFile},
+	}
+	if !reflect.DeepEqual(profile.Preconditions, wantRequirements) {
+		t.Errorf("preconditions = %+v, want %+v", profile.Preconditions, wantRequirements)
+	}
+	if profile.Capabilities != capability.FeatureInspect || profile.Guarantees != capability.GuaranteeReadOnly {
+		t.Errorf("profile = %+v, want read-only inspect", profile)
+	}
+	if support, err := profile.ErrorTolerance.Classify(capability.FaultTargetSyntax); err != nil || support != capability.FaultRejected {
+		t.Errorf("target syntax support = (%v, %v), want rejected", support, err)
+	}
+}
+
 func TestTypedContractLabelsAndFaultProfilesRender(t *testing.T) {
 	variant := capability.ContractVariant{
 		When:          capability.VariantSelectedFile | capability.VariantCheckOnly,

@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -806,5 +807,69 @@ func writeConstructFixture(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestReplaceConstructSelectionRevisionMismatchDoesNotWrite(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "candidates.go")
+	writeConstructFixture(t, path, "package sample\nfunc Check() { if ready { use(1) } }\n")
+	initial, err := InspectConstructCandidates(context.Background(), path, "Check", ConstructIf, "ready")
+	if err != nil {
+		t.Fatalf("InspectConstructCandidates: %v", err)
+	}
+	writeConstructFixture(t, path, "package sample\nfunc Check() { if ready { use(2) } }\n")
+	current, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ReplaceConstruct(context.Background(), path, "Check", ConstructIf, "ready", "if ready { use(3) }", ConstructOptions{ExpectedSelectionRevision: initial.SelectionRevision})
+	var selectionErr *ConstructSelectionError
+	if !errors.As(err, &selectionErr) || selectionErr.Status != "selection_revision_mismatch" {
+		t.Fatalf("expected typed selection revision mismatch, got %T %v", err, err)
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(after) != string(current) {
+		t.Fatalf("stale selection guard changed source:\n%s", after)
+	}
+	if selectionErr.Candidates.SelectionRevision == initial.SelectionRevision {
+		t.Fatal("mismatch response did not include the current selection revision")
+	}
+}
+
+func TestInspectConstructStatementExpressionCommentsKeepMatchingCandidates(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "candidates.go")
+	writeConstructFixture(t, path, "package sample\nfunc Check() { if ready { use(1) } }\n")
+	initial, err := InspectConstructCandidates(context.Background(), path, "Check", ConstructStatementOrExpr, "use(1)")
+	if err != nil {
+		t.Fatalf("InspectConstructCandidates: %v", err)
+	}
+	if len(initial.Candidates) == 0 {
+		t.Fatal("expected a reusable statement/expression candidate")
+	}
+	writeConstructFixture(t, path, "package sample\n// file comment\nfunc Check() {\n\tif ready {\n\t\tuse /* call comment */ (1) // statement comment\n\t}\n}\n")
+	afterComments, err := InspectConstructCandidates(context.Background(), path, "Check", ConstructStatementOrExpr, "use(1)")
+	if err != nil {
+		t.Fatalf("InspectConstructCandidates after comments: %v", err)
+	}
+	if len(initial.Candidates) != len(afterComments.Candidates) || initial.SelectionRevision != afterComments.SelectionRevision {
+		t.Fatalf("comment-only edit changed candidates: %#v != %#v", initial, afterComments)
+	}
+	_, err = ReplaceConstruct(context.Background(), path, "Check", ConstructStatementOrExpr, "use(1)", "use(2)", ConstructOptions{
+		ConstructPath: afterComments.Candidates[0].ConstructPath, ExpectedSelectionRevision: afterComments.SelectionRevision,
+	})
+	if err != nil {
+		t.Fatalf("ReplaceConstruct after comment-only candidate discovery: %v", err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "use(2)") {
+		t.Fatalf("replacement did not use the inspected candidate path:\n%s", updated)
 	}
 }

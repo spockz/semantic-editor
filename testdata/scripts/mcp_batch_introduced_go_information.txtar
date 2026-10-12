@@ -1,0 +1,27 @@
+# A new informational Go diagnostic remains visible in the delta without turning a batch into an MCP error.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":\s*"ok"'
+stdout '"diagnostic_delta":'
+stdout '"severity":3'
+! stdout '"isError":true'
+cmp value.go .scratch/want/value.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchintroducedinformation
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_decl","params":{"file":"value.go","source":"const spare = 1"}}]}}}
+-- value.go --
+package batchintroducedinformation
+
+func Value() int { return 1 }
+-- .scratch/want/value.go --
+package batchintroducedinformation
+
+func Value() int { return 1 }
+
+const spare = 1

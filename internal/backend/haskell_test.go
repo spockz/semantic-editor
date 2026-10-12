@@ -55,7 +55,7 @@ func haskellFixture(t *testing.T, source string) (string, string) {
 func trustedHaskellProject(root, file string) backend.ProjectContext {
 	return backend.ProjectContext{
 		RootDir: root, File: file, Language: backend.LanguageHaskell,
-		HaskellStandalone: true, WorkspaceTrust: backend.NewWorkspaceTrust(root, true),
+		Haskell: backend.HaskellConfig{Standalone: true}, WorkspaceTrust: backend.NewWorkspaceTrust(root, true),
 	}
 }
 
@@ -71,11 +71,11 @@ func TestHaskellLookupInitializesUTF16AndHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
-	if result.Kind != "field" || result.Location.Range.Start.Character != 26 || result.Offset == 0 {
+	if result.Definition == nil || result.Definition.Kind != "field" || result.Definition.Location.Range.Start.Character != 26 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	emoji, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "emoji")
-	if err != nil || emoji.Location.Range.Start.Character != 8 || emoji.Location.Range.End.Character != 10 || emoji.Offset != 23 {
+	if err != nil || emoji.Definition == nil || emoji.Definition.Location.Range.Start.Character != 8 || emoji.Definition.Location.Range.End.Character != 10 {
 		t.Fatalf("non-BMP UTF-16 result=%+v err=%v", emoji, err)
 	}
 	if len(session.methods) < 4 || session.methods[0] != "initialize" || session.methods[1] != "initialized" || session.methods[2] != "workspace/didChangeConfiguration" || session.methods[3] != "textDocument/didOpen" {
@@ -98,7 +98,7 @@ func TestHaskellLookupRejectsTrustBeforeSessionFactory(t *testing.T) {
 		started = true
 		return nil, nil
 	})
-	_, err := underTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageHaskell, HaskellStandalone: true}, "M")
+	_, err := underTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageHaskell, Haskell: backend.HaskellConfig{Standalone: true}}, "M")
 	if !errors.Is(err, backend.ErrWorkspaceTrustRequired) || started {
 		t.Fatalf("err=%v started=%v", err, started)
 	}
@@ -137,7 +137,7 @@ func TestHaskellLookupReturnsAmbiguityAndRejectsMalformedResponses(t *testing.T)
 		return &fakeHaskellSession{symbols: raw}, nil
 	})
 	result, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "first")
-	if err != nil || !result.Ambiguous || len(result.Candidates) != 2 || result.Candidates[0].Location.Range.Start.Character != 0 || result.Candidates[0].SelectionRange == nil {
+	if err != nil || !result.IsAmbiguous() || len(result.Candidates) != 2 || result.Candidates[0].Location.Range.Start.Character != 0 || result.Candidates[0].Location.Range.End.Character == 0 {
 		t.Fatalf("ambiguity result=%+v err=%v", result, err)
 	}
 	underTest = haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {

@@ -420,7 +420,8 @@ func (v *responseValidator) validateStatusConsistency(tool string, isError bool,
 		return
 	}
 	status, _ := native["status"].(string)
-	if (status == "error") != isError {
+	failureStatus := status == "error" || status == "applied_with_diagnostics"
+	if failureStatus != isError {
 		v.report(fmt.Sprintf("%s: semantic_batch status %q disagrees with isError=%t", v.testName, status, isError))
 	}
 	if status == "error" {

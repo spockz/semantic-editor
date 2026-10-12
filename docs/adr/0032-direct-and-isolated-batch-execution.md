@@ -153,9 +153,9 @@ we establish state-journaled staging as a peer batching mechanism:
    `semantic_commit` applies all staged mutations atomically to disk via
    `pipeline.WriteAtomic` (ADR-0010), executes coalesced formatting and
    `goimports` once, and collects the compiler diagnostic delta. Any newly
-   introduced diagnostics explicitly link to the originating step
-   (`attributed_step_id`, `attributed_tool`), providing deterministic attribution
-   without requiring the agent to deduce which edit caused a compiler error.
+   introduced diagnostics include candidate step IDs based on changed paths.
+   These links identify relevant edits rather than proving a single originating
+   step; diagnostics in dependent files can have no candidates.
 4. **Granular Reversion (`semantic_stage_drop`)**:
    `semantic_stage_drop` removes a single staged mutation from the in-memory journal
    before commit. To prevent off-by-one errors and re-indexing hazards (where
@@ -271,3 +271,29 @@ implementation work authorized by this ADR.
 
 The review's final-diff finding remains a direct-batch conformance task. It is
 independent of, and must not be used to justify, an embedded workspace view.
+
+## Restoration integration: 2026-10-12
+
+Retained staging uses the same source buffer as standalone operations and batches.
+The server binds each journal to its canonical request root and current Go module
+owner, rejects overlapping roots and competing stages in one module, and rechecks
+ownership before publication. Reinitialization, reload, disconnect, expiry, and
+abort discard volatile state and invalidate retained diagnostics.
+
+Step IDs remain unique across drop and replay. Rejected edits and failed replay
+preserve the accepted revision. Publication distinguishes zero writes, partial
+writes, and complete publication: zero-write failure retains the journal, partial
+publication records its error, count, and actual diff and permits only abort,
+and complete publication consumes the journal. New Go files and their parent
+directories remain unpublished until commit. Ordinary batches share this publisher.
+
+The typed optional native `stage_receipt` companion carries staged step selectors.
+It is indexed separately from ordinary `result` continuations; staged children
+never advertise live disk selectors. Diagnostic rows carry candidate step IDs
+based on changed paths. These candidates identify relevant recorded edits, not
+proof of one causal origin; dependent-file diagnostics can have no candidates.
+
+Provisional immutable limits remain 50 accepted steps, 10 MiB retained canonical
+requests, and 10 MiB changed-source bytes. Stage age defaults to 30 minutes.
+These are retention policies, not measured heap, RSS, or latency guarantees.
+[RQ-0067](../research/RQ-0067-staging-resource-accounting-and-defaults.md) remains open.

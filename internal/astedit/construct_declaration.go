@@ -82,7 +82,7 @@ func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []b
 	if err != nil {
 		return "", err
 	}
-	if kind == ConstructMethod && receiverTypeKey(target.Recv) != receiverTypeKey(replacement.declaration.Recv) {
+	if (target.Recv != nil) && receiverTypeKey(target.Recv) != receiverTypeKey(replacement.declaration.Recv) {
 		return "", fmt.Errorf("replacement method receiver must preserve the selected receiver syntax")
 	}
 	filtered := *file
@@ -148,10 +148,14 @@ func parseFunctionReplacement(symbolQuery string, kind ConstructKind, source str
 	if !ok {
 		return parsedFunctionReplacement{}, fmt.Errorf("replacement source must be one function or method declaration")
 	}
-	if (kind == ConstructMethod) != (declaration.Recv != nil) || declaration.Name.Name != name {
+	if declaration.Name.Name != name || (kind == ConstructMethod && declaration.Recv == nil) {
 		return parsedFunctionReplacement{}, fmt.Errorf("replacement must preserve the selected %s symbol %q", kind, symbolQuery)
 	}
-	if kind == ConstructMethod && extractReceiverName(declaration.Recv) != receiver {
+	sourceReceiver := extractReceiverName(declaration.Recv)
+	if kind == ConstructFunction && receiver == "" {
+		receiver = sourceReceiver
+	}
+	if sourceReceiver != receiver {
 		return parsedFunctionReplacement{}, fmt.Errorf("replacement method receiver must preserve %q", receiver)
 	}
 	return parsedFunctionReplacement{receiver: receiver, name: name, fset: fset, source: replacementSource, declaration: declaration}, nil
@@ -161,7 +165,7 @@ func findFunctionConstructTarget(file *ast.File, replacement parsedFunctionRepla
 	var target *ast.FuncDecl
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != replacement.name || extractReceiverName(function.Recv) != replacement.receiver || (kind == ConstructMethod) != (function.Recv != nil) {
+		if !ok || function.Name.Name != replacement.name || extractReceiverName(function.Recv) != replacement.receiver || (replacement.declaration.Recv != nil) != (function.Recv != nil) {
 			continue
 		}
 		if target != nil {

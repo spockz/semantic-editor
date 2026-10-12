@@ -41,6 +41,11 @@ type Entry struct {
 	LanguageContracts  map[backend.LanguageID]capability.OperationContract
 }
 
+// NormalizedInput returns canonical parameter spellings before a caller retains or forwards an operation request.
+func (e Entry) NormalizedInput(raw map[string]any) (map[string]any, error) {
+	return normalizedInput(e.NormalizeInput, raw, e.Params)
+}
+
 // SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.
 func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, error) {
 	if !e.BufferedBatch {
@@ -139,6 +144,7 @@ type ParameterContract struct {
 	Enums            []string
 	DynamicEnums     func(backend.Backend) []string
 	LanguageSelector bool
+	InputAliases     []string
 	// SourceFields names top-level structured output fields that can feed this parameter.
 	SourceFields []string
 	Schema       *ValueSchema
@@ -315,7 +321,7 @@ func finalizeOutputHook[Req any, Res any](def Def[Req, Res]) func(CallContext, m
 		return nil
 	}
 	return func(cc CallContext, raw map[string]any, value any) (any, error) {
-		normalized, err := normalizedInput(def.NormalizeInput, raw)
+		normalized, err := normalizedInput(def.NormalizeInput, raw, def.Params)
 		if err != nil {
 			return nil, fmt.Errorf("normalize %q finalization input: %w", def.Key, err)
 		}
@@ -375,7 +381,7 @@ func projectErrorOutputHook[Req any, Res any](def Def[Req, Res]) func(error) (an
 	}
 }
 
-// ValidateOutputMode enforces the legacy-envelope versus projected typed-result boundary.
+// ValidateOutputMode enforces that every declared output contract specifies both a typed result schema and an output projector.
 func ValidateOutputMode(contract *OperationOutputContract, hasProjector bool) error {
 	if contract == nil {
 		if hasProjector {

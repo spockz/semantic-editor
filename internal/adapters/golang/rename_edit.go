@@ -196,7 +196,7 @@ func snapshotRenameDocument(session *godiagnostics.Session, change renameDocumen
 	if change.TextDocument == nil || change.TextDocument.Version == nil || len(change.Edits) == 0 {
 		return godiagnostics.Document{}, errors.New("rename edit lacks a versioned document or text edits")
 	}
-	path, err := safeRenameDocumentPath(session.Root, change.TextDocument.URI)
+	path, err := safeRenameDocumentPath(session, change.TextDocument.URI)
 	if err != nil {
 		return godiagnostics.Document{}, err
 	}
@@ -214,27 +214,27 @@ func snapshotRenameDocument(session *godiagnostics.Session, change renameDocumen
 	return document, nil
 }
 
-func safeRenameDocumentPath(root, documentURI string) (string, error) {
+func safeRenameDocumentPath(session *godiagnostics.Session, documentURI string) (string, error) {
 	uri, err := url.Parse(documentURI)
 	if err != nil || uri.Scheme != "file" || uri.Host != "" || uri.RawQuery != "" || uri.Fragment != "" || !filepath.IsAbs(uri.Path) {
 		return "", errors.New("rename edit has an invalid local file URI")
 	}
 	path := filepath.Clean(uri.Path)
-	canonical, err := filepath.EvalSymlinks(path)
+	canonical, err := session.CanonicalSourcePath(path)
 	if err != nil {
 		return "", fmt.Errorf("resolve rename file: %w", err)
 	}
-	if path != canonical || !pathutil.PathWithin(root, path) || filepath.Ext(path) != ".go" {
+	if path != canonical || !pathutil.PathWithin(session.Root, path) || filepath.Ext(path) != ".go" {
 		return "", fmt.Errorf("unsafe rename file %q", path)
 	}
-	info, err := os.Stat(path)
-	if err != nil {
+	info, err := os.Stat(canonical)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("stat rename file: %w", err)
 	}
-	if !info.Mode().IsRegular() {
+	if err == nil && !info.Mode().IsRegular() {
 		return "", fmt.Errorf("rename file %q is not regular", path)
 	}
-	return path, nil
+	return canonical, nil
 }
 
 func collectRenameSpans(request renamePlanRequest, document godiagnostics.Document, edits []renameTextEdit) (renameSpanPlan, error) {

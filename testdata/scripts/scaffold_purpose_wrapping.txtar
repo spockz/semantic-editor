@@ -1,0 +1,25 @@
+# Wrap plain and mixed purpose text as Go comments while preserving existing comments.
+mkdir api
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"isError":false'
+cmp api/config.go want/api/config.go
+cmp api/mixed.go want/api/mixed.go
+
+-- go.mod --
+module example.com/scaffold
+go 1.23
+
+-- want/api/config.go --
+// Provides application configuration primitives and parsing.
+
+package api
+-- want/api/mixed.go --
+// WHY: Documents the package.
+// Owns parsing and validation.
+
+package api
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"api/config.go","package":"api","purpose_header":"Provides application configuration primitives and parsing."}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"api/mixed.go","package":"api","purpose_header":"// WHY: Documents the package.\nOwns parsing and validation."}}}

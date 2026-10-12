@@ -1,0 +1,50 @@
+# The batch read sees the prior buffered mutation; a stale optional guard returns that current choice and stops later edits.
+cp api/sample.go before/sample.go
+exec semedit inspect-construct --file api/sample.go --in-function Check --kind if --discriminator ready
+stdout '"expected_selection_revision": "c950c86b12ee00875c2b2320365ce498ef2049cf70e5f8d69ae828cfd15a05d5"'
+stdin input.json
+exec semedit mcp
+stdout 'selection_revision_mismatch'
+stdout '"application_state":\s*"not_applied"'
+stdout '"file":\s*"api/sample.go"'
+stdout '"in_function":\s*"Check"'
+stdout '"kind":\s*"if"'
+stdout '"discriminator":\s*"ready"'
+stdout 'candidates'
+stdout 'expected_selection_revision'
+stdout 'construct_path'
+stdout 'use\(2\)'
+cmp api/sample.go want/sample.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"api/sample.go","in_function":"Check","kind":"if","discriminator":"ready","expected_selection_revision":"c950c86b12ee00875c2b2320365ce498ef2049cf70e5f8d69ae828cfd15a05d5","source":"if ready { use(2) }"}},{"tool":"semantic_inspect_construct","params":{"file":"api/sample.go","in_function":"Check","kind":"if","discriminator":"ready"}},{"tool":"semantic_replace_construct","params":{"file":"api/sample.go","in_function":"Check","kind":"if","discriminator":"ready","expected_selection_revision":"c950c86b12ee00875c2b2320365ce498ef2049cf70e5f8d69ae828cfd15a05d5","source":"if ready { use(3) }"}},{"tool":"semantic_replace_construct","params":{"file":"api/sample.go","in_function":"Check","kind":"if","discriminator":"ready","source":"if ready { use(4) }"}}]}}}
+
+-- go.mod --
+module example.com/inspectionbatch
+
+go 1.23
+
+-- api/sample.go --
+package sample
+
+func Check() {
+	if ready {
+		use(1)
+	}
+}
+-- before/sample.go --
+package sample
+
+func Check() {
+	if ready {
+		use(1)
+	}
+}
+-- want/sample.go --
+package sample
+
+func Check() {
+	if ready {
+		use(2)
+	}
+}

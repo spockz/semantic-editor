@@ -3,13 +3,13 @@ package operation
 
 var discriminatorOutputConsumers = []string{
 	semanticInsertCaseToolName, semanticInsertConstructToolName, semanticRemoveConstructToolName,
-	semanticReplaceConstructToolName,
+	semanticInspectConstructToolName, semanticReplaceConstructToolName,
 }
 
 var functionOutputConsumers = []string{
 	"semantic_extract_constant", "semantic_extract_function", "semantic_extract_variable",
 	semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName,
-	semanticRemoveConstructToolName, semanticReplaceConstructToolName,
+	semanticInspectConstructToolName, semanticRemoveConstructToolName, semanticReplaceConstructToolName,
 }
 
 var symbolOutputConsumers = []string{
@@ -26,6 +26,7 @@ var fileOutputConsumers = []string{
 	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticInsertCaseToolName,
 	semanticInsertConstructToolName, semanticInsertDeclToolName, semanticInsertDeclarationToolName,
 	semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInspectSymbolToolName,
+	semanticInspectConstructToolName,
 	"semantic_introduce_parameter", "semantic_introduce_parameter_object", "semantic_lookup",
 	semanticMigrateTypeToolName, semanticMoveConstructToolName, semanticRemoveConstructToolName,
 	semanticRenameToolName, semanticReplaceBodyToolName, semanticReplaceConstructToolName,

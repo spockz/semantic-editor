@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -320,6 +321,41 @@ func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
 	}
 }
 
+func TestStageReceiptContinuationGraph(t *testing.T) {
+	t.Parallel()
+	registry := operation.DefaultRegistry()
+	drop, ok := registry.LookupMCP("semantic_stage_drop")
+	if !ok {
+		t.Fatal("registry omitted semantic_stage_drop")
+	}
+	stepID := sourceParameterByJSONName(t, drop, "step_id")
+	if !reflect.DeepEqual(stepID.SourceFields, operation.StageDropSourceFields(registry.All())) {
+		t.Fatalf("stage-drop step_id sources = %v", stepID.SourceFields)
+	}
+	if got := drop.Output.Continuations; !reflect.DeepEqual(got, operation.StageDropContinuations()) {
+		t.Fatalf("stage-drop continuations = %#v", got)
+	}
+	stageSchema := drop.Output.ResultSchema
+	if stageSchema == nil {
+		t.Fatal("stage-drop has no typed receipt schema")
+	}
+	steps, ok := stageSchema.Properties["steps"]
+	if !ok || steps.Kind != operation.SchemaArray || steps.Items == nil || steps.Items.Kind != operation.SchemaObject || !slices.Contains(stageSchema.Required, "steps") {
+		t.Fatalf("stage-drop receipt schema does not require steps as an array: %#v", steps)
+	}
+	stageStepID, ok := steps.Items.Properties["step_id"]
+	if !ok || stageStepID.Kind != operation.SchemaString || !slices.Contains(steps.Items.Required, "step_id") {
+		t.Fatalf("stage-drop receipt step inventory does not require step_id: %#v", steps.Items)
+	}
+	mutation, ok := registry.LookupMCP("semantic_replace_body")
+	if !ok {
+		t.Fatal("registry omitted semantic_replace_body")
+	}
+	if got := operation.StageOutputContinuations(mutation); len(got) != 1 || got[0].Path != "stage_receipt.step_id" {
+		t.Fatalf("stage mutation continuation = %#v", got)
+	}
+}
+
 func sourceParameterByJSONName(t *testing.T, entry operation.Entry, name string) operation.ParameterContract {
 	t.Helper()
 	for _, parameter := range entry.Params {
@@ -364,6 +400,232 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 	}
 }
 
+func TestMCPRemainingTypedOutputsExposeObservableResults(t *testing.T) {
+	t.Parallel()
+	root := remainingTypedOutputWorkspace(t)
+	results := callRemainingTypedOutputs(t, root)
+	assertDependencyOutput(t, root, results["semantic_add_build_dependency"])
+	assertAssertionOutputs(t, results)
+	assertReadOutputs(t, results)
+	assertSnapshotUndoOutputs(t, results)
+	if len(results["semantic_workspace_outline"]["packages"].([]any)) == 0 {
+		t.Fatalf("workspace outline result = %#v", results["semantic_workspace_outline"])
+	}
+}
+
+func remainingTypedOutputWorkspace(t *testing.T) string {
+	t.Helper()
+	root := schemaWorkspace(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n\nreplace example.com/localdep => ./localdep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "localdep"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "localdep", "go.mod"), []byte("module example.com/localdep\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "localdep", "value.go"), []byte("package localdep\n\nconst Value = 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("// Package sample documents the typed output fixture.\npackage sample\n\nimport _ \"example.com/localdep\"\n\nfunc Foo() {}\nfunc Bar() { Foo() }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main_test.go"), []byte("package sample\n\nimport \"testing\"\n\nfunc TestCheck(t *testing.T) { t.Fatal(\"x\") }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func remainingTypedOutputRequests() []map[string]any {
+	return []map[string]any{
+		{"name": "semantic_add_build_dependency", "arguments": map[string]any{"package": "example.com/localdep@v0.0.0"}},
+		{"name": "semantic_assertion_mode", "arguments": map[string]any{"file": "main_test.go", "mode": "relax", "dry_run": true}},
+		{"name": "semantic_assertion_mode", "arguments": map[string]any{"file": "main_test.go", "mode": "relax", "trust_workspace": true}},
+		{"name": "semantic_assertion_mode", "arguments": map[string]any{"file": "main_test.go", "mode": "relax", "trust_workspace": true}},
+		{"name": "semantic_find_references", "arguments": map[string]any{"symbol": "Foo", "file": "main.go", "language": "go"}},
+		{"name": "semantic_outline", "arguments": map[string]any{"file": "main.go", "language": "go"}},
+		{"name": "semantic_snapshot", "arguments": map[string]any{"label": "before-output-test", "paths": []string{"main.go"}}},
+		{"name": "semantic_undo", "arguments": map[string]any{"snapshot_id": "latest"}},
+		{"name": "semantic_workspace_outline", "arguments": map[string]any{"path": "."}},
+	}
+}
+
+func callRemainingTypedOutputs(t *testing.T, root string) map[string]map[string]any {
+	t.Helper()
+	requests := remainingTypedOutputRequests()
+	var input strings.Builder
+	for index, request := range requests {
+		encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": index + 1, "method": "tools/call", "params": request})
+		if err != nil {
+			t.Fatal(err)
+		}
+		input.Write(encoded)
+		input.WriteByte('\n')
+	}
+	var output bytes.Buffer
+	if err := mcptest.NewServer(t, "full", root, &output).Serve(context.Background(), strings.NewReader(input.String())); err != nil {
+		t.Fatalf("serve typed output calls: %v", err)
+	}
+	return decodeRemainingTypedOutputResults(t, output.String(), requests)
+}
+
+func decodeRemainingTypedOutputResults(t *testing.T, output string, requests []map[string]any) map[string]map[string]any {
+	t.Helper()
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != len(requests) {
+		t.Fatalf("MCP responses = %d, want %d: %s", len(lines), len(requests), output)
+	}
+	results := make(map[string]map[string]any, len(requests))
+	seen := make(map[string]int, len(requests))
+	for index, line := range lines {
+		var response map[string]any
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			t.Fatalf("decode response %d: %v", index+1, err)
+		}
+		name := mcpResultKey(t, response, requests[index], line, seen)
+		results[name] = mcpStructuredResult(t, response)
+	}
+	return results
+}
+
+func mcpResultKey(t *testing.T, response, request map[string]any, line string, seen map[string]int) string {
+	t.Helper()
+	if response["error"] != nil {
+		t.Fatalf("tool %s returned protocol error: %s", request["name"], line)
+	}
+	call := response["result"].(map[string]any)
+	if call["isError"] == true {
+		t.Fatalf("tool %s returned error: %s", request["name"], line)
+	}
+	name := request["name"].(string)
+	seen[name]++
+	if seen[name] > 1 {
+		name += "#" + strconv.Itoa(seen[name])
+	}
+	return name
+}
+
+func mcpStructuredResult(t *testing.T, response map[string]any) map[string]any {
+	t.Helper()
+	call := response["result"].(map[string]any)
+	structured := call["structuredContent"].(map[string]any)
+	return structured["result"].(map[string]any)
+}
+
+func assertDependencyOutput(t *testing.T, root string, dependency map[string]any) {
+	t.Helper()
+	if dependency["status"] != "added" || dependency["package"] != "example.com/localdep@v0.0.0" || dependency["go_mod"] != filepath.Join(root, "go.mod") {
+		t.Fatalf("dependency result = %#v", dependency)
+	}
+	goMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatalf("read dependency go.mod: %v", err)
+	}
+	if !strings.Contains(string(goMod), "require example.com/localdep v0.0.0") {
+		t.Fatalf("dependency go.mod omitted requested require: %s", goMod)
+	}
+}
+
+func assertAssertionOutputs(t *testing.T, results map[string]map[string]any) {
+	t.Helper()
+	assertions := results["semantic_assertion_mode"]
+	if assertions["status"] != "preview" || assertions["swapped"] != float64(1) || assertions["edit_receipt"].(map[string]any)["status"] != string(operation.EditNoOp) {
+		t.Fatalf("assertion preview result = %#v", assertions)
+	}
+	actualAssertions := results["semantic_assertion_mode#2"]
+	if actualAssertions["status"] != string(operation.EditPersisted) || actualAssertions["edit_receipt"].(map[string]any)["status"] != string(operation.EditPersisted) {
+		t.Fatalf("assertion persisted result = %#v", actualAssertions)
+	}
+	noOpAssertions := results["semantic_assertion_mode#3"]
+	if noOpAssertions["status"] != string(operation.EditNoOp) || noOpAssertions["edit_receipt"].(map[string]any)["status"] != string(operation.EditNoOp) {
+		t.Fatalf("assertion no-op result = %#v", noOpAssertions)
+	}
+}
+
+func assertReadOutputs(t *testing.T, results map[string]map[string]any) {
+	t.Helper()
+	if len(results["semantic_find_references"]["references"].([]any)) != 1 {
+		t.Fatalf("reference result = %#v", results["semantic_find_references"])
+	}
+	outlineFiles := results["semantic_outline"]["files"].([]any)
+	if len(outlineFiles) != 1 {
+		t.Fatalf("outline result = %#v", results["semantic_outline"])
+	}
+	if outlineFiles[0].(map[string]any)["doc"] != "// Package sample documents the typed output fixture." {
+		t.Fatalf("outline file documentation = %#v", outlineFiles[0])
+	}
+}
+
+func assertSnapshotUndoOutputs(t *testing.T, results map[string]map[string]any) {
+	t.Helper()
+	if results["semantic_snapshot"]["status"] != "created" || results["semantic_snapshot"]["snapshot_id"] == "" {
+		t.Fatalf("snapshot result = %#v", results["semantic_snapshot"])
+	}
+	if results["semantic_undo"]["status"] != "no_op" {
+		t.Fatalf("undo result = %#v", results["semantic_undo"])
+	}
+}
+
+func TestMCPBatchAssertionModeReportsWorkingReceipt(t *testing.T) {
+	t.Parallel()
+	root := schemaWorkspace(t)
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/assertionbatch\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "main_test.go")
+	if err := os.WriteFile(file, []byte("package sample\n\nimport \"testing\"\n\nfunc TestCheck(t *testing.T) { t.Fatal(\"x\") }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{
+		"name": "semantic_batch",
+		"arguments": map[string]any{"edits": []any{map[string]any{
+			"tool":   "semantic_assertion_mode",
+			"params": map[string]any{"file": "main_test.go", "mode": "relax", "trust_workspace": true},
+		}}},
+	}}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	err = mcptest.NewServer(t, "full", root, &output).Serve(context.Background(), bytes.NewReader(append(encoded, '\n')))
+	if err != nil {
+		t.Fatalf("serve assertion batch: %v", err)
+	}
+	var response map[string]any
+	err = json.Unmarshal(output.Bytes(), &response)
+	if err != nil {
+		t.Fatalf("decode assertion batch response: %v", err)
+	}
+	call := response["result"].(map[string]any)
+	if call["isError"] == true {
+		t.Fatalf("assertion batch returned error: %#v", call["content"])
+	}
+	structured := call["structuredContent"].(map[string]any)
+	batch := structured["result"].(map[string]any)
+	children := batch["results"].([]any)
+	if len(children) != 1 {
+		t.Fatalf("batch child results = %#v", children)
+	}
+	child := children[0].(map[string]any)
+	if child["status"] != "ok" {
+		t.Fatalf("assertion batch child = %#v", child)
+	}
+	result := child["result"].(map[string]any)
+	receipt := result["edit_receipt"].(map[string]any)
+	if receipt["status"] != string(operation.EditAppliedWorking) {
+		t.Fatalf("batch assertion receipt status = %#v, want applied_working", receipt["status"])
+	}
+	contents, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(contents), `t.Error("x")`) || strings.Contains(string(contents), `t.Fatal("x")`) {
+		t.Fatalf("batch assertion mutation was not published to disk: %s", contents)
+	}
+}
+
 func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	t.Helper()
 	name, ok := tool["name"].(string)
@@ -389,6 +651,16 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertTypedOutcomeOrLegacyStringSchema(t, name, output)
 	case "semantic_lookup":
 		assertRegisteredTypedOutputSchema(t, name, output)
+	case "semantic_assertion_mode", "semantic_add_build_dependency", "semantic_find_references", "semantic_outline", "semantic_snapshot", "semantic_undo", "semantic_workspace_outline":
+		assertRemainingTypedOutputSchema(t, name, output)
+	case "semantic_inspect_construct":
+		assertTypedObjectRequiredFields(t, name, output, "file", "in_function", "kind", "candidates", "expected_selection_revision")
+	case "semantic_stage", "semantic_stage_drop", "semantic_stage_abort":
+		assertTypedObjectRequiredFields(t, name, output, "status", "stage_id", "steps", "step_count", "request_bytes", "dirty_source_bytes", "limits")
+		assertStageReceiptNestedSchema(t, name, output)
+	case "semantic_commit":
+		assertTypedObjectRequiredFields(t, name, output, "status", "workspace_root", "results", "published_files", "final_diff")
+		assertStageCommitNestedSchema(t, name, output)
 	case "semantic_insert_construct":
 		assertFileEditOutputSchema(t, name, output)
 		assertCompositeElementOutputSchema(t, output)
@@ -409,6 +681,47 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	}
 }
 
+func assertRemainingTypedOutputSchema(t *testing.T, name string, output any) {
+	t.Helper()
+	result := assertRegisteredTypedOutputSchema(t, name, output)
+	properties, ok := result["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s result schema properties = %#v", name, result["properties"])
+	}
+	want := map[string][]string{
+		"semantic_assertion_mode":       {"status", "file", "swapped", "edit_receipt"},
+		"semantic_add_build_dependency": {"status", "package", "go_mod"},
+		"semantic_find_references":      {"scope", "symbol", "references", "files"},
+		"semantic_outline":              {"scope", "files"},
+		"semantic_snapshot":             {"status", "snapshot_id", "created_at", "captured_files", "captured_file_count", "captured_files_truncated"},
+		"semantic_undo":                 {"status", "restored_files", "restored_file_count", "restored_files_truncated", "diagnostics", "diagnostic_count", "diagnostics_truncated", "diagnostic_status"},
+		"semantic_workspace_outline":    {"scope", "modules", "packages"},
+	}
+	for _, field := range want[name] {
+		if properties[field] == nil {
+			t.Errorf("%s result schema omitted meaningful field %q", name, field)
+		}
+	}
+	for field, limit := range map[string]float64{"captured_files": 100, "restored_files": 100, "diagnostics": 20} {
+		if properties[field] == nil {
+			continue
+		}
+		if got := properties[field].(map[string]any)["maxItems"]; got != limit {
+			t.Errorf("%s.%s maxItems = %#v, want %v", name, field, got, limit)
+		}
+	}
+	if name == "semantic_outline" {
+		files := properties["files"].(map[string]any)
+		fileProperties := files["items"].(map[string]any)["properties"].(map[string]any)
+		if fileProperties["doc"] == nil {
+			t.Error("semantic_outline file schema omitted optional doc")
+		}
+		if slices.Contains(files["items"].(map[string]any)["required"].([]any), "doc") {
+			t.Error("semantic_outline file doc must remain optional")
+		}
+	}
+}
+
 func assertRegisteredTypedOutputSchema(t *testing.T, name string, output any) map[string]any {
 	t.Helper()
 	assertStandardOutputSchema(t, output, "object")
@@ -419,6 +732,62 @@ func assertRegisteredTypedOutputSchema(t *testing.T, name string, output any) ma
 	result := nativeResultSchema(t, output)
 	assertResultSchemaMatchesRegistration(t, name, result, entry)
 	return result
+}
+
+func assertTypedObjectRequiredFields(t *testing.T, name string, output any, fields ...string) {
+	t.Helper()
+	result := assertRegisteredTypedOutputSchema(t, name, output)
+	properties, ok := result["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s result schema properties = %#v", name, result["properties"])
+	}
+	required, ok := result["required"].([]any)
+	if !ok {
+		t.Fatalf("%s result schema required fields = %#v", name, result["required"])
+	}
+	for _, field := range fields {
+		if properties[field] == nil {
+			t.Errorf("%s result schema omitted meaningful field %q", name, field)
+		}
+		if !slices.Contains(required, any(field)) {
+			t.Errorf("%s result schema does not require meaningful field %q", name, field)
+		}
+	}
+}
+
+func assertStageReceiptNestedSchema(t *testing.T, name string, output any) {
+	t.Helper()
+	result := nativeResultSchema(t, output)
+	properties := result["properties"].(map[string]any)
+	stepItems := properties["steps"].(map[string]any)["items"].(map[string]any)
+	assertObjectRequiredFields(t, name+".steps[]", stepItems, "step_id")
+	limits := properties["limits"].(map[string]any)
+	assertObjectRequiredFields(t, name+".limits", limits, "steps", "request_bytes", "dirty_source_bytes", "max_age")
+}
+
+func assertStageCommitNestedSchema(t *testing.T, name string, output any) {
+	t.Helper()
+	result := nativeResultSchema(t, output)
+	properties := result["properties"].(map[string]any)
+	rows := properties["results"].(map[string]any)["items"].(map[string]any)
+	assertObjectRequiredFields(t, name+".results[]", rows, "step_id", "tool", "status")
+}
+
+func assertObjectRequiredFields(t *testing.T, name string, object map[string]any, fields ...string) {
+	t.Helper()
+	properties := object["properties"].(map[string]any)
+	required, ok := object["required"].([]any)
+	if !ok {
+		t.Fatalf("%s schema required fields = %#v", name, object["required"])
+	}
+	for _, field := range fields {
+		if properties[field] == nil {
+			t.Errorf("%s schema omitted meaningful field %q", name, field)
+		}
+		if !slices.Contains(required, any(field)) {
+			t.Errorf("%s schema does not require meaningful field %q", name, field)
+		}
+	}
 }
 
 func assertFileEditOutputSchema(t *testing.T, name string, output any) {
@@ -798,10 +1167,10 @@ func assertBatchItemOutcomeBranch(t *testing.T, branch map[string]any) {
 func assertBatchAggregateOutcomeBranches(t *testing.T, result map[string]any) {
 	t.Helper()
 	branches, ok := result["oneOf"].([]any)
-	if !ok || len(branches) != 2 {
-		t.Fatalf("batch aggregate outcomes = %#v, want ok and error branches", result["oneOf"])
+	if !ok || len(branches) != 3 {
+		t.Fatalf("batch aggregate outcomes = %#v, want ok, applied_with_diagnostics, and error branches", result["oneOf"])
 	}
-	foundSuccess, foundError := false, false
+	foundSuccess, foundAppliedWithDiagnostics, foundError := false, false, false
 	for _, rawBranch := range branches {
 		branch := rawBranch.(map[string]any)
 		properties := branch["properties"].(map[string]any)
@@ -821,10 +1190,15 @@ func assertBatchAggregateOutcomeBranches(t *testing.T, result map[string]any) {
 			if !reflect.DeepEqual(not["required"], []any{"diagnostic_delta"}) {
 				t.Fatalf("error aggregate branch permits diagnostic_delta: %#v", branch)
 			}
+		case "applied_with_diagnostics":
+			foundAppliedWithDiagnostics = true
+			if _, forbidden := branch["not"]; forbidden {
+				t.Fatalf("applied aggregate branch rejects diagnostic_delta: %#v", branch)
+			}
 		}
 	}
-	if !foundSuccess || !foundError {
-		t.Fatalf("batch aggregate schema omitted successful or error branch: %#v", branches)
+	if !foundSuccess || !foundAppliedWithDiagnostics || !foundError {
+		t.Fatalf("batch aggregate schema omitted successful, applied, or error branch: %#v", branches)
 	}
 }
 

@@ -1,0 +1,20 @@
+# Package initializers may be repeated, while an init-named method is not exempted from collision checks.
+exec semedit insert-func --file api/init.go --source 'func init() {}'
+stdout 'Successfully inserted function'
+exec cp api/init.go .scratch/before-init.go
+! exec semedit insert-func --file api/init.go --source 'func (t *T) init() {}'
+stderr 'already exists'
+cmp api/init.go .scratch/before-init.go
+
+-- go.mod --
+module example.com/insert-init
+
+go 1.23
+
+-- api/init.go --
+package api
+
+type T struct{}
+
+func init() {}
+func (t *T) init() {}

@@ -3,13 +3,16 @@
 package gocache_test
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"semedit/internal/gocache"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestGoSubprocessTemporaryFiles(t *testing.T) {
@@ -88,5 +91,178 @@ func TestEnvironmentKeepsGoplsCacheBelowSelectedBase(t *testing.T) {
 	}
 	if !foundGoplsCache {
 		t.Fatal("Go subprocess environment omitted GOPLSCACHE")
+	}
+}
+
+func TestEnvironmentSeedsOfflineModuleCacheIntoManagedState(t *testing.T) {
+	seed := filepath.Join(t.TempDir(), "seed")
+	source := filepath.Join(seed, "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sourceData := []byte("module fixture.test/dependency\n\ngo 1.27.1\n")
+	if err := os.WriteFile(source, sourceData, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	oldTime := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(source, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOPROXY", "off")
+	base := filepath.Join(t.TempDir(), "managed")
+	ctx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(t.Context(), base), seed)
+	environment, err := gocache.Environment(ctx, t.TempDir())
+	if err != nil {
+		t.Fatalf("prepare offline module cache: %v", err)
+	}
+	var moduleCache string
+	for _, entry := range environment {
+		if after, ok := strings.CutPrefix(entry, "GOMODCACHE="); ok {
+			moduleCache = after
+		}
+	}
+	if moduleCache != filepath.Join(base, "mod") {
+		t.Fatalf("GOMODCACHE = %q, want managed cache %q", moduleCache, filepath.Join(base, "mod"))
+	}
+	copied := filepath.Join(moduleCache, "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	got, err := os.ReadFile(copied)
+	if err != nil {
+		t.Fatalf("read copied module metadata: %v", err)
+	}
+	if !bytes.Equal(got, sourceData) {
+		t.Fatalf("copied module metadata = %q, want %q", got, sourceData)
+	}
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destinationInfo, err := os.Stat(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sourceInfo.ModTime().Equal(oldTime) || !destinationInfo.ModTime().After(oldTime) {
+		t.Fatalf("source/destination timestamps = %v / %v, want preserved source and fresh destination", sourceInfo.ModTime(), destinationInfo.ModTime())
+	}
+}
+
+func TestEnvironmentControlsModuleWriteFlags(t *testing.T) {
+	t.Setenv("GOFLAGS", "-mod=mod -v")
+	readValue := func(environment []string) string {
+		for _, entry := range environment {
+			if value, ok := strings.CutPrefix(entry, "GOFLAGS="); ok {
+				return value
+			}
+		}
+		return ""
+	}
+	ordinary, err := gocache.Environment(t.Context(), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readValue(ordinary); got != "-mod=readonly" {
+		t.Fatalf("ordinary GOFLAGS = %q, want -mod=readonly", got)
+	}
+	writable, err := gocache.Environment(gocache.WithWritableModuleChanges(t.Context()), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readValue(writable); got != "" {
+		t.Fatalf("explicit module-change GOFLAGS = %q, want empty", got)
+	}
+}
+
+func TestEnvironmentRejectsOfflineModuleCacheSeedConflicts(t *testing.T) {
+	t.Setenv("GOPROXY", "off")
+	seed := filepath.Join(t.TempDir(), "seed")
+	source := filepath.Join(seed, "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("module fixture.test/dependency\n"), 0o400); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(t.TempDir(), "managed")
+	destination := filepath.Join(base, "mod", "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destination, []byte("preexisting cache data\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(t.Context(), base), seed)
+	if _, err := gocache.Environment(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("Environment() error = %v, want cache conflict", err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "preexisting cache data\n" {
+		t.Fatalf("existing cache contents changed to %q", got)
+	}
+}
+
+func TestEnvironmentRejectsOfflineModuleCacheSeedSymlinks(t *testing.T) {
+	t.Setenv("GOPROXY", "off")
+	seed := filepath.Join(t.TempDir(), "seed")
+	if err := os.MkdirAll(seed, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "outside")
+	if err := os.WriteFile(target, []byte("outside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(seed, "link")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	ctx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(t.Context(), filepath.Join(t.TempDir(), "managed")), seed)
+	if _, err := gocache.Environment(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("Environment() error = %v, want seed symlink refusal", err)
+	}
+}
+
+func TestEnvironmentRequiresOfflineModeForModuleCacheSeed(t *testing.T) {
+	t.Setenv("GOPROXY", "https://proxy.golang.org")
+	ctx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(t.Context(), filepath.Join(t.TempDir(), "managed")), t.TempDir())
+	if _, err := gocache.Environment(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "GOPROXY=off") {
+		t.Fatalf("Environment() error = %v, want explicit offline-mode requirement", err)
+	}
+}
+
+func TestEnvironmentSeedsOfflineModuleCacheConcurrently(t *testing.T) {
+	t.Setenv("GOPROXY", "off")
+	seed := filepath.Join(t.TempDir(), "seed")
+	source := filepath.Join(seed, "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	if err := os.MkdirAll(filepath.Dir(source), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contents := []byte("module fixture.test/dependency\n")
+	if err := os.WriteFile(source, contents, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	base := filepath.Join(t.TempDir(), "managed")
+	ctx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(t.Context(), base), seed)
+	var group sync.WaitGroup
+	errors := make(chan error, 8)
+	for range cap(errors) {
+		group.Go(func() {
+			_, err := gocache.Environment(ctx, t.TempDir())
+			errors <- err
+		})
+	}
+	group.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent Environment() error: %v", err)
+		}
+	}
+	copied := filepath.Join(base, "mod", "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")
+	got, err := os.ReadFile(copied)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, contents) {
+		t.Fatalf("concurrent seed contents = %q, want %q", got, contents)
 	}
 }

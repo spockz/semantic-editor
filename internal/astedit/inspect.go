@@ -82,7 +82,7 @@ func resolveGoInspectSnapshot(ctx context.Context, root, file, query string) (go
 
 func inspectSymbolCandidates(result *symbol.LookupResult) []*symbol.Symbol {
 	candidates := make([]*symbol.Symbol, 0, 1)
-	if result.Ambiguous {
+	if result.IsAmbiguous() {
 		return append(candidates, result.Candidates...)
 	}
 	if result.Definition != nil {

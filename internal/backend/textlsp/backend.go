@@ -225,7 +225,7 @@ func (a *Adapter) Lookup(ctx context.Context, project backend.ProjectContext, qu
 	if err != nil {
 		return nil, err
 	}
-	return selectSymbol(query, root, file, source, symbols)
+	return selectSymbol(query, file, symbols)
 }
 
 // Outline returns a validated selected-file projection from the configured language server.
@@ -804,7 +804,7 @@ func utf16Offset(src []byte, want int) (int, error) {
 	}
 	return 0, errors.New("character outside line")
 }
-func selectSymbol(query, root, file string, src []byte, items []symbol) (*backend.LookupResult, error) {
+func selectSymbol(query, file string, items []symbol) (*backend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	if slices.Contains(parts, "") {
 		return nil, ErrMalformedSymbols
@@ -832,7 +832,7 @@ func selectSymbol(query, root, file string, src []byte, items []symbol) (*backen
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("%s: %w", query, ErrSymbolNotFound)
 	}
-	candidates := make([]*backend.SymbolCandidate, 0, len(matches))
+	candidates := make([]*backend.NamedTarget, 0, len(matches))
 	for _, m := range matches {
 		r := m.s.Selection
 		if r == (sourceRange{}) {
@@ -841,21 +841,14 @@ func selectSymbol(query, root, file string, src []byte, items []symbol) (*backen
 		if m.s.Location != nil {
 			r = m.s.Location.Range
 		}
-		line, col := r.Start.Line+1, r.Start.Character+1
-		off, _ := byteOffset(src, r.Start)
-		rel, _ := filepath.Rel(root, file)
 		kind := symbolKind(m.s.Kind)
-		candidate := &backend.SymbolCandidate{Name: m.s.Name, QualifiedName: strings.Join(m.path, "."), Kind: kind, File: rel, Line: line, Column: col, Offset: off, Location: backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: backend.Position(r.Start), End: backend.Position(r.End)}}}
-		if len(m.path) > 1 {
-			candidate.Receiver = strings.Join(m.path[:len(m.path)-1], ".")
-		}
+		candidate := &backend.NamedTarget{Name: m.s.Name, QualifiedName: strings.Join(m.path, "."), Kind: kind, Location: backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: backend.Position(r.Start), End: backend.Position(r.End)}}}
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) > 1 {
-		return &backend.LookupResult{Symbol: query, File: file, Ambiguous: true, Candidates: candidates}, nil
+		return &backend.LookupResult{Candidates: candidates}, nil
 	}
-	c := candidates[0]
-	return &backend.LookupResult{Symbol: c.QualifiedName, File: c.File, Line: c.Line, Column: c.Column, Offset: c.Offset, Kind: c.Kind, Receiver: c.Receiver, Location: c.Location}, nil
+	return &backend.LookupResult{Definition: candidates[0]}, nil
 }
 func symbolKind(k int) string {
 	switch k {

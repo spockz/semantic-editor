@@ -1,0 +1,15 @@
+# A regular buffered MCP batch creates a scaffold parent only when final publication succeeds.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+cmp generated/model.go want/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"generated/model.go","package":"batchscaffold"}}]}}}
+-- go.mod --
+module example.com/batchscaffold
+
+go 1.24
+-- want/model.go --
+package batchscaffold

@@ -1,0 +1,27 @@
+# A staged scaffold is editable through the overlay; abort keeps its new directory private and commit publishes the final mutation.
+stdin input.json
+exec semedit mcp
+stdout '"step_count":2'
+stdout '"status":"aborted"'
+! exists aborted
+! exists aborted/model.go
+cmp generated/model.go want/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"aborted/model.go","package":"stageoverlay"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":"aborted/model.go","source":"func Model() int { return 1 }"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_stage_abort","arguments":{}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"generated/model.go","package":"stageoverlay"}}}
+{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":"generated/model.go","source":"func Model() int { return 1 }"}}}
+{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+-- go.mod --
+module example.com/stageoverlay
+
+go 1.24
+-- want/model.go --
+package stageoverlay
+
+func Model() int { return 1 }

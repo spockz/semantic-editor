@@ -9,14 +9,17 @@ import (
 
 // Request carries typed project execution inputs from an ingress adapter.
 type Request struct {
-	Project            backend.ProjectContext
-	Path               string
-	FormatSelectedFile bool
-	OrganizeImports    bool
-	CheckOnly          bool
-	AllowedLanguages   []backend.LanguageID
-	GoFormattingPaths  []string
-	Service            *backend.Service
+	Project              backend.ProjectContext
+	Path                 string
+	FormatSelectedFile   bool
+	OrganizeImports      bool
+	CheckOnly            bool
+	SkipHooks            bool
+	AllowedLanguages     []backend.LanguageID
+	GoFormattingPaths    []string
+	GoPackagePatterns    map[string][]string
+	GoPackageScopeDetail string
+	Service              *backend.Service
 }
 
 // Result carries final diagnostics and each completed verification phase.

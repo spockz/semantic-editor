@@ -144,7 +144,11 @@ func renamePropertyMethod(rt *rapid.T, fixture roundTripFixture, from, to, direc
 	if err != nil {
 		rt.Fatalf("resolve %s symbol %s: %v", direction, query, err)
 	}
-	if err := golang.Rename(context.Background(), fixture.root, resolved.File, resolved.Line, resolved.Column, to); err != nil {
+	if resolved.Definition == nil || resolved.IsAmbiguous() {
+		rt.Fatalf("resolve %s symbol %s did not return a unique definition: %+v", direction, query, resolved)
+	}
+	definition := resolved.Definition
+	if err := golang.Rename(context.Background(), fixture.root, definition.File, definition.Line, definition.Column, to); err != nil {
 		rt.Fatalf("%s rename failed: %v", direction, err)
 	}
 	if err := pipeline.Format(context.Background(), fixture.root, fixture.file); err != nil {

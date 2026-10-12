@@ -3,6 +3,7 @@ package operation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/sourcebuf"
 )
 
 // ReplaceBodyReq replaces one function or method body with bare statements.
@@ -24,15 +26,16 @@ type ReplaceBodyReq struct {
 
 // ReplaceConstructReq replaces one Go control-flow construct within a function or method.
 type ReplaceConstructReq struct {
-	Project             backend.ProjectContext
-	File                string
-	Symbol              string
-	InFunction          string
-	Kind                backend.ConstructKind
-	Discriminator       string
-	ConstructPath       string
-	Source              string
-	AutoOrganizeImports bool
+	Project                   backend.ProjectContext
+	File                      string
+	Symbol                    string
+	InFunction                string
+	Kind                      backend.ConstructKind
+	Discriminator             string
+	ConstructPath             string
+	ExpectedSelectionRevision string
+	Source                    string
+	AutoOrganizeImports       bool
 }
 
 // MoveConstructReq relocates a declaration without requiring source text.
@@ -105,7 +108,7 @@ func parseMoveConstruct(raw map[string]any) (MoveConstructReq, error) {
 	return req, nil
 }
 
-func validateBatchMoveTargets(workDir, sourcePath, destinationPath string) error {
+func validateBatchMoveTargets(ctx context.Context, workDir, sourcePath, destinationPath string) error {
 	rootPath, err := filepath.Abs(workDir)
 	if err != nil {
 		return fmt.Errorf("resolve batch workspace root: %w", err)
@@ -115,14 +118,14 @@ func validateBatchMoveTargets(workDir, sourcePath, destinationPath string) error
 		return fmt.Errorf("resolve batch workspace root symlinks: %w", err)
 	}
 	for _, target := range []string{sourcePath, destinationPath} {
-		if targetErr := validateBatchMovePath(rootPath, root, target); targetErr != nil {
+		if targetErr := validateBatchMovePath(ctx, rootPath, root, target); targetErr != nil {
 			return targetErr
 		}
 	}
 	return nil
 }
 
-func validateBatchMovePath(rootPath, root, target string) error {
+func validateBatchMovePath(ctx context.Context, rootPath, root, target string) error {
 	absolute, err := filepath.Abs(target)
 	if err != nil {
 		return fmt.Errorf("resolve batch move path %q: %w", target, err)
@@ -131,21 +134,21 @@ func validateBatchMovePath(rootPath, root, target string) error {
 	if err != nil || lexicalRelative == "." || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("batch move path %q must remain inside the workspace", target)
 	}
-	if symlinkErr := rejectBatchMoveSymlinkComponents(rootPath, lexicalRelative, target); symlinkErr != nil {
-		return symlinkErr
-	}
-	resolved, err := filepath.EvalSymlinks(absolute)
+	resolved, err := sourcebuf.CanonicalPath(ctx, absolute)
 	if err != nil {
 		return fmt.Errorf("resolve batch move path %q: %w", target, err)
+	}
+	if symlinkErr := rejectBatchMoveSymlinkComponents(rootPath, lexicalRelative, target); symlinkErr != nil {
+		return symlinkErr
 	}
 	if relativeErr := validateBatchMoveRelative(root, resolved, target); relativeErr != nil {
 		return relativeErr
 	}
-	info, err := os.Stat(resolved)
+	_, err = sourcebuf.ReadFile(ctx, resolved)
 	if err != nil {
 		return fmt.Errorf("inspect batch move file %q: %w", target, err)
 	}
-	if !info.Mode().IsRegular() || filepath.Ext(resolved) != ".go" {
+	if filepath.Ext(resolved) != ".go" {
 		return fmt.Errorf("batch move path %q must be a regular Go source file", target)
 	}
 	return nil
@@ -157,6 +160,9 @@ func rejectBatchMoveSymlinkComponents(rootPath, relative, target string) error {
 		current = filepath.Join(current, component)
 		info, err := os.Lstat(current)
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
 			return fmt.Errorf("inspect batch move path %q: %w", target, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
@@ -184,7 +190,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 	sourcePath := resolveWorkPath(cc.WorkDir, req.File)
 	destinationPath := resolveWorkPath(cc.WorkDir, req.DestinationFile)
 	if cc.InBatch {
-		if err := validateBatchMoveTargets(cc.WorkDir, sourcePath, destinationPath); err != nil {
+		if err := validateBatchMoveTargets(ctx, cc.WorkDir, sourcePath, destinationPath); err != nil {
 			return FileEditRes{}, err
 		}
 
@@ -223,12 +229,13 @@ func (r ReplaceBodyReq) GetProjectContext() backend.ProjectContext { return r.Pr
 func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: Go source file containing the declaration or construct; direct symbol resolution is scoped to this file.", Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: Go source file containing the declaration or construct; direct symbol resolution is scoped to this file.", Required: true, SourceFields: append(append([]string(nil), sourceFileContinuations...), semanticInspectConstructToolName+".result.file")},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: short declaration name or Receiver.Method resolved directly in the given file; declaration replacement does not require an enclosing function", Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceReplaceBodySymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol}},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: enclosing function or method for nested control-flow and statement/expression constructs", Role: RoleSelector, SourceFields: append(sourceInFunctionContinuations, "semantic_inspect_symbol.result.continuations[].in_function")},
-	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableReplaceConstructKinds},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: existing condition, statement, expression, or construct source; required to identify nested targets", Role: RoleSelector, SourceFields: sourceDiscriminatorContinuations},
-	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: enclosing function or method for nested control-flow and statement/expression constructs", Role: RoleSelector, SourceFields: append(append(append([]string(nil), sourceInFunctionContinuations...), "semantic_inspect_symbol.result.continuations[].in_function"), semanticInspectConstructToolName+".result.in_function")},
+	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, Role: RoleSelector, DynamicEnums: executableReplaceConstructKinds, SourceFields: []string{semanticInspectConstructToolName + ".result.kind"}},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: existing condition, statement, expression, or construct source; required to identify nested targets", Role: RoleSelector, SourceFields: append(append([]string(nil), sourceDiscriminatorContinuations...), semanticInspectConstructToolName+".result.discriminator")},
+	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: exact construct_path from semantic_inspect_construct candidate list.", Role: RoleSelector, SourceFields: []string{semanticInspectConstructToolName + ".result." + wireCandidates + "[]." + wireConstructPath}},
+	{Name: wireExpectedSelectionRevision, CLIName: wireCLIExpectedSelectionRevision, JSONName: wireExpectedSelectionRevision, Type: ParamString, Description: "Optional guard from semantic_inspect_construct for nested path-addressable constructs. A mismatch refuses before writing and returns the current choices and token; it is not a whole-file revision.", Role: RoleTarget, SourceFields: []string{semanticInspectConstructToolName + ".result." + wireExpectedSelectionRevision}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement construct source; expression kinds require an expression and statement/declaration kinds require the matching syntax", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
 }
@@ -395,13 +402,14 @@ func runScaffoldFile(ctx context.Context, cc CallContext, req ScaffoldFileReq) (
 
 func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 	return Def[ScaffoldFileReq, ScaffoldFileRes]{
-		Key:     "scaffold_file",
-		Summary: "Use this tool instead of a built-in file writer when creating a Go source file with the correct package declaration. Use 'infer' (default) for package to auto-detect from sibling non-test files. Fails if the file already exists unless overwrite is true. Does not seed declarations — use insert tools afterward.",
-		Params:  scaffoldFileParams,
-		Level:   LevelFile,
-		CLIName: "scaffold-file",
-		MCPName: "semantic_scaffold_file",
-		Parse:   parseScaffoldFile,
+		Key:           "scaffold_file",
+		Summary:       "Use this tool instead of a built-in file writer when creating a Go source file with the correct package declaration. Use 'infer' (default) for package to auto-detect from sibling non-test files. Fails if the file already exists unless overwrite is true. Does not seed declarations — use insert tools afterward.",
+		Params:        scaffoldFileParams,
+		Level:         LevelFile,
+		CLIName:       "scaffold-file",
+		MCPName:       "semantic_scaffold_file",
+		BufferedBatch: true,
+		Parse:         parseScaffoldFile,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ScaffoldFileReq) (ScaffoldFileRes, error){
 			backend.LanguageGo: runScaffoldFile,
 		},
@@ -411,7 +419,7 @@ func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 		ExampleRaw: map[string]any{"file": wireExampleFile},
 		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, "package": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers)}),
 		FinalizeOutput: func(cc CallContext, _ ScaffoldFileReq, result ScaffoldFileRes) (ScaffoldFileRes, error) {
-			content, err := os.ReadFile(result.File)
+			content, err := sourcebuf.ReadFile(cc.Ctx, result.File)
 			if err != nil {
 				return ScaffoldFileRes{}, fmt.Errorf("read scaffolded file for receipt: %w", err)
 			}
@@ -420,7 +428,7 @@ func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 				return ScaffoldFileRes{}, fmt.Errorf("scaffolded file path is empty: %w", ErrInvalidDefinition)
 			}
 			revision := structuralRevision(content)
-			receipt, err := FinalizeEditReceipt(cc.Ctx, cc.WorkDir, false, cc.InBatch, EditReceiptDraft{Operation: "scaffold_file", Status: EditPersisted, PlannedChanges: []FileRevision{{Path: path, Revision: revision}}}, nil)
+			receipt, err := finalizeCallReceipt(cc.Ctx, cc, cc.WorkDir, EditReceiptDraft{Operation: "scaffold_file", Status: EditPersisted, PlannedChanges: []FileRevision{{Path: path, Revision: revision}}}, nil)
 			if err != nil {
 				return ScaffoldFileRes{}, err
 			}
@@ -571,6 +579,9 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
+	if req.ExpectedSelectionRevision, err = parseNonEmptyOptionalString(raw, wireExpectedSelectionRevision, wireCLIExpectedSelectionRevision); err != nil {
+		return req, err
+	}
 	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
 		return req, err
 	}
@@ -593,6 +604,9 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 			return req, fmt.Errorf("symbol cannot be combined with nested kind=%s", req.Kind)
 		}
 	}
+	if req.ExpectedSelectionRevision != "" && !supportsInspectableConstructKind(req.Kind) {
+		return req, fmt.Errorf("expected_selection_revision is supported only for nested candidate kinds: %w", ErrInvalidParams)
+	}
 	return req, nil
 }
 
@@ -600,13 +614,15 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.ReplaceConstruct(ctx, targetPath, req.InFunction, req.Kind, req.Discriminator, req.Source, astedit.ConstructOptions{
-		Symbol:              req.Symbol,
-		InFunction:          req.InFunction,
-		Discriminator:       req.Discriminator,
-		ConstructPath:       req.ConstructPath,
-		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
+		Symbol:                    req.Symbol,
+		InFunction:                req.InFunction,
+		Discriminator:             req.Discriminator,
+		ConstructPath:             req.ConstructPath,
+		ExpectedSelectionRevision: req.ExpectedSelectionRevision,
+		AutoOrganizeImports:       effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
 	if err != nil {
+		annotateConstructSelectionError(err, displayWorkPath(cc.WorkDir, req.File))
 		return FileEditRes{}, err
 	}
 	delta, diagnosticStatus := finishDelta()
@@ -615,25 +631,29 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 	return Def[ReplaceConstructReq, FileEditRes]{
-		Key:     "replace_construct",
-		Summary: "Use this tool instead of replacing a whole function body to update one selected construct by kind. For kind=statement/expression, the discriminator selects a source span and the tool chooses the whole statement or an inner expression slot, such as an assignment, call argument, literal, or condition, from the source shape. Use symbol for named declarations or in_function plus discriminator for nested targets. semantic_replace_body preserves a function signature when only its body changes.",
-		Params:  replaceConstructParams,
-		Level:   LevelFile,
-		CLIName: "replace-construct",
-		MCPName: semanticReplaceConstructToolName,
-		Parse:   parseReplaceConstruct,
+		Key:            "replace_construct",
+		Summary:        "Use this tool instead of replacing a whole function body to update one selected construct by kind. For kind=statement/expression, the discriminator selects a source span and the tool chooses the whole statement or an inner expression slot, such as an assignment, call argument, literal, or condition, from the source shape. Use symbol for named declarations or in_function plus discriminator for nested targets. semantic_replace_body preserves a function signature when only its body changes.",
+		Params:         replaceConstructParams,
+		Level:          LevelFile,
+		CLIName:        "replace-construct",
+		MCPName:        semanticReplaceConstructToolName,
+		Parse:          parseReplaceConstruct,
+		NormalizeInput: NormalizeConstructKindInput,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceConstructReq) (FileEditRes, error){
 			backend.LanguageGo: bufferedFileEditHandler("replace_construct", func(req ReplaceConstructReq) string { return req.File }, runReplaceConstruct),
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", wireDiscriminator: "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
-		Output:     fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, wireInFunction: {Kind: SchemaString}, "diff": {Kind: SchemaString}}, []OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers)}),
+		Output: fileEditOutputContract(map[string]ValueSchema{"file": {Kind: SchemaString}, wireInFunction: {Kind: SchemaString}, "diff": {Kind: SchemaString}},
+			[]OutputContinuation{outputContinuation("file", RoleTarget, fileOutputConsumers), outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers)}),
+		ErrorOutput: constructSelectionErrorOutput(),
 		FinalizeOutput: func(cc CallContext, _ ReplaceConstructReq, result FileEditRes) (FileEditRes, error) {
 			return finalizeFileEditOutput(cc, result)
 		},
 		ProjectOutput: func(result FileEditRes) (any, error) {
 			return projectFileEditOutput(result, "file", wireInFunction, "diff")
 		},
-		BufferedBatch: true, Batchable: true,
+		ProjectErrorOutput: projectConstructSelectionError,
+		BufferedBatch:      true, Batchable: true,
 	}
 }

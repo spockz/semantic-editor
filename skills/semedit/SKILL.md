@@ -14,6 +14,7 @@ When the request matches an operation exposed by the active semedit server, use 
 | Discover packages, synopses, and module boundaries across the workspace | `semantic_workspace_outline` with optional `path` and `include_tests` | Directory listing, `find`, or `tree` shell exploration |
 | Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
 | Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
+| Inspect matching nested Go constructs before selecting an ambiguous target | `semantic_inspect_construct`; copy a candidate path and selection revision from the same result | Guessing structural paths or retrying unchanged selectors |
 | View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` (use `semantic_workspace_outline` first to discover packages) | Reading whole files or manual grep navigation |
 | Find usages, call sites, or references of a Go symbol | `semantic_find_references` | Broad text search or regex |
 | Rename a symbol and its references in Go, or in selected trusted Rust or Java files | `semantic_rename` | Built-in text replacement across files |
@@ -52,7 +53,7 @@ Examples:
 - “Add the `net/http` import” → use `semantic_organize_imports`; “add the module that provides this package” → use `semantic_add_build_dependency`.
 - “Where is `Config.Port` declared?” → use `semantic_lookup`, with the file path if needed to disambiguate.
 
-For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration, and an exported name requires public access. Relative file and path parameters resolve from the active semedit MCP workspace root, not the task's current directory. If MCP is rooted at the repository and the target is an isolated worktree, include `.scratch/worktrees/<name>/...` in the path; for Rust or Java rename, the selected file must belong to the trusted active workspace. Maven `root` must be absolute and remain inside the trusted workspace; use an absolute worktree path to target an isolated worktree.
+For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration. Omitted access follows identifier casing; explicit access must agree with that casing. Relative file and path parameters resolve from the active semedit MCP workspace root, not the task's current directory. If MCP is rooted at the repository and the target is an isolated worktree, include `.scratch/worktrees/<name>/...` in the path; for Rust or Java rename, the selected file must belong to the trusted active workspace. Maven `root` must be absolute and remain inside the trusted workspace; use an absolute worktree path to target an isolated worktree.
 
 ### Copy typed results and respect publication
 
@@ -64,6 +65,14 @@ children report `applied_working` and omit live continuations. A batch failure
 can retain earlier successful edits, so inspect its persisted diff before retrying.
 Standalone AST edits prepare edits, formatting, and imports in one source buffer
 and publish the prepared result once.
+
+When the advertised Go tools include retained staging, use `semantic_stage` for
+edits that span turns and should remain unpublished. Staged reads see the working
+revision. Copy a mutation's native `stage_receipt.step_id` to `semantic_stage_drop`,
+or use `semantic_stage_abort` to discard the journal; `semantic_commit` publishes
+and verifies it. Ordinary `result` continuations are not live while staged. Read
+[the Go publication guide](references/golang.md#publication-and-verification)
+for conflicts, limits, partial publication, and verification choices.
 
 ### Direct targeting over preliminary lookup
 

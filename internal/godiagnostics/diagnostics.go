@@ -88,6 +88,11 @@ func FindGopls() (string, error) {
 
 // CheckDetailed requests typed diagnostics for all Go files selected by the project package pattern.
 func CheckDetailed(ctx context.Context, root, executable string, environment []string) (diagnostics []Diagnostic, resultErr error) {
+	return CheckDetailedForPatterns(ctx, root, executable, environment)
+}
+
+// CheckDetailedForPatterns checks only package patterns when provided.
+func CheckDetailedForPatterns(ctx context.Context, root, executable string, environment []string, patterns ...string) (diagnostics []Diagnostic, resultErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -108,7 +113,7 @@ func CheckDetailed(ctx context.Context, root, executable string, environment []s
 	if executable == "" {
 		return nil, errors.New("gopls executable is required")
 	}
-	files, packageFindings, err := loadGoFiles(sessionCtx, root, environment)
+	files, packageFindings, err := loadGoFiles(sessionCtx, root, environment, patterns...)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +205,11 @@ func startDiagnosticsClient(ctx context.Context, root, executable string, enviro
 	return client, nil
 }
 
-func loadGoFiles(ctx context.Context, root string, environment []string) ([]string, []Diagnostic, error) {
+func loadGoFiles(ctx context.Context, root string, environment []string, patterns ...string) ([]string, []Diagnostic, error) {
+	explicitPatterns := len(patterns) > 0
+	if len(patterns) == 0 {
+		patterns = []string{"./..."}
+	}
 	loaded, err := packages.Load(&packages.Config{
 		Context:    ctx,
 		Dir:        root,
@@ -208,14 +217,22 @@ func loadGoFiles(ctx context.Context, root string, environment []string) ([]stri
 		Mode:       packages.NeedName | packages.NeedFiles,
 		Tests:      true,
 		BuildFlags: []string{"-mod=readonly"},
-	}, "./...")
+	}, patterns...)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, nil, fmt.Errorf("load Go packages for diagnostics: %w", ctxErr)
 	}
 	if err != nil {
 		return nil, nil, fmt.Errorf("load Go packages for diagnostics: %w", err)
 	}
-	return selectPackageFiles(root, loaded)
+	buildCache := ""
+	for _, entry := range environment {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok && key == "GOCACHE" {
+			buildCache = value
+			break
+		}
+	}
+	return selectPackageFilesWithPolicy(root, loaded, buildCache, explicitPatterns)
 }
 
 func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string) ([]Diagnostic, error) {
@@ -288,28 +305,41 @@ func requestDiagnostics(ctx context.Context, client *lsp.Client, root, path stri
 	return diagnostics, nil
 }
 
-func selectPackageFiles(root string, loaded []*packages.Package) ([]string, []Diagnostic, error) {
-	excludedPath := func(path string) bool {
-		relative, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return false
-		}
-		for part := range strings.SplitSeq(filepath.ToSlash(relative), "/") {
-			if part == "." {
-				continue
-			}
-			if part == "testdata" || part == "build" || part == "dist" || part == "target" || part == "vendor" || part == "node_modules" || part == ".scratch" || part == ".git" || strings.HasPrefix(part, "bazel-") || strings.HasPrefix(part, "_") || strings.HasPrefix(part, ".") {
-				return true
-			}
-		}
+// IsSyntheticTestRunnerFile identifies generated test mains stored under GOCACHE.
+func IsSyntheticTestRunnerFile(pkg *packages.Package, path, buildCache string) bool {
+	if buildCache == "" || pkg.Name != "main" || !strings.HasSuffix(pkg.ID, ".test") {
 		return false
 	}
+	cacheRoot, err := filepath.Abs(buildCache)
+	if err != nil {
+		return false
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	relative, err := filepath.Rel(cacheRoot, absolutePath)
+	return err == nil && relative != "." && relative != ".." && !filepath.IsAbs(relative) && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func selectPackageFiles(root string, loaded []*packages.Package) ([]string, []Diagnostic, error) {
+	return selectPackageFilesWithPolicy(root, loaded, "", false)
+}
+
+func selectPackageFilesWithPolicy(root string, loaded []*packages.Package, buildCache string, explicitPatterns bool) ([]string, []Diagnostic, error) {
 	fileSet := make(map[string]struct{})
 	findingsSet := make(map[Diagnostic]struct{})
 	for _, pkg := range loaded {
 		includedFiles := 0
 		for _, path := range pkg.GoFiles {
-			if excludedPath(path) {
+			if IsSyntheticTestRunnerFile(pkg, path, buildCache) {
+				continue
+			}
+			relative, err := filepath.Rel(root, path)
+			if err != nil || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				continue
+			}
+			if !explicitPatterns && excludedDiagnosticPath(relative) {
 				continue
 			}
 			fileSet[path] = struct{}{}
@@ -339,4 +369,16 @@ func selectPackageFiles(root string, loaded []*packages.Package) ([]string, []Di
 	}
 	slices.SortFunc(findings, func(a, b Diagnostic) int { return strings.Compare(a.String(), b.String()) })
 	return files, findings, nil
+}
+
+func excludedDiagnosticPath(relative string) bool {
+	for part := range strings.SplitSeq(filepath.ToSlash(relative), "/") {
+		if part == "." {
+			continue
+		}
+		if part == "testdata" || part == "build" || part == "dist" || part == "target" || part == "vendor" || part == "node_modules" || part == ".scratch" || part == ".git" || strings.HasPrefix(part, "bazel-") || strings.HasPrefix(part, "_") || strings.HasPrefix(part, ".") {
+			return true
+		}
+	}
+	return false
 }

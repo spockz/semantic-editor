@@ -45,32 +45,21 @@ func TestDiagnosticDeltaJSONOmitsInternalSnapshots(t *testing.T) {
 	}
 }
 
-func TestLookupJSONOmitsReceiverAndOffset(t *testing.T) {
-	encoded, err := json.Marshal(backend.LookupResult{
-		Symbol: "(*Server).Handle", Offset: 42, Receiver: "(*Server)",
-		Candidates: []*backend.SymbolCandidate{{Name: "Handle", Receiver: "(*Server)", QualifiedName: "(*Server).Handle", Offset: 42, Kind: "method", File: "server.go"}},
-	})
+func TestLookupAmbiguityComesFromCandidateCount(t *testing.T) {
+	result := backend.LookupResult{Candidates: []*backend.NamedTarget{{Name: "Handle", QualifiedName: "(*Server).Handle", Kind: "method"}}}
+	if result.IsAmbiguous() {
+		t.Fatal("one candidate must not be ambiguous")
+	}
+	result.Candidates = append(result.Candidates, &backend.NamedTarget{Name: "Handle", QualifiedName: "(*Other).Handle", Kind: "method"})
+	if !result.IsAmbiguous() {
+		t.Fatal("multiple candidates must be ambiguous")
+	}
+	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var fields map[string]any
-	if err := json.Unmarshal(encoded, &fields); err != nil {
-		t.Fatal(err)
-	}
-	if fields["symbol"] != "(*Server).Handle" {
-		t.Errorf("serialized symbol = %#v", fields["symbol"])
-	}
-	for _, field := range []string{"receiver", "offset"} {
-		if _, ok := fields[field]; ok {
-			t.Errorf("serialized lookup contains %q: %s", field, encoded)
-		}
-	}
-	candidates := fields["candidates"].([]any)
-	candidate := candidates[0].(map[string]any)
-	for _, field := range []string{"receiver", "offset"} {
-		if _, ok := candidate[field]; ok {
-			t.Errorf("serialized candidate contains %q: %s", field, encoded)
-		}
+	if string(encoded) != "{}" {
+		t.Errorf("internal lookup serialized unexpectedly: %s", encoded)
 	}
 }
 

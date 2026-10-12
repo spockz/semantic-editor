@@ -114,11 +114,18 @@ func TestLookupUsesSelectedFileAndUTF16Ranges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Offset != 6 || got.Line != 1 || got.Column != 5 || got.Location.URI != pathutil.FileURI(canonicalFile) {
+	if got.Definition == nil || got.Definition.Name != "f" || got.Definition.Kind != "function" || got.IsAmbiguous() || len(got.Candidates) != 0 {
 		t.Fatalf("lookup result=%+v", got)
 	}
-	if got.File != "a.sh" {
-		t.Fatalf("result file=%q, want selected path relative to root", got.File)
+	wantLocation := backend.SourceLocation{
+		URI: pathutil.FileURI(canonicalFile),
+		Range: backend.Range{
+			Start: backend.Position{Line: 0, Character: 4},
+			End:   backend.Position{Line: 0, Character: 5},
+		},
+	}
+	if got.Definition.Location != wantLocation {
+		t.Fatalf("definition location=%+v, want captured UTF16 location %+v", got.Definition.Location, wantLocation)
 	}
 }
 

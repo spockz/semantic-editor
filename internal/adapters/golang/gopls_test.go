@@ -49,7 +49,7 @@ func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
 		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
 		"GOPATH":     filepath.Join(root, ".scratch", "go"),
-		"GOFLAGS":    "",
+		"GOFLAGS":    "-mod=readonly",
 		"GOWORK":     "off",
 	}
 	for key, path := range want {
@@ -229,7 +229,7 @@ func assertChangedLookupSnapshotRejected(t *testing.T, root string, source []byt
 	if writeErr := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	selected := backend.SymbolCandidate{Name: "Value", File: "value.go", Offset: bytes.Index(source, []byte("Value"))}
+	selected := backend.NamedTarget{Name: "Value", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "value.go")), Range: backend.Range{Start: backend.PositionFromByteOffset(source, bytes.Index(source, []byte("Value")))}}}
 	err = RenameSelected(t.Context(), root, selected, expected, "Renamed")
 	if !errors.Is(err, ErrRenameFailed) || !strings.Contains(err.Error(), "changed since symbol lookup") {
 		t.Fatalf("RenameSelected error = %v", err)

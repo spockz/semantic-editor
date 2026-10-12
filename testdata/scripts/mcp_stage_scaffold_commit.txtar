@@ -1,0 +1,18 @@
+# A staged scaffold publishes its buffered source and deferred parent directory only on commit.
+stdin input.json
+exec semedit mcp
+stdout '"stage_receipt"'
+stdout '"step_count":1'
+cmp generated/model.go want/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"generated/model.go","package":"stage"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+-- go.mod --
+module example.com/stagescaffold
+
+go 1.24
+-- want/model.go --
+package stage

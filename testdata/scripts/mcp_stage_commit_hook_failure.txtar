@@ -1,0 +1,40 @@
+# A failed final hook preserves the complete typed staged-commit outcome after publication and consumes the journal.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"result":{"application_state":"persisted"'
+stdout '"status":"applied_with_diagnostics"'
+stdout '"application_state":"persisted"'
+stdout '"published_files":1'
+stdout '"Status":"failed"'
+stdout 'return 2'
+stdout 'no staging session is active'
+cmp value.go want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 2"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_commit","arguments":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_stage_abort","arguments":{}}}
+-- go.mod --
+module example.com/stagecommithookfailure
+
+go 1.24
+-- value.go --
+package stagecommithookfailure
+
+func Value() int { return 1 }
+-- .semedit.yaml --
+version: 1
+verify:
+  check:
+    - id: fail-after-publication
+      languages: [go]
+      exec: [sh, -c, 'exit 1']
+-- want/value.go --
+package stagecommithookfailure
+
+func Value() int {
+	return 2
+}

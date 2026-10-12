@@ -641,7 +641,7 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := envelope.Result.StructuredContent.Result
-	if !envelope.Result.IsError || response.Status != "error" || len(response.Results) != 2 || response.Results[1].Tool != "semantic_verify" {
+	if !envelope.Result.IsError || response.Status != "applied_with_diagnostics" || len(response.Results) != 2 || response.Results[1].Tool != "semantic_verify" {
 		t.Fatalf("partial response = %+v; wire output: %s", envelope.Result, out.String())
 	}
 	if !strings.Contains(response.FinalDiff, "return 2") {

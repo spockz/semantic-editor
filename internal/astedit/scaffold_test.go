@@ -6,9 +6,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"semedit/internal/astedit"
+	"semedit/internal/sourcebuf"
 )
 
 func TestScaffoldFile_ExplicitPackage(t *testing.T) {
@@ -32,6 +34,33 @@ func TestScaffoldFile_ExplicitPackage(t *testing.T) {
 	expected := "package models\n"
 	if string(content) != expected {
 		t.Errorf("got %q, want %q", string(content), expected)
+	}
+}
+
+func TestScaffoldFileBuffersNewFileUntilPublication(t *testing.T) {
+	root := t.TempDir()
+	buffer, err := sourcebuf.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	targetPath := filepath.Join(root, "generated", "model.go")
+
+	if _, scaffoldErr := astedit.ScaffoldFile(ctx, targetPath, "models", astedit.ScaffoldOptions{}); scaffoldErr != nil {
+		t.Fatalf("ScaffoldFile: %v", scaffoldErr)
+	}
+	if _, statErr := os.Stat(filepath.Dir(targetPath)); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("staged scaffold created parent directory: %v", statErr)
+	}
+	content, err := sourcebuf.ReadFile(ctx, targetPath)
+	if err != nil {
+		t.Fatalf("read staged scaffold: %v", err)
+	}
+	if string(content) != "package models\n" {
+		t.Fatalf("staged scaffold = %q", content)
+	}
+	if _, scaffoldErr := astedit.ScaffoldFile(ctx, targetPath, "models", astedit.ScaffoldOptions{}); !errors.Is(scaffoldErr, astedit.ErrFileExists) {
+		t.Fatalf("duplicate staged scaffold error = %v, want ErrFileExists", scaffoldErr)
 	}
 }
 
@@ -215,5 +244,91 @@ func TestScaffoldFile_InvalidPurposeHeaderDoesNotCreateFile(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Dir(targetPath)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stat parent directory error = %v, want parent not created", err)
+	}
+}
+
+func TestScaffoldFileWrapsPlainPurposeTextWithoutChangingPackage(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		want   []string
+	}{
+		{
+			name:   "plain prose",
+			header: "Provides application configuration primitives and parsing.",
+			want:   []string{"// Provides application configuration primitives and parsing.", "package config"},
+		},
+		{
+			name:   "mixed existing comments and prose",
+			header: "// WHY: Describes the configuration package.\nOwns parsing and validation.",
+			want:   []string{"// WHY: Describes the configuration package.", "// Owns parsing and validation.", "package config"},
+		},
+		{
+			name:   "block comment remains intact",
+			header: "/*\nPurpose for the configuration package.\n*/",
+			want:   []string{"/*\nPurpose for the configuration package.\n*/", "package config"},
+		},
+		{
+			name:   "prose starting with Go keywords",
+			header: "package owners can configure typed values.\nfunc describes the public entry point.",
+			want:   []string{"// package owners can configure typed values.", "// func describes the public entry point.", "package config"},
+		},
+		{
+			name:   "backticks and comment terminators remain comments",
+			header: "Purpose \u0060package\u0060 uses */ safely.\nThe package handles <config>.",
+			want:   []string{"// Purpose \u0060package\u0060 uses */ safely.", "// The package handles <config>.", "package config"},
+		},
+		{
+			name:   "leading BOM is treated as encoding marker",
+			header: "\ufeffPurpose of this file.",
+			want:   []string{"// Purpose of this file.", "package config"},
+		},
+		{
+			name:   "BOM and whitespace means absent header",
+			header: "\ufeff \n\t",
+			want:   []string{"package config"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.go")
+			if _, err := astedit.ScaffoldFile(context.Background(), path, "config", astedit.ScaffoldOptions{PurposeHeader: test.header}); err != nil {
+				t.Fatalf("ScaffoldFile: %v", err)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read scaffold: %v", err)
+			}
+			for _, want := range test.want {
+				if !strings.Contains(string(content), want) {
+					t.Errorf("scaffold does not contain %q:\n%s", want, content)
+				}
+			}
+		})
+	}
+}
+
+func TestScaffoldFileRejectsPurposeDeclarationsAndDirectives(t *testing.T) {
+	for _, header := range []string{
+		"type Config struct{}",
+		"type Invalid struct {",
+		"package other",
+		"package",
+		"func Invalid() {",
+		"const Invalid =",
+		"import (",
+		"//go:build linux",
+		"Prose \ufeff with interior BOM",
+	} {
+		t.Run(header, func(t *testing.T) {
+			targetPath := filepath.Join(t.TempDir(), "nested", "config.go")
+			_, err := astedit.ScaffoldFile(context.Background(), targetPath, "config", astedit.ScaffoldOptions{PurposeHeader: header})
+			if !errors.Is(err, astedit.ErrSyntax) {
+				t.Fatalf("ScaffoldFile error = %v, want ErrSyntax", err)
+			}
+			if _, statErr := os.Stat(targetPath); !errors.Is(statErr, os.ErrNotExist) {
+				t.Fatalf("stat scaffolded file error = %v, want file not created", statErr)
+			}
+		})
 	}
 }

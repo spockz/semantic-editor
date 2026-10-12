@@ -1,0 +1,31 @@
+# Explicit imports remain present even when goimports cannot resolve an independent nested module.
+exec semedit imports --file main.go --add 'nestedpkg fixture.test/nested/subpkg'
+stdout 'changed_files: main.go'
+cmp main.go want/main.go
+
+-- go.mod --
+module fixture.test/root
+
+go 1.27.1
+
+-- main.go --
+package main
+
+func main() { _ = nestedpkg.Value() }
+
+-- nested/go.mod --
+module fixture.test/nested
+
+go 1.27.1
+
+-- nested/subpkg/source.go --
+package subpkg
+
+func Value() int { return 1 }
+
+-- want/main.go --
+package main
+
+import nestedpkg "fixture.test/nested/subpkg"
+
+func main() { _ = nestedpkg.Value() }

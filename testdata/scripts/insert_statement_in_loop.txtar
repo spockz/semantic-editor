@@ -1,0 +1,32 @@
+# WHY: Verify anchored insertion resolves a nested statement to its own lexical block and preserves the enclosing loop.
+exec semedit insert-construct --file loop.go --kind statement/expression --in-function Process --discriminator 'process(item)' --source 'audit(item)' --anchor before
+cmp loop.go .scratch/_want/loop.go
+exec go test ./...
+
+-- go.mod --
+module example.com/insertloop
+
+go 1.24
+-- loop.go --
+package loop
+
+func Process(items []int) {
+	for _, item := range items {
+		process(item)
+	}
+}
+
+func process(int) {}
+func audit(int)   {}
+-- .scratch/_want/loop.go --
+package loop
+
+func Process(items []int) {
+	for _, item := range items {
+		audit(item)
+		process(item)
+	}
+}
+
+func process(int) {}
+func audit(int)   {}

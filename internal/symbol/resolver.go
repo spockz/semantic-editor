@@ -11,8 +11,10 @@ import (
 	"go/token"
 	"io/fs"
 	"maps"
+	"os"
 	"path/filepath"
 	"semedit/internal/sourcebuf"
+	"slices"
 	"strings"
 )
 
@@ -38,18 +40,15 @@ func (s *Symbol) BuildQualifiedName() string {
 
 // LookupResult holds the resolved symbol information or ambiguous candidate options.
 type LookupResult struct {
-	Symbol     string  `json:"symbol,omitempty"`
-	File       string  `json:"file,omitempty"`
-	Line       int     `json:"line,omitempty"`
-	Column     int     `json:"column,omitempty"`
-	Offset     int     `json:"offset,omitempty"`
-	Kind       string  `json:"kind,omitempty"`
-	Receiver   string  `json:"receiver,omitempty"`
 	Definition *Symbol `json:"definition,omitempty"`
 	// Usages are syntactic local binding declarations, not semantic references.
 	Usages     []*Symbol `json:"usages,omitempty"`
-	Ambiguous  bool      `json:"ambiguous,omitempty"`
 	Candidates []*Symbol `json:"candidates,omitempty"`
+}
+
+// IsAmbiguous reports whether lookup found multiple candidate declarations.
+func (result *LookupResult) IsAmbiguous() bool {
+	return result != nil && len(result.Candidates) >= 2
 }
 
 // ParseIdentifier decomposes a query identifier into receiver and symbol name.
@@ -63,18 +62,26 @@ func parseIdentifier(raw string) (pkg string, receiver string, name string, err 
 	if clean == "" {
 		return "", "", "", fmt.Errorf("%w: identifier cannot be empty", ErrInvalidIdentifier)
 	}
-
 	parts := strings.Split(clean, ".")
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return "", "", "", fmt.Errorf("%w: %q contains an empty selector component", ErrInvalidIdentifier, raw)
+		}
+	}
 	switch len(parts) {
 	case 1:
 		return "", "", parts[0], nil
 	case 2:
-		return "", cleanReceiver(parts[0]), parts[1], nil
+		pkg, receiver, name = "", cleanReceiver(parts[0]), parts[1]
 	case 3:
-		return parts[0], cleanReceiver(parts[1]), parts[2], nil
+		pkg, receiver, name = parts[0], cleanReceiver(parts[1]), parts[2]
 	default:
 		return "", "", "", fmt.Errorf("%w: %q (expected [Package.][Receiver.]Name)", ErrInvalidIdentifier, raw)
 	}
+	if strings.TrimSpace(receiver) == "" {
+		return "", "", "", fmt.Errorf("%w: %q contains an empty receiver", ErrInvalidIdentifier, raw)
+	}
+	return pkg, receiver, name, nil
 }
 
 func cleanReceiver(raw string) string {
@@ -285,42 +292,74 @@ func extractPosition(fset *token.FileSet, err error) token.Position {
 	return token.Position{}
 }
 
-func resolveTargetFiles(rootDir, filePath string) ([]string, error) {
+func resolveTargetFiles(ctx context.Context, rootDir, filePath string) ([]string, error) {
 	if filePath != "" {
-		resolvedPath := filePath
-		if !filepath.IsAbs(resolvedPath) && rootDir != "" {
-			resolvedPath = filepath.Join(rootDir, filePath)
-		}
-		return []string{resolvedPath}, nil
+		return resolveSelectedTargetFiles(ctx, rootDir, filePath)
 	}
+	return resolveWorkspaceTargetFiles(ctx, rootDir)
+}
+
+func resolveSelectedTargetFiles(ctx context.Context, rootDir, filePath string) ([]string, error) {
+	resolvedPath := filePath
+	if !filepath.IsAbs(resolvedPath) && rootDir != "" {
+		resolvedPath = filepath.Join(rootDir, filePath)
+	}
+	info, err := os.Stat(resolvedPath)
+	if err == nil && info.IsDir() {
+		return resolveDirectoryTargetFiles(ctx, rootDir, resolvedPath)
+	}
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("inspect symbol target %q: %w", resolvedPath, err)
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		files, found, directoryErr := resolveVirtualDirectoryTargetFiles(ctx, rootDir, resolvedPath)
+		if directoryErr != nil {
+			return nil, directoryErr
+		}
+		if found {
+			return files, nil
+		}
+	}
+	return []string{resolvedPath}, nil
+}
+
+func resolveWorkspaceTargetFiles(ctx context.Context, rootDir string) ([]string, error) {
 	searchRoot := rootDir
 	if searchRoot == "" {
 		searchRoot = "."
 	}
 	rootPath := filepath.Clean(searchRoot)
-	var targetFiles []string
+	targetFiles := make(map[string]bool)
 	err := filepath.WalkDir(searchRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if filepath.Clean(path) != rootPath {
-				base := entry.Name()
-				if strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata" {
-					return filepath.SkipDir
-				}
+			if filepath.Clean(path) != rootPath && ignoredSourceDirectory(entry.Name()) {
+				return filepath.SkipDir
 			}
 			return nil
 		}
-		if strings.HasSuffix(entry.Name(), ".go") && !strings.HasSuffix(entry.Name(), "_test.go") {
-			targetFiles = append(targetFiles, path)
+		if resolvableSourceName(entry.Name()) {
+			targetFiles[path] = true
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return targetFiles, nil
+	if err := addOverlayTargetFiles(ctx, rootPath, rootPath, false, targetFiles); err != nil {
+		return nil, err
+	}
+	return sortedTargetFiles(targetFiles), nil
+}
+
+func ignoredSourceDirectory(name string) bool {
+	return strings.HasPrefix(name, ".") || name == "vendor" || name == "testdata"
+}
+
+func resolvableSourceName(name string) bool {
+	return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
 }
 
 func isLocalBinding(kind string) bool {
@@ -330,16 +369,6 @@ func isLocalBinding(kind string) bool {
 	default:
 		return false
 	}
-}
-
-func setLegacyDefinition(result *LookupResult, definition *Symbol) {
-	result.Symbol = definition.BuildQualifiedName()
-	result.File = definition.File
-	result.Line = definition.Line
-	result.Column = definition.Column
-	result.Offset = definition.Offset
-	result.Kind = definition.Kind
-	result.Receiver = definition.Receiver
 }
 
 // ResolutionSnapshot contains a lookup result and the exact source bytes read while resolving it.
@@ -389,7 +418,7 @@ func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath st
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
 	}
 
-	targetFiles, err := resolveTargetFiles(rootDir, filePath)
+	targetFiles, err := resolveTargetFiles(ctx, rootDir, filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan workspace: %w", err)
 	}
@@ -443,23 +472,173 @@ func resolveCandidates(filePath, query string, declarations, usages []*Symbol, r
 	result := &LookupResult{Usages: usages}
 	if len(declarations) > 0 {
 		if len(declarations) > 1 {
-			result.Ambiguous = true
 			result.Candidates = declarations
 			return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
 		}
 		result.Definition = declarations[0]
-		setLegacyDefinition(result, result.Definition)
 		return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
 	}
 	if len(usages) == 0 {
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: ErrNotFound}
 	}
 	if len(usages) > 1 {
-		result.Ambiguous = true
 		result.Candidates = usages
 		return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
 	}
 	result.Definition = usages[0]
-	setLegacyDefinition(result, result.Definition)
 	return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
+}
+
+func pathWithinDirectory(root, candidate string) bool {
+	relative, err := filepath.Rel(root, candidate)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func resolveDirectoryTargetFiles(ctx context.Context, rootDir, directory string) ([]string, error) {
+	boundary := rootDir
+	if boundary == "" {
+		boundary = "."
+	}
+	boundary, err := filepath.Abs(boundary)
+	if err != nil {
+		return nil, fmt.Errorf("resolve symbol workspace %q: %w", rootDir, err)
+	}
+	boundary, err = filepath.EvalSymlinks(boundary)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize symbol workspace %q: %w", rootDir, err)
+	}
+	directory, err = filepath.Abs(directory)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Go package directory: %w", err)
+	}
+	canonicalDirectory, err := canonicalTargetDirectory(ctx, directory)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize Go package directory: %w", err)
+	}
+	if !pathWithinDirectory(boundary, canonicalDirectory) {
+		return nil, fmt.Errorf("package directory %q resolves outside the workspace", directory)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("read Go package directory %q: %w", directory, err)
+	}
+	targetFiles := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		candidate := filepath.Join(directory, name)
+		candidateInfo, statErr := os.Stat(candidate)
+		if statErr != nil {
+			return nil, fmt.Errorf("inspect Go source candidate %q: %w", candidate, statErr)
+		}
+		if !candidateInfo.Mode().IsRegular() {
+			return nil, fmt.Errorf("source candidate %q is not a regular file", candidate)
+		}
+		canonicalCandidate, canonicalErr := filepath.EvalSymlinks(candidate)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("canonicalize Go source candidate %q: %w", candidate, canonicalErr)
+		}
+		if !pathWithinDirectory(boundary, canonicalCandidate) {
+			return nil, fmt.Errorf("source candidate %q resolves outside the workspace", candidate)
+		}
+		targetFiles[candidate] = true
+	}
+	if err := addOverlayTargetFiles(ctx, boundary, canonicalDirectory, true, targetFiles); err != nil {
+		return nil, err
+	}
+	if len(targetFiles) == 0 {
+		return nil, fmt.Errorf("no Go source files found in directory %q", directory)
+	}
+	return sortedTargetFiles(targetFiles), nil
+}
+
+func resolveVirtualDirectoryTargetFiles(ctx context.Context, rootDir, directory string) ([]string, bool, error) {
+	if _, err := canonicalTargetDirectory(ctx, directory); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("canonicalize virtual Go package directory %q: %w", directory, err)
+	}
+	files, err := resolveDirectoryTargetFiles(ctx, rootDir, directory)
+	if err != nil {
+		return nil, true, err
+	}
+	return files, true, nil
+}
+
+func canonicalTargetDirectory(ctx context.Context, directory string) (string, error) {
+	canonical, err := filepath.EvalSymlinks(directory)
+	if err == nil {
+		return canonical, nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return "", err
+	}
+	for path := range sourcebuf.Overlay(ctx) {
+		canonicalPath, canonicalErr := sourcebuf.CanonicalPath(ctx, path)
+		if canonicalErr != nil {
+			return "", fmt.Errorf("canonicalize buffered package source %q: %w", path, canonicalErr)
+		}
+		candidate := filepath.Join(directory, filepath.Base(canonicalPath))
+		candidatePath, candidateErr := sourcebuf.CanonicalPath(ctx, candidate)
+		if candidateErr == nil && candidatePath == canonicalPath {
+			return filepath.Dir(canonicalPath), nil
+		}
+	}
+	return "", err
+}
+
+func addOverlayTargetFiles(ctx context.Context, boundary, directory string, directOnly bool, targetFiles map[string]bool) error {
+	canonicalBoundary, err := sourcebuf.CanonicalPath(ctx, boundary)
+	if err != nil {
+		return fmt.Errorf("canonicalize symbol workspace %q: %w", boundary, err)
+	}
+	canonicalDirectory, err := canonicalTargetDirectory(ctx, directory)
+	if err != nil {
+		return fmt.Errorf("canonicalize symbol target directory %q: %w", directory, err)
+	}
+	for path := range sourcebuf.Overlay(ctx) {
+		canonical, err := sourcebuf.CanonicalPath(ctx, path)
+		if err != nil {
+			return fmt.Errorf("canonicalize buffered symbol source %q: %w", path, err)
+		}
+		if _, err := os.Lstat(canonical); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect buffered symbol source %q: %w", path, err)
+		}
+		if !pathWithinDirectory(canonicalBoundary, canonical) || (directOnly && filepath.Dir(canonical) != canonicalDirectory) || !isResolvableGoSource(canonicalBoundary, canonical) {
+			continue
+		}
+		targetFiles[canonical] = true
+	}
+	return nil
+}
+
+func isResolvableGoSource(root, path string) bool {
+	if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+		return false
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || !filepath.IsLocal(relative) {
+		return false
+	}
+	for directory := filepath.Dir(relative); directory != "."; directory = filepath.Dir(directory) {
+		base := filepath.Base(directory)
+		if base == "vendor" || base == "testdata" || strings.HasPrefix(base, ".") {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedTargetFiles(files map[string]bool) []string {
+	targets := make([]string, 0, len(files))
+	for path := range files {
+		targets = append(targets, path)
+	}
+	slices.Sort(targets)
+	return targets
 }

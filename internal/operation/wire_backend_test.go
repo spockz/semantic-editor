@@ -16,6 +16,7 @@ import (
 
 	"semedit/internal/backend"
 	gobackend "semedit/internal/backend/golang"
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/operation"
 )
 
@@ -120,8 +121,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 40 {
-		t.Errorf("registered operations = %d, want 40", len(entries))
+	if len(entries) != 45 {
+		t.Errorf("registered operations = %d, want 45", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -133,11 +134,17 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
 	t.Helper()
-	if entry.Key == "" || entry.Summary == "" || entry.MCPName == "" || len(entry.Params) == 0 {
+	missingParams := len(entry.Params) == 0 && !zeroArgumentStageControl(entry.Key)
+	if entry.Key == "" || entry.Summary == "" || entry.MCPName == "" || missingParams {
 		t.Errorf("entry has incomplete public metadata: %+v", entry)
 	}
 	if _, err := entry.Parse(entry.ExampleRaw); err != nil {
 		t.Errorf("ExampleRaw parse failed: %v", err)
+	}
+	if zeroArgumentStageControl(entry.Key) {
+		if _, err := entry.Parse(map[string]any{"unexpected": true}); err == nil {
+			t.Error("zero-argument stage control accepted an unknown parameter")
+		}
 	}
 	t.Run("cli-string-shapes", func(t *testing.T) {
 		t.Parallel()
@@ -145,6 +152,10 @@ func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
 	})
 	assertRequiredEntryParamsFail(t, entry)
 	assertEnumEntryParamsFail(t, entry)
+}
+
+func zeroArgumentStageControl(key string) bool {
+	return key == "stage_start" || key == "stage_abort"
 }
 
 func assertBooleanCLIStringsParse(t *testing.T, entry operation.Entry) {
@@ -351,7 +362,7 @@ func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline" || entry.Key == "find_references" || entry.Key == "workspace_outline"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "inspect_construct" || entry.Key == "outline" || entry.Key == "find_references" || entry.Key == "workspace_outline"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
@@ -394,17 +405,15 @@ func TestLookupSharedProjectParserPreservesBackendConfiguration(t *testing.T) {
 		t.Fatalf("parsed request type = %T, want LookupReq", request)
 	}
 	want := backend.ProjectContext{
-		File:              "src/Widget.java",
-		Language:          backend.LanguageJava,
-		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: true},
-		Java:              backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true},
-		Scala:             backend.ScalaConfig{MetalsHome: "/metals", MetalsBin: "/metals/bin", JavaBin: "/java", JavaVersion: "21"},
-		Haskell:           backend.HaskellConfig{Standalone: true, GHCBin: "/ghc", HLSBin: "/hls", GHCVersion: "9.10", HLSVersion: "2.11"},
-		HaskellStandalone: true,
-		Kotlin:            backend.KotlinConfig{KotlinBin: "/kotlin"},
-		Bash:              backend.BashConfig{BashBin: "/bash"},
-		Make:              backend.MakeConfig{MakeBin: "/make"},
-		KotlinBin:         "/kotlin",
+		File:           "src/Widget.java",
+		Language:       backend.LanguageJava,
+		WorkspaceTrust: backend.WorkspaceTrust{Trusted: true},
+		Java:           backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true},
+		Scala:          backend.ScalaConfig{MetalsHome: "/metals", MetalsBin: "/metals/bin", JavaBin: "/java", JavaVersion: "21"},
+		Haskell:        backend.HaskellConfig{Standalone: true, GHCBin: "/ghc", HLSBin: "/hls", GHCVersion: "9.10", HLSVersion: "2.11"},
+		Kotlin:         backend.KotlinConfig{KotlinBin: "/kotlin"},
+		Bash:           backend.BashConfig{BashBin: "/bash"},
+		Make:           backend.MakeConfig{MakeBin: "/make"},
 	}
 	if !reflect.DeepEqual(lookup.Project, want) {
 		t.Errorf("lookup project = %#v, want %#v", lookup.Project, want)
@@ -511,10 +520,13 @@ func TestRenameProjectionUsesOneVerifiedPostRenameIdentity(t *testing.T) {
 	if !ok {
 		t.Fatal("rename operation missing")
 	}
+	root := t.TempDir()
+	location := backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "config.go")), Range: backend.Range{Start: backend.Position{Line: 2, Character: 4}}}
 	result := &backend.RenameResult{
 		ApplicationState: "persisted",
-		Source:           &backend.LookupResult{Symbol: "Config.ListenPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.ListenPort"}},
-		Lookup:           &backend.LookupResult{Symbol: "Config.BoundPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.BoundPort"}},
+		ProjectRoot:      root,
+		Source:           &backend.LookupResult{Definition: &backend.NamedTarget{Name: "ListenPort", QualifiedName: "Config.ListenPort", Location: location}},
+		Lookup:           &backend.LookupResult{Definition: &backend.NamedTarget{Name: "BoundPort", QualifiedName: "Config.BoundPort", Location: location}},
 		Revision:         "post-rename-digest",
 	}
 	projected, err := entry.ProjectOutput(result)
@@ -546,9 +558,11 @@ func TestRenameDiagnosticErrorProjectionHasNoLiveIdentity(t *testing.T) {
 	if !ok {
 		t.Fatal("rename operation missing")
 	}
+	root := t.TempDir()
 	result := &backend.RenameResult{
 		ApplicationState: "persisted",
-		Source:           &backend.LookupResult{Symbol: "Config.ListenPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.ListenPort"}},
+		ProjectRoot:      root,
+		Source:           &backend.LookupResult{Definition: &backend.NamedTarget{Name: "ListenPort", QualifiedName: "Config.ListenPort", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "config.go"))}}},
 	}
 	projected, known, err := entry.ProjectErrorOutput(&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"new error"}})
 	if err != nil || !known {

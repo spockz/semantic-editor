@@ -105,9 +105,11 @@ func workspaceOutlineDef() Def[WorkspaceOutlineReq, WorkspaceOutlineRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, WorkspaceOutlineReq) (WorkspaceOutlineRes, error){
 			backend.LanguageAuto: runWorkspaceOutline,
 		},
-		Format:     formatWorkspaceOutline,
-		ExampleRaw: map[string]any{"path": "."},
-		Batchable:  false,
+		Format:        formatWorkspaceOutline,
+		Output:        &OperationOutputContract{ResultSchema: workspaceOutlineOutputSchema()},
+		ProjectOutput: projectWorkspaceOutlineOutput,
+		ExampleRaw:    map[string]any{"path": "."},
+		Batchable:     false,
 	}
 }
 

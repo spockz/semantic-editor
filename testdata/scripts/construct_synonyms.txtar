@@ -1,0 +1,54 @@
+# Accept common kind synonyms and infer method replacement from the receiver selector.
+exec semedit insert-construct --file api/server.go --kind variable --source 'var CacheHits int'
+stdout 'Successfully inserted var construct'
+exec semedit replace-construct --file api/server.go --kind procedure --symbol Normalize --source 'func Normalize(value string) string { return value }'
+stdout 'Replaced function construct'
+exec semedit replace-construct --file api/server.go --kind function --symbol '(*Server).Start' --source 'func (s *Server) Start() { s.running = true }'
+stdout 'Replaced method construct'
+exec semedit replace-construct --file api/server.go --kind function --symbol 'worker.Flush' --source 'func (w *worker) Flush() { w.flushed = true }'
+stdout 'Replaced method construct'
+exec semedit remove-construct --file api/server.go --kind constant --symbol Legacy
+stdout 'Removed selected node'
+exec semedit remove-construct --file api/server.go --kind variable --symbol CacheHits
+stdout 'Removed selected node'
+cmp api/server.go want/api/server.go
+
+-- go.mod --
+module example.com/kinds
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct {
+	running bool
+}
+
+func (s *Server) Start() {}
+
+type worker struct {
+	flushed bool
+}
+
+func (w *worker) Flush() {}
+
+const Legacy = 1
+
+func Normalize(value string) string { return value + "!" }
+
+-- want/api/server.go --
+package api
+
+type Server struct {
+	running bool
+}
+
+func (s *Server) Start() { s.running = true }
+
+type worker struct {
+	flushed bool
+}
+
+func (w *worker) Flush() { w.flushed = true }
+
+func Normalize(value string) string { return value }

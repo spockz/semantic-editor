@@ -271,3 +271,57 @@ func TestReplaceBody_RejectsWrapperEscapeWithoutMutation(t *testing.T) {
 		t.Fatalf("file changed after wrapper escape: %s", after)
 	}
 }
+
+func TestReplaceBodyStripsOnlyOneASTProvenOuterBlock(t *testing.T) {
+	tests := []struct {
+		name                 string
+		body                 string
+		wantStandaloneBlocks int
+		wantComments         []string
+	}{
+		{
+			name: "outer block with braces in literals and comments",
+			body: "{\nvalue := \"raw } string\"\nobject := map[string]int{\"key\": 1}\n// }\n_ = value\n_ = object\n}",
+		},
+		{
+			name:                 "sequential blocks remain separate",
+			body:                 "{ first() }\n{ second() }",
+			wantStandaloneBlocks: 2,
+		},
+		{
+			name:                 "comments outside braces remain outside",
+			body:                 "// before\n{\nreturn\n}\n// after",
+			wantStandaloneBlocks: 1,
+			wantComments:         []string{"// before", "// after"},
+		},
+		{
+			name: "labels and nested control flow",
+			body: "{\nouter:\nfor {\nif ready { break outer }\n}\n}",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "main.go")
+			if err := os.WriteFile(path, []byte("package main\n\nfunc Run() {}\n"), 0o600); err != nil {
+				t.Fatalf("write source: %v", err)
+			}
+			if _, err := astedit.ReplaceBody(context.Background(), path, "Run", test.body, astedit.BodyOptions{}); err != nil {
+				t.Fatalf("ReplaceBody: %v", err)
+			}
+			updated, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read source: %v", err)
+			}
+			content := string(updated)
+			if got := strings.Count(content, "\n\t{"); got != test.wantStandaloneBlocks {
+				t.Errorf("standalone body blocks = %d, want %d:\n%s", got, test.wantStandaloneBlocks, content)
+			}
+			for _, comment := range test.wantComments {
+				if !strings.Contains(content, comment) {
+					t.Errorf("updated source lost %q:\n%s", comment, content)
+				}
+			}
+		})
+	}
+}

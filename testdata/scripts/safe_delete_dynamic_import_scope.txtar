@@ -1,0 +1,80 @@
+# WHY: Prove that private function deletion only ignores dynamic imports outside its own package while retaining module-wide directive refusals.
+exec semedit remove-construct --file core/core.go --kind function --symbol clean --safe-delete
+stdout 'Safe deletion checks run'
+cmp core/core.go .scratch/_want/core/core.go
+
+cp active/active.go .scratch/before-active.go
+! exec semedit remove-construct --file active/active.go --kind function --symbol blockedByInternalTest --safe-delete
+stderr 'dynamic imports in the target package'
+cmp active/active.go .scratch/before-active.go
+
+cp inactive/inactive.go .scratch/before-inactive.go
+! exec semedit remove-construct --file inactive/inactive.go --kind function --symbol blockedByInactiveFile --safe-delete
+stderr 'dynamic imports in the target package'
+cmp inactive/inactive.go .scratch/before-inactive.go
+
+cp links/linkname.go.txt links/linkname.go
+cp linked/linked.go .scratch/before-linked.go
+! exec semedit remove-construct --file linked/linked.go --kind function --symbol blockedByLinkname --safe-delete
+stderr 'Go generation or link-name directives'
+cmp linked/linked.go .scratch/before-linked.go
+exec go test ./...
+
+-- go.mod --
+module example.com/safedelete-dynamic
+
+go 1.24
+-- core/core.go --
+package core
+
+func clean() {}
+func retained() {}
+-- core/external_test.go --
+package core_test
+
+import u `unsafe`
+
+var _ = u.Sizeof(0)
+-- driver/unsafe.go --
+package driver
+
+import u "unsafe"
+
+var _ = u.Sizeof(0)
+-- active/active.go --
+package active
+
+func blockedByInternalTest() {}
+-- active/internal_test.go --
+package active
+
+import u "unsafe"
+
+var _ = u.Sizeof(0)
+-- inactive/inactive.go --
+package inactive
+
+func blockedByInactiveFile() {}
+-- inactive/unsafe_inactive.go --
+//go:build never_enabled
+
+package inactive
+
+import u `unsafe`
+
+var _ = u.Sizeof(0)
+-- linked/linked.go --
+package linked
+
+func blockedByLinkname() {}
+-- links/linkname.go.txt --
+package links
+
+import _ "unsafe"
+
+//go:linkname linkedTarget example.com/safedelete-dynamic/linked.blockedByLinkname
+var linkedTarget func()
+-- .scratch/_want/core/core.go --
+package core
+
+func retained() {}

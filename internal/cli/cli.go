@@ -66,6 +66,24 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 		default:
 			values.strings[param.CLIName] = cmd.Flags().String(param.CLIName, stringDefault(param.Default), description)
 		}
+		for _, alias := range param.InputAliases {
+			if alias == "" || alias == param.CLIName {
+				continue
+			}
+			switch param.Type {
+			case operation.ParamObject, operation.ParamArray:
+				values.json[alias] = cmd.Flags().String(alias, "", "")
+			case operation.ParamBoolean:
+				values.bools[alias] = cmd.Flags().Bool(alias, false, "")
+			case operation.ParamStringSlice:
+				values.slices[alias] = cmd.Flags().StringArray(alias, nil, "")
+			case operation.ParamInteger:
+				values.ints[alias] = cmd.Flags().Int(alias, 0, "")
+			default:
+				values.strings[alias] = cmd.Flags().String(alias, "", "")
+			}
+			cmd.Flags().Lookup(alias).Hidden = true
+		}
 	}
 }
 
@@ -73,15 +91,28 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 func rawParams(entry operation.Entry, values *flagValues, flagChanged func(string) bool) (map[string]any, error) {
 	raw := make(map[string]any, len(entry.Params))
 	for _, param := range entry.Params {
-		if param.CLIName == "" {
-			continue
+		if param.CLIName != "" {
+			value, include, err := rawParamValue(param, values, flagChanged)
+			if err != nil {
+				return nil, err
+			}
+			if include {
+				raw[param.JSONName] = value
+			}
 		}
-		value, include, err := rawParamValue(param, values, flagChanged)
-		if err != nil {
-			return nil, err
-		}
-		if include {
-			raw[param.JSONName] = value
+		for _, alias := range param.InputAliases {
+			if alias == "" || alias == param.CLIName {
+				continue
+			}
+			aliasParam := param
+			aliasParam.CLIName = alias
+			value, include, err := rawParamValue(aliasParam, values, flagChanged)
+			if err != nil {
+				return nil, err
+			}
+			if include {
+				raw[alias] = value
+			}
 		}
 	}
 	return raw, nil

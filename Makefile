@@ -6,20 +6,6 @@ export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
 endif
 HUGO_BASE_URL ?= /
 DOCGEN_ARGS ?=
-GOLANGCI_LINT_VERSION ?= v2.14.0
-GOLANGCI_GO_VERSION := $(shell go env GOVERSION)
-GOLANGCI_LINT = $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOLANGCI_GO_VERSION)
-PACKAGE_CLOSURE_PLUGIN = $(GOBIN)/packageclosure.so
-MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
-VALE_VERSION ?= v3.22.0
-GOPLS_VERSION ?= v0.23.0
-# GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
-# Set it only in the top-level process so recursive make shares its jobserver.
-MAKE_JOBS ?= 12
-ifeq ($(MAKELEVEL),0)
-MAKEFLAGS += -j$(MAKE_JOBS)
-endif
-
 GO_SCRATCH := $(CURDIR)/.scratch/go
 export GOENV := $(GO_SCRATCH)/env
 export GOCACHE := $(GO_SCRATCH)/build
@@ -32,6 +18,20 @@ export GOFLAGS :=
 export GOWORK := off
 export GOLANGCI_LINT_CACHE := $(CURDIR)/.scratch/golangci-lint-cache
 export HUGO_CACHEDIR := $(CURDIR)/.scratch/hugo-cache
+GOLANGCI_LINT_VERSION ?= v2.14.0
+GOLANGCI_GO_VERSION := $(shell GOMODCACHE="$(GOMODCACHE)" go env GOVERSION)
+GOLANGCI_LINT = $(GOBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)-$(GOLANGCI_GO_VERSION)
+PACKAGE_CLOSURE_PLUGIN = $(GOBIN)/packageclosure.so
+MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
+VALE_VERSION ?= v3.22.0
+GOPLS_VERSION ?= v0.23.0
+# GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
+# Set it only in the top-level process so recursive make shares its jobserver.
+MAKE_JOBS ?= 12
+ifeq ($(MAKELEVEL),0)
+MAKEFLAGS += -j$(MAKE_JOBS)
+endif
+
 ifeq ($(MAKELEVEL),0)
 export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
 endif

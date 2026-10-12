@@ -29,9 +29,12 @@ func (r *AssertionModeReq) SetProjectContext(project backend.ProjectContext) { r
 
 // AssertionModeRes reports the mechanical changes considered or written.
 type AssertionModeRes struct {
-	File    string
-	Swapped int
-	DryRun  bool
+	File         string
+	Swapped      int
+	DryRun       bool
+	WorkingView  bool
+	ReceiptDraft EditReceiptDraft
+	Receipt      EditReceipt
 }
 
 var assertionModeParams = []ParameterContract{
@@ -59,7 +62,7 @@ func parseAssertionMode(raw map[string]any) (AssertionModeReq, error) {
 	if req.TrustWorkspace, err = ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false); err != nil {
 		return req, err
 	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo, WorkspaceTrust: backend.NewWorkspaceTrust(".", req.TrustWorkspace)}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo, WorkspaceTrust: backend.WorkspaceTrust{Trusted: req.TrustWorkspace}}
 	return req, nil
 }
 
@@ -77,8 +80,25 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 			if res.DryRun {
 				return fmt.Sprintf("%d swapped (dry run)", res.Swapped), nil
 			}
+			if res.Swapped == 0 {
+				return fmt.Sprintf("No assertions changed in %s.", res.File), nil
+			}
 			return fmt.Sprintf("%d swapped; wrote %s", res.Swapped, res.File), nil
 		},
+		Output: &OperationOutputContract{ResultSchema: assertionModeOutputSchema()},
+		FinalizeOutput: func(cc CallContext, _ AssertionModeReq, result AssertionModeRes) (AssertionModeRes, error) {
+			ctx := cc.Ctx
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, result.WorkingView, cc.InBatch || result.WorkingView, result.ReceiptDraft, nil)
+			if err != nil {
+				return AssertionModeRes{}, err
+			}
+			result.Receipt = receipt
+			return result, nil
+		},
+		ProjectOutput: projectAssertionModeOutput,
 		ExampleRaw:    map[string]any{"file": "api/api_test.go", "mode": "relax", "dry_run": true},
 		BufferedBatch: true, Batchable: true,
 	}
@@ -86,7 +106,12 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 
 func bufferedAssertionModeHandler(ctx context.Context, cc CallContext, req AssertionModeReq) (AssertionModeRes, error) {
 	if req.DryRun {
-		return runAssertionMode(ctx, cc, req)
+		result, err := runAssertionMode(ctx, cc, req)
+		if err != nil {
+			return AssertionModeRes{}, err
+		}
+		result.ReceiptDraft = EditReceiptDraft{Operation: "assertion_mode", Status: EditNoOp}
+		return result, nil
 	}
 	target := resolveWorkPath(cc.WorkDir, req.File)
 	root, err := structuralModuleRoot(target)
@@ -95,8 +120,16 @@ func bufferedAssertionModeHandler(ctx context.Context, cc CallContext, req Asser
 	}
 	var result AssertionModeRes
 	err = sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		buffer := sourcebuf.FromContext(editCtx)
+		before := buffer.Checkpoint()
 		var editErr error
 		result, editErr = runAssertionMode(editCtx, cc, req)
+		if editErr != nil {
+			return editErr
+		}
+		result.WorkingView = sourcebuf.FromContext(cc.Ctx) != nil
+		fileEdit := FileEditRes{Display: req.File, DiagnosticStatus: diagnosticStatusUnavailable}
+		result.ReceiptDraft, editErr = bufferedReceiptDraft(buffer, before, cc, "assertion_mode", fileEdit)
 		return editErr
 	})
 	return result, err

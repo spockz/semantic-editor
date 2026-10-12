@@ -1279,7 +1279,9 @@ func createMCPSnapshot(t *testing.T, root string) string {
 				Text string `json:"text"`
 			} `json:"content"`
 			StructuredContent struct {
-				Result json.RawMessage `json:"result"`
+				Result struct {
+					SnapshotID string `json:"snapshot_id"`
+				} `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -1289,20 +1291,10 @@ func createMCPSnapshot(t *testing.T, root string) string {
 	if envelope.Result.IsError || len(envelope.Result.Content) == 0 {
 		t.Fatalf("snapshot failed: %s", response)
 	}
-	var snapshotText string
-	if err := json.Unmarshal(envelope.Result.StructuredContent.Result, &snapshotText); err != nil {
-		t.Fatalf("unmarshal snapshot text: %v", err)
-	}
-	var snapshot struct {
-		ID string `json:"snapshot_id"`
-	}
-	if err := json.Unmarshal([]byte(snapshotText), &snapshot); err != nil {
-		t.Fatalf("unmarshal snapshot data: %v", err)
-	}
-	if snapshot.ID == "" {
+	if envelope.Result.StructuredContent.Result.SnapshotID == "" {
 		t.Fatal("empty snapshot id")
 	}
-	return snapshot.ID
+	return envelope.Result.StructuredContent.Result.SnapshotID
 }
 
 func undoMCPSnapshot(t *testing.T, root, snapshotID string) {

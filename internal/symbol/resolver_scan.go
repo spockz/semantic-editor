@@ -2,12 +2,15 @@
 package symbol
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
+	"semedit/internal/sourcebuf"
+	"slices"
 	"strings"
 )
 
@@ -256,17 +259,12 @@ type packageTypeIndex struct {
 
 func loadPackageTypeIndex(filePath, packageName string, reader *sourceSnapshotReader) (*packageTypeIndex, error) {
 	selectedIsTest := strings.HasSuffix(filePath, "_test.go")
-	entries, err := os.ReadDir(filepath.Dir(filePath))
+	paths, err := packageSourcePaths(filePath, selectedIsTest, reader)
 	if err != nil {
-		return nil, fmt.Errorf("read package directory for %s: %w", filePath, err)
+		return nil, err
 	}
 	index := &packageTypeIndex{types: make(map[string][]indexedTypeDeclaration)}
-	for _, entry := range entries {
-		name := entry.Name()
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(name, ".go") || (!selectedIsTest && strings.HasSuffix(name, "_test.go")) {
-			continue
-		}
-		path := filepath.Join(filepath.Dir(filePath), name)
+	for _, path := range paths {
 		source, err := reader.read(path)
 		if err != nil {
 			return nil, fmt.Errorf("read package source %s: %w", path, err)
@@ -298,4 +296,46 @@ func loadPackageTypeIndex(filePath, packageName string, reader *sourceSnapshotRe
 		}
 	}
 	return index, nil
+}
+
+func packageSourcePaths(filePath string, selectedIsTest bool, reader *sourceSnapshotReader) ([]string, error) {
+	directory := filepath.Dir(filePath)
+	entries, err := os.ReadDir(directory)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read package directory for %s: %w", filePath, err)
+	}
+	paths := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || !strings.HasSuffix(name, ".go") || (!selectedIsTest && strings.HasSuffix(name, "_test.go")) {
+			continue
+		}
+		paths[filepath.Join(directory, name)] = struct{}{}
+	}
+	canonicalFile, err := sourcebuf.CanonicalPath(reader.ctx, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("canonicalize package source %s: %w", filePath, err)
+	}
+	canonicalDirectory := filepath.Dir(canonicalFile)
+	for path := range sourcebuf.Overlay(reader.ctx) {
+		canonicalPath, err := sourcebuf.CanonicalPath(reader.ctx, path)
+		if err != nil {
+			return nil, fmt.Errorf("canonicalize buffered package source %s: %w", path, err)
+		}
+		if filepath.Dir(canonicalPath) != canonicalDirectory || !strings.HasSuffix(canonicalPath, ".go") || (!selectedIsTest && strings.HasSuffix(canonicalPath, "_test.go")) {
+			continue
+		}
+		if _, err := os.Lstat(canonicalPath); err == nil {
+			continue
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("inspect buffered package source %s: %w", path, err)
+		}
+		paths[canonicalPath] = struct{}{}
+	}
+	result := make([]string, 0, len(paths))
+	for path := range paths {
+		result = append(result, path)
+	}
+	slices.Sort(result)
+	return result, nil
 }

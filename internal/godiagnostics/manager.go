@@ -53,7 +53,7 @@ func (s *Session) Snapshot(path string) (Document, error) {
 	if err != nil {
 		return Document{}, fmt.Errorf("resolve document: %w", err)
 	}
-	path, err = filepath.EvalSymlinks(path)
+	path, err = sourcebuf.CanonicalPath(s.ctx, path)
 	if err != nil {
 		return Document{}, fmt.Errorf("canonicalize document: %w", err)
 	}
@@ -70,13 +70,22 @@ func (s *Session) Snapshot(path string) (Document, error) {
 		return Document{}, fmt.Errorf("go source %q changed since synchronization", path)
 	}
 	info, err := os.Stat(path)
-	if err != nil {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return Document{}, fmt.Errorf("stat source preimage: %w", err)
 	}
-	if !info.Mode().IsRegular() {
+	if err == nil && !info.Mode().IsRegular() {
 		return Document{}, fmt.Errorf("source preimage %q is not regular", path)
 	}
 	return Document{Info: info, Path: path, URI: (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String(), Version: snapshot.version, Content: content}, nil
+}
+
+// CanonicalSourcePath validates a source path against this session's retained source view.
+func (s *Session) CanonicalSourcePath(path string) (string, error) {
+	canonical, err := sourcebuf.CanonicalPath(s.ctx, path)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Go source path: %w", err)
+	}
+	return canonical, nil
 }
 
 // AssertCurrent rejects disk changes anywhere in the analysis scope before publication.
@@ -144,7 +153,7 @@ func (m *SessionManager) Close() error {
 }
 
 // CheckDetailed synchronizes selected files before requesting current diagnostics.
-func (m *SessionManager) CheckDetailed(ctx context.Context, root, executable string, environment []string) ([]Diagnostic, error) {
+func (m *SessionManager) CheckDetailed(ctx context.Context, root, executable string, environment []string, patterns ...string) ([]Diagnostic, error) {
 	root, resolveErr := filepath.Abs(root)
 	if resolveErr != nil {
 		return nil, fmt.Errorf("resolve Go diagnostics root: %w", resolveErr)
@@ -155,7 +164,7 @@ func (m *SessionManager) CheckDetailed(ctx context.Context, root, executable str
 	}
 	var diagnostics []Diagnostic
 	err := m.use(ctx, root, executable, environment, func(ctx context.Context, session *Session) error {
-		files, findings, err := loadGoFiles(ctx, root, environment)
+		files, findings, err := loadGoFiles(ctx, root, environment, patterns...)
 		if err != nil {
 			return err
 		}
@@ -188,12 +197,17 @@ func WithSessionManager(ctx context.Context, manager *SessionManager) context.Co
 
 // CheckDetailedWithContext reuses an attached manager or runs a one-shot check.
 func CheckDetailedWithContext(ctx context.Context, root, executable string, environment []string) ([]Diagnostic, error) {
+	return CheckDetailedWithPatternsWithContext(ctx, root, executable, environment, nil)
+}
+
+// CheckDetailedWithPatternsWithContext requests diagnostics for explicit package patterns when provided.
+func CheckDetailedWithPatternsWithContext(ctx context.Context, root, executable string, environment []string, patterns []string) ([]Diagnostic, error) {
 	if ctx != nil {
 		if manager, ok := ctx.Value(managerContextKey{}).(*SessionManager); ok && manager != nil {
-			return manager.CheckDetailed(ctx, root, executable, environment)
+			return manager.CheckDetailed(ctx, root, executable, environment, patterns...)
 		}
 	}
-	return CheckDetailed(ctx, root, executable, environment)
+	return CheckDetailedForPatterns(ctx, root, executable, environment, patterns...)
 }
 
 // UseWithContext runs a Go LSP operation on the MCP session or a temporary CLI session.
@@ -591,7 +605,7 @@ func discoverManagedScope(ctx context.Context, root string, environment []string
 	if err != nil {
 		return diagnosticsScope{}, err
 	}
-	return assembleDiagnosticsScope(moduleRoot, loaded)
+	return assembleDiagnosticsScope(ctx, moduleRoot, loaded)
 }
 
 func resolveDiagnosticsModule(ctx context.Context, root string, environment []string) (string, error) {
@@ -645,7 +659,7 @@ func loadDiagnosticsPackages(ctx context.Context, moduleRoot string, environment
 	return loaded, nil
 }
 
-func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (diagnosticsScope, error) {
+func assembleDiagnosticsScope(ctx context.Context, moduleRoot string, loaded []*packages.Package) (diagnosticsScope, error) {
 	fileSet := make(map[string]struct{})
 	manifestRoots := map[string]struct{}{moduleRoot: {}}
 	auxiliary := make(map[string]manifestState)
@@ -666,7 +680,7 @@ func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (di
 		}
 		manifestRoots[module.Dir] = struct{}{}
 		for _, path := range pkg.GoFiles {
-			canonicalPath, err := canonicalGoSourcePath(path)
+			canonicalPath, err := canonicalGoSourcePath(ctx, path)
 			if err != nil {
 				visitErr = err
 				return false
@@ -686,6 +700,9 @@ func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (di
 	if visitErr != nil {
 		return diagnosticsScope{}, visitErr
 	}
+	if err := addOverlaySources(ctx, moduleRoot, fileSet); err != nil {
+		return diagnosticsScope{}, err
+	}
 	scope := diagnosticsScope{root: moduleRoot, manifests: auxiliary}
 	for path := range fileSet {
 		scope.files = append(scope.files, path)
@@ -701,12 +718,66 @@ func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (di
 	return scope, nil
 }
 
-func canonicalGoSourcePath(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
+func addOverlaySources(ctx context.Context, moduleRoot string, files map[string]struct{}) error {
+	canonicalRoot, err := sourcebuf.CanonicalPath(ctx, moduleRoot)
 	if err != nil {
-		return "", fmt.Errorf("resolve Go source path %q: %w", path, err)
+		return fmt.Errorf("canonicalize Go diagnostics module root: %w", err)
 	}
-	canonical, err := filepath.EvalSymlinks(absolute)
+	for path := range sourcebuf.Overlay(ctx) {
+		canonical, err := canonicalGoSourcePath(ctx, path)
+		if err != nil {
+			return err
+		}
+		if _, statErr := os.Lstat(canonical); statErr == nil {
+			continue
+		} else if !errors.Is(statErr, os.ErrNotExist) {
+			return fmt.Errorf("inspect buffered Go source %q: %w", path, statErr)
+		}
+		managed, err := managedOverlaySource(canonicalRoot, canonical)
+		if err != nil {
+			return err
+		}
+		if managed {
+			files[canonical] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func managedOverlaySource(moduleRoot, path string) (bool, error) {
+	if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || !pathutil.PathWithin(moduleRoot, path) {
+		return false, nil
+	}
+	relative, err := filepath.Rel(moduleRoot, path)
+	if err != nil {
+		return false, fmt.Errorf("resolve buffered Go source path %q: %w", path, err)
+	}
+	if !filepath.IsLocal(relative) {
+		return false, nil
+	}
+	for directory := filepath.Dir(relative); directory != "."; directory = filepath.Dir(directory) {
+		base := filepath.Base(directory)
+		if base == "vendor" || base == "testdata" || strings.HasPrefix(base, ".") {
+			return false, nil
+		}
+	}
+	for directory := filepath.Dir(path); directory != moduleRoot; directory = filepath.Dir(directory) {
+		manifest := filepath.Join(directory, "go.mod")
+		_, statErr := os.Stat(manifest)
+		switch {
+		case statErr == nil:
+			return false, nil
+		case errors.Is(statErr, os.ErrNotExist):
+			continue
+		default:
+			return false, fmt.Errorf("inspect buffered Go module boundary %q: %w", directory, statErr)
+		}
+	}
+	return true, nil
+}
+
+func canonicalGoSourcePath(ctx context.Context, path string) (string, error) {
+	canonical, err := sourcebuf.CanonicalPath(ctx, path)
 	if err != nil {
 		return "", fmt.Errorf("canonicalize Go source path %q: %w", path, err)
 	}

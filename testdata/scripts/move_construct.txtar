@@ -27,10 +27,20 @@ cmp other/source.go .scratch/_want/other/source.go
 cmp api/cross.go .scratch/_want/api/cross.go
 cmp callers/use.go .scratch/_want/callers/use.go
 
-# A selected member of a grouped declaration fails without moving its siblings.
+# A selected member of an iota group fails without moving its siblings or changing values.
 ! exec semedit move-construct --file api/group.go --destination-file api/dest.go --symbol First --placement file_end
-stderr 'cannot move one member of a grouped declaration'
+stderr 'grouped constant with implicit expressions or iota'
 cmp api/group.go .scratch/_want/api/group.go
+
+# A single literal variable spec moves with its documentation while the sibling remains.
+exec semedit move-construct --file api/group_var.go --destination-file api/group_var_dest.go --symbol GroupedB --placement before_symbol --target-symbol KeepGroupedVar
+cmp api/group_var.go .scratch/_want/api/group_var.go
+cmp api/group_var_dest.go .scratch/_want/api/group_var_dest.go
+
+# A grouped type member moves with its documentation, and the sibling remains unchanged.
+exec semedit move-construct --file api/group_type.go --destination-file api/group_type_dest.go --symbol MoveType --placement before_symbol --target-symbol KeepGroupType
+cmp api/group_type.go .scratch/_want/api/group_type.go
+cmp api/group_type_dest.go .scratch/_want/api/group_type_dest.go
 exec go test ./...
 
 -- go.mod --
@@ -155,13 +165,71 @@ func Unrelated() {}
 package api
 
 const (
-	First = 1
-	Second = 2
+	First = iota
+	Second
 )
 -- .scratch/_want/api/group.go --
 package api
 
 const (
-	First = 1
-	Second = 2
+	First = iota
+	Second
 )
+-- api/group_var.go --
+package api
+
+var (
+	// GroupedA remains with its original declaration.
+	GroupedA = 1
+	// GroupedB moves with this documentation.
+	GroupedB = 2
+)
+-- api/group_var_dest.go --
+package api
+
+func KeepGroupedVar() {}
+
+-- api/group_type.go --
+package api
+
+type (
+	// KeepType remains in the source file.
+	KeepType struct{}
+	// MoveType travels with its declaration.
+	MoveType struct{}
+)
+-- api/group_type_dest.go --
+package api
+
+type GroupTypeDestinationExisting struct{}
+func KeepGroupType() {}
+-- .scratch/_want/api/group_type.go --
+package api
+
+type (
+	// KeepType remains in the source file.
+	KeepType struct{}
+)
+-- .scratch/_want/api/group_type_dest.go --
+package api
+
+type GroupTypeDestinationExisting struct{}
+
+// MoveType travels with its declaration.
+type MoveType struct{}
+
+func KeepGroupType() {}
+-- .scratch/_want/api/group_var.go --
+package api
+
+var (
+	// GroupedA remains with its original declaration.
+	GroupedA = 1
+)
+-- .scratch/_want/api/group_var_dest.go --
+package api
+
+// GroupedB moves with this documentation.
+var GroupedB = 2
+
+func KeepGroupedVar() {}

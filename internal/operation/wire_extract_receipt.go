@@ -39,7 +39,7 @@ var extractionReceiptFileConsumers = []string{
 	semanticInsertCaseToolName, semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInsertDeclToolName,
 	semanticInsertDeclarationToolName, semanticInsertConstructToolName, semanticReplaceDeclToolName, semanticExtractFunctionToolName,
 	"semantic_extract_constant", semanticExtractVariableToolName, semanticInlineVariableToolName, "semantic_insert_field",
-	semanticAssertionModeToolName,
+	semanticAssertionModeToolName, semanticInspectConstructToolName,
 }
 
 // ExtractionResult combines human CLI detail with the typed public edit receipt.

@@ -296,7 +296,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 	if err != nil {
 		return nil, err
 	}
-	return selectRustSymbol(query, root, file, source, symbols)
+	return selectRustSymbol(query, file, symbols)
 }
 
 // Rename executes one trusted, file-scoped rust-analyzer rename transaction.
@@ -369,11 +369,14 @@ func performRustRename(ctx context.Context, session RustSession, root, file stri
 	if validationErr := validateRustDocumentSymbolURI(symbols, uri); validationErr != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Err: validationErr}
 	}
-	lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
+	lookup, err := selectRustSymbol(request.Symbol, file, symbols)
 	if err != nil {
 		return nil, err
 	}
-	position := lookup.Location.Range.Start
+	if lookup.IsAmbiguous() || lookup.Definition == nil {
+		return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: errors.New("rename requires one unique target")}
+	}
+	position := lookup.Definition.Location.Range.Start
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position})
 	if err != nil {
 		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
@@ -391,7 +394,7 @@ func performRustRename(ctx context.Context, session RustSession, root, file stri
 	if err != nil {
 		return nil, &RustError{Op: "rename", File: file, Err: err}
 	}
-	if err := pipeline.WriteAtomic(file, updated); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, file, updated); err != nil {
 		return nil, &RustError{Op: "write", File: file, Err: err}
 	}
 	return &neutralbackend.RenameResult{Lookup: lookup}, nil
@@ -834,7 +837,7 @@ func rustKindName(kind int) string {
 	}
 }
 
-func selectRustSymbol(query, root, file string, source []byte, symbols []rustDocumentSymbol) (*neutralbackend.LookupResult, error) {
+func selectRustSymbol(query, file string, symbols []rustDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), "::")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -861,37 +864,17 @@ func selectRustSymbol(query, root, file string, source []byte, symbols []rustDoc
 	if len(matches) == 0 {
 		return nil, &RustError{Op: "lookup", File: file, Symbol: query, Err: ErrRustSymbolNotFound}
 	}
-	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.NamedTarget, 0, len(matches))
 	for _, item := range matches {
-		converted = append(converted, rustCandidate(root, file, source, item.symbol, item.path))
+		converted = append(converted, rustCandidate(file, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Candidates: converted}, nil
 	}
-	candidate := converted[0]
-	return &neutralbackend.LookupResult{
-		Symbol:   candidate.QualifiedName,
-		File:     candidate.File,
-		Line:     candidate.Line,
-		Column:   candidate.Column,
-		Offset:   candidate.Offset,
-		Kind:     candidate.Kind,
-		Receiver: candidate.Receiver,
-		Location: candidate.Location,
-	}, nil
+	return &neutralbackend.LookupResult{Definition: converted[0]}, nil
 }
 
-func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
-	start := symbol.SelectionRange.Start
-	offset, _ := rustByteOffset(source, start)
-	receiver := ""
-	if len(path) > 1 {
-		receiver = strings.Join(path[:len(path)-1], "::")
-	}
-	relative, err := filepath.Rel(root, file)
-	if err != nil {
-		relative = file
-	}
+func rustCandidate(file string, symbol rustDocumentSymbol, path []string) *neutralbackend.NamedTarget {
 	location := neutralbackend.SourceLocation{
 		URI: pathutil.FileURI(file),
 		Range: neutralbackend.Range{
@@ -899,17 +882,7 @@ func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, 
 			End:   neutralbackend.Position{Line: symbol.SelectionRange.End.Line, Character: symbol.SelectionRange.End.Character},
 		},
 	}
-	return &neutralbackend.SymbolCandidate{
-		Name:          symbol.Name,
-		Receiver:      receiver,
-		QualifiedName: strings.Join(path, "::"),
-		Kind:          rustKindName(symbol.Kind),
-		File:          relative,
-		Line:          start.Line + 1,
-		Column:        start.Character + 1,
-		Offset:        offset,
-		Location:      location,
-	}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "::"), Kind: rustKindName(symbol.Kind), Location: location}
 }
 
 func rustByteOffset(source []byte, position rustPosition) (int, error) {

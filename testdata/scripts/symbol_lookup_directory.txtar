@@ -1,0 +1,32 @@
+# Resolve symbols within a directly selected Go package directory.
+exec semedit lookup --file pkg --symbol Start
+stdout '"file":\s*"pkg/start.go"'
+stdout '"line":\s*3'
+exec semedit outline --file pkg
+stdout 'Start'
+exec semedit outline --path ' ' --file pkg
+stdout 'Start'
+
+-- go.mod --
+module example.com/lookup
+go 1.23
+
+-- pkg/start.go --
+package pkg
+
+func Start() {}
+
+-- pkg/other.go --
+package pkg
+
+func Stop() {}
+
+-- pkg/nested/start.go --
+package nested
+
+func Start() {}
+
+-- pkg/start_test.go --
+package pkg
+
+func Start() {}

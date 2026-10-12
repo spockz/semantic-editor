@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/gocache"
 	"semedit/internal/godiagnostics"
 	"semedit/internal/sourcebuf"
@@ -53,12 +55,12 @@ func Rename(ctx context.Context, workDir string, file string, line int, col int,
 }
 
 // RenameSelected binds the complete backend lookup snapshot to a shared-session rename.
-func RenameSelected(ctx context.Context, workDir string, selected backend.SymbolCandidate, expected map[string][]byte, newName string) error {
+func RenameSelected(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string) error {
 	return renameSelected(ctx, workDir, selected, expected, newName, nil)
 }
 
 // RenameSelectedFiles reports only sources changed by the validated shared-session rename.
-func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.SymbolCandidate, expected map[string][]byte, newName string) ([]string, error) {
+func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string) ([]string, error) {
 	paths := make([]string, 0)
 	err := renameSelected(ctx, workDir, selected, expected, newName, func(changed []string) { paths = changed })
 	if err != nil {
@@ -67,8 +69,11 @@ func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.S
 	return paths, nil
 }
 
-func renameSelected(ctx context.Context, workDir string, selected backend.SymbolCandidate, expected map[string][]byte, newName string, record func([]string)) error {
-	file := selected.File
+func renameSelected(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string, record func([]string)) error {
+	file, err := pathutil.FilePathFromURI(selected.Location.URI)
+	if err != nil {
+		return fmt.Errorf("resolve rename target location: %w", err)
+	}
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(workDir, file)
 	}
@@ -101,7 +106,7 @@ type renameCoordinate struct {
 	column int
 }
 
-func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.SymbolCandidate, expected map[string][]byte) (renameCoordinate, error) {
+func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.NamedTarget, expected map[string][]byte) (renameCoordinate, error) {
 	if err := validateRenameExpectedFiles(ctx, expected); err != nil {
 		return renameCoordinate{}, err
 	}
@@ -116,26 +121,30 @@ func validateRenameLookupSnapshot(ctx context.Context, file string, current []by
 	if !bytes.Equal(current, source) {
 		return renameCoordinate{}, errors.New("rename source changed since symbol lookup")
 	}
-	if selected.Offset < 0 || selected.Offset+len(selected.Name) > len(source) || string(source[selected.Offset:selected.Offset+len(selected.Name)]) != selected.Name {
+	offset, err := readlsp.ByteOffset(source, selected.Location.Range.Start)
+	if err != nil {
+		return renameCoordinate{}, fmt.Errorf("map rename target position: %w", err)
+	}
+	if selected.Name == "" || offset+len(selected.Name) > len(source) || string(source[offset:offset+len(selected.Name)]) != selected.Name {
 		return renameCoordinate{}, errors.New("rename identity does not match the lookup source")
 	}
-	prefix := source[:selected.Offset]
+	prefix := source[:offset]
 	line := bytes.Count(prefix, []byte{'\n'}) + 1
-	column := selected.Offset - bytes.LastIndexByte(prefix, '\n')
+	column := offset - bytes.LastIndexByte(prefix, '\n')
 	return renameCoordinate{line: line, column: column}, nil
 }
 
 func validateRenameExpectedFiles(ctx context.Context, expected map[string][]byte) error {
 	for path, source := range expected {
-		canonical, err := filepath.EvalSymlinks(path)
+		canonical, err := sourcebuf.CanonicalPath(ctx, path)
 		if err != nil {
 			return fmt.Errorf("resolve rename lookup input: %w", err)
 		}
 		info, err := os.Stat(canonical)
-		if err != nil {
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("stat rename lookup input: %w", err)
 		}
-		if !info.Mode().IsRegular() {
+		if err == nil && !info.Mode().IsRegular() {
 			return errors.New("rename lookup input is not a regular file")
 		}
 		// #nosec G304 -- inputs come from the backend's exact resolver snapshot.

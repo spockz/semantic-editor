@@ -1,0 +1,25 @@
+# A net-new Go compiler error leaves the batch applied, reports its delta, and signals an MCP error.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":\s*"applied_with_diagnostics"'
+stdout '"severity":1'
+stdout '"introduced":\[.*undefined: missing'
+cmp value.go .scratch/want/value.go
+
+-- go.mod --
+module example.com/batchintroducederror
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return missing"}}]}}}
+-- value.go --
+package batchintroducederror
+
+func Value() int { return 1 }
+-- .scratch/want/value.go --
+package batchintroducederror
+
+func Value() int {
+	return missing
+}

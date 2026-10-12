@@ -15,6 +15,41 @@ persisted diff is authoritative. Successful editing operations already verify
 diagnostics, so a separate `semantic_verify` is needed only for a new explicit
 verification request or subsequent external changes.
 
+For a refactoring that needs several turns, start `semantic_stage` in the selected
+Go workspace. Successful mutations return a native `stage_receipt`; reads use the
+same overlay and source files remain unchanged until `semantic_commit`. During an
+API migration, use `semantic_stage_drop` with a returned `stage_receipt.step_id`
+to remove a mistaken edit and replay the surviving steps. Use
+`semantic_stage_abort` to discard the entire tentative migration. A conflicting input, failed replay, or
+budget rejection preserves accepted edits. One module cannot host competing
+stages, and workspace-root changes cannot bypass an active journal.
+
+Zero-write commit failures retain the stage. Partial publication reports the
+actual persisted diff and freezes further edits until abort. Complete publication
+consumes the stage; later verification problems report `applied_with_diagnostics`.
+Inspect publication evidence before retrying. `skip_hooks` on batch, verification,
+or commit skips external commands while preserving formatting and Go diagnostics.
+Stage budgets are policy limits, not promises about heap usage or latency.
+
+Use `semantic_inspect_construct` to obtain matching normalized candidates when a
+nested selector is ambiguous. Copy `construct_path` and the corresponding
+`expected_selection_revision`; a stale revision refuses the replacement and
+returns current choices. This guard is optional and covers the matching candidate
+set, not the whole file. Control selectors accept formatting differences.
+
+Lookup locations use captured source, including staged bytes. Public line and
+column values are one-based UTF-16; neutral ranges are zero-based UTF-16. Go token
+positions remain byte-based internally, so do not mix those coordinate systems.
+Directory lookup searches the selected package. Whole method replacement with
+`kind: "function"` accepts a qualified selector or infers the receiver from the
+complete method source; receiver identity and pointer/value form stay protected.
+
+Brace-wrapped replacement bodies and plain-text scaffold purposes are accepted.
+Nested statement anchors, multiple package initializers, safe grouped-member
+moves, and explicitly requested nested-module imports retain their structural
+checks. Ordinary Go commands preserve manifests with `-mod=readonly`; use the
+explicit dependency operation when changing module requirements.
+
 Generic `kind: "field"` insertion uses the typed field planner: its owner must
 be a private non-generic struct, and package-overlay validation must prove
 layout compatibility. An exported owner, duplicate field, or unsupported

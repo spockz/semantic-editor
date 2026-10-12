@@ -81,7 +81,9 @@ func referencesDef() Def[ReferencesReq, *backend.ReferencesResult] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReferencesReq) (*backend.ReferencesResult, error){
 			backend.LanguageGo: referencesRun,
 		},
-		Format:     formatReferences,
-		ExampleRaw: map[string]any{"symbol": "Store.Read", "file": "api/store.go", "language": "go"},
+		Format:        formatReferences,
+		Output:        &OperationOutputContract{ResultSchema: referencesOutputSchema()},
+		ProjectOutput: projectReferencesOutput,
+		ExampleRaw:    map[string]any{"symbol": "Store.Read", "file": "api/store.go", "language": "go"},
 	}
 }

@@ -1,0 +1,23 @@
+# An active stage owns its descendants, including a semantic_batch whose canonical root is a child workspace.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'overlaps active staging workspace'
+cmp child/value.go want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"workspace_root":"child","edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return 2"}}]}}}
+-- go.mod --
+module example.com/stagechildbatch
+
+go 1.24
+-- child/value.go --
+package child
+
+func Value() int { return 1 }
+-- want/value.go --
+package child
+
+func Value() int { return 1 }

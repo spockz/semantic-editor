@@ -51,6 +51,7 @@ const (
 
 const (
 	wireTrustWorkspace          = "trust_workspace"
+	wireSkipHooks               = "skip_hooks"
 	wireAutoOrganizeImports     = "auto_organize_imports"
 	wireExampleFile             = "api/server.go"
 	wireTargetSymbol            = "target_symbol"
@@ -131,8 +132,9 @@ var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "
 
 // LookupReq requests symbol coordinates through the selected language backend.
 type LookupReq struct {
-	Project backend.ProjectContext
-	Symbol  string
+	Project  backend.ProjectContext
+	Symbol   string
+	WorkRoot string
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -162,6 +164,7 @@ type VerifyReq struct {
 	FormatSelectedFile bool
 	OrganizeImports    bool
 	CheckOnly          bool
+	SkipHooks          bool
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -170,8 +173,29 @@ func (r VerifyReq) GetProjectContext() backend.ProjectContext { return r.Project
 // SetProjectContext replaces the request project with the effective dispatch project.
 func (r *VerifyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
-// LookupRes reports symbol coordinates in backend-neutral form.
-type LookupRes = backend.LookupResult
+// LookupTarget describes one public lookup target without exposing source URIs.
+type LookupTarget struct {
+	Name          string `json:"name,omitempty"`
+	QualifiedName string `json:"qualified_name,omitempty"`
+	Kind          string `json:"kind,omitempty"`
+	File          string `json:"file,omitempty"`
+	Line          int    `json:"line,omitempty"`
+	Column        int    `json:"column,omitempty"`
+}
+
+// LookupRes contains the public lookup projection.
+type LookupRes struct {
+	Symbol     string         `json:"symbol,omitempty"`
+	File       string         `json:"file,omitempty"`
+	Line       int            `json:"line,omitempty"`
+	Column     int            `json:"column,omitempty"`
+	Kind       string         `json:"kind,omitempty"`
+	Definition *LookupTarget  `json:"definition,omitempty"`
+	Usages     []LookupTarget `json:"usages,omitempty"`
+	Ambiguous  bool           `json:"ambiguous,omitempty"`
+	Candidates []LookupTarget `json:"candidates,omitempty"`
+	WorkRoot   string         `json:"-"`
+}
 
 // RenameRes reports the resolved target and diagnostic delta after a rename.
 type RenameRes = backend.RenameResult
@@ -196,6 +220,7 @@ var verifyParams = []ParameterContract{
 	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable", Type: ParamString},
 	{Name: "make_bin", CLIName: "make-bin", JSONName: "make_bin", Description: "Path to a preinstalled make-ls executable", Type: ParamString},
 	{Name: "check_only", CLIName: "check-only", JSONName: "check_only", Description: "Skip all formatting and normalization hooks; verify the current files only", Type: ParamBoolean, Default: false},
+	{Name: wireSkipHooks, CLIName: "skip-hooks", JSONName: wireSkipHooks, Description: "Skip configured project hooks while preserving language-server diagnostics and built-in formatting", Type: ParamBoolean, Default: false},
 }
 
 func parseLookup(raw map[string]any) (LookupReq, error) {
@@ -214,7 +239,7 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 	if err != nil {
 		return LookupReq{}, err
 	}
-	return LookupReq{Project: project, Symbol: symbol}, nil
+	return LookupReq{Project: project, Symbol: symbol, WorkRoot: project.RootDir}, nil
 }
 
 func parseRename(raw map[string]any) (RenameReq, error) {
@@ -329,6 +354,10 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	skipHooks, err := ParseBool(raw, wireSkipHooks, "skip-hooks", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
 	return VerifyReq{
 		Project: backend.ProjectContext{
 			File:           path,
@@ -338,15 +367,14 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 			Kotlin:         backend.KotlinConfig{KotlinBin: kotlinBin},
 			Bash:           backend.BashConfig{BashBin: bashBin},
 			Make:           backend.MakeConfig{MakeBin: makeBin},
-			KotlinBin:      kotlinBin,
 		},
 		Path:               path,
 		FormatSelectedFile: formatSelected,
-		OrganizeImports:    organizeImports, CheckOnly: checkOnly,
+		OrganizeImports:    organizeImports, CheckOnly: checkOnly, SkipHooks: skipHooks,
 	}, nil
 }
 
-func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*backend.LookupResult, error) {
+func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*LookupRes, error) {
 	project := effectiveProject(cc, request.Project)
 	service := cc.Service
 	if service == nil {
@@ -356,24 +384,77 @@ func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*backend
 	if err != nil {
 		return nil, err
 	}
-	outputRoot := cc.WorkDir
-	if outputRoot == "" {
-		outputRoot = project.RootDir
+	workRoot := cc.WorkDir
+	if workRoot == "" {
+		workRoot = project.RootDir
 	}
-	normalizeLookupResultPaths(outputRoot, result)
-	return result, nil
+	if workRoot == "" {
+		workRoot = request.WorkRoot
+	}
+	return lookupResponse(workRoot, request.Symbol, result)
 }
 
-func normalizeLookupResultPaths(root string, result *backend.LookupResult) {
+func lookupResponse(root, query string, result *backend.LookupResult) (*LookupRes, error) {
 	if result == nil {
-		return
+		return nil, fmt.Errorf("lookup backend returned no result")
 	}
-	result.File = lookupWorkspacePath(root, result.File)
-	for _, candidate := range result.Candidates {
-		if candidate != nil {
-			candidate.File = lookupWorkspacePath(root, candidate.File)
+	ambiguous := result.IsAmbiguous()
+	if result.Definition != nil && len(result.Candidates) != 0 {
+		return nil, fmt.Errorf("lookup backend returned both a definition and candidates")
+	}
+	if result.Definition == nil && len(result.Candidates) < 2 {
+		return nil, fmt.Errorf("lookup backend returned neither a unique definition nor multiple candidates")
+	}
+	response := &LookupRes{Symbol: query, WorkRoot: pathutil.CanonicalWorkspaceRoot(root), Ambiguous: ambiguous}
+	if result.Definition != nil {
+		definition, err := lookupTarget(root, result.Definition)
+		if err != nil {
+			return nil, fmt.Errorf("project lookup definition: %w", err)
 		}
+		response.Definition = &definition
+		response.Symbol = result.Definition.Identity()
+		response.File, response.Line, response.Column, response.Kind = definition.File, definition.Line, definition.Column, definition.Kind
 	}
+	for _, usage := range result.Usages {
+		target, err := lookupTarget(root, usage)
+		if err != nil {
+			return nil, fmt.Errorf("project lookup usage: %w", err)
+		}
+		response.Usages = append(response.Usages, target)
+	}
+	for _, candidate := range result.Candidates {
+		target, err := lookupTarget(root, candidate)
+		if err != nil {
+			return nil, fmt.Errorf("project lookup candidate: %w", err)
+		}
+		response.Candidates = append(response.Candidates, target)
+	}
+	return response, nil
+}
+
+func lookupTarget(root string, target *backend.NamedTarget) (LookupTarget, error) {
+	if target == nil {
+		return LookupTarget{}, fmt.Errorf("nil lookup target")
+	}
+	file, err := pathutil.FilePathFromURI(target.Location.URI)
+	if err != nil {
+		return LookupTarget{}, fmt.Errorf("parse target URI: %w", err)
+	}
+	if strings.TrimSpace(target.Name) == "" || strings.TrimSpace(target.Kind) == "" {
+		return LookupTarget{}, fmt.Errorf("lookup target has no name or kind")
+	}
+	rangeValue := target.Location.Range
+	start, end := rangeValue.Start, rangeValue.End
+	if start.Line < 0 || start.Character < 0 || end.Line < 0 || end.Character < 0 ||
+		end.Line < start.Line || (end.Line == start.Line && end.Character <= start.Character) {
+		return LookupTarget{}, fmt.Errorf("lookup target has invalid identifier range")
+	}
+	position := start
+	qualifiedName := target.Identity()
+	return LookupTarget{
+		Name: target.Name, QualifiedName: qualifiedName, Kind: target.Kind,
+		File: lookupWorkspacePath(root, file), Line: position.Line + 1, Column: position.Character + 1,
+	}, nil
 }
 
 func lookupWorkspacePath(root, source string) string {
@@ -416,14 +497,17 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRes, error) {
 	project := effectiveProject(cc, request.Project)
 	return verification.Run(ctx, verification.Request{
-		Project:            project,
-		Path:               request.Path,
-		FormatSelectedFile: request.FormatSelectedFile,
-		OrganizeImports:    request.OrganizeImports,
-		CheckOnly:          request.CheckOnly,
-		AllowedLanguages:   cc.AllowedLanguages,
-		GoFormattingPaths:  cc.GoFormattingPaths,
-		Service:            cc.Service,
+		Project:              project,
+		Path:                 request.Path,
+		FormatSelectedFile:   request.FormatSelectedFile,
+		OrganizeImports:      request.OrganizeImports,
+		CheckOnly:            request.CheckOnly,
+		SkipHooks:            request.SkipHooks,
+		AllowedLanguages:     cc.AllowedLanguages,
+		GoFormattingPaths:    cc.GoFormattingPaths,
+		GoPackagePatterns:    cc.GoPackagePatterns,
+		GoPackageScopeDetail: cc.GoPackageScopeDetail,
+		Service:              cc.Service,
 	})
 }
 
@@ -432,7 +516,7 @@ func SelectedGoModuleRoots(projectRoot string, selectedPaths []string) ([]string
 	return verification.SelectedGoModuleRoots(projectRoot, selectedPaths)
 }
 
-func formatLookup(result *backend.LookupResult) (string, error) {
+func formatLookup(result *LookupRes) (string, error) {
 	data, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("format lookup result: %w", err)
@@ -443,9 +527,9 @@ func formatLookup(result *backend.LookupResult) (string, error) {
 func formatRename(result *backend.RenameResult) (string, error) {
 	text := "Successfully renamed symbol."
 	if result != nil && result.Lookup != nil {
-		symbol := result.Lookup.Symbol
-		if result.Lookup.Definition != nil && result.Lookup.Definition.QualifiedName != "" {
-			symbol = result.Lookup.Definition.QualifiedName
+		symbol := ""
+		if result.Lookup.Definition != nil {
+			symbol = result.Lookup.Definition.Identity()
 		}
 		text = fmt.Sprintf("Successfully renamed %s.", symbol)
 	}
@@ -488,22 +572,22 @@ func formatVerify(result VerifyRes) (string, error) {
 	return text + "\nVerification report: " + string(data), nil
 }
 
-func lookupDef() Def[LookupReq, *backend.LookupResult] {
+func lookupDef() Def[LookupReq, *LookupRes] {
 	text := ValueSchema{Kind: SchemaString}
 	candidate := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"name": text, "qualified_name": text, "kind": text, "file": text,
+		"name": text, outputQualifiedNameField: text, "kind": text, "file": text,
 		"line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
 	}, Required: []string{"name", "kind"}}
 	schema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"symbol": text, "file": text, "kind": text, "line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
 		"ambiguous": {Kind: SchemaBoolean}, "candidates": {Kind: SchemaArray, Items: &candidate},
 	}, Required: []string{"ambiguous"}}
-	return Def[LookupReq, *backend.LookupResult]{
+	return Def[LookupReq, *LookupRes]{
 		Key:     capability.OpLookup,
 		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed. Returns symbol, file, kind, line, and column. Pass symbol and file to follow-up semedit calls. Use line and column only for file-navigation reads; they are not accepted as semedit tool parameters.",
 		Params:  lookupParams, Level: LevelSymbol, ReadOnly: true,
 		CLIName: "lookup", MCPName: semanticLookupToolName, Parse: parseLookup,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, LookupReq) (*backend.LookupResult, error){
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, LookupReq) (*LookupRes, error){
 			backend.LanguageGo: lookupRun, backend.LanguageRust: lookupRun, backend.LanguageJava: lookupRun,
 			backend.LanguageScala: lookupRun, backend.LanguageHaskell: lookupRun, backend.LanguageKotlin: lookupRun,
 			backend.LanguageBash: lookupRun, backend.LanguageMake: lookupRun,
@@ -517,7 +601,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 	}
 }
 
-func projectLookupResult(result *backend.LookupResult) (any, error) {
+func projectLookupResult(result *LookupRes) (any, error) {
 	if result == nil {
 		return nil, fmt.Errorf("project lookup: missing result: %w", ErrInvalidDefinition)
 	}
@@ -526,20 +610,13 @@ func projectLookupResult(result *backend.LookupResult) (any, error) {
 		projectResolvedLookup(result, projected)
 		return projected, nil
 	}
-	candidates := make([]map[string]any, 0, len(result.Candidates))
-	for _, item := range result.Candidates {
-		if item == nil {
-			return nil, fmt.Errorf("project lookup: nil candidate: %w", ErrInvalidDefinition)
-		}
-		value := map[string]any{"name": item.Name, "kind": item.Kind}
-		projectLookupCandidate(item, value)
-		candidates = append(candidates, value)
-	}
+	candidates := make([]LookupTarget, 0, len(result.Candidates))
+	candidates = append(candidates, result.Candidates...)
 	projected["candidates"] = candidates
 	return projected, nil
 }
 
-func projectResolvedLookup(result *backend.LookupResult, projected map[string]any) {
+func projectResolvedLookup(result *LookupRes, projected map[string]any) {
 	if result.Symbol != "" {
 		projected["symbol"] = result.Symbol
 	}
@@ -554,21 +631,6 @@ func projectResolvedLookup(result *backend.LookupResult, projected map[string]an
 	}
 	if result.Column > 0 {
 		projected["column"] = result.Column
-	}
-}
-
-func projectLookupCandidate(item *backend.SymbolCandidate, projected map[string]any) {
-	if item.QualifiedName != "" {
-		projected["qualified_name"] = item.QualifiedName
-	}
-	if item.File != "" {
-		projected["file"] = item.File
-	}
-	if item.Line > 0 {
-		projected["line"] = item.Line
-	}
-	if item.Column > 0 {
-		projected["column"] = item.Column
 	}
 }
 
@@ -656,16 +718,24 @@ func projectRenameOutput(result *backend.RenameResult) (any, error) {
 		"status": "renamed", wireApplicationState: result.ApplicationState,
 		wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
 	}
-	if origin := projectRenameIdentity(result.ProjectRoot, result.Source); origin != nil {
-		projection["origin"] = origin
+	origin, found, err := projectRenameIdentity(result.ProjectRoot, result.Source)
+	if err != nil {
+		return nil, err
+	}
+	if found {
+		projection["origin"] = origin.wireValue()
 	}
 	if result.ContinuationUnavailable != "" {
 		projection["continuation_unavailable"] = result.ContinuationUnavailable
 	}
 	if result.Lookup != nil && result.Revision != "" && result.ApplicationState == string(EditPersisted) {
-		if identity := projectRenameIdentity(result.ProjectRoot, result.Lookup); identity != nil {
-			projection["file"] = identity["file"]
-			projection["symbol"] = identity["symbol"]
+		identity, identityFound, identityErr := projectRenameIdentity(result.ProjectRoot, result.Lookup)
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		if identityFound {
+			projection["file"] = identity.File
+			projection["symbol"] = identity.Symbol
 			projection[wireExpectedRevision] = result.Revision
 		}
 	}
@@ -685,32 +755,42 @@ func projectRenameErrorOutput(err error) (any, bool, error) {
 	if result.ApplicationState != string(EditPersisted) && result.ApplicationState != string(EditAppliedWorking) {
 		return nil, false, nil
 	}
-	origin := projectRenameIdentity(result.ProjectRoot, result.Source)
-	if origin == nil {
+	origin, found, err := projectRenameIdentity(result.ProjectRoot, result.Source)
+	if err != nil {
+		return nil, false, err
+	}
+	if !found {
 		return nil, false, nil
 	}
 	return map[string]any{
 		"status": "applied_with_diagnostics", wireApplicationState: result.ApplicationState,
-		"origin": origin, wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+		"origin": origin.wireValue(), wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
 	}, true, nil
 }
 
-func projectRenameIdentity(root string, lookup *backend.LookupResult) map[string]any {
-	if lookup == nil {
-		return nil
+type renameIdentity struct {
+	File   string
+	Symbol string
+}
+
+func (identity renameIdentity) wireValue() map[string]any {
+	return map[string]any{"file": identity.File, "symbol": identity.Symbol}
+}
+
+func projectRenameIdentity(root string, lookup *backend.LookupResult) (renameIdentity, bool, error) {
+	if lookup == nil || lookup.Definition == nil {
+		return renameIdentity{}, false, nil
 	}
-	file, symbol := lookup.File, lookup.Symbol
-	if lookup.Definition != nil {
-		file = lookup.Definition.File
-		if lookup.Definition.QualifiedName != "" {
-			symbol = lookup.Definition.QualifiedName
-		}
+	file, err := pathutil.FilePathFromURI(lookup.Definition.Location.URI)
+	if err != nil {
+		return renameIdentity{}, false, fmt.Errorf("project rename identity location: %w", err)
 	}
+	symbol := lookup.Definition.Identity()
 	file = renameProjectRelativeFile(root, file)
 	if file == "" || symbol == "" {
-		return nil
+		return renameIdentity{}, false, nil
 	}
-	return map[string]any{"file": file, "symbol": symbol}
+	return renameIdentity{File: file, Symbol: symbol}, true, nil
 }
 
 func renameProjectRelativeFile(root, file string) string {
@@ -759,7 +839,7 @@ func projectRenameDiagnostics(delta backend.DiagnosticDelta) map[string]any {
 	if suggestions == nil {
 		suggestions = []string{}
 	}
-	return map[string]any{"net_delta": delta.NetDelta, "introduced": introduced, "resolved": resolved, "suggestions": suggestions}
+	return map[string]any{"net_delta": delta.NetDelta, introducedField: introduced, "resolved": resolved, "suggestions": suggestions}
 }
 
 var renameFileConsumers = []string{
@@ -770,7 +850,7 @@ var renameFileConsumers = []string{
 	semanticInsertDeclarationToolName, semanticInsertConstructToolName, semanticReplaceDeclToolName,
 	semanticExtractFunctionToolName, semanticExtractVariableToolName,
 	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticMigrateTypeToolName,
-	semanticFindReferencesToolName, semanticInspectSymbolToolName,
+	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticInspectConstructToolName,
 }
 
 var renameSymbolConsumers = []string{
@@ -825,6 +905,9 @@ func DefaultRegistry() *Registry {
 	if err := registerReadInspectOps(registry); err != nil {
 		panic(err)
 	}
+	if err := registerInspectConstructOps(registry); err != nil {
+		panic(err)
+	}
 	if err := registerEngineOps(registry); err != nil {
 		panic(err)
 	}
@@ -838,6 +921,9 @@ func DefaultRegistry() *Registry {
 		panic(err)
 	}
 	if err := registerContractOps(registry); err != nil {
+		panic(err)
+	}
+	if err := registerStageOps(registry); err != nil {
 		panic(err)
 	}
 	if err := registry.installLanguageContracts(); err != nil {

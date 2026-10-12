@@ -614,6 +614,44 @@ func TestOpenCodeProviderReusesPreparedConfigurationAtLaunch(t *testing.T) {
 	}
 }
 
+func TestOpenCodeLocalCompactionThreshold(t *testing.T) {
+	for _, tc := range []struct {
+		name                       string
+		context, output, threshold int
+	}{
+		{"saluki", 65536, 8192, 49152},
+		{"different_context", 131072, 8192, 98304},
+		{"fractional_threshold", 65537, 8192, 49152},
+		{"output_requires_earlier_compaction", 16384, 8192, 8192},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewRunner(t.TempDir(), WithOpenCodeModelLimits(openCodeModelLimits{Context: tc.context, Output: tc.output}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
+			config, err := runner.openCodeConfig(t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/saluki"}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compaction := config["compaction"].(map[string]any)
+			if compaction["auto"] != true {
+				t.Fatal("automatic compaction is disabled")
+			}
+			providers := config["provider"].(map[string]any)
+			models := providers["amdbeast"].(map[string]any)["models"].(map[string]any)
+			limit := models["saluki"].(map[string]any)["limit"].(map[string]int)
+			// OpenCode 1.18.30 uses input-reserved; without input it ignores reserved.
+			threshold := limit["input"] - compaction["reserved"].(int)
+			if threshold != tc.threshold {
+				t.Fatalf("compaction threshold = %d, want %d", threshold, tc.threshold)
+			}
+			if limit["context"] != tc.context || limit["output"] != tc.output {
+				t.Fatalf("model capacity changed: %v", limit)
+			}
+			if threshold+limit["output"] > limit["context"] {
+				t.Fatal("compaction leaves insufficient room for output")
+			}
+		})
+	}
+}
+
 func assertOpenCodeSessionIDFailure(t *testing.T, mode string) {
 	t.Helper()
 	env := openCodeFakeClient(t, mode)

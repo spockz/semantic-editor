@@ -312,7 +312,12 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_replace_construct":          "unmatched enclosing-function selector",
 		"semantic_replace_decl":               "missing source file",
 		"semantic_scaffold_file":              "target already exists",
+		"semantic_inspect_construct":          "missing source file with a valid construct kind",
 		"semantic_set_doc_comment":            "missing source file",
+		"semantic_stage":                      "unknown closed parameter",
+		"semantic_stage_abort":                "no active retained stage",
+		"semantic_stage_drop":                 "no active retained stage with an opaque step selector",
+		"semantic_commit":                     "no active retained stage",
 		"semantic_snapshot":                   "missing snapshot path",
 		"semantic_undo":                       "nonexistent snapshot id",
 		"semantic_verify":                     "missing verification path",
@@ -470,6 +475,9 @@ func requiredFailureArguments(tool string, schema map[string]any) map[string]any
 }
 
 func applyFailureArgumentOverrides(args map[string]any, tool string) {
+	if applyStageAndInspectionFailureOverrides(args, tool) || applySelectorFailureOverrides(args, tool) {
+		return
+	}
 	switch tool {
 	case "semantic_snapshot":
 		args["label"] = ""
@@ -500,6 +508,27 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 		args["observed_result"] = "Tool returned an error"
 		args["unexpected_reason"] = "Expected invalid feedback interface to be rejected"
 		args["manual_touchups"] = ""
+	}
+}
+
+func applyStageAndInspectionFailureOverrides(args map[string]any, tool string) bool {
+	switch tool {
+	case "semantic_stage":
+		args["unexpected"] = true
+	case "semantic_stage_drop":
+		args["step_id"] = "00112233445566778899aabbccddeeff"
+	case "semantic_inspect_construct":
+		args["file"] = "missing.go"
+		args["in_function"] = "Existing"
+		args["kind"] = "if"
+	default:
+		return false
+	}
+	return true
+}
+
+func applySelectorFailureOverrides(args map[string]any, tool string) bool {
+	switch tool {
 	case "semantic_rename":
 		args["symbol"] = "MissingSymbol"
 		args["to"] = "RenamedSymbol"
@@ -523,7 +552,10 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 	case "semantic_assertion_mode":
 		args["file"] = "missing_test.go"
 		args["mode"] = "relax"
+	default:
+		return false
 	}
+	return true
 }
 
 func checkRejectedConstructSource(t *testing.T, testCase rejectedConstructCase, batch bool) {

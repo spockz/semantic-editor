@@ -83,10 +83,16 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 			}
 		}
 	}
+	if seed, _ := ctx.Value(moduleCacheSeedKey{}).(string); strings.TrimSpace(seed) != "" {
+		moduleCacheDir = filepath.Join(baseDir, "mod")
+	}
 	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir, goplsCacheDir} {
 		if err := verifyStateDirectory(dir); err != nil {
 			return nil, err
 		}
+	}
+	if err := seedModuleCache(ctx, baseDir, moduleCacheDir); err != nil {
+		return nil, err
 	}
 
 	managed := map[string]struct{}{
@@ -110,6 +116,10 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 			env = append(env, value)
 		}
 	}
+	goFlags := "-mod=readonly"
+	if moduleWritesAllowed(ctx) {
+		goFlags = ""
+	}
 	return append(env,
 		"GOENV="+filepath.Join(baseDir, "env"),
 		"GOCACHE="+cacheDir,
@@ -121,7 +131,17 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"GOBIN="+binDir,
 		"GOPATH="+baseDir,
 		"GOPLSCACHE="+goplsCacheDir,
-		"GOFLAGS=",
+		"GOFLAGS="+goFlags,
 		"GOWORK=off",
 	), nil
+}
+
+// IsManagedEnvironmentKey reports whether key is controlled by the Go cache environment.
+func IsManagedEnvironmentKey(key string) bool {
+	switch key {
+	case "GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "TMPDIR", "TEMP", "TMP", "GOBIN", "GOPATH", "GOPLSCACHE", "GOFLAGS", "GOWORK":
+		return true
+	default:
+		return false
+	}
 }

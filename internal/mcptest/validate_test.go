@@ -96,6 +96,7 @@ func TestResponseValidatorChecksNativeErrorStatusConsistency(t *testing.T) {
 		{name: "empty structured error missing outer error", tool: "sample", content: map[string]any{"error": ""}, wantFailures: 1},
 		{name: "batch error has diagnostic delta", tool: "semantic_batch", isError: true, content: map[string]any{"result": map[string]any{"status": "error", "diagnostic_delta": map[string]any{}, "results": []any{map[string]any{"status": "ok", "error": "bad"}}}}, wantFailures: 2},
 		{name: "batch error missing outer error", tool: "semantic_batch", content: map[string]any{"result": map[string]any{"status": "error", "results": []any{}}}, wantFailures: 1},
+		{name: "batch diagnostics have outer error", tool: "semantic_batch", isError: true, content: map[string]any{"result": map[string]any{"status": "applied_with_diagnostics", "diagnostic_delta": map[string]any{}, "results": []any{}}}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

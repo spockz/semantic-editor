@@ -35,6 +35,7 @@ func AddDependency(ctx context.Context, workDir string, pkg string) error {
 	if modRoot == "" {
 		return ErrNoModuleRoot
 	}
+	ctx = gocache.WithWritableModuleChanges(ctx)
 	env, err := gocache.Environment(ctx, modRoot)
 	if err != nil {
 		return fmt.Errorf("prepare Go dependency environment: %w", err)

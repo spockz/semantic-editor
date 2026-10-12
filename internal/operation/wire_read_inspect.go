@@ -50,7 +50,7 @@ const (
 )
 
 var outlineReadParams = readRequestParams(
-	ParameterContract{Name: "path", CLIName: "path", JSONName: "path", Description: "Source file or directory to outline", Type: ParamString, Required: true},
+	ParameterContract{Name: "path", CLIName: "path", JSONName: "path", InputAliases: []string{"file"}, Description: "Source file or directory to outline", Type: ParamString, Required: true},
 	ParameterContract{Name: "kinds", CLIName: "kind", JSONName: "kinds", Description: "Optional kinds to include: type, interface, function, method, field, constant, variable, package, class, constructor, enum, record, module, property, object, enum_member, trait, target; known kinds absent from a backend produce empty symbols", Type: ParamStringSlice},
 	ParameterContract{Name: "include_unexported", CLIName: "include-unexported", JSONName: "include_unexported", Description: "Include unexported Go declarations and members; external backends require true (default true)", Type: ParamBoolean, Default: true},
 	ParameterContract{Name: wireIncludeTests, CLIName: wireCLIIncludeTests, JSONName: wireIncludeTests, Description: "Include _test.go files for Go directory scopes (default false)", Type: ParamBoolean, Default: false},
@@ -169,7 +169,7 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer}},
 				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, signatureChangeConsumer}},
 				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer, semanticExtractConstantToolName, semanticExtractVariableToolName}},
-				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractConstantToolName, semanticExtractVariableToolName, semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName, semanticRemoveConstructToolName}},
+				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractConstantToolName, semanticExtractVariableToolName, semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName, semanticInspectConstructToolName, semanticRemoveConstructToolName}},
 				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName, extractTypeToolName, semanticInsertConstructToolName}},
 				{Path: "result.continuations[].in_declaration", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticInsertConstructToolName}},
 			},
@@ -192,8 +192,10 @@ func outlineReadDef() Def[OutlineReq, *backend.OutlineResult] {
 			backend.LanguageRust:   outlineReadRun,
 			backend.LanguageScala:  outlineReadRun,
 		},
-		Format:     formatOutlineRead,
-		ExampleRaw: map[string]any{"path": "internal/astedit", "language": "go", "include_unexported": true, "include_tests": false},
+		Format:        formatOutlineRead,
+		Output:        &OperationOutputContract{ResultSchema: outlineOutputSchema()},
+		ProjectOutput: projectOutlineOutput,
+		ExampleRaw:    map[string]any{"path": "internal/astedit", "language": "go", "include_unexported": true, "include_tests": false},
 	}
 }
 

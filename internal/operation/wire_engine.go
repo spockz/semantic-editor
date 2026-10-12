@@ -180,11 +180,11 @@ func formatFileEdit(res FileEditRes) (string, error) {
 func diagnosticDeltaSchema() ValueSchema {
 	textList := ValueSchema{Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}}
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"net_delta":   {Kind: SchemaInteger},
-		"introduced":  textList,
-		"resolved":    textList,
-		"suggestions": textList,
-	}, Required: []string{"net_delta", "introduced", "resolved"}}
+		"net_delta":     {Kind: SchemaInteger},
+		introducedField: textList,
+		"resolved":      textList,
+		"suggestions":   textList,
+	}, Required: []string{"net_delta", introducedField, "resolved"}}
 }
 
 func diagnosticDeltaOutput(delta pipeline.DiagnosticDelta) pipeline.DiagnosticDelta {
@@ -620,7 +620,8 @@ func finalizeFileEditOutput(cc CallContext, result FileEditRes) (FileEditRes, er
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, result.WorkingView, cc.InBatch || result.SuppressContinuations, result.ReceiptDraft, result.Resolve)
+	workingView := result.WorkingView || sourcebuf.FromContext(ctx) != nil
+	receipt, err := FinalizeEditReceipt(ctx, cc.WorkDir, workingView, cc.InBatch || result.SuppressContinuations, result.ReceiptDraft, result.Resolve)
 	if err != nil {
 		return FileEditRes{}, err
 	}

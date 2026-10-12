@@ -1,0 +1,32 @@
+# Retained stages keep mutations private until commit and discard them on abort.
+stdin input.json
+exec semedit mcp
+stdout '"stage_receipt"'
+stdout '"step_count":1'
+stdout '"status":"aborted"'
+stdout '"status":"ok"'
+! stdout '"continuations"'
+cmp value.go want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 2"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_stage_abort","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 3"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+-- go.mod --
+module example.com/stage
+
+go 1.23
+-- value.go --
+package stage
+
+func Value() int { return 1 }
+-- want/value.go --
+package stage
+
+func Value() int {
+	return 3
+}

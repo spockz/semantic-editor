@@ -102,3 +102,43 @@ func TestCommandsIncludeLanguageContractsInLongHelp(t *testing.T) {
 		}
 	}
 }
+
+func TestOutlineFileAliasIsHiddenAndSchemaCanonical(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("outline")
+	if !ok {
+		t.Fatal("outline registry entry missing")
+	}
+	var command *cobra.Command
+	for _, candidate := range cli.Commands(t.TempDir()) {
+		if candidate.Name() == "outline" {
+			command = candidate
+			break
+		}
+	}
+	if command == nil {
+		t.Fatal("outline command missing")
+	}
+	fileAlias := command.Flags().Lookup("file")
+	if fileAlias == nil {
+		t.Fatal("outline command is missing the --file alias")
+	}
+	if !fileAlias.Hidden {
+		t.Fatal("outline --file compatibility alias is visible in help")
+	}
+	var pathParameter *operation.ParameterContract
+	for index := range entry.Params {
+		param := &entry.Params[index]
+		if param.JSONName == "path" {
+			pathParameter = param
+		}
+		if param.JSONName == "file" {
+			t.Fatal("outline advertises file as a canonical parameter")
+		}
+	}
+	if pathParameter == nil {
+		t.Fatal("outline canonical path parameter missing")
+	}
+	if len(pathParameter.InputAliases) != 1 || pathParameter.InputAliases[0] != "file" {
+		t.Fatalf("outline path input aliases = %v, want [file]", pathParameter.InputAliases)
+	}
+}

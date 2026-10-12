@@ -1,0 +1,33 @@
+# skip_hooks suppresses external commands while retaining built-in formatting and Go diagnostics.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"Status":"skipped"'
+stdout '"coverage"'
+! exists hook.log
+cmp value.go want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"skip_hooks":true,"trust_workspace":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return 2"}}]}}}
+-- go.mod --
+module example.com/batchskiphooks
+
+go 1.23
+-- value.go --
+package batchskiphooks
+
+func Value() int { return 1 }
+-- .semedit.yaml --
+version: 1
+verify:
+  check:
+    - id: check
+      languages: [go]
+      exec: [sh, -c, 'printf "check\\n" >> hook.log']
+-- want/value.go --
+package batchskiphooks
+
+func Value() int {
+	return 2
+}
