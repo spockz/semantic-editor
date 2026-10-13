@@ -1,0 +1,22 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INSERT_MEMBER=1 SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+exec semedit insert-type --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --source 'private static class Helper {}'
+stdout 'Inserted Java nested type'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  int size;
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  int size;
+  private static class Helper {}
+}

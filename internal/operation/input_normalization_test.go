@@ -105,6 +105,25 @@ func TestInsertConstructElementParserContract(t *testing.T) {
 	assertInsertElementParserContracts(t, entry, base)
 }
 
+func TestJavaInsertConstructElementParserContract(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupKey("insert_construct")
+	if !ok {
+		t.Fatal("insert_construct is not registered")
+	}
+	parsed, err := entry.Parse(map[string]any{
+		"file": "LedgerService.java", "language": "java", "trust_workspace": true,
+		"jdtls_home": "/opt/jdtls", "kind": "element", "source": `"MONTHLY", 5000`,
+		"in_declaration": "LedgerService.limits", "discriminator": `Map.of("DAILY", 1000)`,
+	})
+	if err != nil {
+		t.Fatalf("Java collection element request rejected: %v", err)
+	}
+	request := parsed.(operation.InsertConstructReq)
+	if request.Project.Language != backend.LanguageJava || request.Placement != "append" || request.InDeclaration != "LedgerService.limits" {
+		t.Fatalf("Java element request = %#v", request)
+	}
+}
+
 func assertInsertElementParserContracts(t *testing.T, entry operation.Entry, base map[string]any) {
 	t.Helper()
 	parsed, err := entry.Parse(base)

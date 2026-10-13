@@ -329,7 +329,7 @@ func assertLanguageCapabilityMatrix(t *testing.T, svc *backend.Service, lang bac
 }
 
 func capabilityOperationMapping() map[string]backend.Operation {
-	return map[string]backend.Operation{"rename": backend.OperationRename, "lookup": backend.OperationLookup, "verify": backend.OperationVerify}
+	return map[string]backend.Operation{"rename": backend.OperationRename, "lookup": backend.OperationLookup, "verify": backend.OperationVerify, "organize_imports": backend.OperationOrganizeImports}
 }
 
 func assertMatrixOperationsSupported(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix, caps backend.Capabilities, opMapping map[string]backend.Operation) {

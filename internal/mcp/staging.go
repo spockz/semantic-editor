@@ -69,6 +69,7 @@ func newStageManager(s *Server) *stageManager {
 }
 
 func stageModule(root string) (string, error) {
+	var mavenRoot string
 	for dir := root; ; dir = filepath.Dir(dir) {
 		manifest := filepath.Join(dir, "go.mod")
 		info, err := os.Lstat(manifest)
@@ -81,8 +82,23 @@ func stageModule(root string) (string, error) {
 		if !os.IsNotExist(err) {
 			return "", fmt.Errorf("inspect Go module manifest: %w", err)
 		}
+		pom := filepath.Join(dir, "pom.xml")
+		pomInfo, pomErr := os.Lstat(pom)
+		if pomErr == nil {
+			if !pomInfo.Mode().IsRegular() {
+				return "", fmt.Errorf("maven POM %q is not regular", pom)
+			}
+			if mavenRoot == "" {
+				mavenRoot = dir
+			}
+		} else if !os.IsNotExist(pomErr) {
+			return "", fmt.Errorf("inspect Maven POM: %w", pomErr)
+		}
 		if parent := filepath.Dir(dir); parent == dir {
-			return "", fmt.Errorf("no enclosing Go module for %q", root)
+			if mavenRoot != "" {
+				return filepath.EvalSymlinks(mavenRoot)
+			}
+			return "", fmt.Errorf("no enclosing Go module or Maven project for %q", root)
 		}
 	}
 }
@@ -360,6 +376,19 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 	if err != nil {
 		return operation.StageCommitResult{}, err
 	}
+	verifyOptions := map[string]any{trustWorkspaceField: trusted}
+	for _, step := range state.steps {
+		var raw map[string]any
+		if err := json.Unmarshal(step.params, &raw); err != nil {
+			return operation.StageCommitResult{}, fmt.Errorf("decode staged verification options: %w", err)
+		}
+		if err := mergeBatchVerificationOptions(verifyOptions, raw); err != nil {
+			return operation.StageCommitResult{}, err
+		}
+	}
+	if skipHooks {
+		verifyOptions["skip_hooks"] = true
+	}
 	before := state.workspaceBefore
 	requestServer, candidate, paths, candidateErr := m.commitCandidate(ctx, key, state, trusted)
 	if candidateErr != nil {
@@ -380,10 +409,6 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 			result.ApplicationState = "persisted"
 			return result, &operation.StageCommitError{Result: result, Err: fmt.Errorf("synchronize diagnostics after staged publication: %w", err)}
 		}
-	}
-	verifyOptions := map[string]any{trustWorkspaceField: trusted}
-	if skipHooks {
-		verifyOptions["skip_hooks"] = true
 	}
 	verified, verifyErr := requestServer.verifyFinishedBatch(sourcebuf.WithoutBuffer(ctx), response, before, state.verification, verifyOptions, paths)
 	if verifyErr != nil {

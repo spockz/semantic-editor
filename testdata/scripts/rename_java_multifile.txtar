@@ -1,0 +1,41 @@
+# Java rename validates and stages every cross-file edit in the trusted workspace.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_JAVA_CROSS_RENAME_URI=file://$WORK/src/Use.java SEMEDIT_JAVA_CROSS_RENAME_START=12 SEMEDIT_JAVA_CROSS_RENAME_END=18
+exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget --to Gadget
+stdout 'Successfully renamed Gadget.'
+cmp src/Widget.java want/Widget.java
+cmp src/Use.java want/Use.java
+
+# A standalone public top-level rename also moves its Java source file.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_JAVA_RENAME_FILE_URI=file://$WORK/src/public/Gadget.java
+exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/public/Widget.java --symbol Widget --to Gadget
+stdout 'Successfully renamed Gadget.'
+cmp src/public/Gadget.java want/Gadget.java
+! exists src/public/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+class Widget {}
+
+-- src/Use.java --
+class Use { Widget value; }
+
+-- src/public/Widget.java --
+package com.acme;
+
+public class Widget {}
+
+-- want/Widget.java --
+class Gadget {}
+
+-- want/Use.java --
+class Use { Gadget value; }
+
+-- want/Gadget.java --
+package com.acme;
+
+public class Gadget {}

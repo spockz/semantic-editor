@@ -2,10 +2,16 @@
 package operation
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"path/filepath"
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/backends"
+	"semedit/internal/javacst"
+	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"strings"
 )
 
@@ -39,7 +45,7 @@ func (r *InsertConstructReq) SetProjectContext(project backend.ProjectContext) {
 	r.Project = project
 }
 
-var insertConstructParams = []ParameterContract{
+var insertConstructParams = append([]ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: append(append([]string(nil), sourceFileContinuations...), "semantic_insert_construct.result.selector_continuations[].file")},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend; use element for one keyed map/dictionary entry or struct/object initializer property", Required: true, DynamicEnums: executableInsertConstructKinds},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Source code for the new construct", Required: true},
@@ -55,7 +61,7 @@ var insertConstructParams = []ParameterContract{
 	{Name: "construct_path", CLIName: wireCLIConstructPath, JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic for statement/expression insertion; requires the matching expected_revision"},
 	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Role: RoleTarget, Description: "Opaque full-file revision required with construct_path for statement/expression insertion and optionally used as a full-file guard for statement, field, or element insertion", SourceFields: []string{"semantic_inspect_symbol.result.continuations[].expected_revision", "semantic_insert_construct.result.selector_continuations[].expected_revision"}},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
-}
+}, readProjectParams...)
 
 var constructPlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "type_start", "type_end", "first", "last", "before_default", "before", "after"}
 
@@ -93,6 +99,10 @@ func parseInsertConstruct(raw map[string]any) (InsertConstructReq, error) {
 	var err error
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
+	} else if req.Project, err = parseReadProject(raw, req.File); err != nil {
+		return req, err
+	} else if req.Project.Language == "" {
+		req.Project.Language = backend.LanguageGo
 	}
 	kindStr, err := ParseString(raw, "kind", "kind", true)
 	if err != nil {
@@ -141,10 +151,41 @@ func parseInsertConstruct(raw map[string]any) (InsertConstructReq, error) {
 	if req.Kind == backend.ConstructElement && strings.TrimSpace(req.Placement) == "" {
 		req.Placement = "append"
 	}
+	if err := validateJavaInsertConstructRequest(req); err != nil {
+		return req, err
+	}
 	if err := validateInsertConstructRequest(req); err != nil {
 		return req, err
 	}
 	return req, nil
+}
+
+func validateJavaInsertConstructRequest(req InsertConstructReq) error {
+	if req.Project.Language != backend.LanguageJava {
+		return nil
+	}
+	if req.Kind == backend.ConstructElement {
+		if strings.TrimSpace(req.InDeclaration) == "" {
+			return fmt.Errorf("java element insertion requires in_declaration: %w", ErrInvalidParams)
+		}
+		if nonEmpty(req.Function, req.Anchor, req.TypeName, req.TargetSymbol, req.AccessModifier, req.Group) {
+			return fmt.Errorf("java element insertion does not accept method-local or declaration placement selectors: %w", ErrInvalidParams)
+		}
+		return nil
+	}
+	switch req.Kind {
+	case backend.ConstructLoop, backend.ConstructIf, javacst.ConstructSwitch, backend.ConstructTryWithResources,
+		backend.ConstructSynchronized, backend.ConstructStatementOrExpr:
+	default:
+		return fmt.Errorf("java insert_construct does not support kind=%s: %w", req.Kind, ErrInvalidParams)
+	}
+	if strings.TrimSpace(req.Function) == "" || strings.TrimSpace(req.Anchor) == "" {
+		return fmt.Errorf("java method-local insertion requires in_function and anchor: %w", ErrInvalidParams)
+	}
+	if nonEmpty(req.TypeName, req.InDeclaration, req.TargetSymbol, req.AccessModifier, req.Group, req.Placement) {
+		return fmt.Errorf("java method-local insertion does not accept declaration or placement selectors: %w", ErrInvalidParams)
+	}
+	return nil
 }
 
 func validateInsertConstructRequest(req InsertConstructReq) error {
@@ -207,10 +248,16 @@ func parseNonEmptyOptionalString(raw map[string]any, jsonName, cliName string) (
 
 func runInsertConstruct(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
 	if req.Kind == backend.ConstructElement {
+		if req.Project.Language == backend.LanguageJava {
+			return runInsertElementConstructJava(ctx, cc, req)
+		}
 		return runInsertElementConstruct(ctx, cc, req)
 	}
 	if req.Kind == backend.ConstructField {
 		return runInsertFieldConstruct(ctx, cc, req)
+	}
+	if req.Project.Language == backend.LanguageJava {
+		return runInsertConstructJava(ctx, cc, req)
 	}
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
@@ -282,7 +329,7 @@ func runInsertFieldConstruct(ctx context.Context, cc CallContext, req InsertCons
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	planned.Draft.Operation = "insert_construct"
+	planned.Draft.Operation = operationKeyInsertConstruct
 	planned.Edit.Detail = "Successfully inserted field construct."
 	return FileEditRes{
 		File: planned.Edit.File, Display: planned.Edit.Display, Symbol: planned.Edit.Symbol,
@@ -319,7 +366,7 @@ func constructContinuationDiscriminator(req InsertConstructReq) string {
 
 func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 	return Def[InsertConstructReq, FileEditRes]{
-		Key:            "insert_construct",
+		Key:            operationKeyInsertConstruct,
 		Summary:        ("Use this tool instead of text replacement to add one backend-supported declaration, field, keyed composite element, switch case, or anchored statement. For kind=element, select a typed map/dictionary literal and append one keyed `key: value` pair, or select a struct/object initializer and append one property; slices/arrays and positional elements are unsupported. Select the exact literal with `discriminator` and its owning top-level declaration or function/method with `in_declaration`. Element insertion preserves the exact planned bytes and ignores auto_organize_imports. Field insertion requires an existing locally declared, private, non-generic Go struct. Use semantic_replace_construct for existing targets; insertions fail closed on collisions." + automaticVerificationGuidance),
 		Params:         insertConstructParams,
 		Level:          LevelFile,
@@ -328,7 +375,8 @@ func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 		Parse:          parseInsertConstruct,
 		NormalizeInput: NormalizeConstructKindInput,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertConstructReq) (FileEditRes, error){
-			backend.LanguageGo: bufferedFileEditHandler("insert_construct", func(req InsertConstructReq) string { return req.File }, runInsertConstruct),
+			backend.LanguageGo:   bufferedFileEditHandler(operationKeyInsertConstruct, func(req InsertConstructReq) string { return req.File }, runInsertConstruct),
+			backend.LanguageJava: runInsertConstructJava,
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
@@ -340,4 +388,101 @@ func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
+}
+
+func runInsertConstructJava(ctx context.Context, cc CallContext, req InsertConstructReq) (result FileEditRes, retErr error) {
+	if req.Kind == backend.ConstructElement {
+		return runInsertElementConstructJava(ctx, cc, req)
+	}
+	if err := javacst.ValidateMethodConstructSnippet(req.Kind, []byte(req.Source)); err != nil {
+		return result, fmt.Errorf("validate Java insertion source: %w", err)
+	}
+	if strings.TrimSpace(req.Function) == "" {
+		return result, fmt.Errorf("in_function is required for Java method-local insertion")
+	}
+	root, err := filepath.Abs(cc.WorkDir)
+	if err != nil {
+		return result, fmt.Errorf("resolve Java insertion workspace: %w", err)
+	}
+	file := resolveWorkPath(root, req.File)
+	project := effectiveProject(cc, req.Project)
+	project.RootDir, project.File = root, file
+	service := cc.Service
+	if service == nil {
+		service = backends.NewDefaultService()
+	}
+	display := displayWorkPath(root, req.File)
+	before, after, err := applyJavaConstructInsertion(ctx, root, file, project, display, service, cc, req)
+	if err != nil {
+		return result, err
+	}
+	relative, err := filepath.Rel(root, file)
+	if err != nil {
+		return result, fmt.Errorf("derive Java insertion receipt path: %w", err)
+	}
+	if !filepath.IsLocal(relative) {
+		return result, fmt.Errorf("java insertion target %q escapes workspace %q", file, root)
+	}
+	relative = filepath.ToSlash(relative)
+	draft := EditReceiptDraft{
+		Operation: operationKeyInsertConstruct, Status: EditPersisted,
+		ReadSet:        []FileRevision{{Path: relative, Revision: structuralRevision(before)}},
+		PlannedChanges: []FileRevision{{Path: relative, Revision: structuralRevision(after)}},
+	}
+	return FileEditRes{
+		File: file, Display: display, InFunction: req.Function, Discriminator: req.Discriminator,
+		Diff: astedit.UnifiedDiff(display, string(before), string(after)), Detail: "Successfully inserted Java method construct.",
+		DiagnosticStatus: diagnosticStatusUnavailable, HasDelta: true, ReceiptDraft: draft,
+	}, nil
+}
+
+func applyJavaConstructInsertion(ctx context.Context, root, file string, project backend.ProjectContext, display string, service *backend.Service, cc CallContext, req InsertConstructReq) ([]byte, []byte, error) {
+	var before, after []byte
+	err := sourcebuf.Run(ctx, root, func(editCtx context.Context) error {
+		var readErr error
+		before, readErr = sourcebuf.ReadFile(editCtx, file)
+		if readErr != nil {
+			return fmt.Errorf("read Java insertion target: %w", readErr)
+		}
+		if req.ExpectedRevision != "" && structuralRevision(before) != req.ExpectedRevision {
+			return fmt.Errorf("java insertion target revision changed")
+		}
+		inspection, inspectErr := service.Inspect(editCtx, backend.InspectRequest{Project: project, Symbol: req.Function})
+		if inspectErr != nil {
+			return inspectErr
+		}
+		if inspection == nil || len(inspection.Matches) != 1 {
+			return fmt.Errorf("java insertion owner %q must resolve to one method in %s", req.Function, display)
+		}
+		method := inspection.Matches[0]
+		methodSource := []byte(method.Source)
+		start, offsetErr := javacst.ByteOffsetFromPosition(before, method.Range.Start)
+		if offsetErr != nil {
+			return fmt.Errorf("resolve Java method source offset: %w", offsetErr)
+		}
+		end := start + len(methodSource)
+		if end > len(before) || !bytes.Equal(before[start:end], methodSource) {
+			return fmt.Errorf("java method source changed during insertion selection")
+		}
+		updatedMethod, insertErr := javacst.InsertIntoMethod(methodSource, req.Anchor, req.Discriminator, req.ConstructPath, []byte(req.Source))
+		if insertErr != nil {
+			return insertErr
+		}
+		updated := make([]byte, 0, len(before)-len(methodSource)+len(updatedMethod))
+		updated = append(updated, before[:start]...)
+		updated = append(updated, updatedMethod...)
+		updated = append(updated, before[end:]...)
+		if writeErr := pipeline.WriteAtomicContext(editCtx, file, updated); writeErr != nil {
+			return fmt.Errorf("stage Java construct insertion: %w", writeErr)
+		}
+		if _, verifyErr := service.Verify(editCtx, backend.VerifyRequest{Project: project, Path: file, FormatSelectedFile: true, OrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports)}); verifyErr != nil {
+			return fmt.Errorf("verify Java construct insertion: %w", verifyErr)
+		}
+		after, readErr = sourcebuf.ReadFile(editCtx, file)
+		if readErr != nil {
+			return fmt.Errorf("read verified Java construct result: %w", readErr)
+		}
+		return nil
+	})
+	return before, after, err
 }

@@ -38,11 +38,16 @@ func implementContractDef() Def[implementContractRequest, contractOutput] {
 		Params:  implementContractParams, Level: LevelSymbol, CLIName: "implement-contract", MCPName: contractImplementTool,
 		Parse: parseImplementContractRequest,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, implementContractRequest) (contractOutput, error){
-			backend.LanguageGo: runImplementContract,
+			backend.LanguageGo:   runImplementContract,
+			backend.LanguageJava: runImplementContractJava,
 		},
 		Format: formatContractOutput, Output: implementContractOutputContract(),
-		FinalizeOutput: func(cc CallContext, _ implementContractRequest, result contractOutput) (contractOutput, error) {
+		FinalizeOutput: func(cc CallContext, req implementContractRequest, result contractOutput) (contractOutput, error) {
 			result.Operation = "semantic_implement_contract"
+			cc.Project = effectiveProject(cc, req.Project)
+			if req.Project.Language == backend.LanguageJava {
+				return finalizeJavaContractOutput(cc, result)
+			}
 			return finalizeContractOutput(cc, nil, result)
 		},
 		ProjectOutput: projectContractOutput, Batchable: true, BufferedBatch: true,

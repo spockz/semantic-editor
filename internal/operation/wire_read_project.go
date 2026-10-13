@@ -9,7 +9,7 @@ var readProjectParams = []ParameterContract{
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends including Bash, Make, Kotlin, Java, Rust, Scala, and Haskell (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Enable or disable trusted JDT LS Maven import; defaults on when a trusted workspace contains pom.xml and never runs Maven", Type: ParamBoolean},
 	{Name: "metals_home", CLIName: "metals-home", JSONName: "metals_home", Description: "Explicit preinstalled pinned Metals distribution home required for Scala lookup", Type: ParamString},
 	{Name: "metals_bin", CLIName: "metals-bin", JSONName: "metals_bin", Description: "Direct pinned Metals executable, alternative to metals_home", Type: ParamString},
 	{Name: "java_version", CLIName: "java-version", JSONName: "java_version", Description: "Recorded Java major version required for Scala lookup", Type: ParamString},
@@ -100,6 +100,7 @@ func parseReadJavaScala(raw map[string]any) (readProjectConfiguration, error) {
 	if err != nil {
 		return readProjectConfiguration{}, err
 	}
+	_, importMavenSet := rawLookup(raw, wireImportMaven, "import-maven")
 	metalsHome, err := ParseString(raw, "metals_home", "metals-home", false)
 	if err != nil {
 		return readProjectConfiguration{}, err
@@ -113,7 +114,7 @@ func parseReadJavaScala(raw map[string]any) (readProjectConfiguration, error) {
 		return readProjectConfiguration{}, err
 	}
 	return readProjectConfiguration{
-		java:  backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
+		java:  backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven, ImportMavenSet: importMavenSet},
 		scala: backend.ScalaConfig{MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion},
 	}, nil
 }

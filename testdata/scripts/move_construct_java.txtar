@@ -1,0 +1,32 @@
+# Java move_construct delegates a static member and its workspace edits to JDT LS.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_MOVE_CONSTRUCT=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit move-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Source.java --destination-file src/Target.java --symbol Source.value --target-symbol sample.Target
+cmp src/Source.java want/Source.java
+cmp src/Target.java want/Target.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Source.java --
+package sample;
+class Source {
+  static int value() { return 1; }
+}
+-- src/Target.java --
+package sample;
+class Target {
+}
+
+-- want/Source.java --
+package sample;
+class Source {
+}
+
+-- want/Target.java --
+package sample;
+class Target {
+  static int value() { return 1; }
+}

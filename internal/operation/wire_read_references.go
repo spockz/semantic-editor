@@ -28,7 +28,7 @@ func (request *ReferencesReq) SetProjectContext(project backend.ProjectContext) 
 
 var referencesParams = readRequestParams(
 	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Store.Read' or 'Widget')", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: sourceSymbolContinuations},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file containing the target declaration; search still covers the selected Go module", Type: ParamString, Role: RoleTarget, SourceFields: sourceFileContinuations},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file containing the target declaration; searches cover the active Go module or trusted Java workspace", Type: ParamString, Role: RoleTarget, SourceFields: sourceFileContinuations},
 )
 
 func parseReferences(raw map[string]any) (ReferencesReq, error) {
@@ -75,11 +75,12 @@ func formatReferences(result *backend.ReferencesResult) (string, error) {
 func referencesDef() Def[ReferencesReq, *backend.ReferencesResult] {
 	return Def[ReferencesReq, *backend.ReferencesResult]{
 		Key:     capability.OpFindReferences,
-		Summary: "Use this tool instead of text search when finding typed references to a Go declaration within its active module build. The optional file selects the target declaration; results span the module, including test variants.",
+		Summary: "Use this tool instead of text search when finding typed references to a Go or Java declaration. The optional file selects the target; results span the active Go module or trusted Java workspace.",
 		Params:  referencesParams, Level: LevelSymbol, CLIName: "find-references", MCPName: semanticFindReferencesToolName,
 		ReadOnly: true, Batchable: false, Parse: parseReferences,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReferencesReq) (*backend.ReferencesResult, error){
-			backend.LanguageGo: referencesRun,
+			backend.LanguageGo:   referencesRun,
+			backend.LanguageJava: referencesRun,
 		},
 		Format:        formatReferences,
 		Output:        &OperationOutputContract{ResultSchema: referencesOutputSchema()},

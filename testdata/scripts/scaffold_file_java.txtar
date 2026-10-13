@@ -1,0 +1,10 @@
+# Scaffold a Java source file using its sibling package declaration
+exec semedit scaffold-file --language java --file module/src/main/java/com/acme/billing/InvoiceService.java --package infer
+cmp module/src/main/java/com/acme/billing/InvoiceService.java want/module/src/main/java/com/acme/billing/InvoiceService.java
+
+-- module/src/main/java/com/acme/billing/Invoice.java --
+package com.acme.billing;
+public class Invoice {}
+-- want/module/src/main/java/com/acme/billing/InvoiceService.java --
+// WHY: Starts this Java source file in its package so declarations can be added with semantic operations.
+package com.acme.billing;

@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"go/types"
 	"os"
+	"semedit/internal/backend"
 	"semedit/internal/contractedit"
 	"semedit/internal/contractplan"
 	"strings"
@@ -34,17 +35,17 @@ const (
 	sourceGeneratedMethodSymbol   = "semantic_implement_contract.result.generated_methods[].symbol"
 )
 
-var extractInterfaceParams = []ParameterContract{
-	{Name: contractDestinationFileField, CLIName: "destination-file", JSONName: contractDestinationFileField, Type: ParamString, Description: "Target: existing same-package Go file receiving the interface; defaults to file", Role: RoleTarget},
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: existing Go source file declaring the concrete type", Required: true, Role: RoleSelector},
+var extractInterfaceParams = append([]ParameterContract{
+	{Name: contractDestinationFileField, CLIName: "destination-file", JSONName: contractDestinationFileField, Type: ParamString, Description: "Target: existing same-package source file receiving the interface; Java currently requires the concrete type file", Role: RoleTarget},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: existing Go or Java source file declaring the concrete type", Required: true, Role: RoleSelector},
 	{Name: "in_type", CLIName: "in-type", JSONName: "in_type", Type: ParamString, Description: "Selector: exact named concrete type whose direct methods are selected", Required: true, Role: RoleSelector},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: new simple interface identifier chosen by the caller", Required: true, Role: RoleTarget},
-	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: select the pointer or value method set of in_type", Required: true, Enums: []string{"pointer", "value"}, Role: RolePolicy},
+	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: for Go, select the pointer or value method set of in_type; Java extracts public instance methods", Enums: []string{"pointer", "value"}, Role: RolePolicy},
 	{Name: "members", CLIName: "members", JSONName: "members", Type: ParamArray, Description: "Selector: nonempty closed array of exact direct method targets {file, symbol}", Required: true, Role: RoleSelector, Schema: new(contractMemberArraySchema())},
 	{Name: contractExpectedRevisionField, CLIName: wireCLIExpectedRevision, JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
-}
+}, readProjectParams...)
 
-var implementContractParams = []ParameterContract{
+var implementContractParams = append([]ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: existing Go source file declaring the concrete type", Required: true, Role: RoleSelector},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: exact named concrete type to receive missing methods; this is an existing declaration", Required: true, Role: RoleTarget},
 	{Name: "contract", CLIName: "contract", JSONName: "contract", Type: ParamString, Description: "Selector: exact interface name copied from semantic_extract_interface.contract", Required: true, Role: RoleSelector, SourceFields: []string{sourceExtractedContract}},
@@ -53,7 +54,7 @@ var implementContractParams = []ParameterContract{
 	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: exact receiver method set for generated methods", Required: true, Enums: []string{"pointer", "value"}, Role: RolePolicy},
 	{Name: "body_policy", CLIName: "body-policy", JSONName: "body_policy", Type: ParamString, Description: "Policy: generated missing methods use explicit panic_stub bodies", Required: true, Enums: []string{"panic_stub"}, Role: RolePolicy},
 	{Name: contractExpectedRevisionField, CLIName: wireCLIExpectedRevision, JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
-}
+}, readProjectParams...)
 
 const contractReceiverKindField = "receiver_kind"
 
@@ -74,6 +75,7 @@ type contractOutput struct {
 	Signatures        []contractMethodShape  `json:"signatures,omitempty"`
 	Receipt           EditReceipt            `json:"receipt"`
 	ReceiptCandidates []SymbolTarget         `json:"-"`
+	javaService       *backend.Service
 }
 
 const contractExpectedRevisionField = "expected_revision"
@@ -98,6 +100,7 @@ type contractMethodShape struct {
 }
 
 type implementContractRequest struct {
+	Project          backend.ProjectContext
 	File             string
 	Symbol           string
 	Contract         string
@@ -108,7 +111,14 @@ type implementContractRequest struct {
 	ExpectedRevision *string
 }
 
+func (r implementContractRequest) GetProjectContext() backend.ProjectContext { return r.Project }
+
+func (r *implementContractRequest) SetProjectContext(project backend.ProjectContext) {
+	r.Project = project
+}
+
 type extractInterfaceRequest struct {
+	Project          backend.ProjectContext
 	File             string
 	InType           string
 	Symbol           string
@@ -116,6 +126,12 @@ type extractInterfaceRequest struct {
 	ReceiverKind     contractplan.ReceiverKind
 	Members          []contractMemberTarget
 	ExpectedRevision *string
+}
+
+func (r extractInterfaceRequest) GetProjectContext() backend.ProjectContext { return r.Project }
+
+func (r *extractInterfaceRequest) SetProjectContext(project backend.ProjectContext) {
+	r.Project = project
 }
 
 type contractSnapshot = contractedit.Snapshot
@@ -178,6 +194,12 @@ func parseExtractInterfaceRequest(raw map[string]any) (extractInterfaceRequest, 
 	if request.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return request, err
 	}
+	if request.Project, err = parseReadProject(raw, request.File); err != nil {
+		return request, err
+	}
+	if request.Project.Language == "" {
+		request.Project.Language = backend.LanguageGo
+	}
 	if request.InType, err = ParseString(raw, "in_type", "in-type", true); err != nil {
 		return request, err
 	}
@@ -187,7 +209,8 @@ func parseExtractInterfaceRequest(raw map[string]any) (extractInterfaceRequest, 
 	if request.DestinationFile, err = ParseString(raw, contractDestinationFileField, "destination-file", false); err != nil {
 		return request, err
 	}
-	receiver, err := ParseEnum(raw, contractReceiverKindField, "receiver-kind", []string{"pointer", "value"}, true, "")
+	java := request.Project.Language == backend.LanguageJava
+	receiver, err := ParseEnum(raw, contractReceiverKindField, "receiver-kind", []string{"pointer", "value"}, !java, "pointer")
 	if err != nil {
 		return request, err
 	}
@@ -211,6 +234,12 @@ func parseImplementContractRequest(raw map[string]any) (implementContractRequest
 	var err error
 	if request.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return request, err
+	}
+	if request.Project, err = parseReadProject(raw, request.File); err != nil {
+		return request, err
+	}
+	if request.Project.Language == "" {
+		request.Project.Language = backend.LanguageGo
 	}
 	if request.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
 		return request, err

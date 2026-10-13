@@ -1,0 +1,27 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+exec cp want/Widget.java expected.java
+exec semedit insert-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --in-function Widget.run --kind loop --anchor after --discriminator 'if (ready()) { work(); }' --source 'for (int i = 0; i < 1; i++) { audit(); }'
+stdout 'Successfully inserted Java method construct'
+cmp src/Widget.java expected.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    if (ready()) { work(); }
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    if (ready()) { work(); }
+    for (int i = 0; i < 1; i++) { audit(); }
+  }
+}

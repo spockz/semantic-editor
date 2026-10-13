@@ -2,6 +2,7 @@
 package operation
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,7 +10,12 @@ import (
 	"path/filepath"
 	"semedit/internal/adapters/golang"
 	"semedit/internal/backend"
+	"semedit/internal/backends"
+	"semedit/internal/maven/pomedit"
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
+	"slices"
+	"strings"
 )
 
 // OrganizeImportsReq manages import statements of a file or workspace scope.
@@ -40,18 +46,17 @@ const (
 	organizeImportsDiagnosticDelta  = "diagnostic_delta"
 )
 
-var organizeImportsParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: optional file to constrain search scope. Optional Go file or directory path, relative to the active semedit workspace root. Omit it to organize imports across the entire workspace, which may write multiple files"},
-	{Name: "add", CLIName: "add", JSONName: "add", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly add. Supports 'path', 'alias path', or '_ path'."},
-	{Name: "remove", CLIName: "remove", JSONName: "remove", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly remove."},
-}
+var organizeImportsParams = append([]ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: optional Go file or directory path, relative to the active workspace root. Omit it to organize imports across the entire workspace (Go may write multiple files). Java requires one selected .java file."},
+	{Name: "add", CLIName: "add", JSONName: "add", Type: ParamStringSlice, Description: "Optional imports to explicitly add. Go supports 'path', 'alias path', or '_ path'; Java accepts fully qualified type names."},
+	{Name: "remove", CLIName: "remove", JSONName: "remove", Type: ParamStringSlice, Description: "Optional imports to explicitly remove. Java accepts fully qualified type names."},
+}, readProjectParams...)
 
 func parseOrganizeImports(raw map[string]any) (OrganizeImportsReq, error) {
 	var req OrganizeImportsReq
 	if err := CheckParams(raw, organizeImportsParams); err != nil {
 		return req, err
 	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
 	var err error
 	if req.File, err = ParseString(raw, "file", "file", false); err != nil {
 		return req, err
@@ -61,6 +66,13 @@ func parseOrganizeImports(raw map[string]any) (OrganizeImportsReq, error) {
 	}
 	if req.Remove, err = ParseStringSlice(raw, "remove", "remove"); err != nil {
 		return req, err
+	}
+	req.Project, err = parseReadProject(raw, req.File)
+	if err != nil {
+		return req, err
+	}
+	if req.Project.Language == "" {
+		req.Project.Language = backend.LanguageGo
 	}
 	return req, nil
 }
@@ -118,17 +130,89 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 	return FileEditRes{File: written, Display: display, Detail: "Organized imports.", ChangedFiles: changedFiles, ApplicationState: string(state), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
+func runOrganizeImportsJava(ctx context.Context, cc CallContext, req OrganizeImportsReq) (FileEditRes, error) {
+	if strings.TrimSpace(req.File) == "" || !strings.EqualFold(filepath.Ext(req.File), ".java") {
+		return FileEditRes{}, fmt.Errorf("java import organization requires one selected .java file")
+	}
+	project := effectiveProject(cc, req.Project)
+	file := resolveWorkPath(cc.WorkDir, req.File)
+	project.File = file
+	before, err := sourcebuf.ReadFile(ctx, file)
+	if err != nil {
+		return FileEditRes{}, fmt.Errorf("read Java import target: %w", err)
+	}
+	service := cc.Service
+	if service == nil {
+		service = backends.NewDefaultService()
+	}
+	if _, verifyErr := service.Verify(ctx, backend.VerifyRequest{
+		Project: project, Path: file, FormatSelectedFile: true, OrganizeImports: true,
+		AddImports: req.Add, RemoveImports: req.Remove,
+	}); verifyErr != nil {
+		return FileEditRes{}, javaOrganizeImportsFailure(ctx, cc, file, before, verifyErr)
+	}
+	after, err := sourcebuf.ReadFile(ctx, file)
+	if err != nil {
+		return FileEditRes{}, javaOrganizeImportsFailure(ctx, cc, file, before, fmt.Errorf("read organized Java source: %w", err))
+	}
+	state := EditPersisted
+	changedFiles := []string{}
+	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
+		state = EditAppliedWorking
+	}
+	if !bytes.Equal(before, after) {
+		relative, relErr := filepath.Rel(cc.WorkDir, file)
+		if relErr != nil {
+			return FileEditRes{}, fmt.Errorf("make Java import path relative: %w", relErr)
+		}
+		changedFiles = append(changedFiles, filepath.ToSlash(relative))
+	} else {
+		state = EditNoOp
+	}
+	diagnosticStatus := diagnosticStatusUnavailable
+	if cc.DeferVerification {
+		diagnosticStatus = "deferred"
+	}
+	return FileEditRes{
+		File: file, Display: displayWorkPath(cc.WorkDir, file), Detail: "Organized imports.",
+		ChangedFiles: changedFiles, ApplicationState: string(state), DiagnosticStatus: diagnosticStatus,
+		HasDelta: true,
+	}, nil
+}
+
+func javaOrganizeImportsFailure(ctx context.Context, cc CallContext, file string, before []byte, cause error) error {
+	state := EditStatus("unknown")
+	changedFiles := []string{}
+	diagnosticStatus := diagnosticStatusUnavailable
+	if cc.DeferVerification {
+		diagnosticStatus = "deferred"
+	}
+	if after, err := sourcebuf.ReadFile(ctx, file); err == nil && !bytes.Equal(before, after) {
+		state = EditPartiallyPublished
+		if sourcebuf.FromContext(ctx) != nil {
+			state = EditAppliedWorking
+		}
+		if relative, relErr := filepath.Rel(cc.WorkDir, file); relErr == nil {
+			changedFiles = append(changedFiles, filepath.ToSlash(relative))
+		} else {
+			cause = errors.Join(cause, fmt.Errorf("make Java import failure path relative: %w", relErr))
+		}
+	}
+	return &organizeImportsError{ApplicationState: string(state), ChangedFiles: changedFiles, DiagnosticStatus: diagnosticStatus, Err: cause}
+}
+
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 	return Def[OrganizeImportsReq, FileEditRes]{
-		Key:     "organize_imports",
-		Summary: "Use this tool instead of text editing import blocks or shelling out to goimports when adding, removing, or formatting Go source imports. Set `file` to limit writes to one file or directory; omit it only when workspace-wide import changes are intended. Supports explicit package additions (including aliases and blank imports) and removals." + automaticVerificationGuidance,
+		Key:     operationKeyOrganizeImports,
+		Summary: "Use this tool instead of text editing import blocks or shelling out to goimports when adding, removing, or formatting Go imports. For Java, select one trusted .java file; explicit additions and removals use fully qualified type names before JDT LS formats and organizes imports." + automaticVerificationGuidance,
 		Params:  organizeImportsParams,
 		Level:   LevelFile,
 		CLIName: "imports",
 		MCPName: "semantic_organize_imports",
 		Parse:   parseOrganizeImports,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, OrganizeImportsReq) (FileEditRes, error){
-			backend.LanguageGo: runOrganizeImports,
+			backend.LanguageGo:   runOrganizeImports,
+			backend.LanguageJava: runOrganizeImportsJava,
 		},
 		Format: func(res FileEditRes) (string, error) {
 			res.Detail = "Successfully organized imports."
@@ -192,8 +276,10 @@ var organizeImportsFileConsumers = []string{
 
 // AddBuildDependencyReq fetches one external module into the build (go get + go mod tidy).
 type AddBuildDependencyReq struct {
-	Project backend.ProjectContext
-	Package string
+	Project    backend.ProjectContext
+	Package    string
+	Dependency string
+	File       string
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -206,8 +292,10 @@ func (r *AddBuildDependencyReq) SetProjectContext(project backend.ProjectContext
 
 // BuildDependencyRes reports a build-file mutation for response rendering and batch post-processing.
 type BuildDependencyRes struct {
-	Package string
-	GoMod   string
+	Package    string
+	GoMod      string
+	Dependency string
+	POMs       []string
 }
 
 func (e *organizeImportsError) Error() string {
@@ -218,19 +306,60 @@ func (e *organizeImportsError) Unwrap() error {
 	return e.Err
 }
 
-var addBuildDependencyParams = []ParameterContract{
-	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "Module path to fetch (e.g. github.com/google/uuid@latest); runs go get and go mod tidy, can use the network, and may update go.mod and go.sum without editing source files", Required: true},
-}
+var addBuildDependencyParams = append([]ParameterContract{
+	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "Go module path to fetch (e.g. github.com/google/uuid@latest); updates go.mod/go.sum, runs go get and go mod tidy, and may access the network."},
+	{Name: operationKeyDependency, CLIName: operationKeyDependency, JSONName: operationKeyDependency, Type: ParamString, Description: "Java Maven coordinate groupId:artifactId[:version][:scope][:classifier]."},
+	{Name: "file", CLIName: "file", JSONName: "file", InputAliases: []string{"path"}, Type: ParamString, Description: "Optional Java module directory or pom.xml path in a Maven reactor; defaults to the workspace root POM."},
+}, readProjectParams...)
 
 func parseAddBuildDependency(raw map[string]any) (AddBuildDependencyReq, error) {
 	var req AddBuildDependencyReq
 	if err := CheckParams(raw, addBuildDependencyParams); err != nil {
 		return req, err
 	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
 	var err error
-	if req.Package, err = ParseString(raw, "package", "package", true); err != nil {
+	if req.Package, err = ParseString(raw, "package", "package", false); err != nil {
 		return req, err
+	}
+	if req.Dependency, err = ParseString(raw, operationKeyDependency, operationKeyDependency, false); err != nil {
+		return req, err
+	}
+	if req.File, err = ParseString(raw, "file", "file", false); err != nil {
+		return req, err
+	}
+	if req.File == "" {
+		if req.File, err = ParseString(raw, "path", "path", false); err != nil {
+			return req, err
+		}
+	}
+	req.Project, err = parseReadProject(raw, req.File)
+	if err != nil {
+		return req, err
+	}
+	if req.Project.Language == "" {
+		if req.Dependency != "" {
+			req.Project.Language = backend.LanguageJava
+		} else {
+			req.Project.Language = backend.LanguageGo
+		}
+	}
+	switch req.Project.Language {
+	case backend.LanguageJava:
+		if req.Dependency == "" {
+			return req, fmt.Errorf("param %q is required: %w", operationKeyDependency, ErrInvalidParams)
+		}
+		if req.Package != "" {
+			return req, fmt.Errorf("java requires dependency and does not accept package")
+		}
+	case backend.LanguageGo:
+		if req.Package == "" {
+			return req, fmt.Errorf("param %q is required: %w", "package", ErrInvalidParams)
+		}
+		if req.Dependency != "" || req.File != "" {
+			return req, fmt.Errorf("go requires package and does not accept dependency or file")
+		}
+	default:
+		return req, fmt.Errorf("add_build_dependency supports Go and Java")
 	}
 	return req, nil
 }
@@ -242,19 +371,71 @@ func runAddBuildDependency(ctx context.Context, cc CallContext, req AddBuildDepe
 	return BuildDependencyRes{Package: req.Package, GoMod: filepath.Join(cc.WorkDir, "go.mod")}, nil
 }
 
+func runAddJavaBuildDependency(ctx context.Context, cc CallContext, req AddBuildDependencyReq) (BuildDependencyRes, error) {
+	project := effectiveProject(cc, req.Project)
+	root, err := filepath.Abs(project.RootDir)
+	if err != nil {
+		return BuildDependencyRes{}, fmt.Errorf("resolve Java workspace root: %w", err)
+	}
+	project.RootDir = root
+	if !project.WorkspaceTrust.Allows(root) {
+		return BuildDependencyRes{}, &backend.WorkspaceTrustError{Operation: backend.OperationAddBuildDependency, Language: backend.LanguageJava, Workspace: root}
+	}
+	if sourcebuf.FromContext(ctx) != nil {
+		return BuildDependencyRes{}, fmt.Errorf("java Maven dependency edits are not supported in buffered batches")
+	}
+	dependency, err := pomedit.ParseCoordinate(req.Dependency)
+	if err != nil {
+		return BuildDependencyRes{}, err
+	}
+	plan, err := pomedit.Plan(root, req.File, dependency)
+	if err != nil {
+		return BuildDependencyRes{}, err
+	}
+	written := make([]pomedit.FileEdit, 0, len(plan))
+	for _, edit := range plan {
+		original, readErr := os.ReadFile(edit.Path)
+		if readErr != nil {
+			return BuildDependencyRes{}, fmt.Errorf("read POM before update: %w", readErr)
+		}
+		if writeErr := pipeline.WriteAtomicContext(ctx, edit.Path, edit.Data); writeErr != nil {
+			rollbackErr := error(nil)
+			for _, w := range slices.Backward(written) {
+				rollbackErr = errors.Join(rollbackErr, pipeline.WriteAtomicContext(context.WithoutCancel(ctx), w.Path, w.Data))
+			}
+			return BuildDependencyRes{}, errors.Join(fmt.Errorf("write Maven POM %q: %w", edit.Path, writeErr), rollbackErr)
+		}
+		written = append(written, pomedit.FileEdit{Path: edit.Path, Data: original})
+	}
+	poms := make([]string, 0, len(plan))
+	for _, edit := range plan {
+		poms = append(poms, edit.Path)
+	}
+	if len(poms) > 0 && cc.Service != nil {
+		if err := cc.Service.NotifyProjectConfigurationUpdate(ctx, project, poms); err != nil {
+			return BuildDependencyRes{Dependency: req.Dependency, POMs: poms}, fmt.Errorf("maven POMs updated but JDT LS refresh failed: %w", err)
+		}
+	}
+	return BuildDependencyRes{Dependency: req.Dependency, POMs: poms}, nil
+}
+
 func addBuildDependencyDef() Def[AddBuildDependencyReq, BuildDependencyRes] {
 	return Def[AddBuildDependencyReq, BuildDependencyRes]{
 		Key:     "add_build_dependency",
-		Summary: "Use this tool instead of editing go.mod/go.sum or shelling out to go get or go mod tidy when adding an external Go module dependency. It runs go get and go mod tidy and may access the network. This changes build dependencies; use semantic_organize_imports for source import statements.",
+		Summary: "Use this tool instead of editing go.mod/go.sum or Maven POM files manually to add a build dependency. Go runs go get and go mod tidy and may access the network; Java updates the selected Maven reactor using dependencyManagement inheritance and refreshes JDT LS. Java requires explicit workspace trust. Use semantic_organize_imports for source imports.",
 		Params:  addBuildDependencyParams,
 		Level:   LevelBuild,
 		CLIName: "add-build-dependency",
 		MCPName: "semantic_add_build_dependency",
 		Parse:   parseAddBuildDependency,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, AddBuildDependencyReq) (BuildDependencyRes, error){
-			backend.LanguageGo: runAddBuildDependency,
+			backend.LanguageGo:   runAddBuildDependency,
+			backend.LanguageJava: runAddJavaBuildDependency,
 		},
 		Format: func(res BuildDependencyRes) (string, error) {
+			if res.Dependency != "" {
+				return fmt.Sprintf("Successfully added Maven dependency %s to %d POM(s).", res.Dependency, len(res.POMs)), nil
+			}
 			return fmt.Sprintf("Successfully added dependency %s and tidied go.mod.", res.Package), nil
 		},
 		Output:        &OperationOutputContract{ResultSchema: dependencyOutputSchema()},

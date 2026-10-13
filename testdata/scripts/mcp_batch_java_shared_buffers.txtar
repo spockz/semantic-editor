@@ -1,0 +1,33 @@
+# The second Java field insertion uses the first insertion as its member anchor.
+env SEMEDIT_TEST_JAVA_CONSTRUCTS=1 SEMEDIT_TEST_JAVA_INSERT_FIELD=1 SEMEDIT_TEST_JAVA_SHARED_BATCH=1 SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout 'applied_working'
+cmp src/Widget.java .scratch/want/Widget.java
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_field","params":{"file":"src/Widget.java","language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls","symbol":"Widget.value","source":"private int value;","placement":"type_end"}},{"tool":"semantic_insert_field","params":{"file":"src/Widget.java","language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls","symbol":"Widget.other","source":"private int other;","placement":"after_symbol","target_symbol":"Widget.value"}}]}}}
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    work();
+  }
+}
+-- .scratch/want/Widget.java --
+package sample;
+class Widget {
+  private int value;
+  private int other;
+  void run() {
+    work();
+  }
+}

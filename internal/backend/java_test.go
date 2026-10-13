@@ -34,6 +34,7 @@ type fakeJavaSession struct {
 	codeAction           json.RawMessage
 	prepareRename        json.RawMessage
 	renameResult         json.RawMessage
+	postRenameSymbols    json.RawMessage
 	requestErrors        map[string]error
 	notifyErrors         map[string]error
 	diagnostics          []backend.Diagnostic
@@ -66,6 +67,9 @@ func (f *fakeJavaSession) Request(ctx context.Context, method string, params any
 		return f.prepareRename, nil
 	}
 	if method == "textDocument/rename" && f.renameResult != nil {
+		if f.postRenameSymbols != nil {
+			f.symbols = f.postRenameSymbols
+		}
 		return f.renameResult, nil
 	}
 	if f.cancel {
@@ -151,7 +155,8 @@ func TestJavaSessionFingerprintReusesAndRestarts(t *testing.T) {
 	if len(created) != 2 || created[0].closed != 1 {
 		t.Fatalf("descriptor change sessions=%d closed=%d", len(created), created[0].closed)
 	}
-	project.Java.ImportMaven = true
+	project.Java.ImportMavenSet = true
+	project.Java.ImportMaven = false
 	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +318,7 @@ func TestJavaMavenReactorDiscoveryAndExplicitImportSetting(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
+	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
 	var gotRoot string
 	underTest := javabackend.NewJavaBackendWithFactory(func(_ context.Context, root string, config backend.JavaConfig) (javabackend.JavaSession, error) {
 		gotRoot = root
@@ -458,8 +463,11 @@ func TestJavaLookupPropagatesCancellation(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancellation error = %v", err)
 	}
-	if session.notifications["textDocument/didClose"] == nil {
-		t.Fatal("canceled lookup did not close the opened document")
+	if session.notifications["textDocument/didOpen"] == nil || session.notifications["textDocument/didClose"] != nil {
+		t.Fatal("canceled lookup did not retain its opened document in the warm session")
+	}
+	if err := underTest.Close(); err != nil || session.closed != 1 {
+		t.Fatalf("close err=%v closed=%d", err, session.closed)
 	}
 }
 
@@ -571,8 +579,10 @@ func TestJavaVerifySurfacesCloseFailureAfterSuccess(t *testing.T) {
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		return session, nil
 	})
-	_, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true})
-	if err == nil || !strings.Contains(err.Error(), "close Java session") {
+	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := underTest.Close(); !errors.Is(err, session.closeErr) {
 		t.Fatalf("close error = %v", err)
 	}
 }
@@ -596,7 +606,40 @@ func TestJavaVerifyCombinedActionsSynchronizeFormattingVersion(t *testing.T) {
 	}
 }
 
-func TestJavaVerifyInvalidFormatterEditClosesSession(t *testing.T) {
+func TestJavaVerifyFormatsAndOrganizesDirectoryScope(t *testing.T) {
+	root, first := javaFixture(t, "class First {}\n")
+	second := filepath.Join(root, "src", "Second.java")
+	if err := os.MkdirAll(filepath.Dir(second), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("class Second {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeJavaSession{
+		formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"// normalized\n"}]`),
+		codeAction: json.RawMessage(`[]`),
+	}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
+	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, root), Path: root, FormatSelectedFile: true, OrganizeImports: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{first, second} {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(string(content), "// normalized\n") {
+			t.Errorf("%s was not formatted: %q", file, content)
+		}
+	}
+	if session.waitDiagnosticsCalls != 2 {
+		t.Fatalf("diagnostics calls = %d, want one per Java file", session.waitDiagnosticsCalls)
+	}
+}
+
+func TestJavaVerifyInvalidFormatterEditRetainsSession(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	session := &fakeJavaSession{formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":99},"end":{"line":0,"character":100}},"newText":"x"}]`)}
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
@@ -605,8 +648,11 @@ func TestJavaVerifyInvalidFormatterEditClosesSession(t *testing.T) {
 	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true}); err == nil {
 		t.Fatal("invalid formatting edit unexpectedly succeeded")
 	}
-	if session.closed != 1 {
-		t.Fatalf("invalid edit closed session %d times, want 1", session.closed)
+	if session.closed != 0 {
+		t.Fatalf("invalid edit closed warm session %d times, want 0", session.closed)
+	}
+	if err := underTest.Close(); err != nil || session.closed != 1 {
+		t.Fatalf("close err=%v closed=%d", err, session.closed)
 	}
 }
 
@@ -746,7 +792,7 @@ func (s *statefulJavaSession) Request(_ context.Context, method string, params a
 }
 
 func (s *statefulJavaSession) Notify(_ context.Context, method string, params any) error {
-	if method != "textDocument/didOpen" && method != "textDocument/didClose" {
+	if method != "textDocument/didOpen" && method != "textDocument/didChange" && method != "textDocument/didClose" {
 		s.events = append(s.events, method)
 		return nil
 	}
@@ -778,6 +824,14 @@ func (s *statefulJavaSession) Notify(_ context.Context, method string, params an
 		}
 		delete(s.open, uri)
 		s.events = append(s.events, "close:"+source)
+	case "textDocument/didChange":
+		if _, exists := s.open[uri]; !exists {
+			return fmt.Errorf("didChange without didOpen for %s", uri)
+		}
+		changes := params.(map[string]any)["contentChanges"].([]map[string]string)
+		source := changes[0]["text"]
+		s.open[uri] = source
+		s.events = append(s.events, "change:"+source)
 	}
 	return nil
 }
@@ -828,44 +882,35 @@ func TestJavaReadOperationsUseFreshDocumentSnapshotsAndWarmSession(t *testing.T)
 		t.Fatalf("inspection did not use edited source: %#v", inspection)
 	}
 	wantEvents := []string{
-		"open:class Alpha {}\n", "request:class Alpha {}\n", "close:class Alpha {}\n",
-		"open:class Bravo {}\n", "request:class Bravo {}\n", "close:class Bravo {}\n",
-		"open:class Bravo {}\n", "request:class Bravo {}\n", "close:class Bravo {}\n",
+		"open:class Alpha {}\n", "request:class Alpha {}\n",
+		"change:class Bravo {}\n", "request:class Bravo {}\n", "request:class Bravo {}\n",
 	}
 	if len(session.events) < len(wantEvents) || !slices.Equal(session.events[len(session.events)-len(wantEvents):], wantEvents) {
 		t.Fatalf("document lifecycle events = %#v, want suffix %#v", session.events, wantEvents)
 	}
-	if factoryCalls != 1 || len(session.open) != 0 {
-		t.Fatalf("successful reads must retain one warm session and close documents: factories=%d open=%v", factoryCalls, session.open)
+	if factoryCalls != 1 || len(session.open) != 1 {
+		t.Fatalf("successful reads must retain one warm session and its latest document: factories=%d open=%v", factoryCalls, session.open)
 	}
 	if err := underTest.Close(); err != nil || session.closed != 1 {
 		t.Fatalf("final close err=%v closed=%d", err, session.closed)
 	}
 }
 
-func TestJavaReadDocumentFailuresInvalidateSessionAndJoinCleanup(t *testing.T) {
+func TestJavaReadOpenFailureInvalidatesSessionAndJoinsCleanup(t *testing.T) {
 	openErr := errors.New("didOpen failed")
-	requestErr := errors.New("symbol request failed")
-	documentCloseErr := errors.New("didClose failed")
 	sessionCloseErr := errors.New("session close failed")
 	validSymbols := json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
 	tests := []struct {
 		name       string
 		notifyErrs map[string]error
-		requestErr error
 		wantErrors []error
 	}{
 		{name: "open and session close", notifyErrs: map[string]error{"textDocument/didOpen": openErr}, wantErrors: []error{openErr, sessionCloseErr}},
-		{name: "close and session close", notifyErrs: map[string]error{"textDocument/didClose": documentCloseErr}, wantErrors: []error{documentCloseErr, sessionCloseErr}},
-		{name: "request and close failures", notifyErrs: map[string]error{"textDocument/didClose": documentCloseErr}, requestErr: requestErr, wantErrors: []error{requestErr, documentCloseErr, sessionCloseErr}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			root, file := javaFixture(t, "class Thing {}\n")
 			first := &fakeJavaSession{symbols: validSymbols, closeErr: sessionCloseErr, notifyErrors: test.notifyErrs}
-			if test.requestErr != nil {
-				first.requestErrors = map[string]error{"textDocument/documentSymbol": test.requestErr}
-			}
 			second := &fakeJavaSession{symbols: validSymbols}
 			created := 0
 			underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
@@ -938,18 +983,15 @@ func TestJavaFailedRenameRetiresSessionBeforeNextRead(t *testing.T) {
 	}
 }
 
-func TestJavaVerifyUsesFreshSessionAfterReadForSameVersionDiagnostics(t *testing.T) {
+func TestJavaVerifyReusesWarmSessionForSameVersionDiagnostics(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	symbols := json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
 	stale := &fakeJavaSession{symbols: symbols, diagnostics: []backend.Diagnostic{{Message: "stale v1"}}}
-	fresh := &fakeJavaSession{symbols: symbols, formatting: json.RawMessage(`[]`), diagnostics: []backend.Diagnostic{{Message: "fresh v1"}}}
+	stale.formatting = json.RawMessage(`[]`)
 	created := 0
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		created++
-		if created == 1 {
-			return stale, nil
-		}
-		return fresh, nil
+		return stale, nil
 	})
 	project := trustedJavaProject(root, file)
 	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
@@ -959,11 +1001,14 @@ func TestJavaVerifyUsesFreshSessionAfterReadForSameVersionDiagnostics(t *testing
 	if err != nil {
 		t.Fatalf("verify after lookup: %v", err)
 	}
-	if len(diagnostics) != 1 || diagnostics[0].Message != "fresh v1" {
-		t.Fatalf("verify accepted an old same-URI/version receipt: %#v", diagnostics)
+	if len(diagnostics) != 1 || diagnostics[0].Message != "stale v1" {
+		t.Fatalf("verify diagnostics = %#v", diagnostics)
 	}
-	if stale.waitDiagnosticsCalls != 0 || stale.closed != 1 || fresh.waitDiagnosticsCalls != 1 || fresh.closed != 1 || created != 2 {
-		t.Fatalf("read/verify session lifecycle stale=%+v fresh=%+v created=%d", stale, fresh, created)
+	if stale.waitDiagnosticsCalls != 1 || stale.closed != 0 || created != 1 {
+		t.Fatalf("read/verify session lifecycle session=%+v created=%d", stale, created)
+	}
+	if err := underTest.Close(); err != nil || stale.closed != 1 {
+		t.Fatalf("close err=%v closed=%d", err, stale.closed)
 	}
 }
 
@@ -1004,21 +1049,22 @@ func TestJavaOutlineInspectPreserveOverloadsAndServerDetail(t *testing.T) {
 	}
 }
 
-func TestJavaOutlineRejectsDirectoryAndUnsupportedVisibilityBeforeLaunch(t *testing.T) {
+func TestJavaOutlineSupportsDirectoryAndVisibilityFiltering(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	started := false
+	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		started = true
-		return &fakeJavaSession{}, nil
+		return session, nil
 	})
 	project := trustedJavaProject(root, file)
-	_, directoryErr := underTest.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: root, IncludeUnexported: true})
-	if directoryErr == nil || !strings.Contains(directoryErr.Error(), "selected files only") || started {
-		t.Fatalf("directory outline err=%v started=%v", directoryErr, started)
+	directory, directoryErr := underTest.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: root, IncludeUnexported: true})
+	if directoryErr != nil || !started || directory.Scope.Kind != "directory" || len(directory.Files) != 1 || directory.Files[0].File != "Thing.java" {
+		t.Fatalf("directory outline=%#v err=%v started=%v", directory, directoryErr, started)
 	}
-	_, visibilityErr := underTest.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file})
-	if visibilityErr == nil || !strings.Contains(visibilityErr.Error(), "visibility filtering") || started {
-		t.Fatalf("visibility-filtered outline err=%v started=%v", visibilityErr, started)
+	filtered, visibilityErr := underTest.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: false})
+	if visibilityErr != nil || len(filtered.Files) != 1 || len(filtered.Files[0].Symbols) != 0 {
+		t.Fatalf("visibility-filtered outline=%#v err=%v", filtered, visibilityErr)
 	}
 }
 
@@ -1034,8 +1080,11 @@ func TestJavaReadRejectsSiblingDocumentURI(t *testing.T) {
 	if !errors.Is(err, javabackend.ErrJavaMalformedResponse) {
 		t.Fatalf("sibling URI was accepted: %v", err)
 	}
-	if session.notifications["textDocument/didClose"] == nil {
-		t.Fatal("malformed response did not close the opened document")
+	if session.notifications["textDocument/didOpen"] == nil || session.notifications["textDocument/didClose"] != nil {
+		t.Fatal("malformed response did not retain the opened document in the warm session")
+	}
+	if err := underTest.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -1091,7 +1140,7 @@ func TestJavaReadOperationsRejectUntrustedRequestsBeforeStarting(t *testing.T) {
 	}
 }
 
-func TestJavaSuccessfulRenameClosesSessionBeforeReadUsesUpdatedSource(t *testing.T) {
+func TestJavaSuccessfulRenameRetainsSessionAndUpdatedSource(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	oldSymbols := json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
 	newSymbols := json.RawMessage(`[{"name":"Gadget","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":15}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}}]`)
@@ -1102,25 +1151,25 @@ func TestJavaSuccessfulRenameClosesSessionBeforeReadUsesUpdatedSource(t *testing
 	if marshalErr != nil {
 		t.Fatal(marshalErr)
 	}
-	first := &fakeJavaSession{symbols: oldSymbols, prepareRename: json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}`), renameResult: renameRaw}
-	second := &fakeJavaSession{symbols: newSymbols}
+	first := &fakeJavaSession{symbols: oldSymbols, prepareRename: json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}`), renameResult: renameRaw, postRenameSymbols: newSymbols, diagnostics: []backend.Diagnostic{{Message: "existing warning", Severity: 2}}}
 	created := 0
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		created++
-		if created == 1 {
-			return first, nil
-		}
-		return second, nil
+		return first, nil
 	})
 	project := trustedJavaProject(root, file)
-	if _, renameErr := underTest.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "Thing", To: "Gadget"}); renameErr != nil {
+	renameResult, renameErr := underTest.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "Thing", To: "Gadget"})
+	if renameErr != nil {
 		t.Fatalf("rename: %v", renameErr)
+	}
+	if renameResult.Diagnostics.NetDelta != 0 || len(renameResult.Diagnostics.Before) != 1 || len(renameResult.Diagnostics.After) != 1 {
+		t.Fatalf("rename diagnostic delta = %#v", renameResult.Diagnostics)
 	}
 	result, err := underTest.Inspect(context.Background(), backend.InspectRequest{Project: project, Symbol: "Gadget"})
 	if err != nil {
 		t.Fatalf("inspect after rename: %v", err)
 	}
-	if len(result.Matches) != 1 || result.Matches[0].Source != "class Gadget {}" || first.closed != 1 || created != 2 {
+	if len(result.Matches) != 1 || result.Matches[0].Source != "class Gadget {}" || first.closed != 0 || created != 1 {
 		t.Fatalf("renamed source or session transition incorrect: matches=%#v closed=%d factories=%d", result.Matches, first.closed, created)
 	}
 	if err := underTest.Close(); err != nil {
@@ -1128,28 +1177,36 @@ func TestJavaSuccessfulRenameClosesSessionBeforeReadUsesUpdatedSource(t *testing
 	}
 }
 
-func TestJavaReadSessionRejectsSecondWorkspace(t *testing.T) {
+func TestJavaReadSessionsAreScopedPerWorkspaceRoot(t *testing.T) {
 	rootA, fileA := javaFixture(t, "class Thing {}\n")
 	rootB, fileB := javaFixture(t, "class Thing {}\n")
 	symbols := json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
 	created := 0
+	sessions := make([]*fakeJavaSession, 0, 2)
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		created++
-		return &fakeJavaSession{symbols: symbols}, nil
+		session := &fakeJavaSession{symbols: symbols}
+		sessions = append(sessions, session)
+		return session, nil
 	})
 	if _, err := underTest.Lookup(context.Background(), trustedJavaProject(rootA, fileA), "Thing"); err != nil {
 		t.Fatal(err)
 	}
-	_, err := underTest.Inspect(context.Background(), backend.InspectRequest{Project: trustedJavaProject(rootB, fileB), Symbol: "Thing"})
-	if !errors.Is(err, javabackend.ErrJavaSessionConflict) || created != 1 {
-		t.Fatalf("second workspace request err=%v factories=%d", err, created)
+	if _, err := underTest.Inspect(context.Background(), backend.InspectRequest{Project: trustedJavaProject(rootB, fileB), Symbol: "Thing"}); err != nil {
+		t.Fatalf("second workspace request: %v", err)
 	}
-	if err := underTest.Close(); err != nil {
-		t.Fatal(err)
+	if _, err := underTest.Lookup(context.Background(), trustedJavaProject(rootA, fileA), "Thing"); err != nil {
+		t.Fatalf("return to first workspace request: %v", err)
+	}
+	if created != 2 || sessions[0].closed != 0 || sessions[1].closed != 0 {
+		t.Fatalf("workspace sessions created=%d states=%+v", created, sessions)
+	}
+	if err := underTest.Close(); err != nil || sessions[0].closed != 1 || sessions[1].closed != 1 {
+		t.Fatalf("close err=%v sessions=%+v", err, sessions)
 	}
 }
 
-func TestJavaRenameCloseFailureKeepsCommittedResultAndResetsSession(t *testing.T) {
+func TestJavaRenameKeepsCommittedResultAndRetainsWarmSession(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	oldSymbols := json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
 	newSymbols := json.RawMessage(`[{"name":"Other","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)
@@ -1162,19 +1219,16 @@ func TestJavaRenameCloseFailureKeepsCommittedResultAndResetsSession(t *testing.T
 	}
 	closeErr := errors.New("rename session close failed")
 	first := &fakeJavaSession{
-		symbols:       oldSymbols,
-		prepareRename: json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}`),
-		renameResult:  renameRaw,
-		closeErr:      closeErr,
+		symbols:           oldSymbols,
+		prepareRename:     json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}`),
+		renameResult:      renameRaw,
+		postRenameSymbols: newSymbols,
+		closeErr:          closeErr,
 	}
-	second := &fakeJavaSession{symbols: newSymbols}
 	created := 0
 	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		created++
-		if created == 1 {
-			return first, nil
-		}
-		return second, nil
+		return first, nil
 	})
 	project := trustedJavaProject(root, file)
 
@@ -1189,15 +1243,65 @@ func TestJavaRenameCloseFailureKeepsCommittedResultAndResetsSession(t *testing.T
 	if string(got) != "class Other {}\n" {
 		t.Fatalf("committed source = %q", got)
 	}
-	if first.closed != 1 {
-		t.Fatalf("original session closed %d times, want 1", first.closed)
+	if first.closed != 0 {
+		t.Fatalf("successful rename retired warm session %d times", first.closed)
 	}
 
 	if _, err := underTest.Lookup(context.Background(), project, "Other"); err != nil {
 		t.Fatalf("Lookup after committed rename failed: %v", err)
 	}
-	if created != 2 || second.closed != 0 {
-		t.Fatalf("sessions created=%d fresh session closed=%d, want 2 and 0", created, second.closed)
+	if created != 1 {
+		t.Fatalf("successful rename started %d sessions, want 1", created)
+	}
+	if err := underTest.Close(); !errors.Is(err, closeErr) {
+		t.Fatalf("Close error = %v, want %v", err, closeErr)
+	}
+	if first.closed != 1 {
+		t.Fatalf("warm session closed %d times at shutdown, want 1", first.closed)
+	}
+}
+
+func TestJavaRenamePublishesPublicTypeRenameFileOperation(t *testing.T) {
+	root := t.TempDir()
+	oldFile := filepath.Join(root, "Widget.java")
+	if err := os.WriteFile(oldFile, []byte("public class Widget {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newFile := filepath.Join(root, "Gadget.java")
+	oldURI, newURI := pathutil.FileURI(oldFile), pathutil.FileURI(newFile)
+	renameResult, err := json.Marshal(map[string]any{"documentChanges": []any{
+		map[string]any{"textDocument": map[string]any{"uri": oldURI, "version": 1}, "edits": []any{
+			map[string]any{"range": map[string]any{"start": map[string]int{"line": 0, "character": 13}, "end": map[string]int{"line": 0, "character": 19}}, "newText": "Gadget"},
+		}},
+		map[string]any{"kind": "rename", "oldUri": oldURI, "newUri": newURI},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbols := json.RawMessage(`[{"name":"Widget","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":22}},"selectionRange":{"start":{"line":0,"character":13},"end":{"line":0,"character":19}}}]`)
+	session := &fakeJavaSession{symbols: symbols, prepareRename: json.RawMessage(`{"start":{"line":0,"character":13},"end":{"line":0,"character":19}}`), renameResult: renameResult}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
+	result, err := underTest.Rename(context.Background(), backend.RenameRequest{Project: trustedJavaProject(root, oldFile), Symbol: "Widget", To: "Gadget"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.TargetFile != backend.CanonicalWorkspaceRoot(newFile) {
+		t.Fatalf("target file = %q, want %q", result.TargetFile, backend.CanonicalWorkspaceRoot(newFile))
+	}
+	if _, statErr := os.Stat(oldFile); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("old file remains: %v", statErr)
+	}
+	content, err := os.ReadFile(newFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "public class Gadget {}\n" {
+		t.Fatalf("renamed file contents = %q", content)
+	}
+	if session.notifications["workspace/didRenameFiles"] == nil {
+		t.Fatal("JDT LS did not receive workspace/didRenameFiles")
 	}
 	if err := underTest.Close(); err != nil {
 		t.Fatal(err)

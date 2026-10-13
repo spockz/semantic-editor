@@ -327,6 +327,23 @@ type New struct{}
 	}
 }
 
+func TestParseTxtarExampleSelectsJavaSource(t *testing.T) {
+	content := `# Java example
+exec semedit outline --language java
+
+-- src/main/java/com/example/Thing.java --
+package com.example;
+public class Thing {}
+`
+	example, err := parseTxtarFile("java_example.txtar", content)
+	if err != nil {
+		t.Fatalf("parse Java txtar: %v", err)
+	}
+	if example.InputFile != "src/main/java/com/example/Thing.java" || !strings.Contains(example.InputCode, "public class Thing") {
+		t.Fatalf("Java example source = %q %q", example.InputFile, example.InputCode)
+	}
+}
+
 func TestRenderMarkdownOutputsExpectedState(t *testing.T) {
 	t.Parallel()
 

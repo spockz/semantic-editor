@@ -8,6 +8,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	javabackend "semedit/internal/backend/java"
 )
 
 // WorkspaceOutlineReq captures inputs for discovering packages and modules across a workspace.
@@ -55,6 +56,27 @@ func parseWorkspaceOutline(raw map[string]any) (WorkspaceOutlineReq, error) {
 }
 
 func runWorkspaceOutline(ctx context.Context, cc CallContext, req WorkspaceOutlineReq) (WorkspaceOutlineRes, error) {
+	project := effectiveProject(cc, req.Project)
+	if project.Language == backend.LanguageJava {
+		result, err := javabackend.WorkspaceOutline(project.RootDir, req.Path, req.IncludeTests)
+		if err != nil {
+			return WorkspaceOutlineRes{}, err
+		}
+		return WorkspaceOutlineRes{Result: result}, nil
+	}
+	if project.Language == "" || project.Language == backend.LanguageAuto {
+		isJava, err := javabackend.LooksLikeJavaWorkspace(project.RootDir, req.Path)
+		if err != nil {
+			return WorkspaceOutlineRes{}, err
+		}
+		if isJava {
+			result, outlineErr := javabackend.WorkspaceOutline(project.RootDir, req.Path, req.IncludeTests)
+			if outlineErr != nil {
+				return WorkspaceOutlineRes{}, outlineErr
+			}
+			return WorkspaceOutlineRes{Result: result}, nil
+		}
+	}
 	result, err := astedit.WorkspaceOutlineGo(cc.WorkDir, req.Path, req.IncludeTests)
 	if err != nil {
 		return WorkspaceOutlineRes{}, err
@@ -86,7 +108,16 @@ func formatWorkspaceOutline(res WorkspaceOutlineRes) (string, error) {
 			if mod.GoVersion != "" {
 				goVer = ", go " + mod.GoVersion
 			}
-			fmt.Fprintf(&b, "  %s (%s%s)%s\n", mod.Path, mod.ModulePath, goVer, rootMarker)
+			if mod.ModulePath != "" {
+				fmt.Fprintf(&b, "  %s (%s%s)%s\n", mod.Path, mod.ModulePath, goVer, rootMarker)
+			} else {
+				coordinates := strings.Join([]string{mod.GroupID, mod.ArtifactID, mod.Version}, ":")
+				packaging := ""
+				if mod.Packaging != "" {
+					packaging = ", " + mod.Packaging
+				}
+				fmt.Fprintf(&b, "  %s (%s%s)%s\n", mod.Path, coordinates, packaging, rootMarker)
+			}
 		}
 	}
 	return strings.TrimRight(b.String(), "\n"), nil
@@ -95,7 +126,7 @@ func formatWorkspaceOutline(res WorkspaceOutlineRes) (string, error) {
 func workspaceOutlineDef() Def[WorkspaceOutlineReq, WorkspaceOutlineRes] {
 	return Def[WorkspaceOutlineReq, WorkspaceOutlineRes]{
 		Key:      "workspace_outline",
-		Summary:  "Use this tool instead of find, tree, ls, or shell directory scanning to get a high-level feel for the project; it lists all packages, their descriptions, and module boundaries (go.mod) ordered by directory depth. Use semantic_outline next to inspect declarations in specific packages.",
+		Summary:  "Use this tool instead of find, tree, ls, or shell directory scanning to orient yourself in a Go or Java workspace; it lists packages, synopses, and Go module or Maven reactor boundaries ordered by depth. Use semantic_outline next to inspect declarations.",
 		Params:   workspaceOutlineParams,
 		Level:    LevelWorkspace,
 		CLIName:  "workspace-outline",
@@ -104,6 +135,7 @@ func workspaceOutlineDef() Def[WorkspaceOutlineReq, WorkspaceOutlineRes] {
 		Parse:    parseWorkspaceOutline,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, WorkspaceOutlineReq) (WorkspaceOutlineRes, error){
 			backend.LanguageAuto: runWorkspaceOutline,
+			backend.LanguageJava: runWorkspaceOutline,
 		},
 		Format:        formatWorkspaceOutline,
 		Output:        &OperationOutputContract{ResultSchema: workspaceOutlineOutputSchema()},

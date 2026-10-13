@@ -1,0 +1,16 @@
+# Java staging controls require a retained MCP session and fail closed from the CLI.
+! exec semedit stage
+stderr 'staging requires a retained MCP session'
+! exec semedit stage-drop --step-id step_example
+stderr 'staging requires a retained MCP session'
+! exec semedit stage-abort
+stderr 'staging requires a retained MCP session'
+! exec semedit commit
+stderr 'staging requires a retained MCP session'
+
+-- pom.xml --
+<project><modelVersion>4.0.0</modelVersion><groupId>sample</groupId><artifactId>stage-cli</artifactId><version>1</version></project>
+-- src/main/java/sample/Widget.java --
+package sample;
+
+class Widget {}

@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/javacst"
 	"slices"
 
 	"golang.org/x/tools/go/packages"
@@ -59,9 +60,41 @@ func runInsertElementConstruct(ctx context.Context, cc CallContext, req InsertCo
 	return result.Edit, nil
 }
 
+func runInsertElementConstructJava(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
+	project := effectiveProject(cc, req.Project)
+	var expectedRevision *string
+	if req.ExpectedRevision != "" {
+		expectedRevision = &req.ExpectedRevision
+	}
+	root, file, before, after, err := runJavaInspectedSourceEdit(ctx, cc, project, req.File, req.InDeclaration, "element insertion", expectedRevision, true, func(declaration []byte) ([]byte, error) {
+		return javacst.AppendJavaElement(declaration, req.Discriminator, []byte(req.Source))
+	})
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	display := displayWorkPath(root, req.File)
+	relative, err := filepath.Rel(root, file)
+	if err != nil {
+		return FileEditRes{}, fmt.Errorf("derive Java element receipt path for %q: %w", file, err)
+	}
+	if !filepath.IsLocal(relative) {
+		return FileEditRes{}, fmt.Errorf("derive Java element receipt path for %q: path escapes workspace root", file)
+	}
+	relative = filepath.ToSlash(relative)
+	return FileEditRes{
+		File: file, Display: display, Symbol: req.InDeclaration,
+		Diff:             astedit.UnifiedDiff(display, string(before), string(after)),
+		Detail:           "Appended one element to the selected Java initializer.",
+		DiagnosticStatus: diagnosticStatusUnavailable, HasDelta: true,
+		ReceiptDraft: EditReceiptDraft{Operation: operationKeyInsertConstruct, Status: EditPersisted,
+			ReadSet:        []FileRevision{{Path: relative, Revision: structuralRevision(before)}},
+			PlannedChanges: []FileRevision{{Path: relative, Revision: structuralRevision(after)}}},
+	}, nil
+}
+
 func insertElementPlanSpec() structuralPlanSpec {
 	return structuralPlanSpec{
-		Key: "insert_construct",
+		Key: operationKeyInsertConstruct,
 		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 			if placement := stringParam(raw, "placement"); placement != "" && placement != "append" {
 				return astedit.SourcePlan{}, fmt.Errorf("placement must be append")

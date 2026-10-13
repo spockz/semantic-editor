@@ -1,0 +1,67 @@
+# Add a versioned dependency to a Maven parent and a versionless child entry.
+exec semedit add-build-dependency --language java --trust-workspace --dependency org.example:codec:2.1 --file core
+stdout 'Successfully added Maven dependency org.example:codec:2.1 to 2 POM'
+cmp pom.xml want/pom.xml
+cmp core/pom.xml want/core/pom.xml
+
+-- pom.xml --
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.example</groupId>
+  <artifactId>reactor</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <modules><module>core</module></modules>
+  <dependencyManagement>
+    <dependencies>
+      <!-- Keep this comment in place. -->
+    </dependencies>
+  </dependencyManagement>
+</project>
+
+-- core/pom.xml --
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.example</groupId>
+    <artifactId>reactor</artifactId>
+    <version>1</version>
+  </parent>
+  <artifactId>core</artifactId>
+</project>
+-- want/pom.xml --
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.example</groupId>
+  <artifactId>reactor</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+  <modules><module>core</module></modules>
+  <dependencyManagement>
+    <dependencies>
+      <!-- Keep this comment in place. -->
+      <dependency>
+        <groupId>org.example</groupId>
+        <artifactId>codec</artifactId>
+        <version>2.1</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+</project>
+
+-- want/core/pom.xml --
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>org.example</groupId>
+    <artifactId>reactor</artifactId>
+    <version>1</version>
+  </parent>
+  <artifactId>core</artifactId>
+  <dependencies>
+    <dependency>
+      <groupId>org.example</groupId>
+      <artifactId>codec</artifactId>
+    </dependency>
+  </dependencies>
+</project>

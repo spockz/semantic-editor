@@ -101,7 +101,11 @@ func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, pr
 		result.ContinuationUnavailable = "rename source did not contain a qualified identity"
 		return result
 	}
-	resolved, err := service.Lookup(ctx, project, identity.Query)
+	lookupProject := project
+	if result.TargetFile != "" {
+		lookupProject.File = result.TargetFile
+	}
+	resolved, err := service.Lookup(ctx, lookupProject, identity.Query)
 	if err != nil {
 		result.ContinuationUnavailable = "post-rename lookup failed: " + err.Error()
 		return result
@@ -129,7 +133,8 @@ func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, pr
 		result.ContinuationUnavailable = "post-rename location was invalid: " + err.Error()
 		return result
 	}
-	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, sourceFile, resolvedFile) {
+	if result.Source.Definition == nil || (result.TargetFile == "" && !sameWorkspacePath(project.RootDir, sourceFile, resolvedFile)) ||
+		(result.TargetFile != "" && !sameWorkspacePath(project.RootDir, result.TargetFile, resolvedFile)) {
 		result.ContinuationUnavailable = "post-rename lookup resolved a different source file"
 		return result
 	}

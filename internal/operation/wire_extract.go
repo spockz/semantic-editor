@@ -28,14 +28,14 @@ func (r *ExtractFunctionReq) SetProjectContext(project backend.ProjectContext) {
 	r.Project = project
 }
 
-var extractFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+var extractFunctionParams = append([]ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: Go source file or Java source file containing the selected method", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple identifier for the helper declaration to create", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified owner function or method containing the statements", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Helper declaration form", Required: true, Enums: []string{"function", "method"}},
 	{Name: "start_line", CLIName: "start-line", JSONName: "start_line", Type: ParamInteger, Description: "First selected statement's starting line; must match a direct statement boundary", Required: true},
 	{Name: "end_line", CLIName: "end-line", JSONName: "end_line", Type: ParamInteger, Description: "Last selected statement's ending line; must match a direct statement boundary", Required: true},
-}
+}, readProjectParams...)
 
 func parseExtractFunction(raw map[string]any) (ExtractFunctionReq, error) {
 	var req ExtractFunctionReq
@@ -46,6 +46,12 @@ func parseExtractFunction(raw map[string]any) (ExtractFunctionReq, error) {
 	var err error
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
+	}
+	if req.Project, err = parseReadProject(raw, req.File); err != nil {
+		return req, err
+	}
+	if req.Project.Language == "" {
+		req.Project.Language = backend.LanguageGo
 	}
 	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
 		return req, err
@@ -89,10 +95,13 @@ func extractFunctionDef() Def[ExtractFunctionReq, ExtractionResult] {
 		Key: "extract_function", Summary: "Use this tool instead of copying statements to extract a safe contiguous top-level call region from a Go function or method into a local helper. Parameters are inferred from named owner parameters and the receiver. One leading := declaration may return multiple distinct named live-out values when every result expression is a basic literal, a boolean literal, a named owner parameter, or a supported unary or parenthesized form of those expressions. Effectful, call, compound, and unsupported result-type expressions are refused before writing. Pass the returned live file and helper symbol to semantic_rename or semantic_replace_body. Address-taken values, closure-captured inputs, direct recover calls, selector calls on forwarded values, other local data flow, branching, loops, comments, composite literals, generic owners, and variadic parameters are refused." + automaticVerificationGuidance,
 		Params: extractFunctionParams, Level: LevelFile, CLIName: "extract-function", MCPName: semanticExtractFunctionToolName,
 		Parse:    parseExtractFunction,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (ExtractionResult, error){backend.LanguageGo: runExtractFunctionWithReceipt},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (ExtractionResult, error){backend.LanguageGo: runExtractFunctionWithReceipt, backend.LanguageJava: runExtractFunctionJavaWithReceipt},
 		Format:   formatExtractionResult,
 		Output:   extractionReceiptOutput(semanticRenameToolName, semanticReplaceBodyToolName),
-		FinalizeOutput: func(cc CallContext, _ ExtractFunctionReq, result ExtractionResult) (ExtractionResult, error) {
+		FinalizeOutput: func(cc CallContext, req ExtractFunctionReq, result ExtractionResult) (ExtractionResult, error) {
+			if req.Project.Language == backend.LanguageJava {
+				return finalizeJavaExtractionOutput(cc, ExtractVariableReq{Project: req.Project, File: req.File, Symbol: req.Symbol, InFunction: req.InFunction}, result)
+			}
 			return finalizeExtractionOutput(cc, result)
 		},
 		ProjectOutput: projectExtractionResult,
@@ -123,6 +132,7 @@ type ExtractConstantReq struct {
 	Symbol           string
 	InFunction       string
 	Discriminator    string
+	ConstructPath    string
 	ExpectedRevision string
 }
 
@@ -132,40 +142,78 @@ func (r ExtractConstantReq) GetProjectContext() backend.ProjectContext { return 
 // SetProjectContext applies the language selected by request dispatch.
 func (r *ExtractConstantReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
-var extractConstantParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+var extractConstantParams = append([]ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: source file containing the selected Go or Java method", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh package-level constant identifier to create; choose a new simple name", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified function or method containing the expression", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one current compile-time constant expression", Required: true},
-	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Role: RoleTarget, Description: "Guard: SHA-256 revision of the selected Go source file copied from semantic_inspect_symbol; stale revisions are refused", SourceFields: []string{sourceInspectExpectedRevision}},
-}
+	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Role: RoleSelector, Description: "Selector: candidate path from an ambiguity diagnostic; repeated expressions require its matching expected_revision"},
+	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Role: RoleTarget, Description: "Guard: file revision copied from the ambiguity diagnostic; stale revisions are refused", SourceFields: []string{sourceInspectExpectedRevision}},
+}, readProjectParams...)
 
 func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
-	var req ExtractConstantReq
-	if err := CheckParams(raw, extractConstantParams); err != nil {
-		return req, err
+	selection, err := parseExtractionSelection(raw, extractConstantParams)
+	if err != nil {
+		return ExtractConstantReq{}, err
 	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	return ExtractConstantReq(selection), nil
+}
+
+type extractionSelection struct {
+	Project          backend.ProjectContext
+	File             string
+	Symbol           string
+	InFunction       string
+	Discriminator    string
+	ConstructPath    string
+	ExpectedRevision string
+}
+
+func parseExtractionSelection(raw map[string]any, params []ParameterContract) (extractionSelection, error) {
+	var selection extractionSelection
+	if err := CheckParams(raw, params); err != nil {
+		return selection, err
+	}
+	selection.Project = backend.ProjectContext{Language: backend.LanguageGo}
 	var err error
-	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
-		return req, err
+	if selection.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return selection, err
 	}
-	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
-		return req, err
+	if selection.Project, err = parseReadProject(raw, selection.File); err != nil {
+		return selection, err
 	}
-	if req.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, true); err != nil {
-		return req, err
+	if selection.Project.Language == "" {
+		selection.Project.Language = backend.LanguageGo
 	}
-	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
-		return req, err
+	if selection.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
+		return selection, err
 	}
-	if req.ExpectedRevision, err = ParseString(raw, expectedRevisionJSONName, "expected-revision", false); err != nil {
-		return req, err
+	if selection.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, true); err != nil {
+		return selection, err
 	}
-	if value, present := rawLookup(raw, expectedRevisionJSONName, "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
-		return req, fmt.Errorf("param %q must not be empty when supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
+	if selection.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
+		return selection, err
 	}
-	return req, nil
+	if selection.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
+		return selection, err
+	}
+	if selection.ExpectedRevision, err = ParseString(raw, expectedRevisionJSONName, "expected-revision", false); err != nil {
+		return selection, err
+	}
+	if err := validateExtractionRevision(raw, selection); err != nil {
+		return selection, err
+	}
+	return selection, nil
+}
+
+func validateExtractionRevision(raw map[string]any, selection extractionSelection) error {
+	if value, present := rawLookup(raw, expectedRevisionJSONName, "expected-revision"); present && value != nil && selection.ExpectedRevision == "" {
+		return fmt.Errorf("param %q must not be empty when supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
+	}
+	if selection.ConstructPath != "" && selection.ExpectedRevision == "" {
+		return fmt.Errorf("param %q is required when construct_path is supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
+	}
+	return nil
 }
 
 func runExtractConstant(ctx context.Context, cc CallContext, req ExtractConstantReq) (FileEditRes, error) {
@@ -187,13 +235,16 @@ func runExtractConstant(ctx context.Context, cc CallContext, req ExtractConstant
 
 func extractConstantDef() Def[ExtractConstantReq, ExtractionResult] {
 	return Def[ExtractConstantReq, ExtractionResult]{
-		Key: "extract_constant", Summary: "Use this tool instead of copying an expression and replacing its uses to extract one exact Go constant expression into a package-level constant. The expression must have resolved compile-time type and value facts; untyped constants stay untyped, and supported typed basic constants retain their type. It refuses iota, local constant dependencies, comments inside the selection, collisions, duplicate matches, and unsupported types. On success, the returned file and symbol identify the new live declaration; pass them to semantic_rename or semantic_replace_decl. Select only an expression whose source text identifies one current occurrence." + automaticVerificationGuidance,
+		Key: "extract_constant", Summary: "Use this tool instead of manually moving expressions into fields to extract one exact compile-time constant expression. Go preserves resolved constant type and value facts; Java delegates to JDT LS refactor.extract.constant and renames the generated field. Supply symbol, in_function, and exact-source discriminator; use construct_path with its matching expected_revision when the expression is ambiguous." + automaticVerificationGuidance,
 		Params: extractConstantParams, Level: LevelFile, CLIName: "extract-constant", MCPName: "semantic_extract_constant",
 		Parse:    parseExtractConstant,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractConstantReq) (ExtractionResult, error){backend.LanguageGo: runExtractConstantWithReceipt},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractConstantReq) (ExtractionResult, error){backend.LanguageGo: runExtractConstantWithReceipt, backend.LanguageJava: runExtractConstantJavaWithReceipt},
 		Format:   formatExtractionResult,
 		Output:   extractionReceiptOutput(semanticRenameToolName, semanticReplaceDeclToolName),
-		FinalizeOutput: func(cc CallContext, _ ExtractConstantReq, result ExtractionResult) (ExtractionResult, error) {
+		FinalizeOutput: func(cc CallContext, req ExtractConstantReq, result ExtractionResult) (ExtractionResult, error) {
+			if req.Project.Language == backend.LanguageJava {
+				return finalizeJavaExtractionOutput(cc, ExtractVariableReq(req), result)
+			}
 			return finalizeExtractionOutput(cc, result)
 		},
 		ProjectOutput: projectExtractionResult,
@@ -221,47 +272,21 @@ func (r *ExtractVariableReq) SetProjectContext(project backend.ProjectContext) {
 	r.Project = project
 }
 
-var extractVariableParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+var extractVariableParams = append([]ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: source file containing the selected Go or Java method", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple local identifier to create; choose a new name not already visible in the owner", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: sourceInFunctionContinuations},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of the first argument expression in a direct call to an unshadowed same-file package function", Required: true},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of the expression to extract; Java expressions are selected inside the named method", Required: true},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; a supplied path requires its matching expected_revision"},
 	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Role: RoleTarget, Description: "Guard: selected-file SHA-256 revision copied from semantic_inspect_symbol; required with a construct_path from the ambiguity diagnostic", SourceFields: []string{sourceInspectExpectedRevision}},
-}
+}, readProjectParams...)
 
 func parseExtractVariable(raw map[string]any) (ExtractVariableReq, error) {
-	var req ExtractVariableReq
-	if err := CheckParams(raw, extractVariableParams); err != nil {
-		return req, err
+	selection, err := parseExtractionSelection(raw, extractVariableParams)
+	if err != nil {
+		return ExtractVariableReq{}, err
 	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
-	var err error
-	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
-		return req, err
-	}
-	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
-		return req, err
-	}
-	if req.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, true); err != nil {
-		return req, err
-	}
-	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
-		return req, err
-	}
-	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
-		return req, err
-	}
-	if req.ExpectedRevision, err = ParseString(raw, expectedRevisionJSONName, "expected-revision", false); err != nil {
-		return req, err
-	}
-	if value, present := rawLookup(raw, expectedRevisionJSONName, "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
-		return req, fmt.Errorf("param %q must not be empty when supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
-	}
-	if req.ConstructPath != "" && req.ExpectedRevision == "" {
-		return req, fmt.Errorf("param %q is required when construct_path is supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
-	}
-	return req, nil
+	return ExtractVariableReq(selection), nil
 }
 
 func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariableReq) (FileEditRes, error) {
@@ -284,13 +309,19 @@ func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariable
 
 func extractVariableDef() Def[ExtractVariableReq, ExtractionResult] {
 	return Def[ExtractVariableReq, ExtractionResult]{
-		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. The call target must be an unshadowed same-file package function with no unresolved import binding; callable owner parameters/locals, builtins, and functions declared only in other files are refused. Later arguments retain their evaluation order. If construct_path is supplied, also pass the matching selected-file expected_revision SHA-256. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. The receipt identifies the surviving owner function as a live target; use semantic_lookup to select a local binding for later refactoring." + automaticVerificationGuidance,
+		Key: "extract_variable", Summary: "Use this tool instead of manually rewriting a call to extract one exact expression into a local variable. Go supports one side-effect-free typed first argument of a direct call under strict data-flow checks; Java delegates extraction to a matching JDT LS refactor action, then renames the generated local to the requested symbol. Use construct_path and its matching selected-file expected_revision when the expression is ambiguous." + automaticVerificationGuidance,
 		Params: extractVariableParams, Level: LevelFile, CLIName: "extract-variable", MCPName: semanticExtractVariableToolName,
-		Parse:    parseExtractVariable,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (ExtractionResult, error){backend.LanguageGo: runExtractVariableWithReceipt},
-		Format:   formatExtractionResult,
-		Output:   extractionReceiptOutput(semanticRenameToolName, semanticReplaceBodyToolName),
-		FinalizeOutput: func(cc CallContext, _ ExtractVariableReq, result ExtractionResult) (ExtractionResult, error) {
+		Parse: parseExtractVariable,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (ExtractionResult, error){
+			backend.LanguageGo:   runExtractVariableWithReceipt,
+			backend.LanguageJava: runExtractVariableJavaWithReceipt,
+		},
+		Format: formatExtractionResult,
+		Output: extractionReceiptOutput(semanticRenameToolName, semanticReplaceBodyToolName),
+		FinalizeOutput: func(cc CallContext, req ExtractVariableReq, result ExtractionResult) (ExtractionResult, error) {
+			if req.Project.Language == backend.LanguageJava {
+				return finalizeJavaExtractionOutput(cc, req, result)
+			}
 			return finalizeExtractionOutput(cc, result)
 		},
 		ProjectOutput: projectExtractionResult,

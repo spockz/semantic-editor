@@ -1,0 +1,23 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_ELEMENT=1
+exec semedit insert-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --in-declaration Widget.limits --kind element --discriminator 'Map.of("DAILY", 1000)' --source '"MONTHLY", 5000'
+stdout 'Appended one element to the selected Java initializer'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+import java.util.Map;
+class Widget {
+  private final Map<String, Integer> limits = Map.of("DAILY", 1000);
+}
+-- want/Widget.java --
+package sample;
+import java.util.Map;
+class Widget {
+  private final Map<String, Integer> limits = Map.of("DAILY", 1000, "MONTHLY", 5000);
+}

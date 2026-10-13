@@ -24,9 +24,9 @@ func StageReceiptSchema() *ValueSchema {
 	}, Required: []string{"status", "stage_id", "steps", "step_count", "request_bytes", "dirty_source_bytes", "limits"}}
 }
 
-// StageOutputContinuations declares the staged step selector on a buffer-safe Go mutation result.
+// StageOutputContinuations declares the staged step selector on a buffer-safe Go or Java mutation result.
 func StageOutputContinuations(entry Entry) []OutputContinuation {
-	if !entry.BufferedBatch || entry.ReadOnly || !slices.Contains(entry.Languages, backend.LanguageGo) {
+	if !entry.BufferedBatch || entry.ReadOnly || (!slices.Contains(entry.Languages, backend.LanguageGo) && !slices.Contains(entry.Languages, backend.LanguageJava)) {
 		return nil
 	}
 	return []OutputContinuation{{

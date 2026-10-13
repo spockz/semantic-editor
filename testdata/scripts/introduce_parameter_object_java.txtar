@@ -1,0 +1,61 @@
+# Java parameter-object conversion preserves bound uses, caller argument order, and evaluation.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INTRODUCE_PARAMETER_OBJECT=1 SEMEDIT_JAVA_ORGANIZE=1 SEMEDIT_JAVA_REFERENCE_URI=file://$WORK/src/Caller.java SEMEDIT_JAVA_REFERENCE_LINE=3 SEMEDIT_JAVA_REFERENCE_START=12 SEMEDIT_JAVA_REFERENCE_END=16
+exec semedit introduce-parameter-object --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --symbol 'Service.send(int, boolean)' --destination-file src/Service.java --parameter '{"name":"options","type":"SendOptions"}' --fields '[{"source_index":0,"field":{"name":"id","type":"int"}},{"source_index":1,"field":{"name":"enabled","type":"boolean"}}]'
+cmp src/Service.java want/Service.java
+cmp src/Caller.java want/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Service.java --
+package sample;
+class Service {
+  void send(int id, boolean enabled) {
+    audit(id, enabled);
+  }
+}
+-- src/Caller.java --
+package sample;
+class Caller {
+  void run(Service service) {
+    service.send(loadId(), isEnabled());
+  }
+}
+
+-- want/Service.java --
+package sample;
+class Service {
+  void send(SendOptions options) {
+    audit(options.id(), options.enabled());
+  }
+}
+
+
+final class SendOptions {
+  private final int id;
+  private final boolean enabled;
+
+  SendOptions(int id, boolean enabled) {
+    this.id = id;
+    this.enabled = enabled;
+  }
+
+  int id() {
+    return this.id;
+  }
+
+  boolean enabled() {
+    return this.enabled;
+  }
+}
+
+-- want/Caller.java --
+package sample;
+class Caller {
+  void run(Service service) {
+    service.send(new SendOptions(loadId(), isEnabled()));
+  }
+}

@@ -408,7 +408,7 @@ func TestLookupSharedProjectParserPreservesBackendConfiguration(t *testing.T) {
 		File:           "src/Widget.java",
 		Language:       backend.LanguageJava,
 		WorkspaceTrust: backend.WorkspaceTrust{Trusted: true},
-		Java:           backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true},
+		Java:           backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true, ImportMavenSet: true},
 		Scala:          backend.ScalaConfig{MetalsHome: "/metals", MetalsBin: "/metals/bin", JavaBin: "/java", JavaVersion: "21"},
 		Haskell:        backend.HaskellConfig{Standalone: true, GHCBin: "/ghc", HLSBin: "/hls", GHCVersion: "9.10", HLSVersion: "2.11"},
 		Kotlin:         backend.KotlinConfig{KotlinBin: "/kotlin"},
@@ -576,6 +576,27 @@ func TestRenameDiagnosticErrorProjectionHasNoLiveIdentity(t *testing.T) {
 		if _, exists := output[forbidden]; exists {
 			t.Errorf("rename error advertised live field %q: %#v", forbidden, output)
 		}
+	}
+}
+
+func TestRenameProjectionIncludesPublicTypeTargetFile(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	if !ok {
+		t.Fatal("rename operation missing")
+	}
+	root := t.TempDir()
+	projected, err := entry.ProjectOutput(&backend.RenameResult{
+		ApplicationState: "persisted",
+		ProjectRoot:      root,
+		TargetFile:       filepath.Join(root, "Gadget.java"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := projected.(map[string]any)
+	target, ok := result["target"].(map[string]any)
+	if !ok || target["file"] != "Gadget.java" {
+		t.Fatalf("rename target = %#v", result["target"])
 	}
 }
 

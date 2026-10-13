@@ -1,0 +1,31 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INSERT_CASE=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit insert-case --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --in-function Widget.run --discriminator status --case 'case 2: break;' --placement before_default
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run(int status) {
+    switch (status) {
+      case 1: break;
+      default: break;
+    }
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run(int status) {
+    switch (status) {
+      case 1: break;
+      case 2: break;
+      default: break;
+    }
+  }
+}

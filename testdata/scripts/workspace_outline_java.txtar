@@ -1,0 +1,55 @@
+# Test semedit workspace-outline discovering Java Maven modules and package synopses
+exec semedit workspace-outline --language java --include-tests
+stdout 'Packages:'
+stdout 'api/com/acme/ledger/api \(com\.acme\.ledger\.api\) — Ledger API contracts\.'
+stdout 'core/com/acme/ledger/core \(com\.acme\.ledger\.core\) — Core ledger domain models\.'
+stdout 'core/com/acme/ledger/core/tests \(com\.acme\.ledger\.core\.tests\) —'
+stdout 'Modules:'
+stdout '\. \(com\.acme:ledger-parent:1\.0\.0, pom\) \[root\]'
+stdout 'api \(com\.acme:ledger-api:1\.0\.0, jar\)'
+stdout 'core \(com\.acme:ledger-core:1\.0\.0, jar\)'
+
+# Automatic language selection finds the Maven reactor too
+exec semedit workspace-outline
+stdout 'core/com/acme/ledger/core \(com\.acme\.ledger\.core\) — Core ledger domain models\.'
+
+-- pom.xml --
+<project>
+  <groupId>com.acme</groupId>
+  <artifactId>ledger-parent</artifactId>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+    <module>api</module>
+  </modules>
+</project>
+
+-- core/pom.xml --
+<project>
+  <parent><groupId>com.acme</groupId><version>1.0.0</version></parent>
+  <artifactId>ledger-core</artifactId>
+</project>
+
+-- api/pom.xml --
+<project>
+  <parent><groupId>com.acme</groupId><version>1.0.0</version></parent>
+  <artifactId>ledger-api</artifactId>
+</project>
+
+-- core/src/main/java/com/acme/ledger/core/package-info.java --
+/** Core ledger domain models. */
+package com.acme.ledger.core;
+
+-- core/src/main/java/com/acme/ledger/core/Money.java --
+package com.acme.ledger.core;
+public record Money(long cents) {}
+
+-- core/src/test/java/com/acme/ledger/core/tests/MoneyTest.java --
+package com.acme.ledger.core.tests;
+class MoneyTest {}
+
+-- api/src/main/java/com/acme/ledger/api/Ledger.java --
+package com.acme.ledger.api;
+/** Ledger API contracts. */
+public interface Ledger {}

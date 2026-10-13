@@ -149,7 +149,7 @@ func projectStageCommitError(err error) (any, bool, error) {
 }
 
 func registerStageOps(r *Registry) error {
-	start := stageStatelessControl("stage_start", ("Use this tool instead of applying Go edits immediately when a retained sequence needs review before publication. Accepted edits remain in an in-memory overlay until semantic_commit; no workspace files are written by this control."), "stage", "semantic_stage", func(raw map[string]any) (stageStartReq, error) {
+	start := stageStatelessControl("stage_start", ("Use this tool instead of applying Go or Java edits immediately when a retained sequence needs review before publication. Accepted edits remain in an in-memory overlay until semantic_commit; no workspace files are written by this control."), "stage", "semantic_stage", func(raw map[string]any) (stageStartReq, error) {
 		return stageStartReq{}, CheckParams(raw, nil)
 	}, func(rt StageRuntime, ctx context.Context, cc CallContext, _ stageStartReq) (StageReceipt, error) {
 		return rt.Start(ctx, cc.WorkDir)
@@ -170,10 +170,16 @@ func registerStageOps(r *Registry) error {
 			return StageReceipt{}, e
 		}
 		return rt.Drop(ctx, cc.WorkDir, q.StepID)
+	}, backend.LanguageJava: func(ctx context.Context, cc CallContext, q stageDropReq) (StageReceipt, error) {
+		rt, e := stageRuntime(cc)
+		if e != nil {
+			return StageReceipt{}, e
+		}
+		return rt.Drop(ctx, cc.WorkDir, q.StepID)
 	}}, Format: func(v StageReceipt) (string, error) { return v.Status, nil }, ProjectOutput: func(v StageReceipt) (any, error) { return v, nil }, Output: &OperationOutputContract{ResultSchema: StageReceiptSchema(), Continuations: StageDropContinuations()}, ExampleRaw: map[string]any{"step_id": "00112233445566778899aabbccddeeff"}}); err != nil {
 		return err
 	}
-	abort := stageStatelessControl("stage_abort", ("Use this tool instead of undo when discarding an uncommitted retained Go staging session. This removes its in-memory overlay and writes no workspace files."), "stage-abort", "semantic_stage_abort", func(raw map[string]any) (stageAbortReq, error) {
+	abort := stageStatelessControl("stage_abort", ("Use this tool instead of undo when discarding an uncommitted retained Go or Java staging session. This removes its in-memory overlay and writes no workspace files."), "stage-abort", "semantic_stage_abort", func(raw map[string]any) (stageAbortReq, error) {
 		return stageAbortReq{}, CheckParams(raw, nil)
 	}, func(rt StageRuntime, ctx context.Context, cc CallContext, _ stageAbortReq) (StageReceipt, error) {
 		return rt.Abort(ctx, cc.WorkDir)
@@ -185,7 +191,7 @@ func registerStageOps(r *Registry) error {
 		{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Type: ParamBoolean, Description: "Trust configured verification hooks for the active workspace during final verification.", Default: false},
 		{Name: wireSkipHooks, CLIName: "skip-hooks", JSONName: wireSkipHooks, Type: ParamBoolean, Description: "Skip configured verification hooks after publication; formatting and diagnostic synchronization still run.", Default: false},
 	}
-	return Register(r, Def[stageCommitReq, StageCommitResult]{Key: "stage_commit", Summary: ("Use this tool instead of semantic_batch when publishing an existing retained Go staging session. It normalizes the staged edits and reports zero, partial, or full publication and the final verification outcome."), Level: LevelWorkspace, CLIName: "commit", MCPName: "semantic_commit", Params: commitParams, Parse: func(raw map[string]any) (stageCommitReq, error) {
+	return Register(r, Def[stageCommitReq, StageCommitResult]{Key: "stage_commit", Summary: ("Use this tool instead of semantic_batch when publishing an existing retained Go or Java staging session. It normalizes the staged edits and reports zero, partial, or full publication and the final verification outcome."), Level: LevelWorkspace, CLIName: "commit", MCPName: "semantic_commit", Params: commitParams, Parse: func(raw map[string]any) (stageCommitReq, error) {
 		if e := CheckParams(raw, commitParams); e != nil {
 			return stageCommitReq{}, e
 		}
@@ -201,6 +207,12 @@ func registerStageOps(r *Registry) error {
 			return StageCommitResult{}, e
 		}
 		return rt.Commit(ctx, cc.WorkDir, q.TrustWorkspace || cc.Project.WorkspaceTrust.Trusted, q.SkipHooks)
+	}, backend.LanguageJava: func(ctx context.Context, cc CallContext, q stageCommitReq) (StageCommitResult, error) {
+		rt, e := stageRuntime(cc)
+		if e != nil {
+			return StageCommitResult{}, e
+		}
+		return rt.Commit(ctx, cc.WorkDir, q.TrustWorkspace || cc.Project.WorkspaceTrust.Trusted, q.SkipHooks)
 	}}, Format: func(v StageCommitResult) (string, error) { return v.Status, nil }, ProjectOutput: func(v StageCommitResult) (any, error) { return v, nil }, Output: &OperationOutputContract{ResultSchema: stageCommitSchema()}, ErrorOutput: &OperationErrorOutputContract{ResultSchema: stageCommitErrorSchema()}, ProjectErrorOutput: projectStageCommitError, ExampleRaw: map[string]any{"trust_workspace": false, wireSkipHooks: false}})
 }
 
@@ -208,6 +220,12 @@ func stageStatelessControl[Request any](key, summary, cliName, mcpName string, p
 	return Def[Request, StageReceipt]{
 		Key: key, Summary: summary, Level: LevelWorkspace, CLIName: cliName, MCPName: mcpName, Parse: parse,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, Request) (StageReceipt, error){backend.LanguageGo: func(ctx context.Context, cc CallContext, request Request) (StageReceipt, error) {
+			runtime, err := stageRuntime(cc)
+			if err != nil {
+				return StageReceipt{}, err
+			}
+			return invoke(runtime, ctx, cc, request)
+		}, backend.LanguageJava: func(ctx context.Context, cc CallContext, request Request) (StageReceipt, error) {
 			runtime, err := stageRuntime(cc)
 			if err != nil {
 				return StageReceipt{}, err

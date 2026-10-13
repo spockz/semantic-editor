@@ -1,0 +1,26 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INLINE_VARIABLE=1 SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+exec semedit inline-variable --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol limit --in-function Widget.run()
+stdout 'Inlined the Java local through the JDT LS refactor.inline action'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    int limit = 10;
+    consume(limit);
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    consume(10);
+  }
+}

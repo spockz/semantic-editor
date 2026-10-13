@@ -56,8 +56,21 @@ func registeredLanguageContract(key string, language backend.LanguageID) (capabi
 	case backend.LanguageAuto:
 		return autoOperationContract(key)
 	case backend.LanguageJava:
+		if key == "move_construct" {
+			scope := capability.ScopeSelectedFile
+			return singleContract(capability.VariantSelectedFile, scope,
+				contractRequirements(scope, capability.RequireWorkspaceTrust, capability.RequireJavaRoot, capability.RequireJDTLS, capability.RequireJava21, capability.RequireExactSelector),
+				capability.FeatureTypedRefactor|capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+				conditionalFaultSupport(capability.RecoveryDiagnostics)), true
+		}
 		if key == "maven_compile" || key == "maven_test" {
 			return javaBuildContract(key)
+		}
+		if key == "add_build_dependency" {
+			scope := capability.ScopeModuleManifests
+			return singleContract(0, scope, contractRequirements(scope, capability.RequireWorkspaceTrust, capability.RequireMavenRoot),
+				capability.FeatureAddDependency, capability.GuaranteeAtomicWrites, allFaultSupport()), true
 		}
 		return externalOperationContract(key, language)
 	default:
@@ -133,10 +146,213 @@ func goStageOperationContract(key string) (capability.OperationContract, bool) {
 	}
 }
 
+//nolint:gocognit,funlen // Keep the external-operation capability matrix centralized as one key-to-contract dispatch table.
 func externalOperationContract(key string, language backend.LanguageID) (capability.OperationContract, bool) {
 	scope := capability.ScopeSelectedFile
 	requirements := externalRequirements(language, scope)
 	switch key {
+	case "stage_start":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		workspace := capability.ScopeWorkspacePaths
+		return singleContract(0, workspace, contractRequirements(workspace, capability.RequireSourceStable),
+			capability.FeatureStaging, capability.GuaranteeVolatileState, allFaultSupport()), true
+	case "stage_drop", "stage_abort":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		workspace := capability.ScopeWorkspacePaths
+		return singleContract(0, workspace,
+			append(contractRequirements(workspace, capability.RequireSourceStable), capability.Requirement{Kind: capability.RequireStageSession, Scope: capability.ScopeServerScope}),
+			capability.FeatureStaging, capability.GuaranteeVolatileState, allFaultSupport()), true
+	case "stage_commit":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		workspace := capability.ScopeWorkspacePaths
+		return singleContract(0, workspace, contractRequirements(workspace, capability.RequireWorkspaceTrust, capability.RequireJavaRoot, capability.RequireJDTLS, capability.RequireJava21),
+			capability.FeaturePublication|capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics,
+			capability.GuaranteeConflictChecked|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics|capability.GuaranteePublicationOutcome,
+			conditionalFaultSupport(capability.RecoveryDiagnostics)), true
+	case "workspace_outline":
+		workspace := capability.ScopeWorkspacePaths
+		return singleContract(0, workspace, contractRequirements(workspace, capability.RequireSourceStable),
+			capability.FeatureOutline, capability.GuaranteeReadOnly, allFaultSupport()), true
+	case operationKeyOrganizeImports:
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		return singleContract(capability.VariantSelectedFile, scope,
+			contractRequirements(scope, capability.RequireSourceStable, capability.RequireImportResolution),
+			capability.FeatureOrganizeImports|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "scaffold_file":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		return singleContract(capability.VariantSelectedFile|capability.VariantInferPackage, scope,
+			contractRequirements(scope, capability.RequireWritableDestination), capability.FeatureScaffold,
+			capability.GuaranteeAtomicWrites, targetUnknownFaultSupport()), true
+	case "insert_field":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireTargetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "insert_function":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireTargetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "insert_type":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireTargetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "set_doc_comment":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "extract_variable":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "extract_function":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "extract_constant":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "inline_variable":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "inline_function":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append(contractRequirements(scope, capability.RequireWorkspaceTrust, capability.RequireJDTLS), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}), capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "change_signature", "introduce_parameter", "introduce_parameter_object":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, capability.ScopeServerScope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "implement_contract":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "extract_interface":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case "inspect_construct":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		inspect := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, inspect, capability.FeatureInspect,
+			capability.GuaranteeReadOnly, conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case operationKeyInsertConstruct:
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "insert_case":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "replace_body":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case "replace_decl":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireTargetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
+	case operationKeyRemoveConstruct:
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireTargetParse, Scope: scope}, capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		edit := contractVariant(capability.VariantSelectedFile, scope, mutation,
+			capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization))
+		safeDelete := contractVariant(capability.VariantSelectedFile|capability.VariantSafeDelete, capability.ScopeServerScope,
+			contractRequirements(capability.ScopeServerScope, capability.RequireDocumentSymbols, capability.RequireExactSelector, capability.RequireSourceStable),
+			capability.FeatureASTEdit|capability.FeatureReferences|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis))
+		return typedContract(edit, safeDelete), true
+	case "replace_construct":
+		if language != backend.LanguageJava {
+			return capability.OperationContract{}, false
+		}
+		mutation := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
+			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+			conditionalFaultSupport(capability.RecoveryNormalization)), true
 	case capability.OpLookup:
 		lookup := append(append([]capability.Requirement{}, requirements...),
 			capability.Requirement{Kind: capability.RequireDocumentSymbols, Scope: scope},
@@ -154,6 +370,12 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 			capability.Requirement{Kind: capability.RequireDocumentSymbols, Scope: scope},
 			capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
 		return singleContract(capability.VariantSelectedFile, scope, inspect, capability.FeatureInspect,
+			capability.GuaranteeReadOnly, conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case capability.OpFindReferences:
+		references := append(append([]capability.Requirement{}, requirements...),
+			capability.Requirement{Kind: capability.RequireDocumentSymbols, Scope: scope},
+			capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, references, capability.FeatureReferences,
 			capability.GuaranteeReadOnly, conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
 	case capability.OpRename:
 		if language != backend.LanguageJava && language != backend.LanguageRust {
@@ -173,6 +395,9 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 			normalized := append(append([]capability.Requirement{}, requirements...),
 				capability.Requirement{Kind: capability.RequireDiagnosticsReceipt, Scope: scope},
 				capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			scopeRequirements := contractRequirements(capability.ScopeSelectedScope,
+				capability.RequireWorkspaceTrust, capability.RequireJavaRoot, capability.RequireJDTLS,
+				capability.RequireJava21, capability.RequireDiagnosticsReceipt, capability.RequireSourceStable)
 			checked := append(append([]capability.Requirement{}, requirements...),
 				capability.Requirement{Kind: capability.RequireDiagnosticsReceipt, Scope: scope})
 			tolerance := conditionalFaultSupport(capability.RecoveryDiagnostics)
@@ -180,6 +405,10 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 				contractVariant(capability.VariantSelectedFile|capability.VariantNormalize, scope, normalized,
 					capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics,
 					capability.GuaranteeServerEdit|capability.GuaranteeSelectedFileOnly|capability.GuaranteeDiagnostics|capability.GuaranteeAtomicWrites,
+					conditionalFaultSupport(capability.RecoveryNormalization)),
+				contractVariant(capability.VariantSelectedScope|capability.VariantNormalize, capability.ScopeSelectedScope, scopeRequirements,
+					capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics,
+					capability.GuaranteeServerEdit|capability.GuaranteeDiagnostics|capability.GuaranteeAtomicWrites,
 					conditionalFaultSupport(capability.RecoveryNormalization)),
 				contractVariant(capability.VariantSelectedFile, scope, checked,
 					capability.FeatureDiagnostics, capability.GuaranteeReadOnly|capability.GuaranteeDiagnostics, tolerance),
@@ -226,15 +455,15 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 		return singleContract(capability.VariantSelectedFile, fileScope, inspectRequirements,
 			capability.FeatureInspect, capability.GuaranteeReadOnly, localTolerance), true
 	case "insert_declaration", "insert_function", "insert_type", "insert_decl", "insert_case",
-		"replace_decl", "replace_body", "replace_construct", "remove_construct":
+		"replace_decl", "replace_body", "replace_construct", operationKeyRemoveConstruct:
 		editRequirements := append([]capability.Requirement{}, targetParse...)
 		editRequirements = append(editRequirements, capability.Requirement{Kind: capability.RequireExactSelector, Scope: fileScope})
-		if key != "remove_construct" {
+		if key != operationKeyRemoveConstruct {
 			editRequirements = append(editRequirements, capability.Requirement{Kind: capability.RequireSnippetParse, Scope: fileScope})
 		}
 		edit := contractVariant(capability.VariantSelectedFile, fileScope, editRequirements,
 			capability.FeatureASTEdit|capability.FeatureFormat, capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites, localTolerance)
-		if key != "remove_construct" {
+		if key != operationKeyRemoveConstruct {
 			return typedContract(edit), true
 		}
 		safeDelete := contractVariant(capability.VariantSelectedFile|capability.VariantSafeDelete, capability.ScopeActiveModule,
@@ -242,9 +471,9 @@ func goASTOperationContract(key string) (capability.OperationContract, bool) {
 			capability.FeatureASTEdit|capability.FeatureFormat, capability.GuaranteeASTEdit|capability.GuaranteeModuleProof|capability.GuaranteeAtomicWrites,
 			moduleProofFaultSupport())
 		return typedContract(edit, safeDelete), true
-	case "insert_construct":
+	case operationKeyInsertConstruct:
 		return goInsertConstructContract(), true
-	case "organize_imports":
+	case operationKeyOrganizeImports:
 		file := contractVariant(capability.VariantSelectedFile, fileScope,
 			append(targetParse, capability.Requirement{Kind: capability.RequireImportResolution, Scope: fileScope}),
 			capability.FeatureOrganizeImports|capability.FeatureFormat|capability.FeatureRepairImports,

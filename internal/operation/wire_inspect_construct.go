@@ -11,6 +11,8 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/backends"
+	"semedit/internal/javacst"
 )
 
 const (
@@ -96,6 +98,41 @@ func inspectConstructRun(ctx context.Context, cc CallContext, request InspectCon
 	}, nil
 }
 
+func inspectConstructRunJava(ctx context.Context, cc CallContext, request InspectConstructReq) (InspectConstructRes, error) {
+	project := effectiveProject(cc, request.Project)
+	file := resolveWorkPath(cc.WorkDir, request.File)
+	project.File = file
+	service := cc.Service
+	if service == nil {
+		service = backends.NewDefaultService()
+	}
+	inspection, err := service.Inspect(ctx, backend.InspectRequest{Project: project, Symbol: request.InFunction})
+	if err != nil {
+		return InspectConstructRes{}, err
+	}
+	if inspection == nil || len(inspection.Matches) != 1 {
+		return InspectConstructRes{}, fmt.Errorf("java construct owner %q must resolve to one method in %s", request.InFunction, displayWorkPath(cc.WorkDir, request.File))
+	}
+	method := inspection.Matches[0]
+	candidates, err := javacst.Candidates([]byte(method.Source), request.Kind, request.Discriminator)
+	if err != nil {
+		return InspectConstructRes{}, err
+	}
+	infos := make([]astedit.ConstructCandidateInfo, 0, len(candidates))
+	for _, candidate := range candidates {
+		infos = append(infos, astedit.ConstructCandidateInfo{ConstructPath: candidate.ConstructPath, Syntax: candidate.Syntax})
+	}
+	owner := method.QualifiedName
+	revision, err := javacst.SelectionRevision(owner, request.Kind, request.Discriminator, candidates)
+	if err != nil {
+		return InspectConstructRes{}, err
+	}
+	return InspectConstructRes{
+		File: displayWorkPath(cc.WorkDir, request.File), InFunction: owner, Kind: request.Kind,
+		Discriminator: request.Discriminator, Candidates: infos, SelectionRevision: revision,
+	}, nil
+}
+
 func formatInspectConstruct(result InspectConstructRes) (string, error) {
 	output, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
@@ -124,16 +161,16 @@ func inspectConstructDef() Def[InspectConstructReq, InspectConstructRes] {
 		Key: "inspect_construct", Summary: ("Use this tool instead of guessing nested construct selectors when current choices are unavailable after selection drift or a selector has multiple matches. Lists current candidates with canonical selector context, reusable construct_path values, and an opaque expected_selection_revision for the ordered current candidate list."),
 		Params: inspectConstructParams, Level: LevelFile, CLIName: "inspect-construct", MCPName: semanticInspectConstructToolName,
 		ReadOnly: true, Batchable: true, BufferedBatch: true, Parse: parseInspectConstruct, NormalizeInput: NormalizeConstructKindInput,
-		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, InspectConstructReq) (InspectConstructRes, error){backend.LanguageGo: inspectConstructRun},
+		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, InspectConstructReq) (InspectConstructRes, error){backend.LanguageGo: inspectConstructRun, backend.LanguageJava: inspectConstructRunJava},
 		Format:     formatInspectConstruct,
 		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", "kind": "if", wireDiscriminator: "err != nil", "language": "go"},
 		Output: &OperationOutputContract{ResultSchema: inspectConstructResultSchema(), Continuations: []OutputContinuation{
-			{Path: "result.file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName}},
-			{Path: "result.in_function", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName}},
+			{Path: "result.file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
+			{Path: "result.in_function", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
 			{Path: "result.kind", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName}},
-			{Path: "result.discriminator", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName}, Optional: true},
-			{Path: "result." + wireCandidates + "[]." + wireConstructPath, Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName}},
-			{Path: "result." + wireExpectedSelectionRevision, Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName}},
+			{Path: "result.discriminator", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}, Optional: true},
+			{Path: "result." + wireCandidates + "[]." + wireConstructPath, Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
+			{Path: "result." + wireExpectedSelectionRevision, Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
 		}},
 		ProjectOutput: func(result InspectConstructRes) (any, error) { return result, nil },
 	}
