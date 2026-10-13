@@ -46,7 +46,7 @@ func validateMoveConstructPlacement(opts MoveConstructOptions) error {
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
 func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	if sourcebuf.FromContext(ctx) == nil {
-		root, err := moveModuleRoot(filePath)
+		root, err := sourceBufferRoot(filePath)
 		if err != nil {
 			return "", fmt.Errorf("locate move module: %w", err)
 		}
@@ -722,39 +722,27 @@ func moveBuildConstraint(file *ast.File) string {
 
 func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (string, error) {
 	if sourcebuf.FromContext(ctx) != nil {
-		root, err := moveModuleRoot(filepath.Join(workingDir, "source.go"))
-		if err != nil {
-			return "", err
+		name, found, err := resolveBufferedMoveImportName(ctx, workingDir, importPath)
+		if err != nil || found {
+			return name, err
 		}
-		loaded, err := loadMovePackageScope(ctx, root, nil, packages.NeedName|packages.NeedFiles|packages.NeedModule|packages.NeedImports|packages.NeedDeps|packages.NeedEmbedFiles, []string{importPath})
-		if err != nil {
-			return "", err
-		}
-		var selected *packages.Package
-		for _, pkg := range loaded {
-			if pkg.PkgPath != importPath || pkg.ID != pkg.PkgPath {
-				continue
-			}
-			if selected != nil {
-				return "", fmt.Errorf("ambiguous package name for import %q", importPath)
-			}
-			selected = pkg
-		}
-		if selected == nil || selected.Name == "" || !token.IsIdentifier(selected.Name) {
-			return "", fmt.Errorf("cannot resolve package name for import %q", importPath)
-		}
-		if len(selected.Errors) != 0 {
-			return "", fmt.Errorf("cannot resolve package name for import %q: %s", importPath, selected.Errors[0].Msg)
-		}
-		return selected.Name, nil
 	}
 
+	args := []string{"list", "-mod=readonly", "-f", "{{.Name}}", importPath}
+	if _, found, err := findGoModuleRoot(filepath.Join(workingDir, "source.go"), "move module"); err != nil {
+		return "", err
+	} else if !found {
+		args = []string{"list", "-f", "{{.Name}}", importPath}
+	}
 	// #nosec G204 -- executable is fixed to go; importPath is one parsed import literal.
-	command := exec.CommandContext(ctx, "go", "list", "-mod=readonly", "-f", "{{.Name}}", importPath)
+	command := exec.CommandContext(ctx, "go", args...)
 	command.Dir = workingDir
 	environment, err := gocache.Environment(ctx, workingDir)
 	if err != nil {
 		return "", fmt.Errorf("configure Go state for package-name lookup: %w", err)
+	}
+	if len(args) == 4 {
+		environment = append(environment, "GO111MODULE=off")
 	}
 	command.Env = environment
 	output, err := command.Output()
@@ -766,6 +754,42 @@ func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (
 		return "", fmt.Errorf("go list returned an invalid package name %q for import %q; refusing move", name, importPath)
 	}
 	return name, nil
+}
+
+func resolveBufferedMoveImportName(ctx context.Context, workingDir, importPath string) (string, bool, error) {
+	root, found, err := findGoModuleRoot(filepath.Join(workingDir, "source.go"), "move module")
+	if err != nil || !found {
+		return "", found, err
+	}
+	loaded, err := loadMovePackageScope(ctx, root, nil, packages.NeedName|packages.NeedFiles|packages.NeedModule|packages.NeedImports|packages.NeedDeps|packages.NeedEmbedFiles, []string{importPath})
+	if err != nil {
+		return "", true, err
+	}
+	selected, err := selectMoveImportPackage(loaded, importPath)
+	if err != nil {
+		return "", true, err
+	}
+	return selected.Name, true, nil
+}
+
+func selectMoveImportPackage(loaded []*packages.Package, importPath string) (*packages.Package, error) {
+	var selected *packages.Package
+	for _, pkg := range loaded {
+		if pkg.PkgPath != importPath || pkg.ID != pkg.PkgPath {
+			continue
+		}
+		if selected != nil {
+			return nil, fmt.Errorf("ambiguous package name for import %q", importPath)
+		}
+		selected = pkg
+	}
+	if selected == nil || selected.Name == "" || !token.IsIdentifier(selected.Name) {
+		return nil, fmt.Errorf("cannot resolve package name for import %q", importPath)
+	}
+	if len(selected.Errors) != 0 {
+		return nil, fmt.Errorf("cannot resolve package name for import %q: %s", importPath, selected.Errors[0].Msg)
+	}
+	return selected, nil
 }
 
 func mergeMoveImports(destination, source *ast.File) error {

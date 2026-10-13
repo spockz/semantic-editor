@@ -1,0 +1,31 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_REMOVE_METHOD=1 SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+! exec semedit remove-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --kind field --symbol Widget.value --safe-delete
+stderr 'safe_delete refused'
+stderr 'JDT LS reference analysis was incomplete'
+! exec semedit remove-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --kind method --symbol Widget.run --safe-delete
+stderr 'safe_delete refused'
+stderr 'JDT LS reference analysis was incomplete'
+exec semedit remove-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --kind method --symbol Widget.run
+stdout 'Removed selected node'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  private int value;
+  /** Documentation for the removable method. */
+  private void run() { work(); }
+  void keep() {}
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  private int value;
+  void keep() {}
+}

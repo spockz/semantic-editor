@@ -1,0 +1,24 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_DOC_COMMENT=1
+exec semedit set-doc-comment --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --scope declaration --symbol Widget.run --comment 'Runs work.'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  /** Old documentation. */
+  void run() {}
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  /**
+   * Runs work.
+   */
+  void run() {}
+}

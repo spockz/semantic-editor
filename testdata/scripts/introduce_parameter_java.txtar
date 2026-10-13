@@ -1,0 +1,42 @@
+# Java introduce-parameter delegates signature/caller updates to JDT LS, then replaces the selected expression.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INTRODUCE_PARAMETER=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit introduce-parameter --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --symbol 'Service.send(int)' --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"enabled","type":"boolean"},"argument":"true"}]' --discriminator true
+cmp src/Service.java want/Service.java
+cmp src/Caller.java want/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Service.java --
+package sample;
+class Service {
+  void send(int id) {
+    audit(id, true);
+  }
+}
+-- src/Caller.java --
+package sample;
+class Caller {
+  void run(Service service) {
+    service.send(7);
+  }
+}
+
+-- want/Service.java --
+package sample;
+class Service {
+  void send(int id, boolean enabled) {
+    audit(id, enabled);
+  }
+}
+
+-- want/Caller.java --
+package sample;
+class Caller {
+  void run(Service service) {
+    service.send(7, true);
+  }
+}

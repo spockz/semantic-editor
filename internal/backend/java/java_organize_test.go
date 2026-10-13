@@ -25,6 +25,18 @@ func TestApplyJavaOrganizeImportsEdit(t *testing.T) {
 	}
 }
 
+func TestJavaWorkspaceDataPathAvoidsEclipseWorkspaceOverlap(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "project")
+	dataPath := javaWorkspaceDataPath(root, "maven-import")
+	if pathutil.PathWithin(root, dataPath) {
+		t.Fatalf("JDT LS data path %q overlaps project root %q", dataPath, root)
+	}
+	if filepath.Dir(dataPath) != filepath.Join(parent, ".scratch", "jdtls-data") {
+		t.Fatalf("JDT LS data path = %q, want sibling .scratch cache", dataPath)
+	}
+}
+
 func TestApplyJavaOrganizeImportsEditRejectsUnsafeActions(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "Thing.java")
 	for name, raw := range map[string]json.RawMessage{
@@ -100,6 +112,16 @@ func TestJavaProcessSessionDiagnosticsRetainHighestVersion(t *testing.T) {
 	session.recordDiagnostics("file:///selected.java", 2, []backend.Diagnostic{{Message: "stale"}})
 	got, err := session.WaitDiagnostics(context.Background(), "file:///selected.java", 4)
 	if err != nil || len(got) != 1 || got[0].Message != "final" {
+		t.Fatalf("diagnostics=%#v err=%v", got, err)
+	}
+}
+
+func TestJavaProcessSessionUsesLatestDocumentVersionForUnversionedDiagnostics(t *testing.T) {
+	session := &javaProcessSession{wake: make(chan struct{}, 1)}
+	session.recordDocumentVersion("file:///selected.java", 3)
+	session.recordDiagnostics("file:///selected.java", 0, []backend.Diagnostic{{Message: "current"}})
+	got, err := session.WaitDiagnostics(context.Background(), "file:///selected.java", 3)
+	if err != nil || len(got) != 1 || got[0].Message != "current" {
 		t.Fatalf("diagnostics=%#v err=%v", got, err)
 	}
 }

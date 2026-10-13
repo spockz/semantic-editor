@@ -1,0 +1,24 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+exec cp want/Widget.java expected.java
+exec semedit replace-decl --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget.run --source 'void run() { audit(); }'
+stdout 'Successfully replaced Java declaration'
+cmp src/Widget.java expected.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    work();
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run() { audit(); }
+}

@@ -16,7 +16,7 @@ import (
 )
 
 func prepareExtractionBuffer(ctx context.Context, file string) (context.Context, *sourcebuf.Buffer, bool, error) {
-	root, err := moveModuleRoot(file)
+	root, err := sourceBufferRoot(file)
 	if err != nil {
 		return nil, nil, false, fmt.Errorf("locate extraction module: %w", err)
 	}
@@ -49,8 +49,15 @@ func loadExtractionPackages(ctx context.Context, dir string, overlay map[string]
 		if err != nil {
 			return nil, fmt.Errorf("prepare extraction Go environment: %w", err)
 		}
+		buildFlags := []string{"-mod=readonly"}
+		if _, found, moduleErr := findGoModuleRoot(filepath.Join(dir, "semedit-module-probe.go"), "extraction module"); moduleErr != nil {
+			return nil, fmt.Errorf("locate extraction module: %w", moduleErr)
+		} else if !found {
+			buildFlags = nil
+			environment = append(environment, "GO111MODULE=off")
+		}
 		config := &packages.Config{
-			Context: ctx, Dir: dir, Env: environment, BuildFlags: []string{"-mod=readonly"}, Tests: tests, Overlay: current,
+			Context: ctx, Dir: dir, Env: environment, BuildFlags: buildFlags, Tests: tests, Overlay: current,
 			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax |
 				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps |
 				packages.NeedModule | packages.NeedEmbedFiles,

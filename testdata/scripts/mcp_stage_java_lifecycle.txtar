@@ -1,0 +1,36 @@
+# A staged Java mutation remains in the overlay until commit publishes it.
+env SEMEDIT_TEST_JAVA_CONSTRUCTS=1 SEMEDIT_TEST_JAVA_INSERT_FIELD=1 SEMEDIT_TEST_JAVA_SHARED_BATCH=1 SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+stdin input.json
+exec semedit mcp
+stdout '"stage_receipt"'
+stdout '"step_count":1'
+stdout '"status":"ok"'
+stdout '"published_files":1'
+cmp src/Widget.java .scratch/want/Widget.java
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_field","arguments":{"file":"src/Widget.java","language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls","import_maven":false,"symbol":"Widget.value","source":"private int value;","placement":"type_end"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_commit","arguments":{"trust_workspace":true}}}
+-- pom.xml --
+<project><modelVersion>4.0.0</modelVersion><groupId>sample</groupId><artifactId>fixture</artifactId><version>1</version></project>
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    work();
+  }
+}
+-- .scratch/want/Widget.java --
+package sample;
+class Widget {
+  private int value;
+  void run() {
+    work();
+  }
+}

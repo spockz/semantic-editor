@@ -61,10 +61,12 @@ func undoOutputSchema() *ValueSchema {
 
 func dependencyOutputSchema() *ValueSchema {
 	return new(outputObject(map[string]ValueSchema{
-		"status":  {Kind: SchemaString, Enum: []any{"added"}},
-		"package": outputString(),
-		"go_mod":  outputString(),
-	}, "status", "package", "go_mod"))
+		"status":               {Kind: SchemaString, Enum: []any{"added"}},
+		"package":              outputString(),
+		"go_mod":               outputString(),
+		operationKeyDependency: outputString(),
+		"poms":                 {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+	}, "status"))
 }
 
 func assertionModeOutputSchema() *ValueSchema {
@@ -116,8 +118,10 @@ func outlineOutputSchema() *ValueSchema {
 
 func workspaceOutlineOutputSchema() *ValueSchema {
 	module := outputObject(map[string]ValueSchema{
-		"path": outputString(), "module_path": outputString(), "go_version": outputString(), "is_root": {Kind: SchemaBoolean},
-	}, "path", "module_path", "is_root")
+		"path": outputString(), "module_path": outputString(), "go_version": outputString(),
+		"group_id": outputString(), "artifact_id": outputString(), "version": outputString(), "packaging": outputString(),
+		"is_root": {Kind: SchemaBoolean},
+	}, "path", "is_root")
 	pkg := outputObject(map[string]ValueSchema{
 		"path": outputString(), "name": outputString(), "synopsis": outputString(), "doc": outputString(),
 		"depth": {Kind: SchemaInteger}, "files_count": {Kind: SchemaInteger},
@@ -196,6 +200,9 @@ func projectUndoOutput(result UndoRes) (any, error) {
 }
 
 func projectDependencyOutput(result BuildDependencyRes) (any, error) {
+	if result.Dependency != "" {
+		return map[string]any{"status": "added", operationKeyDependency: result.Dependency, "poms": result.POMs}, nil
+	}
 	return map[string]any{"status": "added", "package": result.Package, "go_mod": result.GoMod}, nil
 }
 

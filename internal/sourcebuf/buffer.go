@@ -386,7 +386,7 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 		if err != nil {
 			return err
 		}
-		if canonical != absolute || !b.writable(canonical) || filepath.Ext(canonical) != ".go" || (state.info == nil && state.content == nil) {
+		if canonical != absolute || !b.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") || (state.info == nil && state.content == nil) {
 			return fmt.Errorf("invalid buffered output %q", change.Path)
 		}
 		if _, exists := pending[canonical]; exists {
@@ -541,7 +541,7 @@ func ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return bytes.Clone(state.content), nil
 }
 
-// CanonicalPath resolves an existing source path or an accepted buffered new Go source without creating parent directories.
+// CanonicalPath resolves an existing source path or an accepted buffered new Go or Java source without creating parent directories.
 func CanonicalPath(ctx context.Context, path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -573,7 +573,7 @@ func CanonicalPath(ctx context.Context, path string) (string, error) {
 	return "", fmt.Errorf("canonicalize buffered source path %q: %w", path, canonicalErr)
 }
 
-// WriteFile buffers existing Go sources during a batch and publishes directly otherwise.
+// WriteFile buffers supported Go or Java sources during a batch and publishes directly otherwise.
 func WriteFile(ctx context.Context, path string, data []byte) error {
 	return WriteFileChecked(ctx, path, data, nil)
 }
@@ -602,8 +602,8 @@ func WriteFileChecked(ctx context.Context, path string, data []byte, check func(
 	if err != nil {
 		return err
 	}
-	if !buffer.writable(canonical) || filepath.Ext(canonical) != ".go" || canonical != originalPath {
-		return fmt.Errorf("buffered output %q must be a Go file beneath the workspace without symlink aliases", path)
+	if !buffer.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") || canonical != originalPath {
+		return fmt.Errorf("buffered output %q must be supported source beneath the workspace without symlink aliases", path)
 	}
 	if state.info == nil && state.content == nil {
 		parents, err := buffer.captureNewFileParents(canonical)
@@ -858,8 +858,8 @@ func (b *Buffer) assertNewFileParents() error {
 				return fmt.Errorf("%w: new output parent %s changed", ErrConflict, directory)
 			}
 		}
-		if filepath.Ext(path) != ".go" {
-			return fmt.Errorf("new buffered output %s is not Go source", path)
+		if filepath.Ext(path) != ".go" && filepath.Ext(path) != ".java" {
+			return fmt.Errorf("new buffered output %s is not supported source", path)
 		}
 	}
 	return nil
@@ -958,7 +958,7 @@ func sourceSet(root string) (map[string]bool, error) {
 			}
 			return nil
 		}
-		if filepath.Ext(path) == ".go" {
+		if filepath.Ext(path) == ".go" || filepath.Ext(path) == ".java" {
 			files[path] = true
 		}
 		return nil

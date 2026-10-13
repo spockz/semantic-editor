@@ -260,7 +260,8 @@ func firstTxtarExampleFiles(files map[string]string, outputs []TxtarFileOutput) 
 		}
 	}
 	for name, content := range files {
-		if strings.HasSuffix(name, ".go") && !strings.HasPrefix(name, "want") {
+		ext := filepath.Ext(name)
+		if (ext == ".go" || ext == ".java" || ext == ".rs" || ext == ".scala" || ext == ".kt" || ext == ".hs" || ext == ".sh" || name == "Makefile") && !strings.HasPrefix(name, "want") {
 			return txtarFirstFiles{input: name, inputContent: content}
 		}
 	}

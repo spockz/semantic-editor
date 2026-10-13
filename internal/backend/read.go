@@ -104,8 +104,12 @@ type WorkspacePackage struct {
 // WorkspaceModule describes one module discovered in the workspace.
 type WorkspaceModule struct {
 	Path       string `json:"path"`
-	ModulePath string `json:"module_path"`
+	ModulePath string `json:"module_path,omitempty"`
 	GoVersion  string `json:"go_version,omitempty"`
+	GroupID    string `json:"group_id,omitempty"`
+	ArtifactID string `json:"artifact_id,omitempty"`
+	Version    string `json:"version,omitempty"`
+	Packaging  string `json:"packaging,omitempty"`
 	IsRoot     bool   `json:"is_root"`
 }
 

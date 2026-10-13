@@ -26,6 +26,7 @@ type ConstructKind string
 const (
 	ConstructFunction         ConstructKind = "function"
 	ConstructMethod           ConstructKind = "method"
+	ConstructConstructor      ConstructKind = "constructor"
 	ConstructType             ConstructKind = "type"
 	ConstructField            ConstructKind = "field"
 	ConstructConst            ConstructKind = "const"
@@ -94,16 +95,42 @@ const (
 	OperationRename Operation = "rename"
 	// OperationVerify formats and checks project diagnostics.
 	OperationVerify Operation = "verify"
+	// OperationOrganizeImports updates and organizes source imports.
+	OperationOrganizeImports Operation = "organize_imports"
+	// OperationAddBuildDependency updates the selected language's build manifest.
+	OperationAddBuildDependency Operation = "add_build_dependency"
 	// OperationInsertConstruct inserts one syntax construct.
 	OperationInsertConstruct Operation = "insert_construct"
 	// OperationReplaceConstruct replaces one selected syntax construct.
 	OperationReplaceConstruct Operation = "replace_construct"
+	// OperationReplaceBody replaces the statements inside one function or method body.
+	OperationReplaceBody Operation = "replace_body"
+	// OperationReplaceDecl replaces one selected declaration.
+	OperationReplaceDecl Operation = "replace_decl"
 	// OperationInspectConstruct inspects candidates for one nested replacement selector.
 	OperationInspectConstruct Operation = "inspect_construct"
 	// OperationRemoveConstruct removes one selected syntax construct.
 	OperationRemoveConstruct Operation = "remove_construct"
+	// OperationExtractVariable extracts one selected expression into a local.
+	OperationExtractVariable Operation = "extract_variable"
+	// OperationInlineVariable inlines one selected local declaration.
+	OperationInlineVariable Operation = "inline_variable"
+	// OperationInlineFunction inlines one selected Java invocation.
+	OperationInlineFunction Operation = "inline_function"
+	// OperationImplementContract generates missing methods for an implemented Java interface.
+	OperationImplementContract Operation = "implement_contract"
+	// OperationExtractFunction extracts selected statements into a method.
+	OperationExtractFunction Operation = "extract_function"
+	// OperationExtractConstant extracts one selected compile-time expression into a constant.
+	OperationExtractConstant Operation = "extract_constant"
 	// OperationMoveConstruct moves one existing syntax construct.
 	OperationMoveConstruct Operation = "move_construct"
+	// OperationChangeSignature updates a Java method signature and resolved call sites.
+	OperationChangeSignature Operation = "change_signature"
+	// OperationIntroduceParameter updates one Java method expression and its resolved call sites.
+	OperationIntroduceParameter Operation = "introduce_parameter"
+	// OperationIntroduceParameterObject replaces a Java parameter list with a value object.
+	OperationIntroduceParameterObject Operation = "introduce_parameter_object"
 	// CapabilityLookup is the lookup capability key.
 	CapabilityLookup = OperationLookup
 	// CapabilityRename is the rename capability key.
@@ -377,6 +404,7 @@ type RenameResult struct {
 	Revision                string        `json:"revision,omitempty"`
 	ApplicationState        string        `json:"application_state,omitempty"`
 	ContinuationUnavailable string        `json:"continuation_unavailable,omitempty"`
+	TargetFile              string        `json:"-"`
 	ProjectRoot             string        `json:"-"`
 }
 
@@ -404,6 +432,8 @@ type VerifyRequest struct {
 	Path               string
 	FormatSelectedFile bool
 	OrganizeImports    bool
+	AddImports         []string
+	RemoveImports      []string
 	CheckOnly          bool
 	GoPackagePatterns  []string
 }
@@ -592,6 +622,21 @@ func (s *Service) Verify(ctx context.Context, request VerifyRequest) (*VerifyRes
 		return nil, err
 	}
 	return &VerifyResult{Diagnostics: returnResult}, nil
+}
+
+// NotifyProjectConfigurationUpdate refreshes an already-running Java language-server project after manifest edits.
+func (s *Service) NotifyProjectConfigurationUpdate(ctx context.Context, project ProjectContext, changedPOMs []string) error {
+	b, err := s.backendFor(project, OperationAddBuildDependency)
+	if err != nil {
+		return err
+	}
+	notifier, ok := b.(interface {
+		NotifyProjectConfigurationUpdate(context.Context, ProjectContext, []string) error
+	})
+	if !ok {
+		return nil
+	}
+	return notifier.NotifyProjectConfigurationUpdate(ctx, project, changedPOMs)
 }
 
 // UTF16Length returns the number of UTF-16 code units in text.

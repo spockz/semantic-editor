@@ -31,7 +31,7 @@ var renameParams = []ParameterContract{
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Enable or disable trusted JDT LS Maven import; defaults on when a trusted workspace contains pom.xml and never runs Maven", Type: ParamBoolean},
 	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
 }
 
@@ -92,6 +92,14 @@ const (
 	sourceReplaceDeclSymbol            = "semantic_replace_decl.symbol"
 	sourceInsertConstructInFunction    = "semantic_insert_construct.in_function"
 	sourceInsertConstructDiscriminator = "semantic_insert_construct.discriminator"
+)
+
+const (
+	operationKeyOrganizeImports = "organize_imports"
+	operationKeyInsertConstruct = "insert_construct"
+	operationKeyRemoveConstruct = "remove_construct"
+	operationKeyDependency      = "dependency"
+	wireDeclaration             = "declaration"
 )
 
 const wireExpectedRevision = "expected_revision"
@@ -207,15 +215,15 @@ type VerifyRes = verification.Result
 type LanguageCoverage = verification.LanguageCoverage
 
 var verifyParams = []ParameterContract{
-	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
+	{Name: "path", CLIName: "path", JSONName: "path", Description: "Target Go file/directory or Java directory scope to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files during normalization", Type: ParamString, Default: "."},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
-	{Name: "format_selected_file", CLIName: "format-selected-file", JSONName: "format_selected_file", Description: "Apply JDT LS formatting to the selected Java file", Type: ParamBoolean, Default: false},
-	{Name: "organize_imports", CLIName: "organize-imports", JSONName: "organize_imports", Description: "Apply bounded JDT LS source.organizeImports to the selected Java file", Type: ParamBoolean, Default: false},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Enable or disable trusted JDT LS Maven import; defaults on when a trusted workspace contains pom.xml and never runs Maven", Type: ParamBoolean},
+	{Name: "format_selected_file", CLIName: "format-selected-file", JSONName: "format_selected_file", Description: "Apply JDT LS formatting to the selected Java file or every Java file beneath a selected directory", Type: ParamBoolean, Default: false},
+	{Name: operationKeyOrganizeImports, CLIName: "organize-imports", JSONName: operationKeyOrganizeImports, Description: "Apply JDT LS source.organizeImports to the selected Java file or every Java file beneath a selected directory", Type: ParamBoolean, Default: false},
 	{Name: "kotlin_bin", CLIName: "kotlin-bin", JSONName: "kotlin_bin", Description: "Path to a preinstalled fwcd/kotlin-language-server executable", Type: ParamString},
 	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable", Type: ParamString},
 	{Name: "make_bin", CLIName: "make-bin", JSONName: "make_bin", Description: "Path to a preinstalled make-ls executable", Type: ParamString},
@@ -278,6 +286,7 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 	if err != nil {
 		return RenameReq{}, err
 	}
+	_, importMavenSet := rawLookup(raw, wireImportMaven, "import-maven")
 	organizeImports, err := ParseBool(raw, wireAutoOrganizeImports, "", true)
 	if err != nil {
 		return RenameReq{}, err
@@ -287,7 +296,7 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 			File:           file,
 			Language:       backend.LanguageID(language),
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
+			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven, ImportMavenSet: importMavenSet},
 		},
 		Symbol:          backend.NormalizeRenameInput(symbol),
 		To:              backend.NormalizeRenameInput(to),
@@ -330,11 +339,12 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	_, importMavenSet := rawLookup(raw, wireImportMaven, "import-maven")
 	formatSelected, err := ParseBool(raw, "format_selected_file", "format-selected-file", false)
 	if err != nil {
 		return VerifyReq{}, err
 	}
-	organizeImports, err := ParseBool(raw, "organize_imports", "organize-imports", false)
+	organizeImports, err := ParseBool(raw, operationKeyOrganizeImports, "organize-imports", false)
 	if err != nil {
 		return VerifyReq{}, err
 	}
@@ -363,7 +373,7 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 			File:           path,
 			Language:       backend.LanguageID(language),
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
+			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven, ImportMavenSet: importMavenSet},
 			Kotlin:         backend.KotlinConfig{KotlinBin: kotlinBin},
 			Bash:           backend.BashConfig{BashBin: bashBin},
 			Make:           backend.MakeConfig{MakeBin: makeBin},
@@ -674,6 +684,7 @@ func renameOutputContract() *OperationOutputContract {
 		"status":                   {Kind: SchemaString, Enum: []any{"renamed"}},
 		wireApplicationState:       {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
 		"origin":                   identitySchema,
+		"target":                   {Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text}, Required: []string{"file"}},
 		"file":                     text,
 		"symbol":                   text,
 		wireExpectedRevision:       text,
@@ -724,6 +735,13 @@ func projectRenameOutput(result *backend.RenameResult) (any, error) {
 	}
 	if found {
 		projection["origin"] = origin.wireValue()
+	}
+	if result.TargetFile != "" {
+		targetFile := renameProjectRelativeFile(result.ProjectRoot, result.TargetFile)
+		if targetFile == "" {
+			return nil, fmt.Errorf("java rename target file is outside the workspace")
+		}
+		projection["target"] = map[string]any{"file": targetFile}
 	}
 	if result.ContinuationUnavailable != "" {
 		projection["continuation_unavailable"] = result.ContinuationUnavailable

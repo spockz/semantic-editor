@@ -73,6 +73,7 @@ type SemanticEditRes struct {
 	DiagnosticStatus string
 	Draft            EditReceiptDraft
 	Receipt          EditReceipt
+	javaService      *backend.Service
 }
 
 var inlineFunctionCallSiteSchema = ValueSchema{
@@ -86,12 +87,12 @@ var inlineFunctionCallSiteSchema = ValueSchema{
 	Required: []string{"file", "in_function", wireDiscriminator},
 }
 
-var inlineFunctionParams = []ParameterContract{
+var inlineFunctionParams = append([]ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file that declares the free function being inlined", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticInlineFunctionToolName + ".result.continuations[].file"}},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: unqualified free-function name to inline; the declaration is preserved", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticInlineFunctionToolName + ".result.continuations[].symbol"}},
 	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol, a resolved rename continuation, or an inline-function continuation for the callee file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticInlineFunctionToolName + ".result.continuations[].expected_revision", sourceRenameExpectedRevision}},
 	{Name: "call_site", CLIName: "call-site", JSONName: "call_site", Type: ParamObject, Description: "Selector: closed caller-selected current call site with file, in_function, and exact discriminator. Copy file, in_function, and optional expected_revision from same-named semantic_inspect_symbol continuation fields. The discriminator is the exact direct call expression visible in the inspected owner body.", Required: true, Role: RoleSelector, Schema: &inlineFunctionCallSiteSchema},
-}
+}, readProjectParams...)
 
 func parseInlineFunction(raw map[string]any) (InlineFunctionReq, error) {
 	var req InlineFunctionReq
@@ -133,13 +134,19 @@ func parseInlineFunction(raw map[string]any) (InlineFunctionReq, error) {
 		}
 		req.CallSite.ExpectedRevision = revision
 	}
-	if err := validateInlineCallSite(callSite); err != nil {
+	if req.Project, err = parseReadProject(raw, req.CallSite.File); err != nil {
+		return req, err
+	}
+	if req.Project.Language == "" {
+		req.Project.Language = backend.LanguageGo
+	}
+	if err := validateInlineCallSite(callSite, req.Project.Language); err != nil {
 		return req, err
 	}
 	return req, nil
 }
 
-func validateInlineCallSite(raw map[string]any) error {
+func validateInlineCallSite(raw map[string]any, language backend.LanguageID) error {
 	for name := range raw {
 		switch name {
 		case "file", "in_function", wireDiscriminator, wireExpectedRevision:
@@ -147,7 +154,12 @@ func validateInlineCallSite(raw map[string]any) error {
 			return fmt.Errorf("call_site has unknown field %q", name)
 		}
 	}
-	if !token.IsIdentifier(raw["in_function"].(string)) {
+	owner := raw["in_function"].(string)
+	if language == backend.LanguageJava {
+		if strings.TrimSpace(owner) != owner || owner == "" {
+			return fmt.Errorf("call_site.in_function must be an exact Java method selector")
+		}
+	} else if !token.IsIdentifier(owner) {
 		return fmt.Errorf("call_site.in_function must be an unqualified free-function name")
 	}
 	if strings.TrimSpace(raw[wireDiscriminator].(string)) != raw[wireDiscriminator].(string) || raw[wireDiscriminator].(string) == "" {
@@ -192,10 +204,10 @@ func inlineFunctionDef() Def[InlineFunctionReq, SemanticEditRes] {
 	receiptSchema := EditReceiptSchema()
 	return Def[InlineFunctionReq, SemanticEditRes]{
 		Key:     "inline_function",
-		Summary: "Use this tool instead of text editing to inline one direct zero-argument call to a same-package Go free function whose body is a single literal return. Select the callee with file and symbol, then select the current caller expression with the closed call_site object. The callee declaration remains in place. Arguments, methods, generic functions, nonliteral bodies, and unsupported scopes are refused before the caller changes.",
+		Summary: "Use this tool instead of text editing to inline one selected call site. Go supports one direct zero-argument call to a same-package free function whose body is a single literal return. Java resolves the selected method call in call_site and delegates one refactor.inline action to JDT LS. The callee declaration remains in place.",
 		Params:  inlineFunctionParams, Level: LevelFile, CLIName: "inline-function", MCPName: semanticInlineFunctionToolName,
 		Parse:    parseInlineFunction,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineFunctionReq) (SemanticEditRes, error){backend.LanguageGo: runInlineFunction},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineFunctionReq) (SemanticEditRes, error){backend.LanguageGo: runInlineFunction, backend.LanguageJava: runInlineFunctionJava},
 		Format: func(res SemanticEditRes) (string, error) {
 			text := "Successfully inlined one call. diagnostic_status: " + res.DiagnosticStatus + "."
 			if res.DiagnosticStatus == "changed" {
@@ -233,7 +245,11 @@ func semanticEditDraft(root, operation string, plan astedit.SemanticEditPlan, ta
 	return EditReceiptDraft{Operation: operation, Status: EditPersisted, PlannedChanges: planned, ReadSet: readSet, Continuations: targets}, nil
 }
 
-func finalizeInlineFunctionOutput(cc CallContext, _ InlineFunctionReq, res SemanticEditRes) (SemanticEditRes, error) {
+func finalizeInlineFunctionOutput(cc CallContext, req InlineFunctionReq, res SemanticEditRes) (SemanticEditRes, error) {
+	if req.Project.Language == backend.LanguageJava {
+		cc.Project = effectiveProject(cc, req.Project)
+		return finalizeJavaInlineFunctionOutput(cc, res)
+	}
 	return finalizeSemanticEditResult(cc, res)
 }
 

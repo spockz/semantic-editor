@@ -1,0 +1,15 @@
+# Java outlines accept a trusted directory scope and filter non-public declarations.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+exec semedit outline --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --path src --include-unexported=false
+stdout '"kind":\s*"directory"'
+stdout '"file":\s*"src/Widget.java"'
+stdout '"symbols":\s*\[\s*\]'
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+class Widget{}

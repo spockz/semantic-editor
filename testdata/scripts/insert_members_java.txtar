@@ -1,0 +1,22 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INSERT_FIELD=1 SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+exec semedit insert-field --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget.timeout --source 'private final int timeout;' --placement type_end
+stdout 'Inserted one Java field'
+cmp src/Widget.java want/Widget.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  int size;
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  int size;
+  private final int timeout;
+}

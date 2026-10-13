@@ -1382,8 +1382,8 @@ func assertConstructReplacementSchema(t *testing.T, byName map[string]map[string
 func assertConstructKindSchema(t *testing.T, byName map[string]map[string]any) {
 	t.Helper()
 	construct := byName["semantic_replace_construct"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["kind"].(map[string]any)
-	if got, want := construct["enum"], toAnySlice([]string{"loop", "if", "else", "case", "select", "defer", "function", "method", "type", "const", "var", "statement/expression"}); !reflect.DeepEqual(got, want) {
-		t.Errorf("Go construct enum = %#v, want %#v", got, want)
+	if got, want := construct["enum"], toAnySlice([]string{"loop", "if", "else", "case", "select", "defer", "function", "method", "type", "const", "var", "statement/expression", "switch", "try_catch", "try_with_resources", "synchronized", "element"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("construct enum = %#v, want %#v", got, want)
 	}
 }
 

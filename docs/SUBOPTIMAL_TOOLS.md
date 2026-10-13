@@ -24,6 +24,62 @@
 * Workaround: move the assignment after the declaration with a targeted source edit.
 * Root cause: the insertion request selected the start of the function instead of an anchor after the local declaration; the tool followed the selected anchor.
 
+## 2026-10-13: semantic verify was gated by workspace trust and reported unrelated diagnostics
+
+* Tool: `semantic_verify`.
+* Target: current worktree, `internal/backend/java`.
+* Observed failure: verification stopped before hooks because `golangci-lint` requires workspace trust; its gopls report also listed type errors in unrelated packages.
+* Workaround: `make check` was attempted as required, but the Go toolchain and dependencies could not be downloaded because network DNS resolution failed. Treat the reported diagnostics as unresolved until an authoritative build can run.
+* Root cause: verification hooks are trust-gated and the configured module diagnostics include unrelated baseline failures.
+
+## 2026-10-13: semantic field insertion requires one field per call
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/backend/java/java.go`, `javaProcessSession`.
+* Observed failure: a `kind: field` request containing two fields was rejected because the operation accepts exactly one named field; no source mutation occurred.
+* Workaround: issue one field insertion per call or use a targeted fallback when several fields form one atomic structural change.
+* Root cause: the field insertion schema only accepts a single field declaration.
+
+## 2026-10-13: Java method replacement required the symbol selector
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/backend/java/java.go`, `JavaBackend.withJavaDocumentLocked`.
+* Observed failure: a method replacement using only `in_function` was rejected because `symbol` is required for method constructs; no source mutation occurred.
+* Workaround: provide `symbol: "JavaBackend.withJavaDocumentLocked"`.
+* Root cause: the selected method construct schema requires its qualified symbol independently of the function nesting selector.
+
+## 2026-10-13: source-set predicate was absent from semantic construct candidates
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/sourcebuf/buffer.go`, `sourceSet`.
+* Observed failure: the resolver reported only the function's `err != nil` guard and could not select the existing file-extension predicate; no source mutation occurred.
+* Workaround: use the smallest targeted source edit for this filesystem-walk callback after confirming the current source.
+* Root cause: the construct locator omitted the callback's extension `if` from its candidate set.
+
+## 2026-10-13: receiver method selector needed its qualified name
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/sourcebuf/buffer.go`, `Buffer.assertNewFileParents`.
+* Observed failure: selecting `assertNewFileParents` without the receiver returned `symbol not found`; no source mutation occurred.
+* Workaround: qualify the selector as `Buffer.assertNewFileParents`.
+* Root cause: receiver methods require a receiver-qualified function selector.
+
+## 2026-10-13: Java source-buffer predicate replacement required an explicit construct path
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/sourcebuf/buffer.go`, `Buffer.Apply`.
+* Observed failure: supplying the complete `if` statement as `discriminator` did not match because the resolver selects `if` constructs by condition or short initializer; no source mutation occurred.
+* Workaround: use the exact `construct_path` returned in the diagnostic, then use targeted file editing only if the structural operation cannot express the predicate changes.
+* Root cause: the call used a statement-shaped discriminator for an `if` node whose selector contract is condition-based.
+
+## 2026-10-13: workspace outline MCP function is unavailable in the loaded inventory
+
+* Tool: `semantic_workspace_outline`.
+* Target: `/Users/alessandro/.codex-workspaces/worktrees/ios-eacc886f-014e-4376-a364-6838569b205f/semantic-editor`.
+* Observed failure: the loaded MCP tool object had no callable `semantic_workspace_outline` function and returned a `TypeError`; no source mutation occurred.
+* Workaround: use the repository workspace-outline CLI and inspect package boundaries with the available semantic outline and lookup tools.
+* Root cause: the loaded MCP inventory advertises Java semantic operations but does not expose the workspace-outline function in this session.
+
 ## 2026-10-12: workspace outline was unavailable from the loaded MCP inventory
 
 * Tool: `semantic_workspace_outline`.
@@ -6603,3 +6659,249 @@ The construct-path retry was rejected before mutation because `semantic_replace_
 * Observed failure: the unqualified lookup also reported no matching declaration.
 * Workaround: use a narrow text search to identify the response projection and apply the smallest source edit.
 * Root cause: the operation handler is registered under a generated or differently named symbol.
+
+## 2026-10-13: semantic insert construct rejected language selector
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/backend/java/java.go`, `prepareJavaWorkspaceEdits`.
+* Observed failure: the tool rejected the `language` argument because its mutation schema does not include that parameter.
+* Workaround: omit `language` and let the selected Go file determine the backend on retry.
+* Root cause: the shared tool inventory documents language selection for read operations, but mutation calls infer their backend from the selected file and reject the extra argument.
+
+## 2026-10-13: semantic insert construct rejected language argument
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/javacst/locator.go`.
+* Observed failure: the call was rejected because `language` is not an accepted mutation parameter.
+* Workaround: retry using the selected Go source file and only the operation's supported arguments; no source mutation occurred on the failed call.
+* Root cause: mutation backend selection is inferred from the target file, unlike read-operation language selection.
+
+## 2026-10-13: semantic replace construct rejected multi-statement replacement
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_engine_constructs.go`, `parseInsertConstruct`.
+* Observed failure: the replacement was rejected because it contained more than one top-level statement.
+* Workaround: retry as one `if` statement with chained `else if` branches; no source mutation occurred on the failed call.
+* Root cause: this construct replacement endpoint accepts exactly one statement for statement/expression replacements.
+
+## 2026-10-13: semantic insert construct rejected in_declaration selector
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_engine_constructs.go`, `insertConstructDef` handler map.
+* Observed failure: the call was rejected because the live accepted-parameter list omits `in_declaration`, although the published tool description documents it.
+* Workaround: replace the one selected map expression to add the Java handler; no source mutation occurred on the failed call.
+* Root cause: the running operation schema and its description are inconsistent for keyed-element insertion.
+
+## 2026-10-13: semantic replace construct could not select handler map expression
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_engine_constructs.go`, `insertConstructDef` handler map.
+* Observed failure: the map expression was absent from the tool's statement/expression candidate set; the diagnostic exposed only the containing return statement and nested selectable expressions.
+* Workaround: use the containing function body as the semantic replacement unit and preserve its existing return contract while adding the handler entry.
+* Root cause: the current Go construct locator does not resolve the typed handler-map expression as a direct replacement selector.
+
+## 2026-10-13: semantic batch verification required workspace trust
+
+* Tool: `semantic_batch` with child `semantic_replace_body`.
+* Target: `internal/operation/wire_engine_constructs.go`, `insertConstructDef`.
+* Observed failure: batch verification stopped because the configured `golangci-lint` hook requires `trust_workspace: true`.
+* Workaround: inspect the target to determine whether the child edit was applied, then retry with workspace trust after confirming the exact scoped change.
+* Root cause: the semantic batch ran configured workspace verification without explicit trust.
+
+## 2026-10-13: semantic insert construct did not match validator anchor
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_engine_constructs.go`, `parseInsertConstruct`.
+* Observed failure: the before-anchor selector matched only the start of an `if` statement and was rejected as not found.
+* Workaround: retry with the complete statement source as the anchor; no source mutation occurred on the failed call.
+* Root cause: this insertion API requires the full anchor text for statement selection.
+
+## 2026-10-13: semantic batch golangci-lint hook failed
+
+* Tool: `semantic_batch` with child `semantic_replace_body`.
+* Target: `internal/javacst/locator.go`, `InsertIntoMethod`.
+* Observed failure: the child edit completed, but the configured `golangci-lint` verification hook exited with status 3.
+* Workaround: inspect the applied body and run focused formatting, tests, and lint diagnostics for the touched package.
+* Root cause: the workspace lint hook returned a nonzero status during semantic batch verification; the failure output did not yet identify a source diagnostic.
+
+## 2026-10-13: semantic replace construct could not select a Go loop
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/javacst/locator.go`, `ReplaceMethodBody`.
+* Observed failure: the `statement/expression` selector did not resolve the surrounding Go `for` loop used to infer body indentation.
+* Workaround: replace the containing `if` statement as one unit and express first-child selection with an `if` guard, avoiding the nested loop selector; no source mutation occurred on the failed call.
+* Root cause: the construct locator did not expose the helper loop through the requested statement/expression selector.
+
+## 2026-10-13: semantic inspect symbol was given the wrong source file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/backend/backend.go`, `ReferencesRequest`.
+* Observed failure: the requested symbol was not found in the selected file; no source mutation occurred.
+* Workaround: locate the declaration in the backend outline or use a selected file that owns the request type.
+* Root cause: the caller guessed the declaration's file without checking the backend package outline first.
+
+## 2026-10-13: semantic inspect symbol guessed the Java configuration file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/backend/backend.go`, `JavaConfig`.
+* Observed failure: the requested symbol was not found in the selected file; no source mutation occurred.
+* Workaround: locate the declaration with `rg` and select `internal/backend/java_contract.go`.
+* Root cause: `JavaConfig` is declared in the language-specific backend contract file, not `backend.go`.
+
+## 2026-10-13: semantic inspect symbol guessed the fake-Java test file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `main_test.go`, `runFakeJava`.
+* Observed failure: the requested helper was not found in the selected file; no source mutation occurred.
+* Workaround: locate the helper with `rg` and inspect its actual owning test file.
+* Root cause: the caller assumed the helper lived in the repository-root test file.
+
+## 2026-10-13: semantic inspect symbol guessed read result declarations
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/backend/read.go`, `LookupResult` and `LookupRequest`.
+* Observed failure: neither symbol is declared in the selected file; no source mutation occurred.
+* Workaround: locate declarations with `rg` and inspect the owning backend file.
+* Root cause: lookup result/request contracts are declared in `internal/backend/backend.go`.
+
+## 2026-10-13: semantic inspect symbol requested a nonexistent lookup request type
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/backend/backend.go`, `LookupRequest`.
+* Observed failure: no type with that name exists; no source mutation occurred.
+* Workaround: use the concrete `JavaBackend.Lookup(ctx, project, query)` signature.
+* Root cause: the adapter accepts a query string directly rather than a `LookupRequest` structure.
+
+## 2026-10-13: semantic outline selected a nonexistent operation file
+
+* Tool: `semantic_outline`.
+* Target: `internal/operation/wire_replace_decl.go`.
+* Observed failure: the selected path does not exist; no source mutation occurred.
+* Workaround: locate the operation implementation with `rg --files` and outline its actual file.
+* Root cause: the caller guessed the filename instead of checking the existing operation layout.
+
+## 2026-10-13: semantic replace construct rejected a language selector
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/stage_output.go`, `StageOutputContinuations`.
+* Observed failure: the operation rejected the `language` parameter because its schema supports no language selector; no source mutation occurred.
+* Workaround: update the single function with a targeted source patch after verifying its current declaration.
+* Root cause: Go semantic operations infer the language from the selected workspace and do not accept the external-backend `language` parameter.
+
+## 2026-10-13: semantic inspect symbol guessed a stage manager method
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/mcp/staging.go`, `Apply`.
+* Observed failure: no symbol named `Apply` exists in the selected file; no source mutation occurred.
+* Workaround: locate the stage runtime method names with `rg` before inspecting a declaration.
+* Root cause: the caller guessed a generic method name without consulting the file outline.
+
+## 2026-10-13: semantic inspect symbol selected the wrong batch file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/mcp/batch.go`, `normalizeBufferedBatch`.
+* Observed failure: the requested symbol was not found in that file; no source mutation occurred.
+* Workaround: locate the method in the MCP package before inspecting its declaration.
+* Root cause: the caller inferred the implementation file from the subsystem name rather than searching for the method.
+
+## 2026-10-13: semantic replace construct used a stale statement selector
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/backend/java/java.go`, `prepareJavaWorkspaceEdits`.
+* Observed failure: the exact statement selector was not found; no source mutation occurred. The diagnostic showed that the statement remained at line 1068 after the prior inspection.
+* Workaround: use a narrow source patch against the current exact statement after recording the failure.
+* Root cause: the selector text was copied from an earlier, truncated read and did not reflect the current source location and construct coordinates.
+
+## 2026-10-13: semantic replace construct rejected an unsupported language parameter
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/backend/java/codeactions_test.go`, `TestPrepareJavaChangeSignatureEditUsesJDTRefactoringContract`.
+* Observed failure: the operation rejected `language` as an unknown parameter before making a source mutation.
+* Workaround: use a targeted source patch after confirming the exact test assertion.
+* Root cause: the Go semantic operation infers the language from the selected source and does not expose a `language` parameter.
+
+## 2026-10-13: semantic find references exposed an incomplete Java CST helper
+
+* Tool: `semantic_find_references`.
+* Target: `internal/javacst/parameter_object.go`.
+* Observed failure: Go package loading failed because `applySourceSpans` referred to undefined `javaEditSpan`; no source mutation occurred.
+* Workaround: inspect and repair the incomplete Java parameter-object helper before retrying semantic navigation.
+* Root cause: an unfinished helper edit used a span type that was never declared in the file.
+
+## 2026-10-13: semantic insert construct received multiple Java request fields
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/backend/codeaction.go`, `CodeActionRequest`.
+* Observed failure: the tool rejected three fields in one insertion with `field source must contain exactly one named field`; no source mutation occurred.
+* Workaround: issue one structural insertion per field, then add the named helper types separately.
+* Root cause: the field insertion contract accepts exactly one named field per call.
+
+## 2026-10-13: semantic replace construct did not match nested removal guard
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_remove.go`, `parseRemove`.
+* Observed failure: the operation rejected the full `if` statement as a discriminator and returned candidate path `16.0.0`; no source mutation occurred.
+* Workaround: retry with the reported construct path and current file revision, or use a targeted source patch if that selector remains ambiguous.
+* Root cause: the Go construct selector matches an `if` by its condition or short initializer, not by the full statement body.
+
+## 2026-10-13: semantic replace construct did not expose nested Java safe-delete guard
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_remove.go`, `runRemoveJava`.
+* Observed failure: the operation could not select the nested `if req.SafeDelete` and listed only the function's top-level `if` candidates; no source mutation occurred.
+* Workaround: inspect the current declaration and use a targeted source patch for the nested preflight block.
+* Root cause: the Go construct selector did not enumerate an `if` nested inside the Java declaration-kind branch.
+
+## 2026-10-13: Java move statement insertion rejected a compound snippet
+
+* Tool: `semantic_insert_construct`
+* Target: `internal/operation/wire_engine_mutations.go`, `runMoveConstructJava`
+* Observed failure: inserting the classification preflight returned `expected exactly one statement` because the snippet contained a declaration, switch, and nested guards.
+* Workaround: no source fallback has been applied yet; retry with one statement per insertion or replace the containing function if the semantic selector cannot express the needed sequence.
+* Root cause: statement insertion validates the supplied snippet as exactly one statement.
+
+The same selector also rejected a `sourcebuf.ReadFile` declaration followed by its error guard, confirming that each insertion call must carry one top-level statement. Use separate calls for the declaration and guard.
+
+A one-statement retry then reported the request anchor was absent. The failed multi-statement plan may have changed the selector-visible statement shape despite its error response; re-inspect the function before any further edit. This is logged as a selector-state uncertainty, not assumed to be a no-op.
+
+The code-action resource-publish insertion also failed to match `staged = false` inside `JavaBackend.ApplyCodeAction`. The selector did not expose this nested statement as an anchor; re-inspect and use a supported enclosing construct or a targeted patch.
+
+The Java move result-field replacement was ambiguous for the expression `destinationPath`; the tool returned four candidate construct paths. No edit was applied. Retry with the exact candidate path for `DestinationFile`, then separately target the display and detail fields.
+
+The insertion of a Java top-level-move branch into `fakeJavaMove` could not find the supplied statement anchor. No edit was applied. Re-inspect the declaration and use a selector supported by the current source shape, or apply a targeted patch. The Go selector matches the statement text differently than the full `if` statement header passed as discriminator.
+
+A retry using only the conditional expression as the anchor also failed with `statement anchor not found`; no source mutation occurred. The standalone text did not match the selector's normalized anchor representation, so the fixture server needs a narrow manual patch.
+
+`semantic_replace_construct` could not select the `moveResult` short-declaration binding in the newly inserted integration assertion and returned a long list of statement/expression candidates. No source mutation occurred. Use a targeted edit to replace that unused binding with `_`; the current selector does not expose short-declaration names as replaceable expression nodes.
+
+A follow-up patch for the real-JDT-LS move test did not match because the semantic insertion formatter collapsed the `Dispatch` map into a different layout than expected. No source mutation occurred. Re-read the formatted lines and retry with the current shape.
+
+A patch to move the real integration fixture within one Maven module did not match the Go fixture-map entry because its source string is escaped differently than expected. No source mutation occurred. Re-read the exact entry and retry surgically.
+
+`semantic_inspect_symbol` could not resolve `NewCallContext` in `internal/operation/operation.go`; the declaration is defined in another operation file. No source mutation occurred. Locate the declaration with `semantic_lookup` before further inspection.
+
+The attempt to insert a fail-closed check in `JavaBackend.ApplyCodeAction` could not match the resource-rename conditional. No source mutation occurred. The selector does not expose the nested block as an insertion anchor; inspect the whole method and use a targeted patch if needed.
+
+The attempt to insert a standalone Java move branch in `moveConstructDef` could not match the nested handler's `runBufferedEdit` call. No source mutation occurred. The construct selector does not descend into the anonymous handler closure; apply the small dispatch change directly.
+
+The attempt to replace the `moveResource` parameter block was ambiguous: the condition occurs at three sites in `JavaBackend.ApplyCodeAction`. No source mutation occurred. Retry with the candidate at line 161 (`construct_path: 36.0.1.e0`) to update the request branch only.
+
+Retrying the move request branch with only its candidate path was rejected because `semantic_replace_construct` also requires a discriminator. No source mutation occurred. The function exposes only candidate-path replacement guidance for this construct, so use the smallest targeted patch.
+
+The path-specific retry selected the conditional expression rather than its enclosing `if` and rejected the statement snippet as an expression. No source mutation occurred. Apply a narrow patch to the complete block instead of using the expression selector.
+
+A follow-up semantic expression replacement removed the undefined helper call but left the old two-value short declaration, introducing an assignment-mismatch diagnostic. The expression selector did not encompass its binding statement. Replace the entire temporary destination lookup block with the original direct URI assignment using a narrow patch.
+
+`semantic_inspect_symbol` could not resolve `FinalizeEditReceipt` in `wire_engine.go`; the symbol is declared in another operation file. No source mutation occurred. Use `semantic_lookup` to find its owning file before inspection.
+
+A patch to normalize trailing blank lines in `move_construct_java_top_level.txtar` did not match the fixture's actual newline count. No source mutation occurred. Read the current fixture and make an exact hunk adjustment.
+
+A second hunk for the same txtar newline cleanup also failed to match the blank-line count. No source mutation occurred. Recreate the fixture file as one complete, exact patch rather than relying on whitespace-sensitive context.
+
+`semantic_replace_construct` could not disambiguate the four `"moveResource"` literals in `JavaBackend.ApplyCodeAction` and returned candidate construct paths. No source mutation occurred. Use those exact candidates for separate replacements or apply a narrow patch. The selector correctly refused to guess among repeated literals.
+
+`semantic_inspect_symbol` was called with `language: "java"` for the Go source file `internal/backend/java/codeactions.go` and rejected the request because Java was not detected in the active workspace. No source mutation occurred. Retry with `language: "go"`; the tool requires the file's language, not the directory's backend name.
+
+`semantic_inspect_symbol` could not find `publishJavaResourceRename` or `prepareJavaWorkspaceEdits` in `internal/backend/java/codeactions.go`. No source mutation occurred. The symbols are shared backend helpers in another file; locate them with `semantic_lookup` before inspection.
+
+`semantic_inspect_symbol` could not resolve `JavaBackend.startJavaSessionLocked` in `internal/backend/java/java.go`. No source mutation occurred. The session initializer is named differently; use `semantic_lookup` to find the actual method before inspection.

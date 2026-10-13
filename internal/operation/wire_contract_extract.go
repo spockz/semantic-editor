@@ -32,12 +32,16 @@ func runExtractInterface(ctx context.Context, cc CallContext, request extractInt
 
 func extractInterfaceDef() Def[extractInterfaceRequest, contractOutput] {
 	return Def[extractInterfaceRequest, contractOutput]{
-		Key: "extract_interface", Summary: "Use this tool instead of reconstructing method signatures to create a Go interface from exact selected direct methods. Choose a new interface symbol; in_type and typed members identify its concrete source and methods. destination_file defaults to file and must already exist in the same package. Copy result.contract and result.contract_file to semantic_implement_contract.contract and contract_file when those aliases accompany the finalized live interface continuation. Buffered working results omit the finalized aliases; batch children use static parameters. Use live receipt continuations for later inspect or rename calls. Generated declarations are type-checked against the current source overlay before one apply; mutable local replacement modules are unsupported, while versioned replacements remain supported.",
+		Key: "extract_interface", Summary: "Use this tool instead of reconstructing method signatures to create an interface from exact selected direct methods. Go type-checks the generated declaration and supports current-overlay proof. Java selects public instance methods, appends a package-private interface to the concrete type file, adds implements, then formats and verifies through JDT LS. Copy result.contract and result.contract_file to semantic_implement_contract.contract and contract_file. Go mutable local replacement modules are unsupported; versioned replacements remain supported.",
 		Params: extractInterfaceParams, Level: LevelSymbol, CLIName: "extract-interface", MCPName: "semantic_extract_interface",
-		Parse: parseExtractInterfaceRequest, Handlers: map[backend.LanguageID]func(context.Context, CallContext, extractInterfaceRequest) (contractOutput, error){backend.LanguageGo: runExtractInterface},
+		Parse: parseExtractInterfaceRequest, Handlers: map[backend.LanguageID]func(context.Context, CallContext, extractInterfaceRequest) (contractOutput, error){backend.LanguageGo: runExtractInterface, backend.LanguageJava: runExtractInterfaceJava},
 		Format: formatContractOutput, Output: extractInterfaceOutputContract(),
-		FinalizeOutput: func(cc CallContext, _ extractInterfaceRequest, result contractOutput) (contractOutput, error) {
+		FinalizeOutput: func(cc CallContext, req extractInterfaceRequest, result contractOutput) (contractOutput, error) {
 			result.Operation = "semantic_extract_interface"
+			cc.Project = effectiveProject(cc, req.Project)
+			if req.Project.Language == backend.LanguageJava {
+				return finalizeJavaExtractInterfaceOutput(cc, result)
+			}
 			finalized, err := finalizeContractOutput(cc, nil, result)
 			if err != nil {
 				return contractOutput{}, err

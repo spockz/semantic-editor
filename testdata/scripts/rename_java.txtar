@@ -1,6 +1,6 @@
-# Java rename is file-scoped and uses the deterministic JDT LS stand-in.
+# Java rename returns a resolved continuation after the fake JDT LS publishes diagnostics.
 exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget --to Gadget
-stdout 'Final continuation unavailable:'
+stdout 'Successfully renamed Gadget.'
 exec cat src/Widget.java
 stdout 'class Gadget {}'
 cmp src/Widget.java want.java

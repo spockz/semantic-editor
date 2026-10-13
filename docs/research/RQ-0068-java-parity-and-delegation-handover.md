@@ -1,7 +1,7 @@
 <!-- WHY: Provides the complete implementation handover, delegation protocols, example Java project specifications, and testing contracts to bring Java support to parity with Go. -->
 # RQ-0068: Java Parity and JDT LS Delegation Implementation Handover
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Java Backend & Refactoring Handover
 * **Date**: 2026-10-13
 
@@ -143,7 +143,7 @@ Workers execute in isolated `.scratch/worktrees/java-*` checkouts and integrate 
 2. **Inlining (`inline_variable`, `inline_function`)**:
    * Resolve the variable or method declaration via JDT LS `documentSymbol` / `internal/javacst`, request `textDocument/codeAction` with `only: ["refactor.inline"]`, validate preimages across all affected files, and apply to `sourcebuf.Buffer`.
 3. **Contracts & Signatures (`implement_contract`, `extract_interface`, `change_signature`, `introduce_parameter`, `introduce_parameter_object`, `move_construct`)**:
-   * `implement_contract`: Ensure `implements <Interface>` is present on `in_type` in the buffer, query JDT LS `textDocument/codeAction` (`source.overrideMethods` / unimplemented-methods `quickfix`), and apply the generated `@Override` method stubs.
+   * `implement_contract`: Ensure `implements <Interface>` is present on `in_type` in the buffer, then use JDT LS `java/listOverridableMethods` and `java/addOverridableMethods` to select and generate the unimplemented methods. The `source.overrideMethods` action opens an interactive method picker and is not suitable for this deterministic operation.
    * `extract_interface`: Inspect selected public methods on `in_type` via JDT LS `documentSymbol`, synthesize the interface declaration, add `implements <Interface>` to `in_type`, and verify via JDT LS diagnostics.
    * `change_signature`, `introduce_parameter`, `introduce_parameter_object`: Use JDT LS `refactor.changeSignature` command or resolve all callers via `textDocument/references`, rewrite call sites and declaration signature in `sourcebuf.Buffer`, and verify zero introduced JDT LS errors across the workspace overlay.
    * `move_construct`: Move top-level or static declarations between files/packages, updating `package` and `import` statements across all `textDocument/references` callers in `sourcebuf.Buffer`.
@@ -187,8 +187,8 @@ Every Java operation must be verified at three levels before completion:
      }
      ```
 
-2. **Extending `runFakeJava` in `main_test.go`**:
-   * Extend the deterministic JDT LS test stand-in (`runFakeJava` in [`main_test.go`](../../main_test.go)) to handle `textDocument/references`, multi-file `textDocument/rename` (including `RenameFile` for public classes), `textDocument/codeAction` (`refactor.extract.*`, `refactor.inline.*`, `source.overrideMethods`), and `workspace/symbol` so `make check` runs all Java `.txtar` scripts hermetically in milliseconds.
+2. **Extending `runFakeJava` in `language_txtar_test.go`**:
+   * Extend the deterministic JDT LS test stand-in (`runFakeJava` in [`language_txtar_test.go`](../../language_txtar_test.go)) to handle `textDocument/references`, multi-file `textDocument/rename` (including `RenameFile` for public classes), `textDocument/codeAction` (`refactor.extract.*`, `refactor.inline.*`, `source.overrideMethods`), and `workspace/symbol` so `make check` runs all Java `.txtar` scripts hermetically in milliseconds.
 3. **Required `testdata/scripts/*_java.txtar` Suite**:
    * `workspace_outline_java.txtar`: Multi-module Maven reactor with `core/pom.xml`, `api/pom.xml`, and `package-info.java` synopses.
    * `outline_java_directory.txtar`: Directory-scoped package outline with `--include-unexported=false`.
@@ -199,9 +199,9 @@ Every Java operation must be verified at three levels before completion:
    * `scaffold_file_java.txtar`: Inferring `package com.example.billing;` from sibling `.java` files.
    * `insert_members_java.txtar`: Inserting fields, constructors, and methods into a Java class with `public` / `protected` / `package-private` / `private` section ordering.
    * `replace_body_java.txtar` & `replace_decl_java.txtar`: Replacing overloaded method bodies and field declarations.
-   * `construct_lifecycle_java.txtar`: `inspect-construct`, `insert-construct`, `replace-construct`, and `insert-case` on Java `loop`, `switch`, `try_with_resources`, and `element`.
+   * `inspect_construct_java.txtar`, `insert_construct_java.txtar`, `insert_construct_java_loop.txtar`, `insert_construct_java_element.txtar`, `replace_construct_java.txtar`, and `insert_case_java.txtar`: Cover Java method-local constructs and collection/array initializer element appends with the shared inspect/edit selectors.
    * `remove_construct_java_safe_delete.txtar`: Removing unused private methods with `--safe-delete` and refusing deletion when `textDocument/references` reports active callers.
-   * `extract_java.txtar` & `inline_java.txtar`: `extract-function`, `extract-variable`, `extract-constant`, `inline-variable`, and `inline-function` delegated through JDT LS code actions + chained rename.
+   * `extract_function_java.txtar`, `extract_variable_java.txtar`, `extract_constant_java.txtar`, `inline_variable_java.txtar`, and `inline_function_java.txtar`: Delegate extraction and inlining through JDT LS code actions plus chained rename.
    * `implement_contract_java.txtar` & `change_signature_java.txtar`: Generating `@Override` stubs for a Java interface and updating method signatures across callers.
    * `add_build_dependency_java_reactor.txtar`: Adding a managed dependency (version omitted in child `pom.xml`) and a new dependency (version registered in root `<dependencyManagement>`, versionless entry in child `pom.xml`).
    * `mcp_batch_java_shared_buffers.txtar` & `mcp_stage_java_lifecycle.txtar`: Multi-step MCP batch and stage/commit lifecycle on a Java project.
@@ -297,13 +297,17 @@ acme-ledger/
            this.auditSink = auditSink;
        }
 
-       public void post(LedgerEntry entry) {
+       void post(LedgerEntry entry) {
            post(entry, true);
        }
 
-       public void post(LedgerEntry entry, boolean notifyAudit) {
-           if (entry.amount().cents() <= 0) {
+       void post(LedgerEntry entry, boolean notifyAudit) {
+           long cents = entry.amount().cents();
+           if (cents <= 0) {
                throw new IllegalArgumentException("amount must be positive");
+           }
+           if (cents > 1000) {
+               throw new IllegalArgumentException("amount exceeds posting limit");
            }
            entries.add(entry);
            if (notifyAudit) {
@@ -329,9 +333,9 @@ acme-ledger/
 
 1. **Workspace & Package Orientation**: Run `semantic_workspace_outline` on `acme-ledger/`; assert both `ledger-domain` and `ledger-service` modules and both `package-info.java` synopses return in depth order.
 2. **Overload Inspection & Reference Discovery**: Run `semantic_lookup` on `LedgerService.post` (asserting 2 overload candidates: `LedgerService.post(LedgerEntry)` and `LedgerService.post(LedgerEntry, boolean)`), then run `semantic_find_references` on `LedgerService.post(LedgerEntry, boolean)` and `Money.cents`.
-3. **Contract Implementation**: Run `semantic_implement_contract` on `InMemoryAuditSink` for `AuditSink`; assert JDT LS generates `@Override public void record(LedgerEntry entry)`.
-4. **Sub-Method Construct & Element Editing**: Run `semantic_inspect_construct` (`kind: "loop"`, `in_function: "LedgerService.netBalanceCents"`), `semantic_insert_construct` (`kind: "element"`, `in_declaration: "LedgerService.limits"`, `source: "\"MONTHLY\", 5000"`), and `semantic_replace_body` on `InMemoryAuditSink.record`.
-5. **CodeAction Extraction + Chained Rename**: Run `semantic_extract_variable` in `LedgerService.post(LedgerEntry, boolean)` with `discriminator: "entry.amount().cents()"`, `symbol: "amountCents"`, and `semantic_extract_constant` with `discriminator: "1000"`, `symbol: "DEFAULT_DAILY_LIMIT"`.
+3. **Contract Implementation**: Run `semantic_implement_contract` on `InMemoryAuditSink` for `AuditSink`; assert JDT LS generates `@Override public void record(LedgerEntry entry)`, then use `semantic_replace_body` on that method.
+4. **Sub-Method Construct & Element Editing**: Run `semantic_inspect_construct` (`kind: "loop"`, `in_function: "LedgerService.netBalanceCents"`) and `semantic_insert_construct` (`kind: "element"`, `in_declaration: "LedgerService.limits"`, `source: "\"MONTHLY\", 5000"`).
+5. **CodeAction Extraction + Chained Rename**: Run `semantic_extract_variable` in `LedgerService.post(LedgerEntry, boolean)` with `discriminator: "entry.amount().cents()"`, `symbol: "amountCents"`; run `semantic_extract_constant` with `discriminator: "1000"`, `symbol: "MAX_POSTING_CENTS"`; then run `semantic_introduce_parameter_object` for the same-package method and verify both main and test callers preserve argument order.
 6. **Cross-Module Rename & Standalone Public Class Rename**:
    * Rename `AuditSink.record` $\to$ `AuditSink.append` and assert `AuditSink.java`, `LedgerService.java`, and `InMemoryAuditSink.java` update atomically in a single persistent JDT LS session with `net_delta: 0` diagnostics.
    * Rename `EntryType` $\to$ `PostingKind` and assert `EntryType.java` renames on disk to `PostingKind.java` while updating imports across `ledger-domain` and `ledger-service`.
@@ -340,6 +344,20 @@ acme-ledger/
    * Run `semantic_add_build_dependency` on `ledger-service/pom.xml` with `com.google.guava:guava:33.0.0-jre`; assert root `pom.xml` `<dependencyManagement>` receives `<version>33.0.0-jre</version>` and `ledger-service/pom.xml` receives versionless `<dependency>`.
 
 #### Commands to Execute Tests
+
+Implementation and verification update (2026-10-13): all eight tracks are implemented.
+The complete `go test ./...` suite passes with the repository-local tools on `PATH`,
+a canonical `TMPDIR`, and local networking enabled for integration tests. Java
+`.txtar` contracts pass, including Track 6 refactorings and cross-package public-type
+moves. The real JDT LS test verifies the installed server's `moveResource` response,
+package rewrite, caller import updates, and published resource rename. The orchestration
+resolves the destination package from the selected destination file and reconciles
+references under the active workspace root when JDT LS omits `RenameFile`.
+
+Repository-wide checks remain red: `make check` reports 327 Go lint findings, and
+`make check-ci` also rejects the archived benchmark result
+`hard-smoke-luna6-medium-20261011T105400Z` because its v1 report has no duration unit.
+These check failures do not affect the passing Go test suite or the Java integration.
 
 ```bash
 # 1. Run standard formatting, linters, unit tests, and hermetic CLI txtar suite:

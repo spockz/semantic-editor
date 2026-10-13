@@ -46,7 +46,7 @@ func (e Entry) NormalizedInput(raw map[string]any) (map[string]any, error) {
 	return normalizedInput(e.NormalizeInput, raw, e.Params)
 }
 
-// SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.
+// SupportsBufferedBatch selects eligible Go and Java requests and preserves disk-only contracts.
 func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, error) {
 	if !e.BufferedBatch {
 		return false, nil
@@ -60,7 +60,7 @@ func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, 
 	if err != nil {
 		return false, err
 	}
-	if language != backend.LanguageGo {
+	if language != backend.LanguageGo && language != backend.LanguageJava {
 		return false, nil
 	}
 	if req, ok := request.(RemoveReq); ok {

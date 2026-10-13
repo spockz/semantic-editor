@@ -155,14 +155,16 @@ func projectSignatureExpansion(result structuralPlanResult) any {
 func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	mapping := ParameterMappingSchema()
 	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping}
-	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
-		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated; copy its exact identity from semantic_lookup or a finalized function_target.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
-		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping; preserve every existing parameter by source_index and append one new mapping with a closed argument expression.", Schema: &mappings},
+	params := make([]ParameterContract, 0, 9)
+	params = append(params, []ParameterContract{
+		structuralStringParam("file", "Target source file: Go file in the active module or Java file in a trusted JDT LS workspace.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
+		structuralStringParam("symbol", "Target: exact private Go free-function identity or signature-qualified Java method; copy it from semantic_lookup or semantic_inspect_symbol.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
+		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping. Preserve Go's supported append-only proof. For Java, map existing parameters by source_index and give each added parameter a closed argument expression used at every existing call site.", Schema: &mappings},
 		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from semantic_inspect_symbol or the same finalized function_target record for this file and symbol; stale revisions are refused.", false, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].expected_revision"}, signatureTargetSourceFields(wireExpectedRevision)...)...),
-	}
+	}...)
+	params = append(params, readProjectParams[:5]...)
 	return Def[map[string]any, structuralPlanResult]{
-		Key: "change_signature", Summary: "Use this tool instead of manually editing one private, non-generic, non-variadic Go free-function signature and its callers. Preserve existing parameter order, names, types, and results, then append one parameter whose literal, nil, or Boolean argument is safe at every direct call. The complete active module call set includes same-package test variants. Function values, methods, exported functions, build-constrained references, and unresolved packages are refused. Standalone results expose a finalized function_target; receipt continuations remain available for inspection. Buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
+		Key: "change_signature", Summary: "Use this tool instead of manually changing a Java method signature and its resolved callers through JDT LS, or a supported private Go free-function signature and its proven direct callers. Supply the complete ordered parameter mapping. New Java parameters require a default argument expression used at every existing call site; Go keeps its stricter append-only proof. Standalone results expose a finalized function_target; receipt continuations remain available for inspection. Buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
 		Params: params, Level: LevelWorkspace, CLIName: "change-signature", MCPName: "semantic_change_signature", Batchable: true, BufferedBatch: true,
 		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{
 			map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}},
@@ -175,7 +177,7 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 			}
 			return maps.Clone(raw), nil
 		},
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){backend.LanguageGo: runChangeSignature},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){backend.LanguageGo: runChangeSignature, backend.LanguageJava: runChangeSignatureJava},
 		Format:   func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
 		FinalizeOutput: func(cc CallContext, _ map[string]any, result structuralPlanResult) (structuralPlanResult, error) {
 			ctx := cc.Ctx

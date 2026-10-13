@@ -14,6 +14,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/javacst"
 )
 
 type structuralPlanSpec struct {
@@ -27,6 +28,7 @@ type structuralPlanSpec struct {
 	ExampleRaw           map[string]any
 	Output               *OperationOutputContract
 	Plan                 func(*structuralSnapshot, map[string]any) (astedit.SourcePlan, error)
+	JavaHandler          func(context.Context, CallContext, map[string]any) (structuralPlanResult, error)
 	Result               func(CallContext, map[string]any, astedit.SourcePlan, string) FileEditRes
 	Continuations        func(CallContext, *structuralSnapshot, map[string]any, astedit.SourcePlan) ([]SymbolTarget, error)
 	ResolveContinuations ContinuationResolver
@@ -45,12 +47,16 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 	run := func(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {
 		return runStructuralPlan(ctx, cc, raw, spec)
 	}
+	handlers := map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){backend.LanguageGo: run}
+	if spec.JavaHandler != nil {
+		handlers[backend.LanguageJava] = spec.JavaHandler
+	}
 	return Def[map[string]any, structuralPlanResult]{
 		Key: spec.Key, VariantVerb: spec.VariantVerb, VariantKind: spec.VariantKind, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
 		CLIName: spec.CLIName, MCPName: spec.MCPName, Batchable: true, BufferedBatch: true,
 		ExampleRaw: spec.ExampleRaw,
 		Parse:      func(raw map[string]any) (map[string]any, error) { return maps.Clone(raw), nil },
-		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){backend.LanguageGo: run},
+		Handlers:   handlers,
 		Format:     func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
 		Output:     spec.Output,
 		FinalizeOutput: func(cc CallContext, _ map[string]any, result structuralPlanResult) (structuralPlanResult, error) {
@@ -194,7 +200,8 @@ func structuralStringParam(name, description string, required, allowEmpty bool, 
 }
 
 func setDocCommentStructuralDef() Def[map[string]any, structuralPlanResult] {
-	params := []ParameterContract{
+	params := make([]ParameterContract, 0, 5+len(readProjectParams))
+	params = append(params, []ParameterContract{
 		structuralStringParam("file", wireTargetGoFileDescription, true, false, RoleTarget,
 			"semantic_set_doc_comment.result.edit_receipt.continuations[].file"),
 		structuralStringParam("scope", "Selector: required target mode; this operation supports declaration scope only.", true, false, RoleSelector),
@@ -203,15 +210,17 @@ func setDocCommentStructuralDef() Def[map[string]any, structuralPlanResult] {
 		structuralStringParam("comment", "Replacement: plain documentation text without Go comment delimiters. An explicit empty string removes the doc comment.", true, true, RoleValue),
 		structuralStringParam("expected_revision", "Precondition: opaque full-file revision copied from this tool's standalone live continuation; stale values are refused.", false, false, RoleTarget,
 			"semantic_set_doc_comment.result.edit_receipt.continuations[].expected_revision"),
-	}
-	params[1].Schema.Enum = []any{"declaration"}
+	}...)
+	params[1].Schema.Enum = []any{wireDeclaration}
+	params = append(params, readProjectParams...)
 	output := structuralOutputContract(true)
 	return structuralPlanDef(structuralPlanSpec{
 		Key: "set_doc_comment", CLIName: "set-doc-comment", MCPName: "semantic_set_doc_comment",
-		Summary:    "Use this tool instead of editing source text to set or remove one owned top-level Go declaration documentation comment. Scope is declaration only. Missing and null comment values are invalid; an explicit empty string removes the comment. Existing directives, grouped declarations, detached ownership, and ambiguous targets are refused. Standalone results include a live declaration continuation; batch receipts report applied_working without live continuations.",
-		Params:     params,
-		Output:     &output,
-		ExampleRaw: map[string]any{"file": "doc.go", "scope": "declaration", "symbol": "Serve", "comment": "Serve handles requests."},
+		Summary:     "Use this tool instead of editing source text to set or remove one owned Go top-level or Java declaration documentation comment. Scope is declaration only. Missing and null comment values are invalid; an explicit empty string removes the comment. Existing Go directives, grouped declarations, detached ownership, and ambiguous targets are refused. Standalone results include a live declaration continuation; batch receipts report applied_working without live continuations.",
+		Params:      params,
+		Output:      &output,
+		JavaHandler: runJavaSetDocCommentStructural,
+		ExampleRaw:  map[string]any{"file": "doc.go", "scope": wireDeclaration, "symbol": "Serve", "comment": "Serve handles requests."},
 		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 			comment, present := raw["comment"]
 			text, valid := comment.(string)
@@ -238,6 +247,55 @@ func setDocCommentStructuralDef() Def[map[string]any, structuralPlanResult] {
 			return candidate, true, nil
 		},
 	})
+}
+
+func runJavaSetDocCommentStructural(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {
+	file := stringParam(raw, "file")
+	project, err := parseReadProject(raw, file)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	if project.Language != backend.LanguageJava {
+		return structuralPlanResult{}, fmt.Errorf("java documentation update requires language=java")
+	}
+	if stringParam(raw, "scope") != wireDeclaration {
+		return structuralPlanResult{}, fmt.Errorf("java documentation update supports scope=declaration only")
+	}
+	commentValue, present := raw["comment"]
+	comment, valid := commentValue.(string)
+	if !present || !valid {
+		return structuralPlanResult{}, fmt.Errorf("comment must be a present string; null is invalid")
+	}
+	var expectedRevision *string
+	if value, ok := raw["expected_revision"]; ok {
+		revision, valid := value.(string)
+		if !valid || revision == "" {
+			return structuralPlanResult{}, fmt.Errorf("expected_revision must be a non-empty string")
+		}
+		expectedRevision = &revision
+	}
+	symbol := stringParam(raw, "symbol")
+	root, absoluteFile, before, after, err := runJavaInspectedWholeSourceEdit(ctx, cc, project, file, symbol, "documentation update", expectedRevision, true, func(source []byte, start, end int, targetSource []byte) ([]byte, error) {
+		return javacst.SetJavaDocComment(source, start, end, targetSource, comment)
+	})
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	relative, err := filepath.Rel(root, absoluteFile)
+	if err != nil || !filepath.IsLocal(relative) {
+		return structuralPlanResult{}, fmt.Errorf("derive Java documentation receipt path for %q: %w", absoluteFile, err)
+	}
+	relative = filepath.ToSlash(relative)
+	display := displayWorkPath(root, file)
+	revision := structuralRevision(after)
+	edit := FileEditRes{File: absoluteFile, Display: display, Symbol: symbol, Diff: astedit.UnifiedDiff(display, string(before), string(after)), Detail: "Updated Java declaration documentation comment.", DiagnosticStatus: diagnosticStatusUnavailable, HasDelta: true}
+	draft := EditReceiptDraft{
+		Operation: "set_doc_comment", Status: EditPersisted,
+		ReadSet:        []FileRevision{{Path: relative, Revision: structuralRevision(before)}},
+		PlannedChanges: []FileRevision{{Path: relative, Revision: revision}},
+		Continuations:  []SymbolTarget{{File: relative, Symbol: symbol, ExpectedRevision: &revision}},
+	}
+	return structuralPlanResult{Edit: edit, Draft: draft}, nil
 }
 
 func rawOptionalString(raw map[string]any, name string) astedit.OptionalString {

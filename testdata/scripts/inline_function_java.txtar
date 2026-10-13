@@ -1,0 +1,30 @@
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_INLINE_FUNCTION=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit inline-function --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Helper.java --symbol Helper.value --call-site '{"file":"src/Caller.java","in_function":"Caller.run","discriminator":"helper.value()"}'
+stdout 'Successfully inlined one call'
+cmp src/Caller.java want/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Helper.java --
+package sample;
+class Helper {
+  int value() { return 41; }
+}
+-- src/Caller.java --
+package sample;
+class Caller {
+  int run() {
+    return helper.value();
+  }
+}
+-- want/Caller.java --
+package sample;
+class Caller {
+  int run() {
+    return 41;
+  }
+}

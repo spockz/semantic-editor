@@ -8,5 +8,6 @@ type JavaConfig struct {
 	JavaBin   string `json:"java_bin,omitempty"`
 	// ImportMaven enables JDT LS Maven project import after explicit trust.
 	// Gradle import is never enabled by this option.
-	ImportMaven bool `json:"import_maven,omitempty"`
+	ImportMaven    bool `json:"import_maven,omitempty"`
+	ImportMavenSet bool `json:"-"`
 }

@@ -1,0 +1,43 @@
+# Java move_construct moves a public top-level type across packages and updates callers.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_MOVE_TOP_LEVEL=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit move-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/oldpkg/Widget.java --destination-file src/newpkg/Target.java --symbol Widget --target-symbol Target
+exec test ! -e src/oldpkg/Widget.java
+cmp src/newpkg/Widget.java want/Widget.java
+cmp src/client/Caller.java want/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/oldpkg/Widget.java --
+package oldpkg;
+
+public class Widget {
+}
+-- src/newpkg/Target.java --
+package newpkg;
+
+public class Target {
+}
+
+-- src/client/Caller.java --
+package client;
+import oldpkg.Widget;
+
+public class Caller {
+}
+
+-- want/Widget.java --
+package newpkg;
+
+public class Widget {
+}
+
+-- want/Caller.java --
+package client;
+import newpkg.Widget;
+
+public class Caller {
+}
