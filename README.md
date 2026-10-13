@@ -7,6 +7,51 @@
 
 The efficiency ambition remains **up to 100× fewer generated edit tokens and 10× faster execution** in favorable refactoring scenarios. These are analytical upper bounds we aim to approach. Current benchmarks demonstrate speed and token savings in individual cases; improved first-attempt correctness remains a goal.
 
+## Getting started
+
+### Install the CLI
+
+Install Go at the version required by [go.mod](go.mod) or newer, and Git. Install `semedit` from a checkout:
+
+```sh
+git clone https://github.com/spockz/semantic-editor.git
+cd semantic-editor
+go install .
+go install golang.org/x/tools/gopls@latest
+```
+
+The module currently declares its path as `semedit`, so use `go install .` from the checkout rather than `go install github.com/spockz/semantic-editor@latest`. `gopls` is required for Go semantic rename and diagnostics; other languages require the tooling listed below.
+
+Go installs executables into `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Add that directory to your shell's `PATH`, then check the CLI:
+
+```sh
+semedit --help
+```
+
+User installation does not require the development linters or Hugo.
+
+### Install into a coding harness
+
+Register the installed executable with Codex or GitHub Copilot CLI. Choose the command for your harness:
+
+```sh
+semedit install codex --scope user --binary "$(command -v semedit)"
+semedit install copilot --scope user --binary "$(command -v semedit)"
+```
+
+For registration in a single project, run the selected command from that project's root with `--scope workspace` instead of `--scope user`, or supply `--workspace /absolute/path/to/project`. The installer records the absolute executable path and configures the harness to launch `semedit mcp --profile full`. It preserves unrelated configuration and rejects conflicting semedit registrations. Add `--dry-run` to preview a registration. Commands print concise human-readable output by default; pass `--json` to `install`, `integration status`, or `uninstall` for structured JSON on stdout. Successful installs print the config path and restart guidance. JSON mode prints only JSON.
+
+Check or remove a registration using the same target and scope:
+
+```sh
+semedit integration status codex --scope user
+semedit uninstall codex --scope user
+```
+
+Use `copilot` in place of `codex` for GitHub Copilot CLI. Restart or reconnect the harness's MCP session after installation and confirm that its tool inventory includes `semantic_lookup`. The installer registers the MCP server but does not install the [semedit steering skill](skills/semedit/SKILL.md); install the `skills/semedit/` directory through your harness's skill mechanism if you want the accompanying workflow guidance.
+
+For other MCP clients, configure a stdio server with the absolute path to `semedit`, arguments `["mcp"]`, and the intended project as its working directory. See [Build and use](#6-build-and-use) for CLI editing examples and MCP profiles.
+
 ## 1. Why semantic editing
 
 A rename or declaration move can require a text-editing agent to read and reproduce code across many files. With semantic editing, the agent names the symbol and the intended change, and local tooling handles coordinates and mechanical edits.

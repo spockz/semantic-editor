@@ -235,25 +235,85 @@ func targetArgs(args []string) (integration.Target, error) {
 	}
 }
 
-func integrationOutput(cmd *cobra.Command, result integration.Result) error {
-	data, err := json.MarshalIndent(result, "", "  ")
+func integrationJSON(cmd *cobra.Command, value any) error {
+	data, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
+		return fmt.Errorf("marshal integration result: %w", err)
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), string(data)); err != nil {
+		return fmt.Errorf("write integration JSON: %w", err)
+	}
+	return nil
+}
+
+func integrationHuman(cmd *cobra.Command, result integration.Result, includeBinaryAvailability bool) error {
+	var message string
+	switch result.Status {
+	case "installed":
+		message = fmt.Sprintf("Installed semedit for %s (%s). Config: %s", result.Target, result.Scope, result.Path)
+	case "already-installed":
+		message = fmt.Sprintf("semedit is already installed for %s (%s). Config: %s", result.Target, result.Scope, result.Path)
+	case "dry-run":
+		message = fmt.Sprintf("Preview only: semedit would be installed for %s (%s). Nothing was written to %s; rerun without --dry-run to install.", result.Target, result.Scope, result.Path)
+	case "not-installed":
+		message = fmt.Sprintf("semedit is not installed for %s (%s). Config: %s", result.Target, result.Scope, result.Path)
+	case "uninstalled":
+		message = fmt.Sprintf("Uninstalled semedit for %s (%s). Config: %s", result.Target, result.Scope, result.Path)
+	case "not-owned":
+		message = fmt.Sprintf("No owned semedit registration was removed for %s (%s). Config: %s", result.Target, result.Scope, result.Path)
+	default:
+		message = fmt.Sprintf("Integration status for %s (%s): %s. Config: %s", result.Target, result.Scope, result.Status, result.Path)
+	}
+	if result.Detail != "" {
+		message += ". Detail: " + result.Detail
+	}
+	if includeBinaryAvailability && result.Status == "installed" && result.Binary != "" && !result.BinaryExists {
+		message += ". Configured executable is unavailable: " + result.Binary
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), message); err != nil {
+		return fmt.Errorf("write integration status: %w", err)
+	}
+	return nil
+}
+
+func integrationOutput(cmd *cobra.Command, result integration.Result, jsonOutput, install bool) error {
+	if jsonOutput {
+		return integrationJSON(cmd, result)
+	}
+	if err := integrationHuman(cmd, result, false); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
-	return err
+	if install && (result.Status == "installed" || result.Status == "already-installed") {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Restart the %s coding harness or reconnect its MCP session to load semedit tools.\n", result.Target); err != nil {
+			return fmt.Errorf("write install next steps: %w", err)
+		}
+	}
+	return nil
 }
 
 func newInstallCommand(workDir string) *cobra.Command {
+	const installNextSteps = `On success, the default output shows the saved config path. With --json, the path appears in the JSON; you do not need to copy or edit it. Restart the target coding harness or reconnect its MCP session to load semedit tools. A --dry-run is only a preview and writes nothing; rerun without --dry-run to install. The skill field reports optional steering-skill availability; "not-installed" does not mean MCP installation failed.`
 	cmd := &cobra.Command{Use: "install", Short: "Install semedit into a native harness configuration", Args: cobra.NoArgs}
+	cmd.Long = `Install semedit into a native harness configuration. Human-readable output is the default; use --json for machine-readable output on stdout.
+
+Choose --scope user or --scope workspace. Pass --binary as the absolute path to an already installed semedit executable.
+
+Examples:
+  semedit install copilot --scope user --binary "$(command -v semedit)"
+  semedit install copilot --scope workspace --binary "$(command -v semedit)"
+  semedit install codex --scope user --binary "$(command -v semedit)"
+  semedit install codex --scope workspace --binary "$(command -v semedit)"
+
+Run "semedit install TARGET --help" for target-specific flags.` + "\n\n" + installNextSteps
 	for _, target := range []integration.Target{integration.TargetCopilot, integration.TargetCodex} {
 		var scope, binary, profile, workspace string
-		var dryRun, replace bool
+		var dryRun, replace, jsonOutput bool
 		targetCmd := &cobra.Command{
 			Use:   string(target),
 			Short: fmt.Sprintf("Install semedit MCP for %s", target),
+			Long:  installNextSteps,
 			Args:  cobra.NoArgs,
-			RunE: func(target integration.Target, scope, binary, profile, workspace *string, dryRun, replace *bool) func(*cobra.Command, []string) error {
+			RunE: func(target integration.Target, scope, binary, profile, workspace *string, dryRun, replace, jsonOutput *bool) func(*cobra.Command, []string) error {
 				return func(cmd *cobra.Command, _ []string) error {
 					if strings.TrimSpace(*scope) == "" {
 						return fmt.Errorf("--scope is required (user or workspace)")
@@ -265,16 +325,17 @@ func newInstallCommand(workDir string) *cobra.Command {
 					if err != nil {
 						return err
 					}
-					return integrationOutput(cmd, result)
+					return integrationOutput(cmd, result, *jsonOutput, true)
 				}
-			}(target, &scope, &binary, &profile, &workspace, &dryRun, &replace),
+			}(target, &scope, &binary, &profile, &workspace, &dryRun, &replace, &jsonOutput),
 		}
 		targetCmd.Flags().StringVar(&scope, "scope", "", "Registration scope: user or workspace (required)")
 		targetCmd.Flags().StringVar(&workspace, "workspace", workDir, "Workspace root for workspace scope")
-		targetCmd.Flags().StringVar(&binary, "binary", "", "Absolute path to an already installed semedit executable")
+		targetCmd.Flags().StringVar(&binary, "binary", "", "Required: absolute path to an already installed semedit executable")
 		targetCmd.Flags().StringVar(&profile, "profile", "full", "MCP profile: full or mutations-only")
 		targetCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report the change without writing")
 		targetCmd.Flags().BoolVar(&replace, "replace", false, "Explicitly replace a conflicting semedit registration")
+		targetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Write structured JSON to stdout")
 		cmd.AddCommand(targetCmd)
 	}
 	return cmd
@@ -282,6 +343,7 @@ func newInstallCommand(workDir string) *cobra.Command {
 
 func newIntegrationStatusCommand(workDir string) *cobra.Command {
 	var scope, workspace string
+	var jsonOutput bool
 	cmd := &cobra.Command{Use: "status TARGET", Short: "Report native semedit harness integration status", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		target, targetErr := targetArgs(args)
 		if targetErr != nil {
@@ -295,7 +357,10 @@ func newIntegrationStatusCommand(workDir string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return integrationOutput(cmd, result)
+			if jsonOutput {
+				return integrationJSON(cmd, result)
+			}
+			return integrationHuman(cmd, result, true)
 		}
 		results := make([]integration.Result, 0, 2)
 		for _, selectedScope := range []integration.Scope{integration.ScopeWorkspace, integration.ScopeUser} {
@@ -305,20 +370,25 @@ func newIntegrationStatusCommand(workDir string) *cobra.Command {
 			}
 			results = append(results, result)
 		}
-		data, err := json.MarshalIndent(map[string]any{"target": target, "statuses": results}, "", "  ")
-		if err != nil {
-			return err
+		if jsonOutput {
+			return integrationJSON(cmd, map[string]any{"target": target, "statuses": results})
 		}
-		_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
-		return err
+		for _, result := range results {
+			if err := integrationHuman(cmd, result, true); err != nil {
+				return err
+			}
+		}
+		return nil
 	}}
 	cmd.Flags().StringVar(&scope, "scope", "", "Limit status to user or workspace")
 	cmd.Flags().StringVar(&workspace, "workspace", workDir, "Workspace root for workspace status")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Write structured JSON to stdout")
 	return cmd
 }
 
 func newUninstallCommand(workDir string) *cobra.Command {
 	var scope, workspace string
+	var jsonOutput bool
 	cmd := &cobra.Command{Use: "uninstall TARGET", Short: "Remove only an owned native semedit registration", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		target, err := targetArgs(args)
 		if err != nil {
@@ -334,10 +404,11 @@ func newUninstallCommand(workDir string) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return integrationOutput(cmd, result)
+		return integrationOutput(cmd, result, jsonOutput, false)
 	}}
 	cmd.Flags().StringVar(&scope, "scope", "", "Registration scope: user or workspace (required)")
 	cmd.Flags().StringVar(&workspace, "workspace", workDir, "Workspace root for workspace scope")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Write structured JSON to stdout")
 	return cmd
 }
 

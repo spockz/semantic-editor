@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -372,24 +373,97 @@ func TestHarnessInstallationPublicCLI(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- executable fixture.
 		t.Fatal(err)
 	}
+	testInstallOutputModes(t, workspace, binary)
+	testIntegrationStatusOutputModes(t, workspace)
+	testUninstallOutputModes(t, workspace)
+}
+
+func runIntegrationCLI(t *testing.T, workspace string, args ...string) (string, string) {
+	t.Helper()
 	cmd := newRootCmd(workspace)
-	cmd.SetArgs([]string{"install", "copilot", "--scope", "workspace", "--binary", binary, "--profile", "mutations-only"})
-	var output bytes.Buffer
+	cmd.SetArgs(args)
+	var output, stderr bytes.Buffer
 	cmd.SetOut(&output)
+	cmd.SetErr(&stderr)
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("install command failed: %v", err)
+		t.Fatalf("CLI command %q failed: %v", args, err)
 	}
-	if !strings.Contains(output.String(), `"status": "installed"`) || !strings.Contains(output.String(), `"target": "copilot"`) {
-		t.Fatalf("install output = %s", output.String())
+	return output.String(), stderr.String()
+}
+
+func testInstallOutputModes(t *testing.T, workspace, binary string) {
+	t.Helper()
+	args := []string{"install", "copilot", "--scope", "workspace", "--binary", binary, "--profile", "mutations-only"}
+	output, stderr := runIntegrationCLI(t, workspace, args...)
+	if !strings.Contains(output, "Installed semedit for copilot (workspace)") || !strings.Contains(output, filepath.Join(workspace, ".mcp.json")) || !strings.Contains(output, "Restart the copilot coding harness") || stderr != "" {
+		t.Fatalf("install output/stderr = %s / %s", output, stderr)
 	}
-	status := newRootCmd(workspace)
-	status.SetArgs([]string{"integration", "status", "copilot", "--scope", "workspace"})
-	output.Reset()
-	status.SetOut(&output)
-	if err := status.Execute(); err != nil {
-		t.Fatalf("status command failed: %v", err)
+	if _, err := os.Stat(filepath.Join(workspace, ".mcp.json")); err != nil {
+		t.Fatalf("installed config was not saved: %v", err)
 	}
-	if !strings.Contains(output.String(), `"profile": "mutations-only"`) || !strings.Contains(output.String(), binary) {
-		t.Fatalf("status output = %s", output.String())
+	output, stderr = runIntegrationCLI(t, workspace, args...)
+	if !strings.Contains(output, "already installed for copilot (workspace)") || !strings.Contains(output, "Restart the copilot coding harness") || stderr != "" {
+		t.Fatalf("repeat install output/stderr = %s / %s", output, stderr)
+	}
+	jsonOutput, jsonStderr := runIntegrationCLI(t, workspace, append(args, "--json")...)
+	assertIntegrationJSONStatus(t, jsonOutput, "already-installed")
+	if jsonStderr != "" {
+		t.Fatalf("JSON install wrote stderr: %s", jsonStderr)
+	}
+	dryWorkspace := t.TempDir()
+	dryArgs := []string{"install", "copilot", "--scope", "workspace", "--binary", binary, "--dry-run"}
+	dryOutput, dryStderr := runIntegrationCLI(t, dryWorkspace, dryArgs...)
+	if !strings.Contains(dryOutput, "Preview only: semedit would be installed") || !strings.Contains(dryOutput, "Nothing was written") || !strings.Contains(dryOutput, "rerun without --dry-run") || dryStderr != "" {
+		t.Fatalf("dry-run output/stderr = %s / %s", dryOutput, dryStderr)
+	}
+	if _, err := os.Stat(filepath.Join(dryWorkspace, ".mcp.json")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run unexpectedly wrote config: stat error = %v", err)
+	}
+}
+
+func testIntegrationStatusOutputModes(t *testing.T, workspace string) {
+	t.Helper()
+	output, _ := runIntegrationCLI(t, workspace, "integration", "status", "copilot", "--scope", "workspace")
+	if !strings.Contains(output, "Installed semedit for copilot (workspace)") || !strings.Contains(output, filepath.Join(workspace, ".mcp.json")) {
+		t.Fatalf("status output = %s", output)
+	}
+	jsonOutput, stderr := runIntegrationCLI(t, workspace, "integration", "status", "copilot", "--json")
+	var result struct {
+		Target   string `json:"target"`
+		Statuses []struct {
+			Scope  string `json:"scope"`
+			Status string `json:"status"`
+		} `json:"statuses"`
+	}
+	if err := json.Unmarshal([]byte(jsonOutput), &result); err != nil || result.Target != "copilot" || len(result.Statuses) != 2 || result.Statuses[0].Status != "installed" || result.Statuses[0].Scope != "workspace" || result.Statuses[1].Scope != "user" || stderr != "" {
+		t.Fatalf("status JSON/stderr = %s / %s, result = %#v, error = %v", jsonOutput, stderr, result, err)
+	}
+}
+
+func testUninstallOutputModes(t *testing.T, workspace string) {
+	t.Helper()
+	jsonOutput, stderr := runIntegrationCLI(t, workspace, "uninstall", "copilot", "--scope", "workspace", "--json")
+	assertIntegrationJSONStatus(t, jsonOutput, "uninstalled")
+	if stderr != "" {
+		t.Fatalf("JSON uninstall wrote stderr: %s", stderr)
+	}
+	binary := filepath.Join(workspace, "semedit")
+	output, _ := runIntegrationCLI(t, workspace, "install", "copilot", "--scope", "workspace", "--binary", binary)
+	if !strings.Contains(output, "Installed semedit for copilot (workspace)") {
+		t.Fatalf("reinstall output = %s", output)
+	}
+	output, _ = runIntegrationCLI(t, workspace, "uninstall", "copilot", "--scope", "workspace")
+	if !strings.Contains(output, "Uninstalled semedit for copilot (workspace)") {
+		t.Fatalf("uninstall output = %s", output)
+	}
+}
+
+func assertIntegrationJSONStatus(t *testing.T, output, want string) {
+	t.Helper()
+	var result struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(output), &result); err != nil || result.Status != want {
+		t.Fatalf("integration JSON = %s, status = %q, error = %v", output, result.Status, err)
 	}
 }

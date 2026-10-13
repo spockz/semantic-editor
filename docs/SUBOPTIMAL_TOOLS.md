@@ -1,5 +1,29 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-13: replace-construct could not select a nested install callback
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/cli/cli.go`, nested callback inside `newInstallCommand`.
+* Observed failure: the operation could not resolve the callback's return statement using the enclosing function selector; no mutation occurred.
+* Workaround: apply a targeted edit to the callback's output handling.
+* Root cause: the selector resolves the named enclosing function but does not expose statements nested inside the callback literal as direct target constructs.
+
+## 2026-10-13: insert-construct statement anchor did not match
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/cli/cli.go`, function `newInstallCommand`.
+* Observed failure: the tool could not locate the requested statement anchor; no mutation occurred.
+* Workaround: use the exact existing statement as the discriminator, then use a targeted source edit if the supported selector cannot express the insertion.
+* Root cause: the insertion selector requires an exact existing statement discriminator, and the supplied prefix was incomplete.
+
+## 2026-10-13: insert-construct placed help assignment before local declaration
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/cli/cli.go`, function `newInstallCommand`.
+* Observed failure: inserting `cmd.Long = ...` at function start produced an undefined `cmd` diagnostic because the requested anchor precedes the declaration.
+* Workaround: move the assignment after the declaration with a targeted source edit.
+* Root cause: the insertion request selected the start of the function instead of an anchor after the local declaration; the tool followed the selected anchor.
+
 ## 2026-10-12: workspace outline was unavailable from the loaded MCP inventory
 
 * Tool: `semantic_workspace_outline`.

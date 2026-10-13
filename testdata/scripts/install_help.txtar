@@ -1,0 +1,40 @@
+# Installation help explains both scopes and the preinstalled binary requirement.
+exec semedit install --help
+stdout 'Choose --scope user or --scope workspace'
+stdout 'absolute path to an already installed semedit executable'
+stdout 'Human-readable output is the default'
+stdout '--json'
+stdout 'semedit install copilot --scope user --binary .*command -v semedit'
+stdout 'semedit install copilot --scope workspace --binary .*command -v semedit'
+stdout 'semedit install codex --scope user --binary .*command -v semedit'
+stdout 'semedit install codex --scope workspace --binary .*command -v semedit'
+stdout 'semedit install TARGET --help'
+stdout 'default output shows the saved config path'
+stdout 'Restart the target coding harness or reconnect its MCP session'
+stdout 'dry-run is only a preview and writes nothing'
+stdout 'not-installed.*does not mean MCP installation failed'
+
+exec semedit install copilot --help
+stdout 'Required: absolute path to an already installed semedit executable'
+stdout '--json'
+stdout 'default output shows the saved config path'
+stdout 'dry-run is only a preview and writes nothing'
+
+exec semedit install codex --help
+stdout 'Required: absolute path to an already installed semedit executable'
+stdout '--json'
+stdout 'default output shows the saved config path'
+stdout 'dry-run is only a preview and writes nothing'
+
+exec semedit integration status copilot --help
+stdout '--json'
+
+exec semedit uninstall --help
+stdout '--json'
+
+exec semedit integration status copilot --scope workspace
+stdout 'semedit is not installed for copilot \(workspace\)'
+
+exec semedit integration status copilot --scope workspace --json
+stdout '"status":\s*"not-installed"'
+stdout '"path":\s*.*\.mcp.json'

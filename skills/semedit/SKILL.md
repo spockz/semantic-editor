@@ -84,6 +84,10 @@ The declaration, loop, body, file, import, dependency, and switch-case operation
 
 Framework conventions belong in a relevant installed framework skill. Use semedit's language-level operation to perform the structural change, and use that skill to choose the framework-specific owner or placement.
 
+## Harness administration output
+
+`install`, `integration status`, and `uninstall` print human-readable results by default. Pass `--json` when scripting these administrative commands; JSON is written to stdout without extra guidance. This flag does not change semantic-operation or MCP tool output.
+
 ## Core Operations vs. Macro Refactorings
 
 `semedit` strictly demarcates low-level engine responsibilities from high-level architectural refactorings:
