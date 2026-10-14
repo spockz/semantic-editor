@@ -164,7 +164,7 @@ First release: one target function or method declaration in an existing Go file,
 
 ### Audited starting state
 
-The authoritative audit tree is `/Users/alessandro/sources/semantic-editor` at `6c95d12`, including shared uncommitted buffers; it was read-only. Six requested operations were absent in all worktrees. Bounded extraction, inline, move, and removal work already exists. The source tree has a central typed registry, Go AST edits, one-process gopls sessions, and a new `sourcebuf` overlay path. There is no Go change-signature AST operation or registry entry. Current `gopls` client support does not establish command/interactive/applyEdit support. A pending ADR-0060 in the audited tree describes MCP-owned diagnostic sessions; treat it as context, not as a settled refactoring transport contract.
+The authoritative audit tree was `<repository-root>` at `6c95d12`, including shared uncommitted buffers; it was read-only. Six requested operations were absent in all worktrees. Bounded extraction, inline, move, and removal work already exists. The source tree has a central typed registry, Go AST edits, one-process gopls sessions, and a new `sourcebuf` overlay path. There is no Go change-signature AST operation or registry entry. Current `gopls` client support does not establish command/interactive/applyEdit support. A pending ADR-0060 in the audited tree describes MCP-owned diagnostic sessions; treat it as context, not as a settled refactoring transport contract.
 
 ### Candidate implementation paths
 
@@ -318,7 +318,7 @@ Bounded first release: one target non-recursive, non-generic, non-variadic free 
 
 ### Audited starting state
 
-Read-only audit used `/Users/alessandro/sources/semantic-editor` at `6c95d12`, including shared uncommitted state. The six requested operations were absent across worktrees. Existing `internal/astedit/inline.go` and `wire_engine_inline.go` implement inline-variable only; they are not evidence of function inlining. Existing extraction, move, and removal are bounded. A central registry and buffered Go batch path exist in the source tree. Current LSP client does not establish support for code-action command execution, interactive actions, or `workspace/applyEdit`; an ADR-0060 draft is present in that audited tree and remains pending context.
+Read-only audit used `<repository-root>` at `6c95d12`, including shared uncommitted state. The six requested operations were absent across worktrees. Existing `internal/astedit/inline.go` and `wire_engine_inline.go` implement inline-variable only; they are not evidence of function inlining. Existing extraction, move, and removal are bounded. A central registry and buffered Go batch path exist in the source tree. Current LSP client does not establish support for code-action command execution, interactive actions, or `workspace/applyEdit`; an ADR-0060 draft is present in that audited tree and remains pending context.
 
 ### Candidate implementation paths
 
@@ -461,7 +461,7 @@ First release: one unambiguous compile-time constant expression inside a functio
 
 ### Audited starting state
 
-The authoritative source tree `/Users/alessandro/sources/semantic-editor` at `6c95d12` was audited read-only, including uncommitted shared buffers. Requested operations are absent across worktrees. Current Go tools include extraction of a function and a variable (`internal/astedit/extract.go`, `extract_variable.go`, `wire_extract.go`), inline-variable only (`inline.go`, `wire_engine_inline.go`), and AST declaration/body editing. These are selection and wire-pattern evidence, not an extract-constant implementation. The registry, sourcebuf overlays, batch executor, and single-process gopls sessions are present in the audited tree. Current LSP client does not prove command, interactive, or applyEdit support; a pending ADR-0060 in that source tree concerns diagnostic sessions only.
+The authoritative source tree `<repository-root>` at `6c95d12` was audited read-only, including uncommitted shared buffers. Requested operations are absent across worktrees. Current Go tools include extraction of a function and a variable (`internal/astedit/extract.go`, `extract_variable.go`, `wire_extract.go`), inline-variable only (`inline.go`, `wire_engine_inline.go`), and AST declaration/body editing. These are selection and wire-pattern evidence, not an extract-constant implementation. The registry, sourcebuf overlays, batch executor, and single-process gopls sessions are present in the audited tree. Current LSP client does not prove command, interactive, or applyEdit support; a pending ADR-0060 in that source tree concerns diagnostic sessions only.
 
 ### Candidate implementation paths
 
@@ -605,7 +605,7 @@ First release: one named, non-generic concrete type in one Go package; select a 
 
 ### Audited starting state
 
-Read-only code audit was performed against `/Users/alessandro/sources/semantic-editor` at `6c95d12`, including shared uncommitted state. All six requested operations were absent across worktrees. Go type inspection, declaration insertion, scaffold-file, move, and references exist as lower-level capabilities; no extract-interface operation exists. Receiver method insertion is present but is a separate action. Current source tree has typed registry and sourcebuf batch support. The active LSP implementation does not demonstrate execute-command, interactive, or applyEdit support. Its pending ADR-0060 context is not a decision for this feature.
+Read-only code audit was performed against `<repository-root>` at `6c95d12`, including shared uncommitted state. All six requested operations were absent across worktrees. Go type inspection, declaration insertion, scaffold-file, move, and references exist as lower-level capabilities; no extract-interface operation exists. Receiver method insertion is present but is a separate action. Current source tree has typed registry and sourcebuf batch support. The active LSP implementation does not demonstrate execute-command, interactive, or applyEdit support. Its pending ADR-0060 context is not a decision for this feature.
 
 ### Candidate implementation paths
 
@@ -756,7 +756,7 @@ First release: one private, non-generic, non-variadic free function or receiver 
 
 ### Audited starting state
 
-Audit source was `/Users/alessandro/sources/semantic-editor` at `6c95d12` and was read-only, including uncommitted shared buffers. The requested six operations were absent in all worktrees. There is no signature/call-site mutation operation. Existing registry/wire patterns include body replacement, extraction, rename, movement, and batched edits; Go references/type information are available through adapter/session paths. `sourcebuf` and `Buffer.Apply` now provide a shared overlay in the source tree. Current LSP session does not establish command, interactive, or applyEdit support. ADR-0060 is pending in that tree and describes diagnostic-session ownership only.
+Audit source was `<repository-root>` at `6c95d12` and was read-only, including uncommitted shared buffers. The requested six operations were absent in all worktrees. There is no signature/call-site mutation operation. Existing registry/wire patterns include body replacement, extraction, rename, movement, and batched edits; Go references/type information are available through adapter/session paths. `sourcebuf` and `Buffer.Apply` now provide a shared overlay in the source tree. Current LSP session does not establish command, interactive, or applyEdit support. ADR-0060 is pending in that tree and describes diagnostic-session ownership only.
 
 ### Candidate implementation paths
 
@@ -910,7 +910,7 @@ First release: migrate all parameters of one private, non-generic, non-variadic 
 
 ### Audited starting state
 
-The read-only authoritative audit tree is `/Users/alessandro/sources/semantic-editor` at `6c95d12`, with shared uncommitted files/buffers included. These six operations were absent across worktrees. Existing signature-related primitives do not implement migration to a parameter object. Declaration/field/type helpers, reference resolution, registry-backed CLI/MCP operations, one-process gopls sessions, `sourcebuf`, and `Buffer.Apply` exist in the audited source. Current transport does not establish support for command execution, interaction, or applyEdit. ADR-0060 remains a pending diagnostic-session record in that tree, not a decision for this operation.
+The read-only authoritative audit tree is `<repository-root>` at `6c95d12`, with shared uncommitted files/buffers included. These six operations were absent across worktrees. Existing signature-related primitives do not implement migration to a parameter object. Declaration/field/type helpers, reference resolution, registry-backed CLI/MCP operations, one-process gopls sessions, `sourcebuf`, and `Buffer.Apply` exist in the audited source. Current transport does not establish support for command execution, interaction, or applyEdit. ADR-0060 remains a pending diagnostic-session record in that tree, not a decision for this operation.
 
 ### Candidate implementation paths
 
@@ -2534,7 +2534,7 @@ Remove `semantic_insert_composite_element`, CLI `insert-composite-element`, and 
 
 Earlier review attempts from this session failed at the MCP synthetic-root and sandbox boundaries; their evidence remains in `.scratch/collection-gemini-review*` and `docs/SUBOPTIMAL_TOOLS.md`. They produced no substantive review output.
 
-The user subsequently supplied a complete plan created with Gemini at `/Users/alessandro/.gemini/antigravity/brain/b5b56ac4-536e-423d-b6d6-4f85bd13cc2c/handover_buffer_unification_and_element_insertion.md` and authorized execution. It specifies two sequential commits: first unify buffer staging and migrate every legacy output contract to typed projections and finalized receipts, then consolidate literal element insertion. Both require passing `make check`, complete caller migration, and synchronized skills. The handover is the accepted design evidence; no additional Gemini service call is needed for its execution.
+The user subsequently supplied a complete plan created with Gemini at `<user-home>/.gemini/antigravity/brain/b5b56ac4-536e-423d-b6d6-4f85bd13cc2c/handover_buffer_unification_and_element_insertion.md` and authorized execution. It specifies two sequential commits: first unify buffer staging and migrate every legacy output contract to typed projections and finalized receipts, then consolidate literal element insertion. Both require passing `make check`, complete caller migration, and synchronized skills. The handover is the accepted design evidence; no additional Gemini service call is needed for its execution.
 
 ## Go set doc comment
 

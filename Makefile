@@ -316,6 +316,10 @@ build: build-next ## Build development and stable binaries
 		cp bin/semedit-next bin/semedit; \
 	fi
 
+.PHONY: install-mcp
+install-mcp: build ## Install development MCP configs with absolute binary paths
+	go run ./tools/mcp-config --workspace "$(CURDIR)"
+
 .PHONY: check-hugo-version
 check-hugo-version: ## Verify installed Hugo matches .hugo-version
 	@if command -v hugo >/dev/null 2>&1; then \

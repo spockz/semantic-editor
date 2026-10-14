@@ -7,10 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/mcp"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spockz/semantic-editor/internal/mcp"
 )
 
 // AgyResponse represents the JSON output from agy --output-format json -p.
@@ -44,10 +45,6 @@ func agyToolFunctionalStatus(status string) ToolCallStatus {
 func configuredAgyExecutable(configured string) string {
 	if configured != "" {
 		return configured
-	}
-	const defaultExecutable = "/Users/alessandro/.local/bin/agy"
-	if _, err := os.Stat(defaultExecutable); err == nil {
-		return defaultExecutable
 	}
 	return "agy"
 }

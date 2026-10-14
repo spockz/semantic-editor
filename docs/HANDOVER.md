@@ -5,7 +5,7 @@
 * **Governance**: Implementation handover following ADR-0005, ADR-0032, ADR-0042, ADR-0055, ADR-0057, and ADR-0065.
 * **Standard**: British English spelling, Oxford commas, assertive phrasing, and executable acceptance criteria.
 
-This specification provides exhaustive engineering instructions, algorithmic steps, edge cases, and test requirements for resolving systemic friction logged in [`docs/SUBOPTIMAL_TOOLS.md`](file:///Users/alessandro/sources/semantic-editor/docs/SUBOPTIMAL_TOOLS.md) and [`docs/MANUAL_EDITS.md`](file:///Users/alessandro/sources/semantic-editor/docs/MANUAL_EDITS.md).
+This specification provides exhaustive engineering instructions, algorithmic steps, edge cases, and test requirements for resolving systemic friction logged in [`docs/SUBOPTIMAL_TOOLS.md`](SUBOPTIMAL_TOOLS.md) and [`docs/MANUAL_EDITS.md`](MANUAL_EDITS.md).
 
 ---
 
@@ -16,8 +16,8 @@ Implements Postel's robustness principle (*lenient in, precise out*) across MCP 
 ### 1.1 Package Directory Resolution in Symbol Lookup
 
 * **Target Files**:
-  * [`internal/symbol/resolver.go`](file:///Users/alessandro/sources/semantic-editor/internal/symbol/resolver.go) (`resolveTargetFiles`)
-  * [`internal/operation/wire_read_inspect.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_read_inspect.go)
+  * [`internal/symbol/resolver.go`](../internal/symbol/resolver.go) (`resolveTargetFiles`)
+  * [`internal/operation/wire_read_inspect.go`](../internal/operation/wire_read_inspect.go)
 * **Root Cause**:
   In `resolveTargetFiles(rootDir, filePath string)`, passing a directory path in `filePath` resolves to `[]string{resolvedPath}` without checking `os.Stat`. Subsequent readers call `os.ReadFile(resolvedPath)`, which aborts with `is a directory`.
 * **Algorithmic Steps**:
@@ -47,7 +47,7 @@ Implements Postel's robustness principle (*lenient in, precise out*) across MCP 
 ### 1.2 Outer Block Delimiter Stripping in Body Replacement
 
 * **Target Files**:
-  * [`internal/astedit/body.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/body.go) (`validateBodySnippet`)
+  * [`internal/astedit/body.go`](../internal/astedit/body.go) (`validateBodySnippet`)
 * **Root Cause**:
   `validateBodySnippet` wraps input in `synthetic := "package dummy\n\nfunc _() {\n" + bodyTrimmed + "\n}\n"`. When callers supply a body enclosed in outer braces `{ ... }`, parsing either nests the block redundantly or causes syntax errors if trailing tokens are present.
 * **Algorithmic Steps**:
@@ -75,7 +75,7 @@ Implements Postel's robustness principle (*lenient in, precise out*) across MCP 
 ### 1.3 Plain-Text Purpose Comment Wrapping
 
 * **Target Files**:
-  * [`internal/astedit/scaffold.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/scaffold.go) (`scaffoldSourceWithPurpose`, `formatScaffoldSource`)
+  * [`internal/astedit/scaffold.go`](../internal/astedit/scaffold.go) (`scaffoldSourceWithPurpose`, `formatScaffoldSource`)
 * **Root Cause**:
   `scaffoldSourceWithPurpose` parses `purposeHeader + "\n\npackage " + packageName`. If `purposeHeader` does not start with `//` or `/*`, parsing aborts with `ErrSyntax: expected 'package', found ...`.
 * **Algorithmic Steps**:
@@ -106,9 +106,9 @@ Implements Postel's robustness principle (*lenient in, precise out*) across MCP 
 ### 1.4 Construct Kind Synonym Aliasing and Receiver Inference
 
 * **Target Files**:
-  * [`internal/operation/wire_engine_mutations.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_engine_mutations.go)
-  * [`internal/operation/wire_engine_constructs.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_engine_constructs.go)
-  * [`internal/astedit/construct_declaration.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/construct_declaration.go)
+  * [`internal/operation/wire_engine_mutations.go`](../internal/operation/wire_engine_mutations.go)
+  * [`internal/operation/wire_engine_constructs.go`](../internal/operation/wire_engine_constructs.go)
+  * [`internal/astedit/construct_declaration.go`](../internal/astedit/construct_declaration.go)
 * **Root Cause**:
   `req.Kind = backend.ConstructKind(kindStr)` performs literal string conversion. Natural language synonyms (`variable`, `constant`, `procedure`) produce an unknown kind error. Method symbols containing receivers fail when callers pass `kind: "function"`.
 * **Algorithmic Steps**:
@@ -140,9 +140,9 @@ Guarantees subagents and parallel git worktrees operate within isolated boundari
 ### 2.1 Optional Dynamic `workspace_root` Ingress Parameter
 
 * **Target Files**:
-  * [`internal/mcp/schema.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/schema.go)
-  * [`internal/operation/wire_backend.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_backend.go)
-  * [`internal/mcp/workspace/workspace_root.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/workspace/workspace_root.go)
+  * [`internal/mcp/schema.go`](../internal/mcp/schema.go)
+  * [`internal/operation/wire_backend.go`](../internal/operation/wire_backend.go)
+  * [`internal/mcp/workspace/workspace_root.go`](../internal/mcp/workspace/workspace_root.go)
 * **Root Cause**:
   Subagent sessions operating in worktrees under `.scratch/worktrees/` require routing tool calls to their private directory while the MCP daemon was initialized at the repository root.
 * **Algorithmic Steps**:
@@ -167,7 +167,7 @@ Guarantees subagents and parallel git worktrees operate within isolated boundari
 ### 2.2 Strict Workspace Boundary Enforcement
 
 * **Target Files**:
-  * [`internal/mcp/workspace/workspace_root.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/workspace/workspace_root.go)
+  * [`internal/mcp/workspace/workspace_root.go`](../internal/mcp/workspace/workspace_root.go)
 * **Root Cause**:
   Relative traversal paths (`../../`) or symlinks pointing outside the workspace boundary risk unintentional mutations.
 * **Algorithmic Steps**:
@@ -177,7 +177,7 @@ Guarantees subagents and parallel git worktrees operate within isolated boundari
   2. Reject any violation with `ErrWorkspaceBoundaryExceeded`.
 * **Acceptance Criteria**:
   * **Scenario 1 (Path escape blocked)**:
-    * **When** a request targets `../../etc/passwd` or `/tmp/other-project/file.go`.
+    * **When** a request targets `../../etc/passwd` or `<temporary-directory>/other-project/file.go`.
     * **Then** the request is rejected with `target path lies outside active workspace root`.
 * **Test Plan**:
   * Unit test in `internal/mcp/workspace/workspace_root_test.go`.
@@ -191,8 +191,8 @@ Protects `go.mod` and `go.sum` from unintended modifications during routine code
 ### 3.1 Readonly Module Flag (`GOFLAGS="-mod=readonly"`)
 
 * **Target Files**:
-  * [`internal/gocache/cache.go`](file:///Users/alessandro/sources/semantic-editor/internal/gocache/cache.go#L122)
-  * [`internal/pipeline/pipeline.go`](file:///Users/alessandro/sources/semantic-editor/internal/pipeline/pipeline.go#L546)
+  * [`internal/gocache/cache.go`](../internal/gocache/cache.go#L122)
+  * [`internal/pipeline/pipeline.go`](../internal/pipeline/pipeline.go#L546)
 * **Root Cause**:
   `gocache.Environment` explicitly clears `GOFLAGS` (`"GOFLAGS="`). When `pipeline.organizeImportFile` calls `imports.Process`, `go list` runs under modern Go toolchains, automatically upgrading `go.mod` directives and reordering indirect dependencies on older checkouts.
 * **Algorithmic Steps**:
@@ -214,8 +214,8 @@ Protects `go.mod` and `go.sum` from unintended modifications during routine code
 ### 3.2 Respect Inherited `GOMODCACHE` in Offline Sessions
 
 * **Target Files**:
-  * [`internal/gocache/cache.go`](file:///Users/alessandro/sources/semantic-editor/internal/gocache/cache.go)
-  * [`internal/mcp/server.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/server.go)
+  * [`internal/gocache/cache.go`](../internal/gocache/cache.go)
+  * [`internal/mcp/server.go`](../internal/mcp/server.go)
 * **Root Cause**:
   `gocache.Environment` unconditionally points `GOMODCACHE` to a scratch directory under `.scratch/`. In offline environments with `GOPROXY=off`, external module downloads fail because pre-cached dependencies in the inherited host `GOMODCACHE` are inaccessible.
 * **Algorithmic Steps**:
@@ -234,7 +234,7 @@ Protects `go.mod` and `go.sum` from unintended modifications during routine code
 ### 3.3 Non-Go Directory Filtering in Gopls Root Discovery
 
 * **Target Files**:
-  * [`internal/godiagnostics/diagnostics.go`](file:///Users/alessandro/sources/semantic-editor/internal/godiagnostics/diagnostics.go#L329)
+  * [`internal/godiagnostics/diagnostics.go`](../internal/godiagnostics/diagnostics.go#L329)
 * **Root Cause**:
   `selectPackageFiles` checks `if len(fileSet) == 0 { return nil, nil, fmt.Errorf("no Go source files found in project root %q", root) }`. In projects where the root directory contains non-Go folders (e.g. `docs/`, `scripts/`) or where Go files reside solely in nested packages, gopls diagnostic queries abort.
 * **Algorithmic Steps**:
@@ -253,7 +253,7 @@ Protects `go.mod` and `go.sum` from unintended modifications during routine code
 ### 3.4 Preserve Explicit Nested-Module Imports
 
 * **Target Files**:
-  * [`internal/pipeline/pipeline.go`](file:///Users/alessandro/sources/semantic-editor/internal/pipeline/pipeline.go#L546)
+  * [`internal/pipeline/pipeline.go`](../internal/pipeline/pipeline.go#L546)
 * **Root Cause**:
   `imports.Process` purges imports that cannot be resolved from the top-level module manifest. Explicit imports requested via `opts.AddImports` targeting nested modules are erroneously stripped.
 * **Algorithmic Steps**:
@@ -277,10 +277,10 @@ Improves clarity and feedback when executing multi-step batch transformations.
 ### 4.1 Uniform `trust_workspace` and `skip_hooks` Parameters
 
 * **Target Files**:
-  * [`internal/mcp/schema.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/schema.go)
-  * [`internal/mcp/batch.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/batch.go)
-  * [`internal/mcp/server.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/server.go)
-  * [`internal/operation/wire_backend.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_backend.go)
+  * [`internal/mcp/schema.go`](../internal/mcp/schema.go)
+  * [`internal/mcp/batch.go`](../internal/mcp/batch.go)
+  * [`internal/mcp/server.go`](../internal/mcp/server.go)
+  * [`internal/operation/wire_backend.go`](../internal/operation/wire_backend.go)
 * **Root Cause**:
   `trust_workspace` and hook skip capabilities are inconsistently supported across endpoints.
 * **Algorithmic Steps**:
@@ -299,8 +299,8 @@ Improves clarity and feedback when executing multi-step batch transformations.
 ### 4.2 Scoped Post-Batch Verification
 
 * **Target Files**:
-  * [`internal/mcp/batch.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/batch.go)
-  * [`internal/projectverify/`](file:///Users/alessandro/sources/semantic-editor/internal/projectverify/)
+  * [`internal/mcp/batch.go`](../internal/mcp/batch.go)
+  * [`internal/projectverify/`](../internal/projectverify/)
 * **Root Cause**:
   Post-batch verification verifies the entire workspace, including packages untouched by the batch, degrading execution performance.
 * **Algorithmic Steps**:
@@ -320,7 +320,7 @@ Improves clarity and feedback when executing multi-step batch transformations.
 ### 4.3 Decouple Mutation Status from Hook Exit Codes
 
 * **Target Files**:
-  * [`internal/mcp/batch.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/batch.go#L816-L821)
+  * [`internal/mcp/batch.go`](../internal/mcp/batch.go#L816-L821)
 * **Root Cause**:
   If mutations succeed on disk but verification hooks return a non-zero exit code, `response.Status` is set to `"error"`, masking successful disk writes.
 * **Algorithmic Steps**:
@@ -365,8 +365,8 @@ Extends structural mutators to handle common Go declaration patterns.
 ### 5.1 Group-Splitting Mutators for `var (...)` and `const (...)` Blocks
 
 * **Target Files**:
-  * [`internal/astedit/move_construct.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/move_construct.go#L98, #L405)
-  * [`internal/astedit/construct.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/construct.go)
+  * [`internal/astedit/move_construct.go`](../internal/astedit/move_construct.go#L98, #L405)
+  * [`internal/astedit/construct.go`](../internal/astedit/construct.go)
 * **Root Cause**:
   `move_construct.go` byte-slices whole `ast.Decl` spans and guards with `if len(group.Specs) > 1 { return fmt.Errorf("cannot move one member of a grouped declaration; split the group first") }`.
 * **Algorithmic Steps**:
@@ -393,8 +393,8 @@ Extends structural mutators to handle common Go declaration patterns.
 ### 5.2 Permit Multiple Package Initialisers (`init`)
 
 * **Target Files**:
-  * [`internal/astedit/collision.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/collision.go#L77-L80, #L113-L125)
-  * [`internal/astedit/function.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/function.go)
+  * [`internal/astedit/collision.go`](../internal/astedit/collision.go#L77-L80, #L113-L125)
+  * [`internal/astedit/function.go`](../internal/astedit/function.go)
 * **Root Cause**:
   `fileDeclarationCollisions` treats `init` as an ordinary unique identifier and enforces package uniqueness, rejecting insertions when a sibling file declares `func init()`.
 * **Algorithmic Steps**:
@@ -416,8 +416,8 @@ Extends structural mutators to handle common Go declaration patterns.
 ### 5.3 Narrow Safe-Delete Directive Refusals
 
 * **Target Files**:
-  * [`internal/astedit/safe_delete.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/safe_delete.go#L136-L140)
-  * [`internal/astedit/remove.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/remove.go)
+  * [`internal/astedit/safe_delete.go`](../internal/astedit/safe_delete.go#L136-L140)
+  * [`internal/astedit/remove.go`](../internal/astedit/remove.go)
 * **Root Cause**:
   `safeDeletePackageProblem` scans all packages in the module for `reflect`, `plugin`, or `unsafe` imports and directives. Unexported private symbols in unrelated packages cannot be targeted dynamically by other packages.
 * **Algorithmic Steps**:
@@ -438,8 +438,8 @@ Extends structural mutators to handle common Go declaration patterns.
 ### 5.4 Anchored Statement Insertion in Loops (`kind: "statement"`)
 
 * **Target Files**:
-  * [`internal/astedit/construct_span.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/construct_span.go#L23-L25)
-  * [`internal/astedit/insert_statement_plan.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/insert_statement_plan.go#L180)
+  * [`internal/astedit/construct_span.go`](../internal/astedit/construct_span.go#L23-L25)
+  * [`internal/astedit/insert_statement_plan.go`](../internal/astedit/insert_statement_plan.go#L180)
 * **Root Cause**:
   `isDirectOwnerStatementCandidate` requires `!strings.Contains(candidate.path, ".")`, discarding any candidate with depth $> 0$ (such as statements inside `for` loops or `if` blocks).
 * **Algorithmic Steps**:
@@ -463,8 +463,8 @@ Eliminates parameter divergences and provides actionable diagnostic remediation.
 ### 6.1 Harmonise `file` and `path` in `semantic_outline`
 
 * **Target Files**:
-  * [`internal/operation/wire_read_inspect.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_read_inspect.go#L47-L52)
-  * [`internal/mcp/schema.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/schema.go)
+  * [`internal/operation/wire_read_inspect.go`](../internal/operation/wire_read_inspect.go#L47-L52)
+  * [`internal/mcp/schema.go`](../internal/mcp/schema.go)
 * **Root Cause**:
   `outlineReadParams` only accepts `path`. Callers supplying `file` are rejected by `CheckParams`.
 * **Algorithmic Steps**:
@@ -482,8 +482,8 @@ Eliminates parameter divergences and provides actionable diagnostic remediation.
 ### 6.2 Actionable Schema Error Feedback
 
 * **Target Files**:
-  * [`internal/mcp/server.go`](file:///Users/alessandro/sources/semantic-editor/internal/mcp/server.go)
-  * [`internal/operation/wire_engine_mutations.go`](file:///Users/alessandro/sources/semantic-editor/internal/operation/wire_engine_mutations.go)
+  * [`internal/mcp/server.go`](../internal/mcp/server.go)
+  * [`internal/operation/wire_engine_mutations.go`](../internal/operation/wire_engine_mutations.go)
 * **Root Cause**:
   Unknown construct kinds or invalid parameters return a generic error message without enumerating acceptable options.
 * **Algorithmic Steps**:
@@ -501,8 +501,8 @@ Eliminates parameter divergences and provides actionable diagnostic remediation.
 ### 6.3 Expose Disambiguation Paths for Repeated Selectors
 
 * **Target Files**:
-  * [`internal/astedit/construct.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/construct.go#L164)
-  * [`internal/astedit/insert_statement_plan.go`](file:///Users/alessandro/sources/semantic-editor/internal/astedit/insert_statement_plan.go#L167)
+  * [`internal/astedit/construct.go`](../internal/astedit/construct.go#L164)
+  * [`internal/astedit/insert_statement_plan.go`](../internal/astedit/insert_statement_plan.go#L167)
 * **Root Cause**:
   When a selector matches multiple identical statements (e.g. multiple `if err != nil`), the ambiguity error must provide exact paths for disambiguation.
 * **Algorithmic Steps**:

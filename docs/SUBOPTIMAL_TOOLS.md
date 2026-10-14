@@ -115,7 +115,7 @@
 ## 2026-10-13: workspace outline MCP function is unavailable in the loaded inventory
 
 * Tool: `semantic_workspace_outline`.
-* Target: `/Users/alessandro/.codex-workspaces/worktrees/ios-eacc886f-014e-4376-a364-6838569b205f/semantic-editor`.
+* Target: `<user-home>/.codex-workspaces/worktrees/ios-eacc886f-014e-4376-a364-6838569b205f/semantic-editor`.
 * Observed failure: the loaded MCP tool object had no callable `semantic_workspace_outline` function and returned a `TypeError`; no source mutation occurred.
 * Workaround: use the repository workspace-outline CLI and inspect package boundaries with the available semantic outline and lookup tools.
 * Root cause: the loaded MCP inventory advertises Java semantic operations but does not expose the workspace-outline function in this session.
@@ -123,7 +123,7 @@
 ## 2026-10-12: workspace outline was unavailable from the loaded MCP inventory
 
 * Tool: `semantic_workspace_outline`.
-* Target: `/Users/alessandro/sources/semantic-editor`.
+* Target: `<repository-root>`.
 * Observed failure: the loaded MCP tool object had no `semantic_workspace_outline` function and returned a `TypeError`; no source mutation occurred.
 * Workaround: inspect the narrowly scoped resolver, diagnostics, and source-buffer call graph with `rg` before making the virtual-source repair.
 * Root cause: the loaded MCP inventory advertises the workspace-outline contract but does not expose a callable function in this session.
@@ -938,7 +938,7 @@ The goal is to track:
 | **ST-0025** | 2026-09-24 | `semantic_insert_function` | `cmd/docgen/benchmark_aggregate.go` in the base checkout, although the requested target was `.scratch/worktrees/benchmark-browser` | Rejected the intended function because its Go raw-string HTML constant contained JavaScript template-literal backticks, terminating the Go literal early. | Reworked the JavaScript messages to avoid nested template literals, then retried in the correct worktree with a manual patch after confirming the semantic server targets the base checkout. | The snippet nested raw-string delimiters, and the semantic server resolved relative paths against the base checkout rather than the requested worktree. | Do not use the semantic server for a separate worktree unless its root can be explicitly selected; avoid nested backticks in Go source snippets. |
 | **ST-0026** | 2026-09-24 | `semantic_insert_function` | `cmd/docgen/benchmark_aggregate.go` in the base checkout, although the requested target was `.scratch/worktrees/benchmark-browser` | Rejected the source because it contained both a constant and a function, while the operation accepts exactly one function declaration. | Split the constant and function into separate insertions; after detecting incorrect checkout targeting, removed the unintended base-checkout file and continued in the requested worktree. | The caller did not match the tool's single-declaration input contract, and the tool targeted a different checkout. | Use declaration insertion for constants and function insertion for functions only after confirming the tool's workspace root. |
 | **ST-0027** | 2026-09-24 | `semantic_insert_function` | `cmd/docgen/benchmark_aggregate.go` in the base checkout, although the requested target was `.scratch/worktrees/benchmark-browser` | Reported successful insertion but diagnostics found `writeBenchmarkBrowserAssets` redeclared in the base checkout; the intended worktree file remained empty. | Removed the unintended base-checkout file and implemented the function in the requested worktree with a focused patch. | The semantic server resolved the relative file path against the main checkout and its success response obscured that workspace mismatch. | Verify the actual absolute workspace path after semantic operations in a task worktree. |
-| **ST-0028** | 2026-09-24 | `semantic_replace_body` | `cmd/docgen/benchmark_aggregate.go` in the requested worktree | Failed to open the target because the semantic server resolved the relative path under `/Users/alessandro/sources/semantic-editor`, where the worktree file does not exist. | Record the tool failure, then apply the focused source change directly in `.scratch/worktrees/benchmark-browser`. | The semantic server ignored the active worktree when resolving relative file paths. | Avoid semantic edits in this worktree until the server can target its root explicitly. |
+| **ST-0028** | 2026-09-24 | `semantic_replace_body` | `cmd/docgen/benchmark_aggregate.go` in the requested worktree | Failed to open the target because the semantic server resolved the relative path under `<repository-root>`, where the worktree file does not exist. | Record the tool failure, then apply the focused source change directly in `.scratch/worktrees/benchmark-browser`. | The semantic server ignored the active worktree when resolving relative file paths. | Avoid semantic edits in this worktree until the server can target its root explicitly. |
 
 | **ST-0025** | 2026-09-23 | `semantic_insert_case` | `internal/astedit/insert.go` in the lint worktree | A request targeting the nested `switch opts.Placement` in `calculateInsertionOffset` inserted `default` into the outer switch with the same discriminant instead. The inner switch remained non-exhaustive, and the outer fallback behavior changed. | Moved the branch into the nested switch. Added a CLI reproducer in `testdata/scripts/insert_case.txtar` that asserts an ambiguous selector leaves the file unchanged. | The switch selector matched the first switch when nested switches had the same discriminant. | Reject ambiguous matches with `ErrSwitchAmbiguous`; a source-position selector remains a possible later enhancement. |
 
@@ -2309,7 +2309,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0169: Root semedit CLI uses short command names
 
-* Tool: `/Users/alessandro/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
+* Tool: `<user-home>/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
 * Target: no source file was modified; semantic command help lookup only.
 * Observed failure: invoking `semantic-replace-body --help` returned `unknown command`.
 * Workaround: inspect the root binary command list and use its registered short CLI command names with the assigned worktree as cwd.
@@ -2317,7 +2317,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0170: Root semedit CLI declaration command lookup
 
-* Tool: `/Users/alessandro/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
+* Tool: `<user-home>/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
 * Target: no source file was modified; command help lookup only.
 * Observed failure: invoking `insert-function --help` returned `unknown command`.
 * Workaround: query the root binary's registered command names before using declaration insertion; no source workaround applied.
@@ -2542,7 +2542,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 ## ST-0198: Git worktree metadata is outside the writable root
 
 * Tool: `git add` for the owned foundation files.
-* Target: shared worktree index at `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-foundation/index.lock`.
+* Target: shared worktree index at `<repository-root>/.git/worktrees/flow-foundation/index.lock`.
 * Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 * Workaround: retry the authorized commit with scoped access to the shared git metadata.
 * Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
@@ -2813,7 +2813,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 * Date: 2026-10-01
 * Tool: `git add` for the assigned contracts worktree
 * Target: index for branch `codex/flow-contracts`; no index or source mutation occurred
-* Observed failure: Git could not create `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-contracts/index.lock` because the shared Git administrative directory is outside the writable worktree.
+* Observed failure: Git could not create `<repository-root>/.git/worktrees/flow-contracts/index.lock` because the shared Git administrative directory is outside the writable worktree.
 * Workaround: Retry the user-authorized explicit-path stage and commit through the sandbox escalation path.
 * Root cause: The worktree shares Git administrative storage outside its source directory.
 
@@ -2945,7 +2945,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0199: CLI lookup rejected documented selector flags
 
-* Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next lookup`.
+* Tool: `<repository-root>/bin/semedit-next lookup`.
 * Target: declaration navigation in `internal/mcp/server.go`, `internal/mcp/batch.go`, `internal/operation/receipt_finalize.go`, `internal/operation/typed_descriptors.go`, and `internal/operation/wire_read_inspect.go`.
 * Observed failure: each `lookup --file <path> --symbol <name>` request returned `param "symbol" is required: invalid operation parameters`.
 * Workaround: use the CLI's read-only `outline --path` operation and inspect the specific declaration via its output.
@@ -2953,7 +2953,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0200: CLI inspection command name differed from expectation
 
-* Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect --help`.
+* Tool: `<repository-root>/bin/semedit-next inspect --help`.
 * Target: read-only inspection navigation for `semantic_inspect_symbol`.
 * Observed failure: the CLI reported `unknown command "inspect"` and suggested `inspect-symbol`.
 * Workaround: use `inspect-symbol` for the documented semantic inspection command.
@@ -2961,7 +2961,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0201: zsh split combined semantic inspection arguments incorrectly
 
-* Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect-symbol`.
+* Tool: `<repository-root>/bin/semedit-next inspect-symbol`.
 * Target: targeted function source inspection in MCP and operation files.
 * Observed failure: the loop's `set -- $spec` under zsh did not preserve the `--file` and `--symbol` arguments, and the CLI rejected each request as missing `symbol`.
 * Workaround: issue exact per-symbol commands with quoted arguments.
@@ -2969,7 +2969,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0202: Semantic insert operation uses grouped CLI command
 
-* Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next insert-function --help`.
+* Tool: `<repository-root>/bin/semedit-next insert-function --help`.
 * Target: adding small helper declarations during the foundation fix.
 * Observed failure: the CLI reported that `insert-function` is not a registered command.
 * Workaround: inspect and use the supported grouped `insert` command for declarations, or use exact atomic updates only when the available semantic operation cannot express a structural change.
@@ -2977,7 +2977,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 ## ST-0203: Shell quoting interrupted semantic body replacement
 
-* Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next replace-body`.
+* Tool: `<repository-root>/bin/semedit-next replace-body`.
 * Target: `internal/mcp/server.go` batch output schema builder.
 * Observed failure: zsh reported `unmatched \"` while parsing the source passed with `--body`; the semantic operation did not run.
 * Workaround: use a shell-safe encoded argument with a source string that contains no shell quote terminators.
@@ -3083,7 +3083,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 * Tool: `git add` for the first review-fix checkpoint.
 * Target: only the owned foundation files in `codex/flow-foundation`.
-* Observed failure: Git was denied creation of `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-foundation/index.lock`; no source files were staged and commit did not run.
+* Observed failure: Git was denied creation of `<repository-root>/.git/worktrees/flow-foundation/index.lock`; no source files were staged and commit did not run.
 * Workaround: retry the user-authorized commit with scoped access to the shared Git metadata.
 * Root cause: this linked worktree stores its index under the common repository directory outside the assigned writable root.
 
@@ -3164,7 +3164,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 * Tool: shell invocation of `./bin/semedit-next --help`.
 * Target: semantic tooling in the foundation worktree.
 * Observed failure: the assigned worktree has no `bin/semedit-next` path.
-* Workaround: use the root-provided absolute CLI path `/Users/alessandro/sources/semantic-editor/bin/semedit-next` with the worktree as the command working directory.
+* Workaround: use the root-provided absolute CLI path `<repository-root>/bin/semedit-next` with the worktree as the command working directory.
 * Root cause: the CLI binary is shared from the main checkout rather than copied into this worktree.
 
 ## ST-0227: Semantic replace-body command rejected an inferred function flag
@@ -3505,13 +3505,13 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 * Target: repository-wide `go test -race -shuffle=on -cover -v ./...`
 * Observed failure: the race/shuffle test stage returned non-zero twice; output truncation hid the failing test/package, while formatter, Go lint, Markdown lint, Vale, and Hugo completed.
 * Workaround: capture the exact test command output in `.scratch/go/structural-check-tests.log` and inspect failure markers before attributing the cause.
-* Root cause: `t.TempDir()` created paths under `/var/folders/...`, a symlink alias of `/private/var/folders/...`; source-buffer path validation correctly rejected those aliases. Re-running `internal/sourcebuf`, `internal/projectverify`, and `internal/mcp` with canonical `TMPDIR=/private/var/folders/wd/twmctgm50s9b4x8mhmfj4_b40000gn/T` passed.
+* Root cause: `t.TempDir()` created paths under a temporary directory symlink alias; source-buffer path validation correctly rejected those aliases. Re-running `internal/sourcebuf`, `internal/projectverify`, and `internal/mcp` with canonical `TMPDIR=<temporary-directory>` passed.
 
 ### ST-0181: Git staging was blocked by the isolated filesystem root
 
 * Date: 2026-10-01
 * Tool: `git add`
-* Target: assigned worktree Git index at `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-structural/index`
+* Target: assigned worktree Git index at `<repository-root>/.git/worktrees/flow-structural/index`
 * Observed failure: sandbox denied creation of `index.lock`; source edits remain in the assigned writable worktree and no index mutation occurred.
 * Workaround: request a narrow sandbox escalation for explicit owned-path staging and the authorized milestone commit.
 * Root cause: this linked worktree's Git metadata is stored outside the configured writable root.
@@ -5156,7 +5156,7 @@ failure remains the documented batch behavior.
 
 * Tool: `semantic_batch`, one failed outer call in the eighth task 12 semedit iteration of `opencode-qwen36-iq4-xs-post-schema-10x-20261005-0022`.
 * Target: the task's `request/request.go` and `request/request_test.go` workspace.
-* Observed failure: the batch used `/Users/alessandro/.codex-worktrees/...` instead of the actual `/Users/alessandro/.codex-workspaces/...` root; canonicalization returned `lstat /Users/alessandro/.codex-worktrees: no such file or directory`. No output-schema rejection was recorded.
+* Observed failure: the batch used `<user-home>/.codex-worktrees/...` instead of the actual `<user-home>/.codex-workspaces/...` root; canonicalization returned `lstat <user-home>/.codex-worktrees: no such file or directory`. No output-schema rejection was recorded.
 * Workaround: the model retried the changes using 15 native `edit` calls (14 completed and one no-op replacement failed), then ran `go build ./...`, `go test ./...`, and hidden-tag tests successfully. Bash did not write source. The benchmark coordinator reports PASS.
 * Root cause: caller supplied a nonexistent absolute workspace path, not a server defect. Failed MCP call ID: `5D9Tt1HZWe1G2IG31jrBnb0orKBUYQHe`. Full evidence is retained in `.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-12-request-identity-migration_1791165639729586000.json`.
 
@@ -6610,7 +6610,7 @@ The CLI `replace-body` fallback also rejected this file because orphan-import pr
 
 * Tool: `mcp__gemini_mcp__gemini_ask`.
 * Target: collection-element naming proposal; read-only review of `internal/operation/wire_structural_composite.go` and naming ADRs.
-* Observed failure: the endpoint rejected `/Users/alessandro/sources/semantic-editor` as outside its synthetic root `/Users/alessandro/sources/gemini-mcp/testdata`.
+* Observed failure: the endpoint rejected `<repository-root>` as outside its synthetic root `<repository-root>/../gemini-mcp/testdata`.
 * Workaround: attempt a review with repository evidence supplied directly and no repository-path override; do not claim a completed review without substantive reviewer output.
 * Root cause: the configured review server enforces a synthetic test-root boundary instead of this workspace.
 
@@ -7001,6 +7001,16 @@ The CLI inspection also requested the nonexistent `prepareReadProjectContext` in
 * Root cause: caller supplied several declarations to a single-construct operation.
 
 `semantic_replace_construct` also rejected an unsupported `language` parameter while targeting `goWorkspaceContext` in that file. No mutation occurred. Retry without the parameter; the operation selects Go from the source file.
+
+## Semantic replace construct schema mismatch (2026-10-14)
+
+* Tool: `semantic_replace_construct`.
+* Target: `tools/mcp-config/install.go`.
+* Observed failure: the call rejected an unsupported `language` parameter before editing; no source mutation occurred.
+* Workaround: retry with only the supported parameters from the live schema.
+* Root cause: the call supplied a language selector for a Go file whose backend is inferred from its extension.
+* The retry with supported parameters rejected a trailing `#nosec` line comment as unsafe to preserve; no source mutation occurred. A targeted ordinary edit will place the justification on its own line before the statement.
+* A subsequent selector included an entire `if` statement instead of the supported nested call expression. The tool listed the valid source spans and made no edit; retry with the call expression as the discriminator.
 
 ## Semantic outline schema mismatch (2026-10-14)
 

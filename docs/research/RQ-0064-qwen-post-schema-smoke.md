@@ -88,7 +88,7 @@ suppressing that question. Independent review and the full checks passed.
 The final run is `opencode-qwen36-iq4-xs-post-schema-10x-20261005-0022`:
 
 ```bash
-PATH="/Users/alessandro/go/bin:$PWD/.scratch/go/bin:$PATH" \
+PATH="$(go env GOPATH)/bin:$PWD/.scratch/go/bin:$PATH" \
   .scratch/bin/benchmark-harness --target opencode/qwen36-iq4-xs \
   --tasks task-01-rename-local,task-09-composite-refactor,task-11-mixed-sink-api-migration,task-12-request-identity-migration \
   --variants small:default --repeats 10 --concurrency 1 --timeout 12m \

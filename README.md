@@ -236,6 +236,14 @@ make build
 
 `make build` produces the development binary `bin/semedit-next`. `make promote` runs checks and promotes it to the stable `bin/semedit` used by long-lived integrations.
 
+The tracked `.codex/config.toml.example` and `.agents/plugins/workspace-servers/mcp_config.json.example` development templates use `{{SEMEDIT_BINARY}}` and `{{SEMEDIT_NEXT_BINARY}}` placeholders. Install the development configurations from the checkout:
+
+```sh
+make install-mcp
+```
+
+This builds the binaries and replaces the placeholders with absolute paths to `bin/semedit` and `bin/semedit-next` in the local configurations. Generated configurations are ignored by Git; edit the `.example` templates and rerun the target to change them. Restart the harness after installation. Use `semedit install codex` or `semedit install copilot` for normal user or workspace registration as described in Getting started.
+
 For a Go project, run the binary from the intended workspace and name the declaration rather than calculating coordinates:
 
 ```sh
