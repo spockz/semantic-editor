@@ -4,9 +4,9 @@ package astedit
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
 	"os"
 	"path/filepath"
-	"semedit/internal/backend"
 	"strings"
 	"testing"
 )

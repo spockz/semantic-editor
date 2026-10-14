@@ -254,7 +254,7 @@ test: test-core ## Alias for test-core
 
 test-core: go-env test-package-closure ## Run core engine unit tests excluding benchmark-harness
 	@echo "==> Running core engine tests..."
-	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
+	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
 	go test $$CORE_PACKAGES
 
 .PHONY: test-package-closure
@@ -264,7 +264,7 @@ test-package-closure: go-env ## Test the custom package-closure linter module
 .PHONY: test-race
 test-race: go-env ## Run core engine unit tests with race detector
 	@echo "==> Running core engine tests with race detector..."
-	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
+	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
 	go test -race -shuffle=on -cover -v $$CORE_PACKAGES
 
 .PHONY: test-harness
@@ -299,7 +299,7 @@ test-fuzz: go-env ## Run deep 1000-check metamorphic property fuzzing
 build-next: go-env ## Build the active development binary (bin/semedit-next)
 	@echo "==> Building bin/semedit-next..."
 	@mkdir -p bin
-	go build -o bin/semedit-next .
+	go build -o bin/semedit-next ./cmd/semedit
 
 .PHONY: promote
 promote: check build-next ## Verify checks and promote bin/semedit-next to healthy bin/semedit

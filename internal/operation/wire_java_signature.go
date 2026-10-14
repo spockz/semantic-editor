@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/javacst"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func runChangeSignatureJava(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {

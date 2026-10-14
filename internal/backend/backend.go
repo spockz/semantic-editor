@@ -13,9 +13,9 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/capability"
-	"semedit/internal/sourcefiles"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/capability"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 
 	"golang.org/x/mod/modfile"
 )

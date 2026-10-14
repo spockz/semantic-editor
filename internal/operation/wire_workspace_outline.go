@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	javabackend "semedit/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
 )
 
 // WorkspaceOutlineReq captures inputs for discovering packages and modules across a workspace.

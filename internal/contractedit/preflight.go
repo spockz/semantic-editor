@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 type preflightState struct {

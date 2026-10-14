@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/lsp"
 )
 
 func TestFramesRoundTripAndRejectMalformedOrOversizedPayload(t *testing.T) {

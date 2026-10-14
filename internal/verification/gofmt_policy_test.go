@@ -5,7 +5,7 @@ package verification
 import (
 	"testing"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func TestShouldRunGofmtPreservesAutoDirectoryAndSkipsExternalFiles(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"slices"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 // Profile carries the static language metadata backing a capability matrix view.

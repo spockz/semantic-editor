@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
 )
 
 func TestMCPLiveReloadCapabilities(t *testing.T) {

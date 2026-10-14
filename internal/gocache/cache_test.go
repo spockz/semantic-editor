@@ -5,10 +5,10 @@ package gocache_test
 import (
 	"bytes"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/gocache"
 	"strings"
 	"sync"
 	"testing"

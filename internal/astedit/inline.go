@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 // InlineVariable inlines one local literal binding at its immediate use site.

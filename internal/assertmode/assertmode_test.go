@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/assertmode"
+	"github.com/spockz/semantic-editor/internal/assertmode"
 )
 
 type applyCase struct {

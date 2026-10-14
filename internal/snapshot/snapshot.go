@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/astedit"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 // Manifest stores metadata and content-addressed file records for a pre-edit snapshot.

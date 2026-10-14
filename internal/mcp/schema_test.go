@@ -15,13 +15,13 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
-	gobackend "semedit/internal/backend/golang"
-	javabackend "semedit/internal/backend/java"
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
-	"semedit/internal/operation"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"slices"
 )
 

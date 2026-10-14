@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/contractplan"
+	"github.com/spockz/semantic-editor/internal/contractplan"
 )
 
 // ExtractInterface resolves exact direct methods and applies a type-checked interface candidate.

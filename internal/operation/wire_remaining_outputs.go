@@ -4,7 +4,7 @@ package operation
 import (
 	"fmt"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func outputObject(properties map[string]ValueSchema, required ...string) ValueSchema {

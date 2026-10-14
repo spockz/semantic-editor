@@ -8,10 +8,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/sourcebuf"
 	"testing"
 )
 

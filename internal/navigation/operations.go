@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 )
 
 // RenameRequest carries execution inputs and publication context for one backend rename.

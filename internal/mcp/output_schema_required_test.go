@@ -3,7 +3,7 @@
 package mcp
 
 import (
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"slices"
 	"testing"
 )

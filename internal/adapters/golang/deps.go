@@ -9,8 +9,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"semedit/internal/gocache"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 var (

@@ -2,7 +2,7 @@
 
 package operation
 
-import "semedit/internal/backend"
+import "github.com/spockz/semantic-editor/internal/backend"
 
 var readProjectParams = []ParameterContract{
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Bash and Make require a selected source file)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},

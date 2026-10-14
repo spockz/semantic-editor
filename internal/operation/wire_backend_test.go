@@ -14,10 +14,10 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
-	gobackend "semedit/internal/backend/golang"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestMoveConstructDefaultsDestinationToSourceFile(t *testing.T) {

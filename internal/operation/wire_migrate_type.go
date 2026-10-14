@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // MigrateTypeReq requests a type-identity-preserving field spelling migration.

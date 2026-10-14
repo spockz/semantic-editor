@@ -4,13 +4,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"go/format"
 	"os"
 	"path/filepath"
-	"semedit/internal/atomicfile"
-	"semedit/internal/backend"
-	"semedit/internal/capability"
-	"semedit/internal/operation"
 	"strings"
 	"testing"
 

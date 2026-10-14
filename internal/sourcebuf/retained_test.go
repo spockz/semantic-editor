@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func TestRetainedForkKeepsParentRevision(t *testing.T) {

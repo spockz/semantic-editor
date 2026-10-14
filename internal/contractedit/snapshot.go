@@ -17,8 +17,8 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/gocache"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // LoadSnapshot captures the selected module's package graph and source read set.

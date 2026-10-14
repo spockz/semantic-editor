@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 func TestParseIdentifier(t *testing.T) {

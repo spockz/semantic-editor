@@ -16,8 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 // ExtractKind selects the declaration form created by ExtractFunction.

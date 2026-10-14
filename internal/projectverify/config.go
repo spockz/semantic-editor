@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/sourcefiles"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 
 	"gopkg.in/yaml.v3"
 )

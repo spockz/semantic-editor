@@ -11,7 +11,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 
-	"semedit/tools/linters/fatalorder"
+	"github.com/spockz/semantic-editor/tools/linters/fatalorder"
 )
 
 func runAnalyzer(t *testing.T, src string) []string {

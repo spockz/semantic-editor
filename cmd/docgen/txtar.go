@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"os"
 	"path/filepath"
-	"semedit/internal/operation"
 	"slices"
 	"strings"
 )

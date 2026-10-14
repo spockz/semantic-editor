@@ -12,10 +12,10 @@ import (
 	"sort"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 const (

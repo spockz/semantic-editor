@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 type retainingBackend struct {

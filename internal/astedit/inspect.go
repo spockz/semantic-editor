@@ -5,11 +5,11 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/token"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/symbol"
 	"slices"
 	"strings"
 )

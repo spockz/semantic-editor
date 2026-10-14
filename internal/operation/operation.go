@@ -9,8 +9,8 @@ import (
 	"maps"
 	"slices"
 
-	"semedit/internal/backend"
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 // Entry is the type-erased view of an operation stored in the registry.

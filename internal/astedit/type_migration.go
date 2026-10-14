@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )

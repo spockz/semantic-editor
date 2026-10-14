@@ -7,8 +7,8 @@ import (
 	"errors"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/lsp"
 )
 
 func TestJavaWorkspaceApplyEditAcknowledgesOnlyAcceptedEdits(t *testing.T) {

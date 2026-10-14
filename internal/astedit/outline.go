@@ -3,12 +3,12 @@ package astedit
 
 import (
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"go/ast"
 	"go/token"
 	"os"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/pipeline"
 	"strings"
 )
 

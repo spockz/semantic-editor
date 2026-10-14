@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestAgentSessionRejectsChangedOriginalThread(t *testing.T) {

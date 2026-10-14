@@ -5,8 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
 	"path/filepath"
-	"semedit/internal/backend"
 	"testing"
 )
 

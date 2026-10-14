@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"slices"
 
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 )
 
 func serviceForContext(service *backend.Service) *backend.Service {

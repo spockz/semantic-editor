@@ -3,13 +3,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/capability"
-	"semedit/internal/operation"
 	"strings"
 )
 

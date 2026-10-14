@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // CasePlacement specifies relative placement for a newly inserted switch case.

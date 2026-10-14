@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/mcptest"
 )
 
 func TestAssertionModeTrustIsScopedToRequestRoot(t *testing.T) {

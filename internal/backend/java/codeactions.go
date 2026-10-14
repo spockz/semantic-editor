@@ -15,10 +15,10 @@ import (
 	"sort"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/javacst"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 const javaMoveResourceKind = "moveResource"

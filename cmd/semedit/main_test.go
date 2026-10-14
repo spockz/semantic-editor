@@ -12,12 +12,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/operation"
 
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/rogpeppe/go-internal/txtar"
@@ -27,11 +28,22 @@ var fakeLSPBuild sync.Once
 var errFakeLSPBuild error
 var fakeBashLSPPath string
 var fakeMakeLSPPath string
+var repositoryRoot = func() string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("resolve repository root from test source")
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(filename), "../.."))
+}()
+
+func repoPath(path ...string) string {
+	return filepath.Join(append([]string{repositoryRoot}, path...)...)
+}
 
 func prepareFakeLSPs() error {
 	fakeLSPBuild.Do(func() {
-		helperDir := filepath.Join(".scratch", "testtools")
-		helperCache := filepath.Join(".scratch", "cache", "testtools")
+		helperDir := repoPath(".scratch", "testtools")
+		helperCache := repoPath(".scratch", "cache", "testtools")
 		if err := os.MkdirAll(helperDir, 0o700); err != nil {
 			errFakeLSPBuild = err
 			return
@@ -55,6 +67,7 @@ func prepareFakeLSPs() error {
 		fakeMakeLSPPath = filepath.Join(helperDir, "make-ls")
 		for _, target := range []string{fakeBashLSPPath, fakeMakeLSPPath} {
 			command := exec.Command("go", "build", "-o", target, "./internal/testtools/lspserver")
+			command.Dir = repositoryRoot
 			command.Env = append(os.Environ(), "GOCACHE="+helperCache)
 			output, buildErr := command.CombinedOutput()
 			if buildErr != nil {
@@ -120,7 +133,7 @@ func getGoWorkHash(startDir string) (string, string, bool) {
 func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 	t.Parallel()
 	testscript.Run(t, testscript.Params{
-		Dir: filepath.Join("testdata", "scripts"),
+		Dir: repoPath("testdata", "scripts"),
 		Setup: func(env *testscript.Env) error {
 			for _, key := range []string{"GOPATH", "GOCACHE", "GOROOT", "HOME", "GOBIN", "GOENV", "GOMODCACHE", "GOTMPDIR", "GOWORK", "GOPLSCACHE"} {
 				if val := os.Getenv(key); val != "" {
@@ -178,7 +191,7 @@ type publicFixture struct {
 
 func loadPublicFixtures(t *testing.T) []publicFixture {
 	t.Helper()
-	entries, err := os.ReadDir(filepath.Join("testdata", "scripts"))
+	entries, err := os.ReadDir(repoPath("testdata", "scripts"))
 	if err != nil {
 		t.Fatalf("read script fixtures: %v", err)
 	}
@@ -187,7 +200,7 @@ func loadPublicFixtures(t *testing.T) []publicFixture {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".txtar" {
 			continue
 		}
-		data, readErr := os.ReadFile(filepath.Join("testdata", "scripts", entry.Name()))
+		data, readErr := os.ReadFile(repoPath("testdata", "scripts", entry.Name()))
 		if readErr != nil {
 			t.Fatalf("read fixture %s: %v", entry.Name(), readErr)
 		}
@@ -321,7 +334,7 @@ func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
 	benchmarkOracle := regexp.MustCompile(`(?m)^oracle:\s*$`)
 	found := 0
 
-	err := filepath.WalkDir("testdata", func(path string, entry fs.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(repoPath("testdata"), func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -338,8 +351,12 @@ func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
 			return fmt.Errorf("read txtar %s: %w", path, err)
 		}
 		archive := txtar.Parse(data)
-		if !txtarHasAssertion(path, archive, assertion, failureExpectation, benchmarkOracle) && !txtarHasWantedFile(archive.Files) {
-			t.Errorf("txtar %s has no test assertion or wanted file", path)
+		relativePath, err := filepath.Rel(repositoryRoot, path)
+		if err != nil {
+			return fmt.Errorf("relative txtar path %s: %w", path, err)
+		}
+		if !txtarHasAssertion(relativePath, archive, assertion, failureExpectation, benchmarkOracle) && !txtarHasWantedFile(archive.Files) {
+			t.Errorf("txtar %s has no test assertion or wanted file", relativePath)
 		}
 		found++
 		return nil

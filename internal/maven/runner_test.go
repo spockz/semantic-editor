@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/backend"
-	"semedit/internal/maven"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/maven"
 )
 
 func fixture(t *testing.T) (string, backend.WorkspaceTrust) {

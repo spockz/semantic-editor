@@ -5,9 +5,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"strings"
 	"testing"
 	"time"

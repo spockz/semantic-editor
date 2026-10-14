@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"bytes"
-	"semedit/internal/backend"
-	javabackend "semedit/internal/backend/java"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/backend"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 type fakeJavaSession struct {

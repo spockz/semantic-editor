@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/astedit"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func TestScaffoldFile_ExplicitPackage(t *testing.T) {

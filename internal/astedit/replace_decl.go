@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // ReplaceDeclOptions configures package declaration replacement.

@@ -7,13 +7,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/lsp"
 	"maps"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/lsp"
 	"slices"
 	"strings"
 	"sync"
@@ -21,7 +21,7 @@ import (
 
 	"encoding/json"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )

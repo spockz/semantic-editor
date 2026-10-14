@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/lsp"
 )
 
 type fakeLSPPosition struct {

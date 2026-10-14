@@ -4,7 +4,7 @@ package golang_test
 import (
 	"testing"
 
-	"semedit/internal/adapters/golang"
+	"github.com/spockz/semantic-editor/internal/adapters/golang"
 )
 
 func TestFindGopls(t *testing.T) {

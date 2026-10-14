@@ -4,7 +4,7 @@ package operation_test
 import (
 	"testing"
 
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestParseToolVariants(t *testing.T) {

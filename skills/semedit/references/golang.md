@@ -4,6 +4,8 @@ This reference provides concrete patterns and workflows for executing Go refacto
 
 The default MCP base catalog includes `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment`; `--tool-profile full` exposes all registered tools. The execution profile `mutations-only` independently removes read-only tools, including workspace outline.
 
+Install the CLI with `go install github.com/spockz/semantic-editor/cmd/semedit@latest`, then install `gopls` with `go install golang.org/x/tools/gopls@latest`. From a checkout, build the executable with `go install ./cmd/semedit` at the repository root.
+
 When scripting semedit harness setup from a Go project, use `--json` with `install`, `integration status`, or `uninstall` for structured administrative output. Semantic operation output is unchanged.
 
 ---

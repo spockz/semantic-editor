@@ -4,10 +4,10 @@ package main
 
 import (
 	"context"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"strings"
 	"testing"
 )

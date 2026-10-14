@@ -2,9 +2,9 @@
 package main
 
 import (
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"strings"
 	"testing"
 )

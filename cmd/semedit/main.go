@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"semedit/internal/cli"
-	"semedit/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/cli"
+	"github.com/spockz/semantic-editor/internal/mcp"
 )
 
 func main() {

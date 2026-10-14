@@ -19,13 +19,13 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/backend"
-	javabackend "semedit/internal/backend/java"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/backend"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 type managedMCPFixture struct {

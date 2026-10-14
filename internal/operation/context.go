@@ -5,7 +5,7 @@ import (
 	"context"
 	"slices"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // CallContext carries request-scoped state shared by every operation invocation.

@@ -11,9 +11,9 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 // Placement specifies where in the file or relative to declarations an insertion occurs.

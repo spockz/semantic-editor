@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"semedit/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcp"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )

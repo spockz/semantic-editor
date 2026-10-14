@@ -18,7 +18,7 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // GoInspectConstructKinds lists nested replacement kinds with path-addressable candidates.

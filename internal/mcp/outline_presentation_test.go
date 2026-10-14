@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/mcptest"
 )
 
 func TestMCPOutlineTextSummarizesBulkCollections(t *testing.T) {

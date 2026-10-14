@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // InsertConstructResult reports the source change produced by a generic insertion.

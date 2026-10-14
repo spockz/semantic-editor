@@ -12,8 +12,8 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 )
 
 // LanguageCoverage reports the verification status and source receipt for one language.

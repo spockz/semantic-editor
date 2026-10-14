@@ -13,7 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 
 	gts "github.com/odvcencio/gotreesitter"
 	javagrammar "github.com/odvcencio/gotreesitter/grammars/java"

@@ -7,9 +7,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/mcp"
 	"os"
 	"path/filepath"
-	"semedit/internal/mcp"
 	"strings"
 )
 

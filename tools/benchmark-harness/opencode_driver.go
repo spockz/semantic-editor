@@ -8,10 +8,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/mcp"
 	"io"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/mcp"
 	"strings"
 	"time"
 )

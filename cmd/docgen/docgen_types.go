@@ -2,7 +2,7 @@
 package main
 
 import (
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 // CodeCapability represents extracted language capability metadata.

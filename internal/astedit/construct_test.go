@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/astedit"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func writeGo(t *testing.T, path, content string) {

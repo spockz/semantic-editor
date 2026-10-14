@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
@@ -13,7 +14,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 	"slices"
 	"strings"
 )

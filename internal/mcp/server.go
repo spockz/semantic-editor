@@ -19,17 +19,17 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/backends"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
-	"semedit/internal/projectverify"
-	"semedit/internal/symbol"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // Server handles MCP JSON-RPC requests over stdio streams.

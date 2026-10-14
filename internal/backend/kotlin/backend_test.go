@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	neutralbackend "semedit/internal/backend"
-	"semedit/internal/lsp"
-	"semedit/internal/pipeline"
+	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestWaitDiagnosticsRequiresMatchingURIReceipt(t *testing.T) {

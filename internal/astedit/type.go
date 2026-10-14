@@ -10,7 +10,7 @@ import (
 	"go/token"
 	"strings"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // TypeOptions configures type declaration insertion behavior.

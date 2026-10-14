@@ -19,13 +19,13 @@ import (
 	"strings"
 
 	"errors"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/symbol"
 
 	"golang.org/x/tools/go/ast/astutil"
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/gocache"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"slices"
 )
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // StageLimits are immutable server policy limits reported with each receipt.

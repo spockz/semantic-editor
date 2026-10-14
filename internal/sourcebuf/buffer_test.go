@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
-	"semedit/internal/atomicfile"
-	"semedit/internal/sourcebuf"
 	"strings"
 	"testing"
 )

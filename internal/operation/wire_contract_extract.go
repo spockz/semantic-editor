@@ -5,8 +5,8 @@ package operation
 import (
 	"context"
 
-	"semedit/internal/backend"
-	"semedit/internal/contractedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/contractedit"
 )
 
 func runExtractInterface(ctx context.Context, cc CallContext, request extractInterfaceRequest) (contractOutput, error) {

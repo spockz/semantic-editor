@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 // ReferencesReq carries target and project selection for typed reference search.

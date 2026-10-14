@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestMCPIngressNormalizesConstructKindAliasesBeforeSchemaValidation(t *testing.T) {

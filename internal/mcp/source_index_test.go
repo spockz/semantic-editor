@@ -3,8 +3,8 @@
 package mcp_test
 
 import (
-	"semedit/internal/mcp"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"testing"
 )
 

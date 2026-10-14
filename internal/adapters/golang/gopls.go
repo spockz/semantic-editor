@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/backend/readlsp"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 var (

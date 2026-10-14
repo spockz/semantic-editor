@@ -5,10 +5,10 @@ package mcp_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"path/filepath"
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
-	"semedit/internal/pipeline"
 	"strings"
 	"testing"
 

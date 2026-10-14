@@ -3,9 +3,9 @@ package atomicfile_test
 
 import (
 	"errors"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
 	"os"
 	"path/filepath"
-	"semedit/internal/atomicfile"
 	"testing"
 )
 

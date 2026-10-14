@@ -4,8 +4,8 @@ package operation
 
 import (
 	"fmt"
-	"semedit/internal/backend"
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 func contractVariant(when capability.VariantSet, scope capability.AnalysisScope, requirements []capability.Requirement, features capability.FeatureSet, guarantees capability.GuaranteeSet, tolerance capability.BrokenCodeSupport) capability.ContractVariant {

@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/backends"
-	"semedit/internal/capability"
-	"semedit/internal/navigation"
-	"semedit/internal/projectverify"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/verification"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/capability"
+	"github.com/spockz/semantic-editor/internal/navigation"
+	"github.com/spockz/semantic-editor/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/verification"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.

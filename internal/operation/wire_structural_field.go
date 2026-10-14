@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/javacst"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 const insertFieldToolName = "semantic_insert_field"

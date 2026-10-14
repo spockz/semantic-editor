@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/mcp"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestCodexToolCallOutcomes(t *testing.T) {

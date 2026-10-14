@@ -15,13 +15,13 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
-	"semedit/internal/projectverify"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 
 	"go/build/constraint"
 

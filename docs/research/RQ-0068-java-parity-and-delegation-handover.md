@@ -187,8 +187,8 @@ Every Java operation must be verified at three levels before completion:
      }
      ```
 
-2. **Extending `runFakeJava` in `language_txtar_test.go`**:
-   * Extend the deterministic JDT LS test stand-in (`runFakeJava` in [`language_txtar_test.go`](../../language_txtar_test.go)) to handle `textDocument/references`, multi-file `textDocument/rename` (including `RenameFile` for public classes), `textDocument/codeAction` (`refactor.extract.*`, `refactor.inline.*`, `source.overrideMethods`), and `workspace/symbol` so `make check` runs all Java `.txtar` scripts hermetically in milliseconds.
+2. **Extending `runFakeJava` in `cmd/semedit/language_txtar_test.go`**:
+   * Extend the deterministic JDT LS test stand-in (`runFakeJava` in [`language_txtar_test.go`](../../cmd/semedit/language_txtar_test.go)) to handle `textDocument/references`, multi-file `textDocument/rename` (including `RenameFile` for public classes), `textDocument/codeAction` (`refactor.extract.*`, `refactor.inline.*`, `source.overrideMethods`), and `workspace/symbol` so `make check` runs all Java `.txtar` scripts hermetically in milliseconds.
 3. **Required `testdata/scripts/*_java.txtar` Suite**:
    * `workspace_outline_java.txtar`: Multi-module Maven reactor with `core/pom.xml`, `api/pom.xml`, and `package-info.java` synopses.
    * `outline_java_directory.txtar`: Directory-scoped package outline with `--include-unexported=false`.

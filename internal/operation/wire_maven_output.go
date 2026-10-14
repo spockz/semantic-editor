@@ -3,7 +3,7 @@ package operation
 
 import (
 	"errors"
-	"semedit/internal/maven"
+	"github.com/spockz/semantic-editor/internal/maven"
 )
 
 func mavenResultOutputSchema() *ValueSchema {

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"go/format"
 
-	"semedit/internal/assertmode"
-	"semedit/internal/backend"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/assertmode"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // AssertionModeReq requests a safe fail-fast or continue-on-failure assertion rewrite.

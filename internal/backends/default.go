@@ -3,15 +3,15 @@ package backends
 
 import (
 	"fmt"
-	"semedit/internal/backend"
-	bashbackend "semedit/internal/backend/bash"
-	gobackend "semedit/internal/backend/golang"
-	haskellbackend "semedit/internal/backend/haskell"
-	javabackend "semedit/internal/backend/java"
-	kotlinbackend "semedit/internal/backend/kotlin"
-	makebackend "semedit/internal/backend/makefile"
-	rustbackend "semedit/internal/backend/rust"
-	scalabackend "semedit/internal/backend/scala"
+	"github.com/spockz/semantic-editor/internal/backend"
+	bashbackend "github.com/spockz/semantic-editor/internal/backend/bash"
+	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
+	haskellbackend "github.com/spockz/semantic-editor/internal/backend/haskell"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	kotlinbackend "github.com/spockz/semantic-editor/internal/backend/kotlin"
+	makebackend "github.com/spockz/semantic-editor/internal/backend/makefile"
+	rustbackend "github.com/spockz/semantic-editor/internal/backend/rust"
+	scalabackend "github.com/spockz/semantic-editor/internal/backend/scala"
 )
 
 // NewDefaultService assembles the built-in language implementations behind the shared service boundary.

@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	javabackend "semedit/internal/backend/java"
-	"semedit/internal/backends"
-	"semedit/internal/javacst"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // ReplaceBodyReq replaces one function or method body with bare statements.

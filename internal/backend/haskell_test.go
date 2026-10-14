@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/backend"
-	haskellbackend "semedit/internal/backend/haskell"
-	"semedit/internal/backends"
+	"github.com/spockz/semantic-editor/internal/backend"
+	haskellbackend "github.com/spockz/semantic-editor/internal/backend/haskell"
+	"github.com/spockz/semantic-editor/internal/backends"
 )
 
 type fakeHaskellSession struct {

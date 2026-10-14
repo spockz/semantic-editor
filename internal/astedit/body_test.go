@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/astedit"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 func TestReplaceBody_TopLevelFunction(t *testing.T) {

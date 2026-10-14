@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/contractedit"
+	"github.com/spockz/semantic-editor/internal/contractplan"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"os"
-	"semedit/internal/backend"
-	"semedit/internal/contractedit"
-	"semedit/internal/contractplan"
 	"strings"
 )
 

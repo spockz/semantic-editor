@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestAllOperationsPreserveWorkspaceManifest(t *testing.T) {

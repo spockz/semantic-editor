@@ -15,8 +15,8 @@ import (
 
 	"golang.org/x/mod/modfile"
 
-	"semedit/internal/backend"
-	"semedit/internal/sourcefiles"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
 // WorkspaceOutlineGo discovers modules and packages under target path within root.

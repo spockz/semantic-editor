@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"bytes"
-	"semedit/internal/integration"
+	"github.com/spockz/semantic-editor/internal/integration"
 )
 
 func TestCopilotWorkspaceInstallConflictAndOwnedUninstall(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/tools/go/analysis/singlechecker"
 
-	"semedit/tools/linters/fatalorder"
+	"github.com/spockz/semantic-editor/tools/linters/fatalorder"
 )
 
 func main() {

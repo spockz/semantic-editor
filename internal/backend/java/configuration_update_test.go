@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 )
 
 type configurationUpdateSession struct {

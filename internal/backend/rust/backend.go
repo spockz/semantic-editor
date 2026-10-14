@@ -12,11 +12,11 @@ import (
 	"strings"
 	"sync"
 
-	neutralbackend "semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/backend/readlsp"
-	"semedit/internal/lsp"
-	"semedit/internal/pipeline"
+	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
+	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 var (

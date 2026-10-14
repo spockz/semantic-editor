@@ -6,9 +6,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 	"testing"
 )
 

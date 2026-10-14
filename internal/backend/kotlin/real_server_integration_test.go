@@ -3,11 +3,11 @@ package kotlin
 
 import (
 	"context"
+	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"path/filepath"
-	neutralbackend "semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/pipeline"
 	"testing"
 )
 

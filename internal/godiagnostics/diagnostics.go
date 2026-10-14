@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/lsp"
 
 	"golang.org/x/tools/go/packages"
 )

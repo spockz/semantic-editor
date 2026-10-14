@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestDiagnosticsLifecycleAndFailures(t *testing.T) {

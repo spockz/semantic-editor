@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"slices"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/javacst"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // InsertDeclarationReq inserts one top-level Go declaration.

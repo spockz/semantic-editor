@@ -3,8 +3,8 @@
 package verification
 
 import (
-	"semedit/internal/backend"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 )
 
 // Request carries typed project execution inputs from an ingress adapter.

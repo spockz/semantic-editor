@@ -3,12 +3,12 @@ package operation
 
 import (
 	"fmt"
+	symbolpkg "github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"maps"
 	"reflect"
-	symbolpkg "semedit/internal/symbol"
 	"strings"
 )
 

@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/backend"
-	javabackend "semedit/internal/backend/java"
-	"semedit/internal/maven/pomedit"
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/backend"
+	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
+	"github.com/spockz/semantic-editor/internal/maven/pomedit"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 //nolint:gocognit,funlen // The end-to-end scenario intentionally exercises one real server session across the Java operation lifecycle.

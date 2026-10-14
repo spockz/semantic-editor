@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/javacst"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func runExtractInterfaceJava(ctx context.Context, cc CallContext, req extractInterfaceRequest) (contractOutput, error) {

@@ -3,9 +3,9 @@ package backend
 
 import (
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 	"io/fs"
 	"path/filepath"
-	"semedit/internal/sourcefiles"
 	"slices"
 	"strings"
 )

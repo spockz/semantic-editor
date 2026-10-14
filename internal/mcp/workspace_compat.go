@@ -2,8 +2,8 @@
 package mcp
 
 import (
-	"semedit/internal/backend"
-	"semedit/internal/mcp/workspace"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/mcp/workspace"
 )
 
 // ResolveRequestRoot delegates root policy to the workspace package.

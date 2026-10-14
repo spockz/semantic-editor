@@ -6,9 +6,9 @@ import (
 	"errors"
 	"fmt"
 
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // ErrUnknownOperation indicates no operation is registered for a key.

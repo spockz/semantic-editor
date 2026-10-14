@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/adapters/golang"
-	"semedit/internal/pipeline"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/adapters/golang"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/symbol"
 
 	"bytes"
 

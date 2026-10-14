@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 const applicationStateField = "application_state"

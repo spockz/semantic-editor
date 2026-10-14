@@ -4,7 +4,7 @@ package operation
 import (
 	"slices"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // StageReceiptSchema describes the compact status and remaining-step inventory returned by staging controls.

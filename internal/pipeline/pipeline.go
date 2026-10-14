@@ -18,12 +18,12 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/atomicfile"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
 	"golang.org/x/tools/imports"
 )

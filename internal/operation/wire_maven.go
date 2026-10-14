@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/maven"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/maven"
 )
 
 // MavenReq requests one fixed Java Maven action.

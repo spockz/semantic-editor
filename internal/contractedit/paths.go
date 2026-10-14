@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // FindModuleRoot finds the module containing the first selected source file.

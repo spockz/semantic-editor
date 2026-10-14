@@ -3,8 +3,8 @@ package mcp
 
 import (
 	"errors"
+	"github.com/spockz/semantic-editor/internal/backend"
 	"reflect"
-	"semedit/internal/backend"
 	"sync"
 )
 

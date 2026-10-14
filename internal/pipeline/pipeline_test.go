@@ -13,7 +13,7 @@ import (
 
 	"bytes"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestWriteAtomic(t *testing.T) {

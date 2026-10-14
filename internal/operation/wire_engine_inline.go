@@ -4,8 +4,8 @@ package operation
 import (
 	"context"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // InlineVariableReq requests one bounded local-variable inline operation.

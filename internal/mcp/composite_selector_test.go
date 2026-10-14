@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcptest"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestLegacyCompositeElementOperationIsRejected(t *testing.T) {

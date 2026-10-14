@@ -4,11 +4,11 @@ package gobackend
 import (
 	"bytes"
 	"context"
+	backend "github.com/spockz/semantic-editor/internal/backend"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	backend "semedit/internal/backend"
 	"strings"
 	"testing"
 	"time"

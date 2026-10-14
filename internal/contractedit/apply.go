@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/contractplan"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/contractplan"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 type candidateCompletion func(*Result) error

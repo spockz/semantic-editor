@@ -3,7 +3,7 @@ package cli
 
 import (
 	"encoding/json"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"testing"
 )
 

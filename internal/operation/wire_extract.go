@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 // ExtractFunctionReq selects a contiguous statement region and names its helper.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 
 	gts "github.com/odvcencio/gotreesitter"
 )

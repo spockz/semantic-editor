@@ -3,10 +3,10 @@
 package operation_test
 
 import (
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"reflect"
-	"semedit/internal/backend"
-	"semedit/internal/capability"
-	"semedit/internal/operation"
 	"slices"
 	"strings"
 	"testing"

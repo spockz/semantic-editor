@@ -16,8 +16,8 @@ import (
 	"strings"
 	"sync"
 
-	"semedit/internal/gocache"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )

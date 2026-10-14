@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/backend"
-	scalabackend "semedit/internal/backend/scala"
+	"github.com/spockz/semantic-editor/internal/backend"
+	scalabackend "github.com/spockz/semantic-editor/internal/backend/scala"
 )
 
 type fakeScalaSession struct {

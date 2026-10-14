@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )

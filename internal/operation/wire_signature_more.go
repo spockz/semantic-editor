@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 	"go/ast"
 	"go/constant"
 	"go/parser"
@@ -13,8 +15,6 @@ import (
 	"go/types"
 	"maps"
 	"path/filepath"
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
 	"strings"
 
 	"golang.org/x/tools/go/packages"

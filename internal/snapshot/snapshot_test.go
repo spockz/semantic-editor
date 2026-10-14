@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"bytes"
-	"semedit/internal/atomicfile"
-	"semedit/internal/snapshot"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/snapshot"
 )
 
 func TestCreateSnapshot_SpecificFiles(t *testing.T) {

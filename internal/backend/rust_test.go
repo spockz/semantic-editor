@@ -12,9 +12,9 @@ import (
 
 	"crypto/sha256"
 	"encoding/hex"
-	"semedit/internal/backend"
-	rustbackend "semedit/internal/backend/rust"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/backend"
+	rustbackend "github.com/spockz/semantic-editor/internal/backend/rust"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 type fakeRustSession struct {

@@ -16,8 +16,8 @@ import (
 	"sort"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )

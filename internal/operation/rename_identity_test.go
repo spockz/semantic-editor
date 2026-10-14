@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/backends"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
 )
 
 func TestRenameContinuationMatchesFreshInspection(t *testing.T) {

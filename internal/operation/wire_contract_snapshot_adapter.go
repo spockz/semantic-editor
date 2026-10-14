@@ -5,7 +5,7 @@ package operation
 import (
 	"context"
 
-	"semedit/internal/contractedit"
+	"github.com/spockz/semantic-editor/internal/contractedit"
 )
 
 func loadContractSnapshot(ctx context.Context, root string, selectedPaths []string) (*contractSnapshot, error) {

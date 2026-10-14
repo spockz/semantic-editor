@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/astedit"
 )
 
 func TestPlanConstantExtractionPreservesContextualTypeAndExactRange(t *testing.T) {

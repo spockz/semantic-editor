@@ -15,17 +15,17 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/astedit"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/operation"
-	"semedit/internal/pipeline"
-	"semedit/internal/projectverify"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // BatchEntry represents a single tool execution request within a batch.

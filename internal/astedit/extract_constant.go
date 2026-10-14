@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 
 	"strings"
 

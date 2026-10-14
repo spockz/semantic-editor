@@ -8,9 +8,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 )
 
 // EditReceiptDraft carries handler evidence for final receipt projection.

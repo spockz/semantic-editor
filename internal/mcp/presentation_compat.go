@@ -2,7 +2,7 @@
 package mcp
 
 import (
-	"semedit/internal/mcp/presentation"
+	"github.com/spockz/semantic-editor/internal/mcp/presentation"
 )
 
 const (

@@ -5,9 +5,9 @@ package cli
 import (
 	"context"
 	"errors"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"io"
-	"semedit/internal/backend"
-	"semedit/internal/operation"
 	"strings"
 	"testing"
 )

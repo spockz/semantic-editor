@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/capability"
 	"os"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/capability"
 )
 
 // OutlineReq requests a filtered Go source outline.

@@ -13,9 +13,9 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 	types "go/types"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
 
 	"golang.org/x/tools/go/packages"
 )

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestNormalizeInsertionOffsetCommentBoundaries(t *testing.T) {

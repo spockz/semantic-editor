@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 var filesystemPathFields = map[string]struct{}{

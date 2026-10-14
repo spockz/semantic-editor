@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/pipeline"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 )
 
 type execution struct {

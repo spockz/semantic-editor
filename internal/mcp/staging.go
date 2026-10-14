@@ -17,12 +17,12 @@ import (
 	"sync"
 	"time"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/operation"
-	"semedit/internal/projectverify"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/operation"
+	"github.com/spockz/semantic-editor/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 const (

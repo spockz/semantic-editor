@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 type fakeSession struct {

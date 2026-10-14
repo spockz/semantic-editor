@@ -11,13 +11,13 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/atomicfile"
-	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/gocache"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/lsp"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"slices"
 )
 

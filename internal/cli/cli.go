@@ -11,10 +11,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"semedit/internal/backend"
-	"semedit/internal/integration"
-	"semedit/internal/maven"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/integration"
+	"github.com/spockz/semantic-editor/internal/maven"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 // ErrCommandFailed marks expected command failures without printing Cobra usage.

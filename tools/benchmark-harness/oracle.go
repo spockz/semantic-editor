@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 
 	"gopkg.in/yaml.v3"
 )

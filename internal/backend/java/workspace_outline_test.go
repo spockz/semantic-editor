@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func TestWorkspaceOutlineDiscoversMavenModulesAndPackages(t *testing.T) {

@@ -4,10 +4,10 @@ package astedit
 import (
 	"bytes"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"semedit/internal/symbol"
 	"slices"
 	"strings"
 )

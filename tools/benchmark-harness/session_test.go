@@ -4,10 +4,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"slices"
 	"strconv"
 	"strings"

@@ -5,11 +5,11 @@ package astedit
 import (
 	"context"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 )
 
 type declarationCollision struct{ name, file string }

@@ -1,4 +1,4 @@
-module semedit
+module github.com/spockz/semantic-editor
 
 go 1.27.2
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/adapters/golang"
+	"github.com/spockz/semantic-editor/internal/adapters/golang"
 )
 
 func TestAddDependency_Validation(t *testing.T) {

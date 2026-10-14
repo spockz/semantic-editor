@@ -2,8 +2,8 @@
 package makefile
 
 import (
-	"semedit/internal/backend"
-	"semedit/internal/backend/textlsp"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/textlsp"
 )
 
 // NewBackend constructs the Makefile selected-file backend.

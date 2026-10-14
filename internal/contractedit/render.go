@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/contractplan"
+	"github.com/spockz/semantic-editor/internal/contractplan"
 )
 
 // ImportBindings resolves the explicit local names of imports in the target file.

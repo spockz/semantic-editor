@@ -309,9 +309,9 @@ semedit turns an editing intent into a compiler-backed change. The CLI and MCP s
 Install Go and Hugo Extended with [Homebrew](https://brew.sh/), then install the Go language server and semedit:
 
 ~~~console
-brew install go hugo
+brew install go
 go install golang.org/x/tools/gopls@latest
-go install github.com/spockz/semantic-editor@latest
+go install github.com/spockz/semantic-editor/cmd/semedit@latest
 ~~~
 
 Ensure the Go binary directory is on your PATH, then verify the installation:
@@ -325,9 +325,9 @@ semedit --help
 Install Go and Hugo Extended using your Linux distribution's package manager. Then install gopls and semedit with Go:
 
 ~~~console
-sudo apt install golang-go hugo
+sudo apt install golang-go
 go install golang.org/x/tools/gopls@latest
-go install github.com/spockz/semantic-editor@latest
+go install github.com/spockz/semantic-editor/cmd/semedit@latest
 ~~~
 
 Verify the installation:

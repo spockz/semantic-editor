@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"slices"
 
-	"semedit/internal/backend"
-	"semedit/internal/capability"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/capability"
 )
 
 func validateRegistration[Req any, Res any](registry *Registry, def Def[Req, Res]) error {

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/cli"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/cli"
+	"github.com/spockz/semantic-editor/internal/operation"
 
 	"github.com/spf13/cobra"
 )

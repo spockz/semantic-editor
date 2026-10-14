@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/snapshot"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/snapshot"
 )
 
 // SnapshotReq captures one transactional pre-edit snapshot.

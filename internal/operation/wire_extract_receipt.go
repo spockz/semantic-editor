@@ -14,9 +14,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"semedit/internal/astedit"
-	"semedit/internal/sourcebuf"
-	symbols "semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	symbols "github.com/spockz/semantic-editor/internal/symbol"
 )
 
 const (

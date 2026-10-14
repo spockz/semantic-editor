@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
 	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
 	"path/filepath"
-	"semedit/internal/backend"
 	"strconv"
 	"strings"
 )

@@ -14,9 +14,9 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	neutralbackend "semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/lsp"
+	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/lsp"
 )
 
 var (

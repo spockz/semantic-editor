@@ -11,16 +11,13 @@ The efficiency ambition remains **up to 100× fewer generated edit tokens and 10
 
 ### Install the CLI
 
-Install Go at the version required by [go.mod](go.mod) or newer, and Git. Install `semedit` from a checkout:
+`semedit` is a Go executable, so install the Go toolchain version required by [go.mod](go.mod) or newer. Then install the CLI:
 
 ```sh
-git clone https://github.com/spockz/semantic-editor.git
-cd semantic-editor
-go install .
-go install golang.org/x/tools/gopls@latest
+go install github.com/spockz/semantic-editor/cmd/semedit@latest
 ```
 
-The module currently declares its path as `semedit`, so use `go install .` from the checkout rather than `go install github.com/spockz/semantic-editor@latest`. `gopls` is required for Go semantic rename and diagnostics; other languages require the tooling listed below.
+For a local checkout, run `go install ./cmd/semedit` from the repository root.
 
 Go installs executables into `GOBIN`, or `$(go env GOPATH)/bin` when `GOBIN` is unset. Add that directory to your shell's `PATH`, then check the CLI:
 
@@ -29,6 +26,48 @@ semedit --help
 ```
 
 User installation does not require the development linters or Hugo.
+
+### Language setup
+
+Each language backend uses its own preinstalled tools in addition to the `semedit` CLI. Follow the language guide for operation limits and examples.
+
+#### Go
+
+Install [`gopls`](https://go.dev/gopls/) for Go semantic rename and diagnostics; AST-based navigation does not require it:
+
+```sh
+go install golang.org/x/tools/gopls@latest
+```
+
+See the [Go guide](skills/semedit/references/golang.md).
+
+#### Rust
+
+Install the [`rust-analyzer` binary](https://rust-analyzer.github.io/book/installation.html) and select a `.rs` file. Rust requires explicit workspace trust and confines rename to the selected file; Cargo is not run. See the [Rust guide](skills/semedit/references/rust.md).
+
+#### Java
+
+Install a Java 21+ runtime and an [Eclipse JDT LS distribution](https://github.com/eclipse-jdtls/eclipse.jdt.ls). Java requests require explicit workspace trust and `jdtls_home` pointing to that distribution. See the [Java guide](skills/semedit/references/java.md).
+
+#### Scala
+
+Install Java 21+ and a pinned [Metals distribution](https://scalameta.org/metals/docs/integrations/new-editor/). Requests require explicit workspace trust and a selected `.scala` file; configure `metals_bin` or `metals_home` and the Java executable/version. Semedit does not invoke a build tool. See the [Scala guide](skills/semedit/references/scala.md).
+
+#### Haskell
+
+Install GHC and a matching `haskell-language-server-wrapper` using the [HLS installation guide](https://haskell-language-server.readthedocs.io/en/stable/installation.html). Requests can pin them with `--ghc-bin` and `--hls-bin`, and optionally require recorded versions with `--ghc-version` and `--hls-version`. Lookup is limited to an explicitly standalone, trusted `.hs` file; Cabal/Stack project markers are rejected. See the [Haskell guide](skills/semedit/references/haskell.md).
+
+#### Kotlin
+
+Install the [`fwcd/kotlin-language-server`](https://github.com/fwcd/kotlin-language-server) executable. Semedit currently expects this server, which its upstream describes as deprecated; requests require explicit trust and a selected `.kt` or `.kts` file. See the [Kotlin guide](skills/semedit/references/kotlin.md).
+
+#### Bash
+
+Install [`bash-language-server`](https://github.com/bash-lsp/bash-language-server) and make its executable available to semedit. Requests require explicit workspace trust and a selected `.sh` or `.bash` file; the backend does not execute scripts. See the [Bash guide](skills/semedit/references/bash.md).
+
+#### Makefile
+
+Install [`make-ls`](https://github.com/owenrumney/make-ls) and make the executable available on `PATH`. Requests require explicit workspace trust and a selected Makefile; the backend does not run recipes. See the [Makefile guide](skills/semedit/references/make.md).
 
 ### Install into a coding harness
 
@@ -192,7 +231,7 @@ Use the Go version declared in [go.mod](go.mod), `make`, and the tools required 
 make check
 make build
 ./bin/semedit-next --help
-./bin/semedit-next lookup --file main.go --symbol main
+./bin/semedit-next lookup --file cmd/semedit/main.go --symbol main
 ```
 
 `make build` produces the development binary `bin/semedit-next`. `make promote` runs checks and promotes it to the stable `bin/semedit` used by long-lived integrations.
@@ -237,12 +276,12 @@ Current test anchors use the requirement ID in the Go test name:
 
 | Requirement | Regression test anchor |
 | :--- | :--- |
-| REQ-001 | [`TestREQ001SemanticIntentCLIContracts`](main_test.go) |
-| REQ-002 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](main_test.go) |
+| REQ-001 | [`TestREQ001SemanticIntentCLIContracts`](cmd/semedit/main_test.go) |
+| REQ-002 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](cmd/semedit/main_test.go) |
 | REQ-003 | [`TestREQ003BackendRejectsUnsafeRenameWithoutWrite`](internal/backend/rust_test.go) |
 | REQ-004 | [`TestREQ004WriteAtomicPreservesPermissionsAndAdvancesMtime`](internal/pipeline/pipeline_test.go), [`TestREQ004RenameReportsIntroducedDiagnostics`](internal/backend/backend_test.go) |
 | REQ-005 | [`TestREQ005WorkspaceTrustRequiresExplicitCanonicalConsent`](internal/backend/backend_test.go) |
-| REQ-006 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](main_test.go) |
+| REQ-006 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](cmd/semedit/main_test.go) |
 | REQ-007 | [`TestREQ007RunPhasePreservesHookOrderAndPartialFailure`](internal/projectverify/executor_test.go) |
 | REQ-008 | [`TestREQ008LoadAllBenchmarkComparisonsExcludesIncompleteRuns`](cmd/docgen/benchmarks_test.go) |
 
@@ -258,7 +297,7 @@ The main source, documentation, and test directories are:
 
 ```text
 semedit/
-├── main.go                 # Executable entry point for CLI and MCP modes
+├── cmd/semedit/            # Executable entry point for CLI and MCP modes
 ├── cmd/docgen/             # Documentation site and benchmark publication generator
 ├── internal/
 │   ├── cli/                # CLI commands generated from the operation registry

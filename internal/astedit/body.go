@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // BodyOptions configures function and method body replacement behavior.

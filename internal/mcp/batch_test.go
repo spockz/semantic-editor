@@ -17,9 +17,9 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcp"
-	"semedit/internal/mcptest"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 func TestBatch_SuccessfulExecution(t *testing.T) {

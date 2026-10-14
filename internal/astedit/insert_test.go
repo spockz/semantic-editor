@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/astedit"
 )
 
 const baseFile = `package testpkg

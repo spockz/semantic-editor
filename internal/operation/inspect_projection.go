@@ -5,9 +5,9 @@ package operation
 import (
 	"context"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
 	"path/filepath"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
 )
 
 // InspectContinuation carries one captured inspection target into a later guarded operation.

@@ -4,10 +4,10 @@ package contractedit
 
 import (
 	"context"
+	"github.com/spockz/semantic-editor/internal/contractplan"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"go/ast"
 	"path/filepath"
-	"semedit/internal/contractplan"
-	"semedit/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )

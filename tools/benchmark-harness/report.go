@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 // BenchmarkReport captures empirical comparison results across targets, tasks, variants, and arms.

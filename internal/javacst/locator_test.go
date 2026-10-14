@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 const javaMethod = `void run(int limit, int[] values) {

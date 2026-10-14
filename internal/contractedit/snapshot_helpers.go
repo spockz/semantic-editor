@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/tools/go/packages"
 
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // ParseSource captures and parses one file from the current workspace view.

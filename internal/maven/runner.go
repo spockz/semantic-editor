@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 const (

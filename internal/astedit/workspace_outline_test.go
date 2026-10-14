@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func TestWorkspaceOutlineGo(t *testing.T) {

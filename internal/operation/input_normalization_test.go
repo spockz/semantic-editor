@@ -9,9 +9,9 @@ import (
 	"slices"
 	"testing"
 
-	"semedit/internal/backend"
-	gobackend "semedit/internal/backend/golang"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestNormalizeConstructKindInputAliases(t *testing.T) {

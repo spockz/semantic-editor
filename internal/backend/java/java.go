@@ -23,14 +23,14 @@ import (
 	"sync"
 	"time"
 
-	backend "semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/backend/readlsp"
-	"semedit/internal/javacst"
-	"semedit/internal/lsp"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/sourcefiles"
+	backend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
+	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
 // ErrJavaFileRequired indicates that lookup did not receive a selected Java source file.

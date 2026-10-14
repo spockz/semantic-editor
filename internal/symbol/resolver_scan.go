@@ -4,12 +4,12 @@ package symbol
 import (
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 	"slices"
 	"strings"
 )

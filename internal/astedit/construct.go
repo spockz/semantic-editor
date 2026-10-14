@@ -15,10 +15,10 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
-	"semedit/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 // ConstructKind aliases the canonical cross-language syntax taxonomy.

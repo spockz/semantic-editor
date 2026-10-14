@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strings"
 
-	"semedit/internal/backend"
-	"semedit/internal/sourcefiles"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
 type javaWorkspacePOM struct {

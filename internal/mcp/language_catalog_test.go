@@ -9,14 +9,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"semedit/internal/backend"
-	"semedit/internal/operation"
 
-	"semedit/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 
 	"sync"
 	"sync/atomic"

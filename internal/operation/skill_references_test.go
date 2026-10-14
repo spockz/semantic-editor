@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/operation"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/operation"
 )
 
 func TestSupportedLanguagesHaveSkillReferences(t *testing.T) {

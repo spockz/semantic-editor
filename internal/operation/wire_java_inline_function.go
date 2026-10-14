@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/backends"
-	"semedit/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/javacst"
 )
 
 func runInlineFunctionJava(ctx context.Context, cc CallContext, req InlineFunctionReq) (SemanticEditRes, error) {

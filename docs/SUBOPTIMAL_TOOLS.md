@@ -7001,3 +7001,11 @@ The CLI inspection also requested the nonexistent `prepareReadProjectContext` in
 * Root cause: caller supplied several declarations to a single-construct operation.
 
 `semantic_replace_construct` also rejected an unsupported `language` parameter while targeting `goWorkspaceContext` in that file. No mutation occurred. Retry without the parameter; the operation selects Go from the source file.
+
+## Semantic outline schema mismatch (2026-10-14)
+
+* Tool: `semantic_outline`.
+* Target: root Go package in `main.go`.
+* Observed failure: the exposed schema rejects `file` and reports `path` as the selector; no source mutation occurred.
+* Workaround: use repository inventory and AST-aware import migration because the workspace-outline tool is not callable and module path migration has no semantic operation.
+* Root cause: the live MCP schema differs from its documented Go `selected_file` parameter.

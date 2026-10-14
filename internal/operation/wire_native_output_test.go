@@ -4,10 +4,10 @@ package operation
 import (
 	"errors"
 	"fmt"
-	"semedit/internal/astedit"
-	"semedit/internal/backend"
-	"semedit/internal/maven"
-	"semedit/internal/projectverify"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/maven"
+	"github.com/spockz/semantic-editor/internal/projectverify"
 	"testing"
 )
 

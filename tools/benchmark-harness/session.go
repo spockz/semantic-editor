@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"semedit/internal/pipeline"
 	"strings"
 	"time"
 )

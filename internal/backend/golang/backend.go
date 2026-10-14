@@ -9,14 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/adapters/golang"
-	"semedit/internal/astedit"
-	backend "semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/godiagnostics"
-	"semedit/internal/pipeline"
-	"semedit/internal/symbol"
-	"semedit/internal/telemetry"
+	"github.com/spockz/semantic-editor/internal/adapters/golang"
+	"github.com/spockz/semantic-editor/internal/astedit"
+	backend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // GoBackend adapts the existing Go resolver, gopls rename, and diagnostic pipeline.

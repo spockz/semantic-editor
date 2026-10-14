@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"semedit/internal/backend"
-	"semedit/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func TestDispatchFailureRestoresOnlyCurrentSharedBufferEdit(t *testing.T) {
