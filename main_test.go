@@ -3,6 +3,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -67,7 +69,23 @@ func prepareFakeLSPs() error {
 func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
 		"semedit": func() {
-			os.Exit(run(os.Args[1:]))
+			cwd, _ := os.Getwd()
+			beforePath, beforeHash, hadWork := getGoWorkHash(cwd)
+			exitCode := run(os.Args[1:])
+			afterPath, afterHash, hasWork := getGoWorkHash(cwd)
+			if hadWork && !hasWork {
+				fmt.Fprintf(os.Stderr, "ADR-0005 invariant violation: semedit deleted %s\n", beforePath)
+				os.Exit(1)
+			}
+			if !hadWork && hasWork {
+				fmt.Fprintf(os.Stderr, "ADR-0005 invariant violation: semedit created %s\n", afterPath)
+				os.Exit(1)
+			}
+			if hadWork && hasWork && (beforePath != afterPath || beforeHash != afterHash) {
+				fmt.Fprintf(os.Stderr, "ADR-0005 invariant violation: semedit mutated %s\n", beforePath)
+				os.Exit(1)
+			}
+			os.Exit(exitCode)
 		},
 		"rust-analyzer":                   runFakeRustAnalyzer,
 		"java":                            runFakeJava,
@@ -77,6 +95,26 @@ func TestMain(m *testing.M) {
 		"kotlin-language-server":          runFakeKotlin,
 		"maven":                           runFakeMaven,
 	})
+}
+
+func getGoWorkHash(startDir string) (string, string, bool) {
+	manifestPath := filepath.Join(startDir, "go.work")
+	data, err := os.ReadFile(manifestPath)
+	if err == nil {
+		sum := sha256.Sum256(data)
+		return manifestPath, hex.EncodeToString(sum[:]), true
+	}
+	for dir := startDir; dir != "" && dir != "/" && dir != "."; dir = filepath.Dir(dir) {
+		manifestPath = filepath.Join(dir, "go.work")
+		if data, err := os.ReadFile(manifestPath); err == nil {
+			sum := sha256.Sum256(data)
+			return manifestPath, hex.EncodeToString(sum[:]), true
+		}
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			break
+		}
+	}
+	return "", "", false
 }
 
 func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
