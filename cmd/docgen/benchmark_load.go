@@ -159,7 +159,10 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 			failures = append(failures, fmt.Errorf("walk benchmark path %s: %w", path, walkErr))
 			return nil
 		}
-		if entry.IsDir() || filepath.Ext(path) != ".json" {
+		if entry.IsDir() && (entry.Name() == "jobs" || entry.Name() == "evidence") {
+			return filepath.SkipDir
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".json" || entry.Name() == "manifest.json" || entry.Name() == "smoke-summary.json" {
 			return nil
 		}
 		source, loadErr := loadBenchmarkSource(resultsDir, path, resultsRoot)

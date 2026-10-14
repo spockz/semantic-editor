@@ -172,3 +172,54 @@ func TestGenerateDocumentationContinuesAfterCapabilityFailure(t *testing.T) {
 	}
 	assertErrorCollectionArtifacts(t, outputDir, true)
 }
+
+func TestGenerateDocumentationIgnoresBenchmarkOperationalArtifacts(t *testing.T) {
+	t.Parallel()
+	rootDir := prepareErrorCollectionRoot(t, true)
+	beforeOutput := prepareErrorCollectionOutput(t, false)
+	beforeErr := generateDocumentation(rootDir, beforeOutput, false)
+	assertErrorCollectionDiagnostics(t, beforeErr, false)
+	beforeRows, err := os.ReadFile(filepath.Join(beforeOutput, "static", "data", "benchmarks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(rootDir, "data", "benchmarks", "results", "valid-run", "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifacts := map[string]any{
+		"manifest.json":                        map[string]any{"format_version": 1, "job_ids": []string{"job-1"}},
+		"jobs/job-1.json":                      map[string]any{"format_version": 1, "report": json.RawMessage(report)},
+		"jobs/nested/report.json":              json.RawMessage(report),
+		"evidence/nested/report.json":          json.RawMessage(report),
+		"evidence/transcript.json":             []any{map[string]any{"response": "finished"}},
+		"evidence/transcript.mcp-metrics.json": []any{map[string]any{"tool": "semantic_verify"}},
+		"smoke-summary.json":                   []any{map[string]any{"status": "completed"}},
+	}
+	for path, value := range artifacts {
+		data, marshalErr := json.Marshal(value)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		target := filepath.Join(rootDir, "data", "benchmarks", "results", "valid-run", filepath.FromSlash(path))
+		if mkdirErr := os.MkdirAll(filepath.Dir(target), 0o750); mkdirErr != nil {
+			t.Fatal(mkdirErr)
+		}
+		if writeErr := writeGeneratedFile(target, data); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	afterOutput := prepareErrorCollectionOutput(t, false)
+	afterErr := generateDocumentation(rootDir, afterOutput, false)
+	if afterErr == nil || afterErr.Error() != beforeErr.Error() {
+		t.Fatalf("operational artifacts changed report failures: before %v; after %v", beforeErr, afterErr)
+	}
+	assertErrorCollectionArtifacts(t, afterOutput, true)
+	afterRows, err := os.ReadFile(filepath.Join(afterOutput, "static", "data", "benchmarks.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterRows) != string(beforeRows) {
+		t.Fatal("operational artifacts changed published browser rows")
+	}
+}

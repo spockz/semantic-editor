@@ -1,5 +1,22 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-14: statement insertion could not anchor inside a walker callback
+
+* Tool: `semantic_insert_construct`.
+* Target: `cmd/docgen/benchmark_load.go`, `loadBenchmarkSources`.
+* Observed failure: insertion before the existing directory/extension guard reported that the statement anchor was not found; no source mutation occurred.
+* Workaround: replace the complete enclosing function with `semantic_replace_construct`.
+* Root cause: the requested condition is inside a function literal passed to `filepath.WalkDir`; statement insertion did not resolve that nested anchor.
+
+## 2026-10-14: verification hook required explicit workspace trust
+
+* Tool: `semantic_verify`.
+* Target: `cmd/docgen`, check-only verification.
+* Observed failure: the configured `golangci-lint` verification hook did not run because workspace trust was omitted.
+* Workaround: retry with explicit workspace trust; retain `make check` and documentation generation as command-level verification.
+* Root cause: check-only verification still runs configured external verification hooks, which require `trust_workspace: true`.
+* The trusted retry reached the hook but failed loading `packageclosure.so`: its Go standard-library build version differed from the linter executable's (`cmp`). Workaround: use the repository's `make check` target, which selects its matching local toolchain and linter.
+
 ## 2026-10-14: semantic construct replacement rejected an unsupported language selector
 
 * Tool: `semantic_replace_construct`.
