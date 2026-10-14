@@ -108,7 +108,7 @@ func TestReconcilePublishedGoScopeFallsBackWhenPackageInputsChange(t *testing.T)
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package scope\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	before, err := snapshotBatchWorkspace(root)
+	before, err := snapshotBatchWorkspace(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestReconcilePublishedGoScopeFallsBackWhenPackageInputsChange(t *testing.T)
 		t.Fatal(err)
 	}
 	baseline := batchVerificationBaseline{GoPatterns: map[string][]string{root: {"."}}, ModuleRoots: []string{root}}
-	reconcilePublishedGoScope(root, before, &baseline)
+	reconcilePublishedGoScope(t.Context(), root, before, &baseline)
 	if baseline.OmittedReason == "" || !slices.Equal(baseline.GoPatterns[root], []string{"./..."}) {
 		t.Fatalf("baseline = %+v, want build-input fallback", baseline)
 	}
@@ -127,7 +127,7 @@ func TestReconcilePublishedGoScopeKeepsExplicitScaffoldTarget(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/scope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	before, err := snapshotBatchWorkspace(root)
+	before, err := snapshotBatchWorkspace(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestReconcilePublishedGoScopeKeepsExplicitScaffoldTarget(t *testing.T) {
 		ModuleRoots:       []string{root},
 		ScaffoldGoTargets: map[string]string{generated: root},
 	}
-	reconcilePublishedGoScope(root, before, &baseline)
+	reconcilePublishedGoScope(t.Context(), root, before, &baseline)
 	if baseline.OmittedReason != "" {
 		t.Fatalf("baseline = %+v, want explicit scaffold target to preserve comparable coverage", baseline)
 	}

@@ -39,7 +39,7 @@ func TestScaffoldFile_ExplicitPackage(t *testing.T) {
 
 func TestScaffoldFileBuffersNewFileUntilPublication(t *testing.T) {
 	root := t.TempDir()
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}

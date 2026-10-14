@@ -6,16 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/atomicfile"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/spockz/semantic-editor/internal/gocache"
+
+	"github.com/spockz/semantic-editor/internal/atomicfile"
 )
 
 // Change describes one source revision and its expected working preimage.
@@ -28,6 +32,7 @@ type Change struct {
 type Buffer struct {
 	mu         sync.Mutex
 	root       string
+	exclusions []string
 	writeRoots map[string]bool
 	files      map[string]*fileState
 	trees      map[string]map[string]bool
@@ -64,6 +69,7 @@ func (b *Buffer) DirtySourceBytes() int64 {
 func (b *Buffer) forkLocked(original bool) *Buffer {
 	fork := &Buffer{
 		root:       b.root,
+		exclusions: slices.Clone(b.exclusions),
 		writeRoots: maps.Clone(b.writeRoots),
 		files:      make(map[string]*fileState, len(b.files)),
 		trees:      make(map[string]map[string]bool, len(b.trees)),
@@ -481,7 +487,7 @@ func (b *Buffer) Rollback(checkpoint Checkpoint) {
 var ErrConflict = errors.New("buffered source changed on disk")
 
 // New binds the workspace source set before a batch segment begins.
-func New(root string) (*Buffer, error) {
+func New(ctx context.Context, root string) (*Buffer, error) {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve buffer root: %w", err)
@@ -490,11 +496,15 @@ func New(root string) (*Buffer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize buffer root: %w", err)
 	}
-	sources, err := sourceSet(canonical)
+	exclusions, err := sourceExclusions(ctx, canonical)
 	if err != nil {
 		return nil, err
 	}
-	buffer := &Buffer{root: canonical, files: make(map[string]*fileState), trees: map[string]map[string]bool{canonical: sources}, aliases: make(map[string]string)}
+	sources, err := sourceSet(canonical, exclusions)
+	if err != nil {
+		return nil, err
+	}
+	buffer := &Buffer{root: canonical, exclusions: exclusions, files: make(map[string]*fileState), trees: map[string]map[string]bool{canonical: sources}, aliases: make(map[string]string)}
 	for _, path := range slices.Sorted(maps.Keys(sources)) {
 		if _, _, err := buffer.load(path); err != nil {
 			return nil, err
@@ -660,7 +670,7 @@ func ObserveTree(ctx context.Context, root string) error {
 	if _, ok := buffer.trees[root]; ok {
 		return nil
 	}
-	files, err := sourceSet(root)
+	files, err := sourceSet(root, buffer.exclusions)
 	if err != nil {
 		return err
 	}
@@ -720,7 +730,7 @@ func Prepare(ctx context.Context, root string) (context.Context, *Buffer, bool, 
 	owned := buffer == nil
 	if owned {
 		var err error
-		buffer, err = New(root)
+		buffer, err = New(ctx, root)
 		if err != nil {
 			return nil, nil, false, fmt.Errorf("capture buffered edit workspace: %w", err)
 		}
@@ -892,7 +902,7 @@ func (b *Buffer) assertDisk() error {
 	}
 
 	for root, expected := range b.trees {
-		actual, err := sourceSet(root)
+		actual, err := sourceSet(root, b.exclusions)
 		if err != nil {
 			return err
 		}
@@ -946,14 +956,14 @@ type fileState struct {
 	parents           map[string]os.FileInfo
 }
 
-func sourceSet(root string) (map[string]bool, error) {
+func sourceSet(root string, exclusions []string) (map[string]bool, error) {
 	files := make(map[string]bool)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("scan buffered source set: %w", err)
 		}
 		if entry.IsDir() {
-			if path != root && (entry.Name() == ".git" || entry.Name() == ".scratch" || entry.Name() == "vendor" || entry.Name() == "node_modules") {
+			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -967,6 +977,141 @@ func sourceSet(root string) (map[string]bool, error) {
 		return nil, err
 	}
 	return files, nil
+}
+
+// SourceDirectoryFilter excludes generated runtime trees from source snapshots.
+type SourceDirectoryFilter struct {
+	exclusions []string
+}
+
+// GeneratedRoots returns a copy of the runtime roots excluded by this filter.
+func (filter SourceDirectoryFilter) GeneratedRoots() []string {
+	return slices.Clone(filter.exclusions)
+}
+
+// DirectoryFilterFor reuses a buffer's frozen exclusions or resolves a new snapshot policy.
+func DirectoryFilterFor(ctx context.Context, root string) (SourceDirectoryFilter, error) {
+	if buffer := FromContext(ctx); buffer != nil {
+		buffer.mu.Lock()
+		defer buffer.mu.Unlock()
+		return SourceDirectoryFilter{exclusions: slices.Clone(buffer.exclusions)}, nil
+	}
+	exclusions, err := sourceExclusions(ctx, root)
+	if err != nil {
+		return SourceDirectoryFilter{}, err
+	}
+	return SourceDirectoryFilter{exclusions: exclusions}, nil
+}
+
+// Skip reports whether path is a generated or ignored directory strictly below root.
+func (filter SourceDirectoryFilter) Skip(root, path string) bool {
+	if path == root {
+		return false
+	}
+	if slices.Contains(filter.exclusions, path) {
+		return true
+	}
+	switch filepath.Base(path) {
+	case ".git", ".scratch", "vendor", "node_modules":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceExclusions(ctx context.Context, root string) ([]string, error) {
+	roots := append([]string{os.TempDir()}, environmentSourceRoots(os.Environ())...)
+	exclusions, err := normalizeSourceExclusions(root, roots)
+	if err != nil {
+		return nil, err
+	}
+	hasGo, err := containsGoSources(root, exclusions)
+	if err != nil {
+		return nil, err
+	}
+	if !hasGo && !gocache.HasBaseDir(ctx) {
+		return exclusions, nil
+	}
+	effective, err := gocache.Environment(ctx, root)
+	if err != nil {
+		if !gocache.HasBaseDir(ctx) && errors.Is(err, exec.ErrNotFound) {
+			return exclusions, nil
+		}
+		return nil, fmt.Errorf("resolve effective Go source exclusions: %w", err)
+	}
+	roots = append(roots, environmentSourceRoots(effective)...)
+	return normalizeSourceExclusions(root, roots)
+}
+
+func environmentSourceRoots(environment []string) []string {
+	roots := make([]string, 0, 8)
+	for _, entry := range environment {
+		key, value, ok := strings.Cut(entry, "=")
+		if !ok || value == "" {
+			continue
+		}
+		switch key {
+		case "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOPLSCACHE", "TMPDIR", "TEMP", "TMP":
+			roots = append(roots, value)
+		case "GOPATH":
+			for _, path := range filepath.SplitList(value) {
+				if path != "" {
+					roots = append(roots, filepath.Join(path, "pkg", "mod"))
+				}
+			}
+		}
+	}
+	return roots
+}
+
+func normalizeSourceExclusions(root string, paths []string) ([]string, error) {
+	exclusions := make([]string, 0, len(paths)*2)
+	for _, path := range paths {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolve generated source root %q: %w", path, err)
+		}
+		absolute = filepath.Clean(absolute)
+		if !slices.Contains(exclusions, absolute) {
+			exclusions = append(exclusions, absolute)
+		}
+		canonical, err := filepath.EvalSymlinks(absolute)
+		if err == nil {
+			if !slices.Contains(exclusions, canonical) {
+				exclusions = append(exclusions, canonical)
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("canonicalize generated source root %q: %w", absolute, err)
+		}
+	}
+	return exclusions, nil
+}
+
+func containsGoSources(root string, exclusions []string) (bool, error) {
+	found := false
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("probe buffered Go sources: %w", err)
+		}
+		if entry.IsDir() {
+			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "go.mod" || entry.Name() == "go.work" || filepath.Ext(path) == ".go" {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return found, nil
 }
 
 // Checkpoint captures buffer state so a failed child edit can restore its parent revision.

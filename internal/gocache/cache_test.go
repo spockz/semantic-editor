@@ -35,7 +35,8 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 	for _, key := range []string{"TMPDIR", "TMP", "TEMP"} {
 		t.Setenv(key, inherited)
 	}
-	environment, err := gocache.Environment(t.Context(), workspace)
+	baseDir := filepath.Join(workspace, ".scratch", "go")
+	environment, err := gocache.Environment(gocache.WithBaseDir(t.Context(), baseDir), workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +53,7 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 			t.Error(removeErr)
 		}
 	}()
-	expected := filepath.Join(workspace, ".scratch", "go", "tmp")
+	expected := filepath.Join(baseDir, "tmp")
 	actual, err := filepath.EvalSymlinks(filepath.Dir(path))
 	if err != nil {
 		t.Fatal(err)
@@ -159,15 +160,91 @@ func TestEnvironmentControlsModuleWriteFlags(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readValue(ordinary); got != "-mod=readonly" {
-		t.Fatalf("ordinary GOFLAGS = %q, want -mod=readonly", got)
+	if got := readValue(ordinary); got != "-mod=mod -v -mod=readonly" {
+		t.Fatalf("ordinary GOFLAGS = %q, want inherited flags followed by -mod=readonly", got)
 	}
 	writable, err := gocache.Environment(gocache.WithWritableModuleChanges(t.Context()), t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := readValue(writable); got != "" {
-		t.Fatalf("explicit module-change GOFLAGS = %q, want empty", got)
+	if got := readValue(writable); got != "-mod=mod -v" {
+		t.Fatalf("explicit module-change GOFLAGS = %q, want inherited flags", got)
+	}
+	managed, err := gocache.Environment(gocache.WithBaseDir(t.Context(), filepath.Join(t.TempDir(), "managed")), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readValue(managed); got != "-mod=readonly" {
+		t.Fatalf("isolated GOFLAGS = %q, want managed read-only flags", got)
+	}
+}
+
+func TestEnvironmentUsesAmbientGoEnvironmentWithoutCreatingWorkspaceState(t *testing.T) {
+	workspace := t.TempDir()
+	configDir := t.TempDir()
+	goenvFile := filepath.Join(configDir, "go.env")
+	settings := map[string]string{
+		"GOCACHE":    filepath.Join(configDir, "build cache"),
+		"GOMODCACHE": filepath.Join(configDir, "module cache"),
+		"GOPATH":     filepath.Join(configDir, "go path"),
+		"GOTMPDIR":   filepath.Join(configDir, "go temp"),
+		"GOFLAGS":    "-tags=from-goenv",
+	}
+	var goenv strings.Builder
+	for key, value := range settings {
+		fmt.Fprintf(&goenv, "%s=%s\n", key, value)
+	}
+	if err := os.WriteFile(goenvFile, []byte(goenv.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOENV", goenvFile)
+	for _, key := range []string{"GOFLAGS", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR"} {
+		t.Setenv(key, "")
+	}
+	inherited := map[string]string{
+		"GOBIN":      filepath.Join(configDir, "user-bin"),
+		"GOPLSCACHE": filepath.Join(configDir, "gopls-cache"),
+		"GOWORK":     "off",
+		"TMPDIR":     filepath.Join(configDir, "temp-dir"),
+		"TEMP":       filepath.Join(configDir, "temp-env"),
+		"TMP":        filepath.Join(configDir, "temp-tmp"),
+	}
+	for key, value := range inherited {
+		t.Setenv(key, value)
+	}
+	environment, err := gocache.Environment(t.Context(), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range settings {
+		want := value
+		if key == "GOFLAGS" {
+			want += " -mod=readonly"
+		}
+		if got := readEnvValue(environment, key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+	for key, value := range inherited {
+		if got := readEnvValue(environment, key); got != value {
+			t.Errorf("inherited %s = %q, want %q", key, got, value)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".scratch")); !os.IsNotExist(err) {
+		t.Errorf("ambient environment created workspace scratch state, stat error = %v", err)
+	}
+}
+
+func TestEnvironmentRejectsModuleCacheSeedWithoutExplicitBase(t *testing.T) {
+	t.Setenv("GOPROXY", "off")
+	seed := t.TempDir()
+	workspace := t.TempDir()
+	ctx := gocache.WithModuleCacheSeed(t.Context(), seed)
+	if _, err := gocache.Environment(ctx, workspace); err == nil || !strings.Contains(err.Error(), "explicit Go isolation base") {
+		t.Fatalf("Environment() error = %v, want explicit-base requirement", err)
+	}
+	if _, err := os.Stat(filepath.Join(workspace, ".scratch")); !os.IsNotExist(err) {
+		t.Fatalf("rejected seed created workspace scratch state, stat error = %v", err)
 	}
 }
 
@@ -265,4 +342,13 @@ func TestEnvironmentSeedsOfflineModuleCacheConcurrently(t *testing.T) {
 	if !bytes.Equal(got, contents) {
 		t.Fatalf("concurrent seed contents = %q, want %q", got, contents)
 	}
+}
+
+func readEnvValue(environment []string, key string) string {
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
 }

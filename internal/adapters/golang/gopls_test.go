@@ -21,34 +21,32 @@ import (
 	"slices"
 )
 
-func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
+func TestCommandEnvUsesOptInWorkspaceLocalGoState(t *testing.T) {
 	root := t.TempDir()
 	for key, value := range map[string]string{
-		"GOENV":                     filepath.Join(t.TempDir(), "env"),
-		"GOCACHE":                   t.TempDir(),
-		"GOMODCACHE":                t.TempDir(),
-		"GOTMPDIR":                  t.TempDir(),
-		"GOBIN":                     t.TempDir(),
-		"GOPATH":                    t.TempDir(),
-		"GOFLAGS":                   "-mod=readonly",
-		"GOWORK":                    filepath.Join(t.TempDir(), "go.work"),
-		"SEMEDIT_SHARED_GOCACHE":    "",
-		"SEMEDIT_SHARED_GOMODCACHE": "",
-		"SEMEDIT_SHARED_GOPLSCACHE": "",
+		"GOENV":      filepath.Join(t.TempDir(), "env"),
+		"GOCACHE":    t.TempDir(),
+		"GOMODCACHE": t.TempDir(),
+		"GOTMPDIR":   t.TempDir(),
+		"GOBIN":      t.TempDir(),
+		"GOPATH":     t.TempDir(),
+		"GOFLAGS":    "-mod=readonly",
+		"GOWORK":     filepath.Join(t.TempDir(), "go.work"),
 	} {
 		t.Setenv(key, value)
 	}
-	env, err := gocache.Environment(t.Context(), root)
+	baseDir := filepath.Join(root, ".scratch", "go")
+	env, err := gocache.Environment(gocache.WithBaseDir(t.Context(), baseDir), root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{
-		"GOENV":      filepath.Join(root, ".scratch", "go", "env"),
-		"GOCACHE":    filepath.Join(root, ".scratch", "go", "build"),
-		"GOMODCACHE": filepath.Join(root, ".scratch", "go", "mod"),
-		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
-		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
-		"GOPATH":     filepath.Join(root, ".scratch", "go"),
+		"GOENV":      filepath.Join(baseDir, "env"),
+		"GOCACHE":    filepath.Join(baseDir, "build"),
+		"GOMODCACHE": filepath.Join(baseDir, "mod"),
+		"GOTMPDIR":   filepath.Join(baseDir, "tmp"),
+		"GOBIN":      filepath.Join(baseDir, "bin"),
+		"GOPATH":     baseDir,
 		"GOFLAGS":    "-mod=readonly",
 		"GOWORK":     "off",
 	}
@@ -64,9 +62,9 @@ func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 	}
 }
 
-func TestCommandEnvRequiresWorkspace(t *testing.T) {
-	if _, err := gocache.Environment(t.Context(), ""); err == nil {
-		t.Fatal("Environment(\"\") succeeded, want error")
+func TestCommandEnvSupportsAmbientStateWithoutWorkspace(t *testing.T) {
+	if _, err := gocache.Environment(t.Context(), ""); err != nil {
+		t.Fatalf("Environment(\"\") failed in ambient mode: %v", err)
 	}
 }
 
@@ -296,7 +294,8 @@ func createBufferedRenameFixture(t *testing.T) bufferedRenameFixture {
 		t.Setenv(key, value)
 	}
 	t.Setenv("SEMEDIT_GO_RENAME_EDIT", `{"documentChanges":[{"textDocument":{"uri":"`+pathutil.FileURI(target)+`","version":1},"edits":[{"range":{"start":{"line":2,"character":5},"end":{"line":2,"character":10}},"newText":"Renamed"}]}]}`)
-	environment, environmentErr := gocache.Environment(t.Context(), root)
+	cacheCtx := gocache.WithBaseDir(t.Context(), filepath.Join(root, ".scratch", "go"))
+	environment, environmentErr := gocache.Environment(cacheCtx, root)
 	if environmentErr != nil {
 		t.Fatal(environmentErr)
 	}
@@ -306,11 +305,11 @@ func createBufferedRenameFixture(t *testing.T) bufferedRenameFixture {
 			t.Error(err)
 		}
 	})
-	buffer, bufferErr := sourcebuf.New(root)
+	diskCtx := godiagnostics.WithSessionManager(cacheCtx, manager)
+	buffer, bufferErr := sourcebuf.New(diskCtx, root)
 	if bufferErr != nil {
 		t.Fatal(bufferErr)
 	}
-	diskCtx := godiagnostics.WithSessionManager(t.Context(), manager)
 	ctx := sourcebuf.WithBuffer(diskCtx, buffer)
 	if err := godiagnostics.UseWithContext(ctx, root, wrapper, environment, func(ctx context.Context, session *godiagnostics.Session) error {
 		return renameInSession(ctx, session, target, 3, 6, "Renamed")

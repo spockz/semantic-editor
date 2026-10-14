@@ -34,7 +34,7 @@ func LoadSnapshot(ctx context.Context, workDir string, selectedPaths []string) (
 	buffer := sourcebuf.FromContext(ctx)
 	analysisCtx := ctx
 	if buffer == nil {
-		buffer, err = sourcebuf.New(root)
+		buffer, err = sourcebuf.New(ctx, root)
 		if err != nil {
 			return nil, fmt.Errorf("bind contract source snapshot: %w", err)
 		}

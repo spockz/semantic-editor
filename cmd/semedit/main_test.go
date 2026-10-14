@@ -140,15 +140,6 @@ func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 					env.Vars = append(env.Vars, key+"="+val)
 				}
 			}
-			if gocache := os.Getenv("GOCACHE"); gocache != "" {
-				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOCACHE="+gocache)
-			}
-			if gomodcache := os.Getenv("GOMODCACHE"); gomodcache != "" {
-				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOMODCACHE="+gomodcache)
-			}
-			if goplscache := os.Getenv("GOPLSCACHE"); goplscache != "" {
-				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOPLSCACHE="+goplscache)
-			}
 			env.Vars = append(env.Vars, "PATH="+os.Getenv("PATH"))
 			if err := prepareFakeLSPs(); err != nil {
 				return err

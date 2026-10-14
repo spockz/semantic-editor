@@ -281,8 +281,12 @@ func isGoDiagnostic(diagnostic backend.Diagnostic) bool {
 	return err == nil && filepath.Ext(path) == ".go"
 }
 
-func snapshotBatchWorkspace(root string) (map[string]string, error) {
+func snapshotBatchWorkspace(ctx context.Context, root string) (map[string]string, error) {
 	files := make(map[string]string)
+	filter, err := sourcebuf.DirectoryFilterFor(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve batch snapshot directories: %w", err)
+	}
 	workspace, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, fmt.Errorf("open workspace root: %w", err)
@@ -293,7 +297,7 @@ func snapshotBatchWorkspace(root string) (map[string]string, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != root && (entry.Name() == ".git" || entry.Name() == ".scratch" || entry.Name() == "vendor" || entry.Name() == "node_modules") {
+			if filter.Skip(root, path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -315,8 +319,8 @@ func snapshotBatchWorkspace(root string) (map[string]string, error) {
 	return files, err
 }
 
-func captureBatchDiff(response *BatchResponse, root string, before map[string]string) error {
-	diff, err := finalBatchDiff(root, before)
+func captureBatchDiff(ctx context.Context, response *BatchResponse, root string, before map[string]string) error {
+	diff, err := finalBatchDiff(ctx, root, before)
 	if err != nil {
 		message := fmt.Errorf("capture final batch diff: %w", err)
 		response.Status = "error"
@@ -328,8 +332,8 @@ func captureBatchDiff(response *BatchResponse, root string, before map[string]st
 	return nil
 }
 
-func finalBatchDiff(root string, before map[string]string) (string, error) {
-	after, err := snapshotBatchWorkspace(root)
+func finalBatchDiff(ctx context.Context, root string, before map[string]string) (string, error) {
+	after, err := snapshotBatchWorkspace(ctx, root)
 	if err != nil {
 		return "", err
 	}
@@ -355,8 +359,8 @@ func finalBatchDiff(root string, before map[string]string) (string, error) {
 	return diff.String(), nil
 }
 
-func changedBatchPaths(root string, before map[string]string) ([]string, error) {
-	after, err := snapshotBatchWorkspace(root)
+func changedBatchPaths(ctx context.Context, root string, before map[string]string) ([]string, error) {
+	after, err := snapshotBatchWorkspace(ctx, root)
 	if err != nil {
 		return nil, err
 	}
@@ -654,7 +658,10 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 }
 
 func (s *Server) prepareBatchStageContext(ctx context.Context, configuration serverConfiguration, request *parsedBatchToolRequest) (context.Context, *Server, error) {
-	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root))
+	ctx = gocache.WithModuleCacheSeed(
+		gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root)),
+		configuration.goModuleCacheSeed,
+	)
 	if request.request.SkipHooks {
 		ctx = context.WithValue(ctx, batchSkipHooksKey{}, true)
 	}
@@ -760,7 +767,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		return s.finishFailedBatchNormalization(ctx, buffer, response, workspaceBefore, err)
 	}
 	if !s.finishBufferedBatch(ctx, buffer, response) {
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		_ = captureBatchDiff(ctx, response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	return s.verifyFinishedBatch(ctx, response, workspaceBefore, baseline, verifyOptions, normalizationPaths)
@@ -772,7 +779,7 @@ func (s *Server) finishFailedBatchEdits(ctx context.Context, buffer *sourcebuf.B
 		response.Results = append(response.Results, BatchResult{Tool: "batch_buffers", Status: "error", Error: cause.Error()})
 	}
 	s.finishBufferedBatch(ctx, buffer, response)
-	_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+	_ = captureBatchDiff(ctx, response, s.workDir, workspaceBefore)
 	return response, nil
 }
 
@@ -780,7 +787,7 @@ func (s *Server) finishFailedBatchNormalization(ctx context.Context, buffer *sou
 	response.Status = "error"
 	response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: cause.Error()})
 	s.finishBufferedBatch(ctx, buffer, response)
-	_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+	_ = captureBatchDiff(ctx, response, s.workDir, workspaceBefore)
 	return response, nil
 }
 
@@ -790,7 +797,7 @@ type batchExecutionSnapshot struct {
 }
 
 func (s *Server) captureBatchExecutionSnapshot(ctx context.Context, edits []BatchEntry) (batchExecutionSnapshot, error) {
-	workspace, err := snapshotBatchWorkspace(s.workDir)
+	workspace, err := snapshotBatchWorkspace(ctx, s.workDir)
 	if err != nil {
 		return batchExecutionSnapshot{}, fmt.Errorf("snapshot workspace before batch: %w", err)
 	}
@@ -806,12 +813,12 @@ func (s *Server) captureBatchExecutionSnapshot(ctx context.Context, edits []Batc
 }
 
 func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchResponse, workspaceBefore map[string]string, baseline batchVerificationBaseline, verifyOptions map[string]any, normalizationPaths []string) (*BatchResponse, error) {
-	reconcilePublishedGoScope(s.workDir, workspaceBefore, &baseline)
+	reconcilePublishedGoScope(ctx, s.workDir, workspaceBefore, &baseline)
 	verifyEntry, ok := s.registry.LookupMCP(semanticVerifyToolName)
 	if !ok {
 		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: "verification operation is not registered"})
-		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(ctx, response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	verifyRaw := map[string]any{"path": ".", "language": "auto", trustWorkspaceField: s.workspaceTrust.Trusted}
@@ -829,21 +836,21 @@ func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchRespons
 	if err != nil {
 		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: err.Error()})
-		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(ctx, response, s.workDir, workspaceBefore)
 		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
 	}
 	verifyResult, ok := verified.(operation.VerifyRes)
 	if !ok {
 		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
-		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(ctx, response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	response.Verification = &verifyResult
 	if verifyResult.Failure != "" {
 		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: verifyResult.Failure})
-		captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
+		captureAppliedBatchDiff(ctx, response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	recordBatchDiagnosticDelta(response, baseline, verifyResult)
@@ -851,7 +858,7 @@ func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchRespons
 		response.Status = batchStatusAppliedWithDiagnostics
 	}
 	markUnbaselinedGoErrors(response, baseline, verifyResult)
-	captureAppliedBatchDiff(response, s.workDir, workspaceBefore)
+	captureAppliedBatchDiff(ctx, response, s.workDir, workspaceBefore)
 	return response, nil
 }
 
@@ -879,8 +886,8 @@ func markUnbaselinedGoErrors(response *BatchResponse, baseline batchVerification
 	}
 }
 
-func captureAppliedBatchDiff(response *BatchResponse, root string, before map[string]string) {
-	if err := captureBatchDiff(response, root, before); err != nil {
+func captureAppliedBatchDiff(ctx context.Context, response *BatchResponse, root string, before map[string]string) {
+	if err := captureBatchDiff(ctx, response, root, before); err != nil {
 		response.Status = batchStatusAppliedWithDiagnostics
 	}
 }
@@ -895,7 +902,10 @@ func (s *Server) executeBatchForConfiguration(ctx context.Context, configuration
 		return nil, err
 	}
 	requestServer := requestViewFromConfiguration(configuration, canonicalRoot, trustWorkspace)
-	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, canonicalRoot))
+	ctx = gocache.WithModuleCacheSeed(
+		gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, canonicalRoot)),
+		configuration.goModuleCacheSeed,
+	)
 	return requestServer.executeBatchWithContext(ctx, preparedEdits, autoOrganizeImports)
 }
 

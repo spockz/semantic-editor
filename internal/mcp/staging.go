@@ -175,11 +175,11 @@ func (m *stageManager) Start(ctx context.Context, root string) (operation.StageR
 			return operation.StageReceipt{}, fmt.Errorf("a staging session already owns module workspace %s", other.key.root)
 		}
 	}
-	b, err := sourcebuf.New(key.root)
+	b, err := sourcebuf.New(ctx, key.root)
 	if err != nil {
 		return operation.StageReceipt{}, err
 	}
-	workspaceBefore, err := snapshotBatchWorkspace(key.root)
+	workspaceBefore, err := snapshotBatchWorkspace(ctx, key.root)
 	if err != nil {
 		return operation.StageReceipt{}, fmt.Errorf("snapshot staging workspace: %w", err)
 	}
@@ -404,7 +404,7 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 		if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(ctx)); err != nil {
 			response.Status = batchStatusAppliedWithDiagnostics
 			response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("synchronize diagnostics after staged publication: %v", err)})
-			captureAppliedBatchDiff(response, key.root, before)
+			captureAppliedBatchDiff(ctx, response, key.root, before)
 			result := stageCommitFromResponse(state, response, published)
 			result.ApplicationState = "persisted"
 			return result, &operation.StageCommitError{Result: result, Err: fmt.Errorf("synchronize diagnostics after staged publication: %w", err)}
@@ -414,7 +414,7 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 	if verifyErr != nil {
 		response.Status = batchStatusAppliedWithDiagnostics
 		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("verify staged publication: %v", verifyErr)})
-		captureAppliedBatchDiff(response, key.root, before)
+		captureAppliedBatchDiff(ctx, response, key.root, before)
 		result := stageCommitFromResponse(state, response, published)
 		result.ApplicationState = "persisted"
 		return result, &operation.StageCommitError{Result: result, Err: fmt.Errorf("verify staged publication: %w", verifyErr)}
@@ -443,7 +443,7 @@ func stagePublicationFailure(ctx context.Context, key stageKey, state *stageStat
 	if invalidateErr := godiagnostics.InvalidateWithContext(ctx); invalidateErr != nil {
 		outcomeErr = errors.Join(outcomeErr, fmt.Errorf("invalidate diagnostics after partial staged publication: %w", invalidateErr))
 	}
-	if diff, diffErr := finalBatchDiff(key.root, before); diffErr != nil {
+	if diff, diffErr := finalBatchDiff(ctx, key.root, before); diffErr != nil {
 		outcomeErr = errors.Join(outcomeErr, fmt.Errorf("capture partial staged diff: %w", diffErr))
 	} else {
 		result.FinalDiff = diff

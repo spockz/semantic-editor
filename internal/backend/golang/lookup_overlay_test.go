@@ -21,11 +21,11 @@ func TestLookupUsesOverlayBytesAndUTF16Location(t *testing.T) {
 	if err := os.WriteFile(file, []byte(diskSource), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 	err = buffer.AuthorizeWrites(ctx, root)
 	if err != nil {

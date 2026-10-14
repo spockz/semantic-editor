@@ -1,5 +1,23 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-14: semantic construct replacement rejected an unsupported language selector
+
+* Tool: `semantic_replace_construct`.
+* Target: `tools/benchmark-harness/codex_driver.go`, `Runner.codexMCPServerInstructionsOverride`.
+* Observed failure: the operation rejected the supplied `language` parameter before editing; no source mutation occurred.
+* A retry with supported parameters also rejected the `function` kind because the target is a method; no source mutation occurred.
+* Workaround: retry using the live schema parameters, the `method` kind, and let the selected Go file determine the backend.
+* Root cause: the selected-file Go operation schema does not accept a language selector and requires the construct kind to match the receiver method declaration.
+
+## 2026-10-14: semantic statement insertion rejected a two-statement snippet
+
+* Tool: `semantic_insert_construct`.
+* Target: `tools/benchmark-harness/bench_test.go`, `TestOpenCodeConfigurationIsFixtureScoped`.
+* Observed failure: the operation rejected a snippet containing a variable declaration and an `if` statement; no source mutation occurred.
+* Workaround: insert the assertion as one statement, computing the expected path inline.
+* Root cause: statement insertion accepts exactly one Go statement per request.
+* A follow-up insertion targeting `args := codexMCPArgsFromOverride(...)` also failed because that statement is absent from `TestRunnerInstructionModesReachCodexMCPArgs`; no source mutation occurred. The assertion is already covered by `TestMCPServerInstructionModeAndCodexOverride`, so no workaround was needed.
+
 ## 2026-10-14: peer-review process exited before returning a review
 
 * Tool: `codex_ask`.
@@ -7012,6 +7030,14 @@ The CLI inspection also requested the nonexistent `prepareReadProjectContext` in
 * The retry with supported parameters rejected a trailing `#nosec` line comment as unsafe to preserve; no source mutation occurred. A targeted ordinary edit will place the justification on its own line before the statement.
 * A subsequent selector included an entire `if` statement instead of the supported nested call expression. The tool listed the valid source spans and made no edit; retry with the call expression as the discriminator.
 
+## Semantic remove construct method selector mismatch (2026-10-14)
+
+* Tool: `semantic_remove_construct`.
+* Target: `internal/mcp/server.go`.
+* Observed failure: the call could not resolve `Initialize` as a method selector, so no mutation occurred.
+* Workaround: resolve the qualified method name with `semantic_lookup` before retrying; use a focused ordinary patch if the method-level statement selector remains unsupported.
+* Root cause: the operation requires a qualified method name for receiver methods.
+
 ## Semantic outline schema mismatch (2026-10-14)
 
 * Tool: `semantic_outline`.
@@ -7019,3 +7045,41 @@ The CLI inspection also requested the nonexistent `prepareReadProjectContext` in
 * Observed failure: the exposed schema rejects `file` and reports `path` as the selector; no source mutation occurred.
 * Workaround: use repository inventory and AST-aware import migration because the workspace-outline tool is not callable and module path migration has no semantic operation.
 * Root cause: the live MCP schema differs from its documented Go `selected_file` parameter.
+
+## Go cache inspection used an incorrect symbol name (2026-10-14)
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/gocache/cache.go`.
+* Observed failure: the requested `Env` symbol was not found; no mutation occurred.
+* Workaround: inspect the existing `Environment` declaration and its callers.
+* Root cause: the caller guessed the declaration name instead of locating it first.
+
+## Parallel edits invalidated Go environment batch (2026-10-14)
+
+* Tool: `semantic_batch`.
+* Target: `internal/pipeline/pipeline.go`.
+* Observed failure: import cleanup and final publication reported that `internal/gocache/cache_test.go` changed on disk during the batch. Pipeline changes were not published.
+* Workaround: pause parallel source edits, check the target disk state, and retry the same focused transformations.
+* Root cause: batch snapshots cover loaded workspace source beyond the files being edited, so concurrent changes to another package invalidate publication.
+
+The retry published the two intended pipeline changes but reported failed verification because the configured `golangci-lint` hook requires workspace trust. The fallback is repository `make check`; future batches in this authorized workspace must request hook trust explicitly. No extra source repair was needed.
+
+## Source-buffer helper insertion verification hook (2026-10-14)
+
+* Tool: `semantic_batch` with `semantic_insert_function`.
+* Target: `internal/sourcebuf/buffer.go`.
+* Observed failure: the helper insertion applied, but automatic final verification failed because the configured `golangci-lint` hook requires workspace trust.
+* Workaround: inspect the published source, then use `trust_workspace=true` for subsequent authorized semantic batches and run repository `make check`.
+* Root cause: the batch omitted the trust flag required for the configured verification hook; the source edit itself succeeded.
+
+A subsequent trusted `semantic_batch` inserted `sourceExclusions` in the same file, but final `golangci-lint` verification exited with status 3 while the multi-step sourcebuf refactor was incomplete. The insertion published; the next verification is repository `make check` after the remaining callers and tests are updated.
+
+After the missing call sites were migrated, a trusted four-step `semantic_batch` published the split source-buffer exclusion helpers, but its automatic `golangci-lint` hook again exited with status 3. The tool reported each semantic edit as applied; repository `make check` will identify any remaining lint issue after all concurrent edits settle.
+
+## Inherited Go state exposed overlay and temporary-source assumptions (2026-10-14)
+
+* Tools: `semantic_insert_declaration`, `semantic_move_construct`, and signature operations through `semantic_batch` in CLI contract tests.
+* Targets: staged scaffold and cross-package batch fixtures under `testdata/scripts/`.
+* Observed failures: `go env` attempted to enter an overlay-only directory absent from disk; other batches reported that the source set changed when temporary Go files appeared beneath the fixture.
+* Workaround: resolve environment settings from the nearest existing directory and exclude configured temporary/cache roots from source snapshots.
+* Root cause: environment discovery assumed source directories already existed, and source-set discovery relied on the old `.scratch` cache layout to exclude transient files.

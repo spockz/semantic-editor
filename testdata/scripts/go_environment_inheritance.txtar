@@ -1,0 +1,97 @@
+# Ordinary Go commands use the caller's build tags, workspace, and caches across CLI and MCP paths.
+env GOENV=$WORK/user-goenv
+env GOFLAGS=
+env GOWORK=$WORK/go.work
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+env GOPATH=$WORK/user-cache/path
+env GOPLSCACHE=$WORK/user-cache/gopls
+env GOPROXY=off
+env GOSUMDB=off
+cd app
+
+exec semedit verify --language go --path . --check-only
+stdout 'Verification clean: 0 diagnostics'
+exists ../user-cache/build/README
+! exists .scratch/go
+! exists ../.scratch/go
+
+stdin ../requests.json
+exec semedit mcp
+stdout '"id":2,"result":.*"isError":false'
+stdout '"id":3,"result":.*"isError":false'
+stdout '"status":"ok"'
+! stdout '"isError":true'
+! exists .scratch/go
+! exists ../.scratch/go
+cmp value.go ../want/value.go
+exec go test ./...
+cmp go.mod ../want/app.go.mod
+cmp ../sibling/go.mod ../want/sibling.go.mod
+cmp ../go.work ../want/go.work
+cmp ../user-goenv ../want/user-goenv
+
+-- app/go.mod --
+module example.com/app
+
+go 1.23
+-- app/value.go --
+// Package app exercises an external workspace module and a tagged declaration.
+package app
+
+import "example.com/sibling"
+
+func Value() int { return sibling.Tagged() }
+-- sibling/go.mod --
+module example.com/sibling
+
+go 1.23
+-- sibling/sibling.go --
+// Package sibling anchors the local dependency when its tagged file is excluded.
+package sibling
+-- sibling/sibling_envtag.go --
+//go:build envtag
+
+// Tagged exists only when the caller's GOENV-defined build flag is inherited.
+package sibling
+
+func Tagged() int { return 7 }
+-- go.work --
+go 1.23
+
+use (
+	./app
+	./sibling
+)
+-- user-goenv --
+GOFLAGS=-tags=envtag
+-- requests.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return sibling.Tagged() + 1"}}]}}}
+-- want/app.go.mod --
+module example.com/app
+
+go 1.23
+-- want/value.go --
+// Package app exercises an external workspace module and a tagged declaration.
+package app
+
+import "example.com/sibling"
+
+func Value() int {
+	return sibling.Tagged() + 1
+}
+-- want/sibling.go.mod --
+module example.com/sibling
+
+go 1.23
+-- want/go.work --
+go 1.23
+
+use (
+	./app
+	./sibling
+)
+-- want/user-goenv --
+GOFLAGS=-tags=envtag

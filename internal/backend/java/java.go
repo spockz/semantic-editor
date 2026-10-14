@@ -731,7 +731,7 @@ func (b *JavaBackend) prepareJavaRenameExecution(ctx context.Context, session Ja
 	buffer := sourcebuf.FromContext(ctx)
 	workingBuffer, workingCtx := buffer, ctx
 	if workingBuffer == nil {
-		createdBuffer, err := sourcebuf.New(root)
+		createdBuffer, err := sourcebuf.New(ctx, root)
 		if err != nil {
 			return javaRenameExecution{}, &JavaError{Op: "rename buffer", Workspace: root, Err: err}
 		}

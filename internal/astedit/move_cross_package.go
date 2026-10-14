@@ -1135,13 +1135,17 @@ func applyBufferedMove(ctx context.Context, original, changes map[string][]byte)
 }
 
 func inspectMoveModuleFiles(ctx context.Context, root, sourcePath, destinationPath, symbolName string) (map[string][]byte, error) {
+	filter, err := sourcebuf.DirectoryFilterFor(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve move source directories: %w", err)
+	}
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, fmt.Errorf("open Go module root: %w", err)
 	}
 	snapshot := map[string][]byte{}
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		return inspectMoveModuleEntry(ctx, root, path, entry, err, rootFS, sourcePath, destinationPath, symbolName, snapshot)
+		return inspectMoveModuleEntry(ctx, root, path, entry, err, rootFS, filter, sourcePath, destinationPath, symbolName, snapshot)
 	})
 	closeErr := rootFS.Close()
 	if walkErr != nil && closeErr != nil {
@@ -1156,7 +1160,7 @@ func inspectMoveModuleFiles(ctx context.Context, root, sourcePath, destinationPa
 	return snapshot, nil
 }
 
-func inspectMoveModuleEntry(ctx context.Context, root, path string, entry fs.DirEntry, entryErr error, rootFS *os.Root, sourcePath, destinationPath, symbolName string, snapshot map[string][]byte) error {
+func inspectMoveModuleEntry(ctx context.Context, root, path string, entry fs.DirEntry, entryErr error, rootFS *os.Root, filter sourcebuf.SourceDirectoryFilter, sourcePath, destinationPath, symbolName string, snapshot map[string][]byte) error {
 	if entryErr != nil {
 		return fmt.Errorf("inspect module file %s: %w", path, entryErr)
 	}
@@ -1167,6 +1171,9 @@ func inspectMoveModuleEntry(ctx context.Context, root, path string, entry fs.Dir
 		return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
 	}
 	if entry.IsDir() {
+		if filter.Skip(root, path) {
+			return filepath.SkipDir
+		}
 		return moveDirectoryTraversal(path, entry.Name())
 	}
 	if !strings.HasSuffix(entry.Name(), ".go") {

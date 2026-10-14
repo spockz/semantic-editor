@@ -259,7 +259,7 @@ Start a stdio MCP server from the intended workspace:
 semedit mcp --enabled-languages=go
 ```
 
-`--profile=full` is the default; `--profile=mutations-only` omits lookup tools. `--enabled-languages` limits the exposed language set. Go subprocess state defaults to `.scratch/go` beneath the server working directory, with `--go-base-dir` available to select another location. Configure the client with the executable path and working directory explicitly. The [semedit steering skill](skills/semedit/SKILL.md) explains intent selection and operation boundaries.
+`--profile=full` is the default; `--profile=mutations-only` omits lookup tools. `--enabled-languages` limits the exposed language set. Normal CLI and MCP use inherit the user's Go environment, including cache paths and workspace selection. MCP's `--go-base-dir` explicitly enables isolated Go state beneath the selected directory; the benchmark runner uses this mode for its fixtures. Ordinary semantic operations keep module files read-only, while explicit dependency operations may update them. Configure the client with the executable path and working directory explicitly. The [semedit steering skill](skills/semedit/SKILL.md) explains intent selection and operation boundaries.
 
 MCP initialization includes prescriptive guidance by default: inspect the tool inventory and use applicable semantic tools for mutations. `--instructions 'Custom guidance'` replaces it; `--instructions=` omits server-wide guidance. Individual tool descriptions remain available.
 
@@ -322,7 +322,7 @@ semedit/
 │   ├── snapshot/           # Snapshot journal and conflict-checked undo
 │   ├── maven/              # Bounded Java Maven verification actions
 │   ├── integration/        # Agent harness installation and configuration
-│   ├── gocache/            # Project-local Go runtime state
+│   ├── gocache/            # Go environment and opt-in isolated state
 │   ├── telemetry/          # Operation timing and metrics
 │   ├── assertmode/         # Go test assertion transformations
 │   └── testtools/          # Shared test support

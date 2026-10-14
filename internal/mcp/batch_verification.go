@@ -498,8 +498,8 @@ func pathWithinDir(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-func reconcilePublishedGoScope(workDir string, before map[string]string, baseline *batchVerificationBaseline) {
-	after, err := snapshotBatchWorkspace(workDir)
+func reconcilePublishedGoScope(ctx context.Context, workDir string, before map[string]string, baseline *batchVerificationBaseline) {
+	after, err := snapshotBatchWorkspace(ctx, workDir)
 	if err != nil {
 		fallbackBatchVerificationScope(baseline, "published workspace scope could not be reconciled")
 		return

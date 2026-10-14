@@ -9,6 +9,8 @@ When the request matches an operation exposed by the active semedit server, use 
 
 Install the CLI with `go install github.com/spockz/semantic-editor/cmd/semedit@latest`; from a local checkout, use `go install ./cmd/semedit` at the repository root. Register the resulting `semedit` executable with the harness MCP configuration.
 
+Normal CLI and MCP use inherit the user's Go environment and caches. Only explicitly isolated runs use managed Go state: MCP `--go-base-dir` opts into isolation, and benchmark fixtures configure it themselves. Do not add isolated cache configuration to ordinary harness registrations. Ordinary semantic operations preserve read-only module-file protection; dependency operations can update module files explicitly.
+
 The default MCP `--tool-profile base` includes workspace outline, signature change, function extraction, and doc-comment operations. `--tool-profile full` exposes every registered tool; execution `--profile mutations-only` filters read-only tools independently of that catalog choice.
 
 Tool descriptions summarize single-fault support and conditional recovery. The generated capability reference retains the exact mixed-fault matrices; do not infer support for combinations from individual fault classes. Copy continuation fields from the same resolved structured record into follow-up calls, including its revision when required. Missing continuation fields mean no resolved target.

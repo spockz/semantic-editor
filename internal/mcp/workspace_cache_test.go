@@ -6,9 +6,16 @@ import (
 	"testing"
 )
 
-func TestGoBaseDirForRootSharesDefaultSubdirectoriesAndIsolatesWorktrees(t *testing.T) {
+func TestGoBaseDirForRootRequiresExplicitIsolation(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
+	ambientServer := &Server{workDir: root}
+	for _, selected := range []string{root, filepath.Join(root, "module", "nested"), filepath.Join(root, ".scratch", "worktrees", "other")} {
+		if got := ambientServer.goBaseDirForRoot(selected); got != "" {
+			t.Errorf("ambient goBaseDirForRoot(%q) = %q, want empty", selected, got)
+		}
+	}
+
 	configuredCache := filepath.Join(root, "private-cache")
 	server := &Server{workDir: root, goBaseDir: configuredCache}
 	for _, selected := range []string{root, filepath.Join(root, "module", "nested")} {

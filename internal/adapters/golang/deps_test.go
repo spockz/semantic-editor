@@ -34,7 +34,7 @@ func TestAddDependencyPermitsExplicitManifestChanges(t *testing.T) {
 	}
 	trace := filepath.Join(t.TempDir(), "trace")
 	stub := filepath.Join(binDir, "go")
-	script := "#!/bin/sh\nprintf '%s %s\\n' \"$GOFLAGS\" \"$*\" >> \"$SEMEDIT_DEP_TRACE\"\nif [ \"$1\" = get ]; then printf 'require example.com/added v1.0.0\\n' >> go.mod; fi\n"
+	script := "#!/bin/sh\nif [ \"$1\" = env ]; then printf '{\"GOFLAGS\":\"\",\"GOCACHE\":\"\",\"GOMODCACHE\":\"\",\"GOPATH\":\"\",\"GOTMPDIR\":\"\"}\\n'; exit 0; fi\nprintf '%s %s\\n' \"$GOFLAGS\" \"$*\" >> \"$SEMEDIT_DEP_TRACE\"\nif [ \"$1\" = get ]; then printf 'require example.com/added v1.0.0\\n' >> go.mod; fi\n"
 	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

@@ -25,7 +25,7 @@ type batchJournal struct {
 }
 
 func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEntry, response *BatchResponse) (*sourcebuf.Buffer, error) {
-	buffer, err := sourcebuf.New(s.workDir)
+	buffer, err := sourcebuf.New(ctx, s.workDir)
 	if err != nil {
 		return nil, fmt.Errorf("create batch source buffers: %w", err)
 	}
@@ -58,7 +58,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 			return buffer, err
 		}
 		if !buffered {
-			buffer, err = sourcebuf.New(s.workDir)
+			buffer, err = sourcebuf.New(ctx, s.workDir)
 			if err != nil {
 				return nil, fmt.Errorf("restart batch source buffers: %w", err)
 			}
@@ -108,7 +108,7 @@ func (s *Server) normalizeBufferedBatch(ctx context.Context, buffer *sourcebuf.B
 		}
 	}
 
-	paths, err := changedBatchPaths(s.workDir, before)
+	paths, err := changedBatchPaths(ctx, s.workDir, before)
 	if err != nil {
 		return nil, fmt.Errorf("collect changed batch paths: %w", err)
 	}

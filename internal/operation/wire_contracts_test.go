@@ -302,11 +302,11 @@ func TestImplementContractUsesCurrentBufferedSourceAndDoesNotPublish(t *testing.
 	if err := os.WriteFile(path, diskBefore, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, bufferErr := sourcebuf.New(canonicalRoot)
+	buffer, bufferErr := sourcebuf.New(t.Context(), canonicalRoot)
 	if bufferErr != nil {
 		t.Fatal(bufferErr)
 	}
-	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	if authorizeErr := buffer.AuthorizeWrites(ctx, canonicalRoot); authorizeErr != nil {
 		t.Fatal(authorizeErr)
 	}
@@ -359,11 +359,11 @@ func TestExtractInterfaceUsesBufferedMethodAndDoesNotPublish(t *testing.T) {
 	if err := os.WriteFile(destinationPath, destinationBefore, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, bufferErr := sourcebuf.New(canonicalRoot)
+	buffer, bufferErr := sourcebuf.New(t.Context(), canonicalRoot)
 	if bufferErr != nil {
 		t.Fatal(bufferErr)
 	}
-	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	if authorizeErr := buffer.AuthorizeWrites(ctx, canonicalRoot); authorizeErr != nil {
 		t.Fatal(authorizeErr)
 	}

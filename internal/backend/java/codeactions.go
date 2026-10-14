@@ -286,7 +286,7 @@ func (b *JavaBackend) stageJavaCodeAction(ctx context.Context, root, file, uri s
 	ownedBuffer := false
 	if workingBuffer == nil {
 		var err error
-		workingBuffer, err = sourcebuf.New(root)
+		workingBuffer, err = sourcebuf.New(ctx, root)
 		if err != nil {
 			return nil, nil, nil, false, fmt.Errorf("create Java code action buffer: %w", err)
 		}

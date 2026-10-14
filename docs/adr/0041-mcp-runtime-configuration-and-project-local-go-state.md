@@ -3,6 +3,8 @@
 Status: Accepted
 Date: 2026-09-21
 
+The default Go isolation policy below is superseded by [ADR-0070](0070-opt-in-go-runtime-isolation.md). Normal CLI and MCP use inherit the user's Go state; benchmark fixtures and explicit `--go-base-dir` configurations retain isolation. Workspace-root selection and the other runtime invariants remain in force.
+
 ## Context
 
 MCP clients can launch `semedit` from a benchmark fixture while configuration

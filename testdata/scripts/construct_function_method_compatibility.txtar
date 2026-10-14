@@ -1,4 +1,5 @@
 # Function replacement accepts receiver-bearing source while preserving the selected method and receiver syntax.
+mkdir .scratch
 exec semedit replace-construct --file request.go --kind function --symbol Request.Validate --source 'func (r *Request) Validate() string { return "qualified" }'
 grep 'return "qualified"' request.go
 exec semedit replace-construct --file request.go --kind function --symbol Validate --source 'func (r *Request) Validate() string { return "unqualified" }'

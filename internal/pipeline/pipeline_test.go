@@ -660,3 +660,44 @@ func assertExplicitImportKeepsFunctionDoc(t *testing.T, entry string) {
 	}
 	t.Fatalf("NormalizeKind declaration missing after import edit:\n%s", updated)
 }
+
+func TestGoFilesSkipsCachesConfiguredThroughGoEnvironmentFile(t *testing.T) {
+	root := t.TempDir()
+	cacheDir := filepath.Join(root, "user-cache")
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goenv := filepath.Join(root, "goenv")
+	settings := "GOCACHE=" + cacheDir + "\nGOMODCACHE=" + filepath.Join(root, "modules") + "\nGOPATH=" + filepath.Join(root, "gopath") + "\n"
+	if err := os.WriteFile(goenv, []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOENV", goenv)
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOPATH"} {
+		t.Setenv(key, "")
+	}
+	for name, contents := range map[string]string{
+		"main.go":                         "package main\n",
+		"user-cache/generated.go":         "package invalid {\n",
+		"modules/example/cache.go":        "package invalid {\n",
+		"gopath/pkg/mod/example/cache.go": "package invalid {\n",
+	} {
+		target := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files, err := pipeline.GoFiles(root, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(files, ","); got != "main.go" {
+		t.Fatalf("selected files = %q, want main.go", got)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".scratch", "go")); !os.IsNotExist(err) {
+		t.Fatalf("ordinary source selection created managed Go state: %v", err)
+	}
+}

@@ -358,6 +358,10 @@ For a new experiment dimension, trace it from `PlanOptions` and `Job` through re
 
 Documentation generation continues through independent input and output failures. Valid benchmark reports still produce pages and browser data; rejected reports appear in neither. After attempting all independent sections, the command reports collected errors and exits nonzero. Repository discovery and output-directory preparation remain prerequisites. `cmd/docgen/error_collection_test.go` protects partial generation, multiple diagnostics, empty datasets, and independent output failures.
 
+## Go environment isolation
+
+Normal semedit CLI and MCP use inherit the user's Go environment. The benchmark runner explicitly creates each fixture's `.scratch/go` state and starts its MCP server with `--go-base-dir` selecting that state. Fixture builds, coding processes, verification, and oracle commands share those managed paths rather than writing to the host's Go caches. This policy belongs to benchmark preparation, not ordinary tool installation; see [ADR-0070](../../docs/adr/0070-opt-in-go-runtime-isolation.md).
+
 ## Verification and related decisions
 
 Follow the repository workflow: run `make check` before targeted verification and again before completion. Focused commands, after that prerequisite, are:

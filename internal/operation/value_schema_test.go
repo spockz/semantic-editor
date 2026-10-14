@@ -618,11 +618,11 @@ func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
 	if standalone.Status != EditNoOp || len(standalone.Changes) != 0 || len(standalone.Continuations) != 1 {
 		t.Fatalf("standalone no-op receipt = %#v", standalone)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
 		t.Fatal(authorizeErr)
 	}

@@ -1,10 +1,13 @@
-// Package gocache creates project-local Go tool state for semantic subprocesses.
+// Package gocache preserves caller Go state and creates isolated state only when explicitly selected.
 package gocache
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -16,7 +19,13 @@ func WithBaseDir(ctx context.Context, baseDir string) context.Context {
 	return context.WithValue(ctx, baseDirContextKey{}, strings.TrimSpace(baseDir))
 }
 
-func resolveBaseDir(ctx context.Context, workDir string) (string, error) {
+// HasBaseDir reports whether a nonblank isolated Go state base was selected.
+func HasBaseDir(ctx context.Context) bool {
+	baseDir, _ := ctx.Value(baseDirContextKey{}).(string)
+	return strings.TrimSpace(baseDir) != ""
+}
+
+func resolveBaseDir(ctx context.Context) (string, error) {
 	if baseDir, _ := ctx.Value(baseDirContextKey{}).(string); baseDir != "" {
 		resolved, err := filepath.Abs(baseDir)
 		if err != nil {
@@ -24,14 +33,7 @@ func resolveBaseDir(ctx context.Context, workDir string) (string, error) {
 		}
 		return resolved, nil
 	}
-	if workDir == "" {
-		return "", fmt.Errorf("go workspace directory is empty")
-	}
-	root, err := filepath.Abs(workDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve Go workspace directory: %w", err)
-	}
-	return filepath.Join(root, ".scratch", "go"), nil
+	return "", nil
 }
 
 func verifyStateDirectory(dir string) error {
@@ -53,12 +55,18 @@ func verifyStateDirectory(dir string) error {
 	return nil
 }
 
-// Environment returns an environment whose Go state remains below the workspace scratch directory.
+// Environment preserves user Go state unless a caller explicitly selects a managed base directory.
 func Environment(ctx context.Context, workDir string) ([]string, error) {
-	explicitBaseDir := ctx.Value(baseDirContextKey{}) != nil
-	baseDir, err := resolveBaseDir(ctx, workDir)
+	baseDir, err := resolveBaseDir(ctx)
 	if err != nil {
 		return nil, err
+	}
+	seed, _ := ctx.Value(moduleCacheSeedKey{}).(string)
+	if seed != "" && baseDir == "" {
+		return nil, fmt.Errorf("offline Go module cache seed requires an explicit Go isolation base directory")
+	}
+	if baseDir == "" {
+		return inheritedEnvironment(ctx, workDir)
 	}
 
 	cacheDir := filepath.Join(baseDir, "build")
@@ -66,26 +74,6 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 	tempDir := filepath.Join(baseDir, "tmp")
 	binDir := filepath.Join(baseDir, "bin")
 	goplsCacheDir := filepath.Join(baseDir, "gopls")
-	if !explicitBaseDir {
-		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOCACHE")); shared != "" {
-			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
-				cacheDir = absShared
-			}
-		}
-		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOMODCACHE")); shared != "" {
-			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
-				moduleCacheDir = absShared
-			}
-		}
-		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOPLSCACHE")); shared != "" {
-			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
-				goplsCacheDir = absShared
-			}
-		}
-	}
-	if seed, _ := ctx.Value(moduleCacheSeedKey{}).(string); strings.TrimSpace(seed) != "" {
-		moduleCacheDir = filepath.Join(baseDir, "mod")
-	}
 	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir, goplsCacheDir} {
 		if err := verifyStateDirectory(dir); err != nil {
 			return nil, err
@@ -134,6 +122,110 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"GOFLAGS="+goFlags,
 		"GOWORK=off",
 	), nil
+}
+
+func inheritedEnvironment(ctx context.Context, workDir string) ([]string, error) {
+	settings, err := effectiveGoSettings(ctx, workDir)
+	if err != nil {
+		return nil, err
+	}
+	goFlags := settings["GOFLAGS"]
+	if !moduleWritesAllowed(ctx) {
+		goFlags = appendGoFlag(goFlags, "-mod=readonly")
+	}
+	env := setEnvironmentValue(os.Environ(), "GOFLAGS", goFlags)
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR"} {
+		if value, exists := environmentValue(env, key); exists && value != "" {
+			continue
+		}
+		if value := settings[key]; value != "" {
+			env = setEnvironmentValue(env, key, value)
+		}
+	}
+	return env, nil
+}
+
+func effectiveGoSettings(ctx context.Context, workDir string) (map[string]string, error) {
+	requested := []string{"GOFLAGS", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR"}
+	command := exec.CommandContext(ctx, "go", "env", "-json", "GOFLAGS", "GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR")
+	goEnvDir, err := existingGoEnvDirectory(workDir)
+	if err != nil {
+		return nil, err
+	}
+	if goEnvDir != "" {
+		command.Dir = goEnvDir
+	}
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	output, err := command.Output()
+	if err != nil {
+		return nil, fmt.Errorf("resolve effective Go environment: %w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	values := make(map[string]*string)
+	if err := json.Unmarshal(output, &values); err != nil {
+		return nil, fmt.Errorf("decode effective Go environment: %w", err)
+	}
+	settings := make(map[string]string, len(requested))
+	for _, key := range requested {
+		value, ok := values[key]
+		if !ok || value == nil {
+			return nil, fmt.Errorf("decode effective Go environment: missing string value for %s", key)
+		}
+		settings[key] = *value
+	}
+	return settings, nil
+}
+
+func existingGoEnvDirectory(workDir string) (string, error) {
+	if strings.TrimSpace(workDir) == "" {
+		return "", nil
+	}
+	directory, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve effective Go working directory: %w", err)
+	}
+	for {
+		info, statErr := os.Stat(directory)
+		if statErr == nil && info.IsDir() {
+			return directory, nil
+		}
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return "", fmt.Errorf("inspect effective Go working directory %q: %w", directory, statErr)
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return "", fmt.Errorf("resolve effective Go working directory: no existing directory above %q", workDir)
+		}
+		directory = parent
+	}
+}
+
+func appendGoFlag(flags, flag string) string {
+	if strings.TrimSpace(flags) == "" {
+		return flag
+	}
+	return strings.TrimSpace(flags) + " " + flag
+}
+
+func setEnvironmentValue(environment []string, key, value string) []string {
+	result := make([]string, 0, len(environment)+1)
+	for _, entry := range environment {
+		entryKey, _, _ := strings.Cut(entry, "=")
+		if entryKey != key {
+			result = append(result, entry)
+		}
+	}
+	return append(result, key+"="+value)
+}
+
+func environmentValue(environment []string, key string) (string, bool) {
+	for _, entry := range environment {
+		entryKey, value, _ := strings.Cut(entry, "=")
+		if entryKey == key {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 // IsManagedEnvironmentKey reports whether key is controlled by the Go cache environment.

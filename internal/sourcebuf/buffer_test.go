@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
@@ -20,7 +21,7 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	second := filepath.Join(root, "b.go")
 	original := []byte("package sample\nfunc Value()int{return 1}\n")
 	before := createBufferedSources(t, first, second, original)
-	buffer, createErr := sourcebuf.New(root)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
 	if createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -76,7 +77,7 @@ func TestRunRollsBackOnlyFailedSharedEdit(t *testing.T) {
 	original := []byte("package sample\nfunc Value() int { return 1 }\n")
 	prior := []byte("package sample\nfunc Value() int { return 2 }\n")
 	writeFiles(t, []string{path}, original)
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestChangesSinceTracksChildRevertingPriorBatchEdit(t *testing.T) {
 	original := []byte("package sample\nfunc Value() int { return 1 }\n")
 	prior := []byte("package sample\nfunc Value() int { return 2 }\n")
 	writeFiles(t, []string{path}, original)
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,13 +244,80 @@ func TestBufferedPublicationRejectsConflicts(t *testing.T) {
 	}
 }
 
+func TestBufferedSourceSetIgnoresEffectiveGoState(t *testing.T) {
+	root := t.TempDir()
+	app := filepath.Join(root, "app.go")
+	writeFiles(t, []string{app}, []byte("package sample\nfunc Value() int { return 1 }\n"))
+	cacheRoots := []string{
+		filepath.Join(root, "build-cache"),
+		filepath.Join(root, "module-cache"),
+		filepath.Join(root, "go-path", "pkg", "mod"),
+		filepath.Join(root, "go-temp"),
+		filepath.Join(root, "gopls-cache"),
+		filepath.Join(root, "process-temp"),
+	}
+	for _, directory := range cacheRoots {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeFiles(t, []string{filepath.Join(directory, "existing.go")}, []byte("package generated\n"))
+	}
+	goenv := filepath.Join(root, "goenv")
+	goenvData := fmt.Sprintf("GOCACHE=%s\nGOMODCACHE=%s\nGOPATH=%s\nGOTMPDIR=%s\n", cacheRoots[0], cacheRoots[1], filepath.Join(root, "go-path"), cacheRoots[3])
+	if err := atomicfile.WriteAtomic(goenv, []byte(goenvData)); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOENV", goenv)
+	t.Setenv("GOWORK", "off")
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR"} {
+		t.Setenv(key, "")
+	}
+	t.Setenv("GOPLSCACHE", cacheRoots[4])
+	t.Setenv("TMPDIR", cacheRoots[5])
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range cacheRoots {
+		writeFiles(t, []string{filepath.Join(directory, "existing.go"), filepath.Join(directory, "new.go")}, []byte("package generated\nfunc Generated() {}\n"))
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		t.Fatalf("Go state changed source read set: %v", err)
+	}
+	writeFiles(t, []string{app}, []byte("package sample\nfunc Value() int { return 2 }\n"))
+	if err := buffer.AssertDisk(); !errors.Is(err, sourcebuf.ErrConflict) {
+		t.Fatalf("application source changed without conflict: %v", err)
+	}
+}
+
+func TestBufferedSourceSetIgnoresExplicitGoBaseDir(t *testing.T) {
+	root := t.TempDir()
+	base := filepath.Join(root, "selected-go-state")
+	ctx := gocache.WithBaseDir(t.Context(), base)
+	buffer, err := sourcebuf.New(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{"build", "mod", "tmp", "gopls"} {
+		path := filepath.Join(base, directory, "generated.go")
+		writeFiles(t, []string{path}, []byte("package generated\n"))
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		t.Fatalf("explicit Go state changed source read set: %v", err)
+	}
+	writeFiles(t, []string{filepath.Join(root, "app.go")}, []byte("package sample\n"))
+	if err := buffer.AssertDisk(); !errors.Is(err, sourcebuf.ErrConflict) {
+		t.Fatalf("application source appeared without conflict: %v", err)
+	}
+}
+
 func testPublicationConflict(t *testing.T, scenario string) {
 	t.Helper()
 	root := t.TempDir()
 	target, sibling := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
 	original := []byte("package sample\nfunc Value()int{return 1}\n")
 	writeFiles(t, []string{target, sibling}, original)
-	buffer, createErr := sourcebuf.New(root)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
 	if createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -332,7 +400,7 @@ func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	buffer, createErr := sourcebuf.New(root)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
 	if createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -380,7 +448,7 @@ func testBufferedApplyRejectsScenario(t *testing.T, scenario string) {
 	first, second := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
 	original := []byte("package sample\n")
 	writeFiles(t, []string{first, second}, original)
-	buffer, createErr := sourcebuf.New(root)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
 	if createErr != nil {
 		t.Fatal(createErr)
 	}
@@ -445,7 +513,7 @@ func TestObservedReplacementRemainsReadOnly(t *testing.T) {
 	if err := atomicfile.WriteAtomic(file, original); err != nil {
 		t.Fatal(err)
 	}
-	buffer, createErr := sourcebuf.New(root)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
 	if createErr != nil {
 		t.Fatal(createErr)
 	}

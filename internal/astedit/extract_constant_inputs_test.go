@@ -94,9 +94,9 @@ func constantInputFixture(t *testing.T) (context.Context, *sourcebuf.Buffer, str
 	if err := os.WriteFile(dependency, []byte("package constants\nconst Window = 3\n"), 0o600); err != nil {
 		t.Fatalf("write imported source: %v", err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatalf("create source buffer: %v", err)
 	}
-	return sourcebuf.WithBuffer(context.Background(), buffer), buffer, selected, dependency, manifest, original
+	return sourcebuf.WithBuffer(t.Context(), buffer), buffer, selected, dependency, manifest, original
 }

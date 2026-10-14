@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/spockz/semantic-editor/internal/mcptest"
 	"io"
 	"os"
 	"os/exec"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/mcptest"
 )
 
 func BenchmarkMCPColdStartupVerify(b *testing.B) {
@@ -24,7 +25,7 @@ func BenchmarkMCPColdStartupVerify(b *testing.B) {
 	}
 	binaryDir := b.TempDir()
 	binary := filepath.Join(binaryDir, "semedit")
-	build := exec.Command("go", "build", "-o", binary, ".")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/semedit")
 	build.Dir = repoRoot
 	build.Env = append(os.Environ(), "GOWORK=off", "GOFLAGS=")
 	if output, err := build.CombinedOutput(); err != nil {
@@ -51,6 +52,7 @@ func BenchmarkMCPColdStartupVerify(b *testing.B) {
 
 type coldMCPBenchmarkFixture struct {
 	workspace string
+	goBaseDir string
 	goDirs    map[string]string
 }
 
@@ -81,18 +83,23 @@ func newColdMCPBenchmarkFixture(b *testing.B) coldMCPBenchmarkFixture {
 	}
 	writeColdMCPFixtureFile(b, filepath.Join(workspace, "go.mod"), "module example.com/coldverify\n\ngo 1.27.1\n")
 	writeColdMCPFixtureFile(b, filepath.Join(workspace, "main.go"), "package coldverify\n\nfunc Value() int { return 1 }\n")
-	envRoot := filepath.Join(b.TempDir(), "env")
-	goDirs := coldMCPGoDirectories(envRoot)
-	for _, dir := range goDirs {
+	goBaseDir := filepath.Join(b.TempDir(), "env")
+	goDirs := coldMCPGoDirectories(goBaseDir)
+	for name, dir := range goDirs {
+		if name == "GOENV" {
+			continue
+		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			b.Fatal(err)
 		}
 	}
-	entries, err := os.ReadDir(goDirs["GOMODCACHE"])
-	if err != nil || len(entries) != 0 {
-		b.Fatalf("module cache is not empty before iteration: entries=%d err=%v", len(entries), err)
+	for _, name := range []string{"GOCACHE", "GOMODCACHE"} {
+		entries, err := os.ReadDir(goDirs[name])
+		if err != nil || len(entries) != 0 {
+			b.Fatalf("selected %s directory is not empty before iteration: path=%s entries=%d err=%v", name, goDirs[name], len(entries), err)
+		}
 	}
-	return coldMCPBenchmarkFixture{workspace: workspace, goDirs: goDirs}
+	return coldMCPBenchmarkFixture{workspace: workspace, goBaseDir: goBaseDir, goDirs: goDirs}
 }
 
 func writeColdMCPFixtureFile(b *testing.B, path, content string) {
@@ -102,21 +109,22 @@ func writeColdMCPFixtureFile(b *testing.B, path, content string) {
 	}
 }
 
-func coldMCPGoDirectories(envRoot string) map[string]string {
+func coldMCPGoDirectories(baseDir string) map[string]string {
 	return map[string]string{
-		"GOENV":      filepath.Join(envRoot, "goenv"),
-		"GOCACHE":    filepath.Join(envRoot, "gocache"),
-		"GOMODCACHE": filepath.Join(envRoot, "gomodcache"),
-		"GOTMPDIR":   filepath.Join(envRoot, "gotmp"),
-		"GOBIN":      filepath.Join(envRoot, "gobin"),
-		"GOPATH":     filepath.Join(envRoot, "gopath"),
-		"HOME":       filepath.Join(envRoot, "home"),
+		"GOENV":      filepath.Join(baseDir, "env"),
+		"GOCACHE":    filepath.Join(baseDir, "build"),
+		"GOMODCACHE": filepath.Join(baseDir, "mod"),
+		"GOTMPDIR":   filepath.Join(baseDir, "tmp"),
+		"GOBIN":      filepath.Join(baseDir, "bin"),
+		"GOPATH":     baseDir,
+		"GOPLSCACHE": filepath.Join(baseDir, "gopls"),
+		"HOME":       filepath.Join(baseDir, "home"),
 	}
 }
 
 func newColdMCPBenchmarkProcess(b *testing.B, binary string, fixture coldMCPBenchmarkFixture) coldMCPBenchmarkProcess {
 	b.Helper()
-	command := exec.Command(binary, "mcp", "--profile", "full")
+	command := exec.Command(binary, "mcp", "--profile", "full", "--go-base-dir", fixture.goBaseDir)
 	command.Dir = fixture.workspace
 	command.Env = coldGoEnv(fixture.goDirs)
 	stdin, err := command.StdinPipe()

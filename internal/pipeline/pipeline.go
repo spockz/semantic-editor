@@ -377,7 +377,7 @@ func GoFilesContext(ctx context.Context, workDir string, paths ...string) ([]str
 	if err != nil {
 		return nil, fmt.Errorf("resolve Go workspace %q: %w", workDir, err)
 	}
-	cacheRoots, err := configuredGoCacheRoots(base)
+	cacheRoots, err := configuredGoCacheRoots(ctx, base)
 	if err != nil {
 		return nil, err
 	}
@@ -607,50 +607,12 @@ func runGofmt(ctx context.Context, workDir, flag string, files []string) (string
 	return output.String(), nil
 }
 
-func configuredGoCacheRoots(base string) ([]string, error) {
-	roots := make([]string, 0, 8)
-	add := func(name, path string) error {
-		if path == "" {
-			return nil
-		}
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(base, path)
-		}
-		path, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("resolve Go cache path %q: %w", path, err)
-		}
-		roots = append(roots, filepath.Clean(path))
-		canonical, err := filepath.EvalSymlinks(path)
-		if err == nil {
-			roots = append(roots, filepath.Clean(canonical))
-			return nil
-		}
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		return fmt.Errorf("resolve configured Go cache %s %q: %w", name, path, err)
+func configuredGoCacheRoots(ctx context.Context, base string) ([]string, error) {
+	filter, err := sourcebuf.DirectoryFilterFor(ctx, base)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Go source-selection environment: %w", err)
 	}
-
-	for _, key := range []string{"GOMODCACHE", "GOCACHE", "GOTMPDIR"} {
-		if err := add(key, os.Getenv(key)); err != nil {
-			return nil, err
-		}
-	}
-	gopath := os.Getenv("GOPATH")
-	if gopath == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve default Go path: %w", err)
-		}
-		gopath = filepath.Join(home, "go")
-	}
-	for _, path := range filepath.SplitList(gopath) {
-		if err := add("GOPATH module cache", filepath.Join(path, "pkg", "mod")); err != nil {
-			return nil, err
-		}
-	}
-	return roots, nil
+	return filter.GeneratedRoots(), nil
 }
 
 func goPathWithin(path, parent string) bool {

@@ -394,8 +394,7 @@ func (s *Server) serveRequests(ctx context.Context, in io.Reader) error {
 	}
 }
 
-// Initialize processes client initialization parameters, establishes workspace root and Go cache environments,
-// and marks the server initialized.
+// Initialize processes client parameters, establishes the workspace root and optional Go isolation, and marks the server initialized.
 func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map[string]any, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
@@ -418,12 +417,12 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		return nil, fmt.Errorf("MCP workspace root mismatch: expected %q, actual %q", s.expectedRoot, actualRoot)
 	}
 	initGoBaseDir := s.goBaseDir
-	if !s.explicitGoBaseDir || initGoBaseDir == "" {
-		initGoBaseDir = filepath.Join(actualRoot, ".scratch", "go")
-	}
-	initCtx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, initGoBaseDir), s.goModuleCacheSeed)
-	if _, cacheErr := gocache.Environment(initCtx, actualRoot); cacheErr != nil {
-		return nil, fmt.Errorf("prepare MCP Go base directory: %w", cacheErr)
+
+	if s.explicitGoBaseDir || s.goModuleCacheSeed != "" {
+		initCtx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, initGoBaseDir), s.goModuleCacheSeed)
+		if _, cacheErr := gocache.Environment(initCtx, actualRoot); cacheErr != nil {
+			return nil, fmt.Errorf("prepare MCP Go base directory: %w", cacheErr)
+		}
 	}
 	plan, err := projectverify.Discover(actualRoot)
 	if err != nil {
@@ -2275,12 +2274,15 @@ func validateIndexedSourceField(index sourceFieldIndex, entry operation.Entry, p
 }
 
 func selectedGoBaseDir(workDir, goBaseDir, root string) string {
-	if root == workDir && goBaseDir != "" {
+	if strings.TrimSpace(goBaseDir) == "" {
+		return ""
+	}
+	if root == workDir {
 		return goBaseDir
 	}
 	if relative, err := filepath.Rel(workDir, root); err == nil && relative != ".." && !filepath.IsAbs(relative) && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
 		worktreePrefix := filepath.Join(".scratch", "worktrees") + string(filepath.Separator)
-		if relative != "." && !strings.HasPrefix(relative, worktreePrefix) && goBaseDir != "" {
+		if relative != "." && !strings.HasPrefix(relative, worktreePrefix) {
 			return goBaseDir
 		}
 	}

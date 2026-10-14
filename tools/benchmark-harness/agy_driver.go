@@ -197,7 +197,7 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 	if err != nil {
 		return fmt.Errorf("resolve Agy MCP expected root: %w", err)
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", expectedRoot, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
+	args := []string{"mcp", "--profile", "full", "--expected-root", expectedRoot, "--go-base-dir", filepath.Join(expectedRoot, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	disabled := arm == ArmBaseline
 	if !disabled {
 		switch mode {

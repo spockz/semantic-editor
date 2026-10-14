@@ -50,11 +50,11 @@ func dispatchRollbackBuffer(t *testing.T) (string, context.Context, string, []by
 	if writeErr := os.WriteFile(path, []byte("package sample\nfunc Value() int { return 1 }\n"), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	buffer, bufferErr := sourcebuf.New(root)
+	buffer, bufferErr := sourcebuf.New(t.Context(), root)
 	if bufferErr != nil {
 		t.Fatal(bufferErr)
 	}
-	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
 		t.Fatal(authorizeErr)
 	}

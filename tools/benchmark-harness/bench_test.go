@@ -282,16 +282,12 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if !found {
 		t.Fatal("semedit MCP server is absent")
 	}
-	expectedRoot, err := canonicalFixtureRoot(workDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	assertFixtureMCPWorkspace(t, server.Command, workDir)
+
 	if !slices.Contains(server.Command, "--metrics-file") || !slices.Contains(server.Command, benchmarkMCPMetricsPath(workDir)) {
 		t.Errorf("MCP command = %#v, want fixture-local metrics file", server.Command)
 	}
-	if !slices.Contains(server.Command, "--expected-root") || !slices.Contains(server.Command, expectedRoot) {
-		t.Errorf("MCP command = %#v, want expected root %q", server.Command, expectedRoot)
-	}
+
 	if got, want := server.Command[len(server.Command)-2:], []string{"--instructions", mcp.PrescriptiveInstructions}; !slices.Equal(got, want) {
 		t.Errorf("MCP command suffix = %#v, want %#v", got, want)
 	}
@@ -551,7 +547,7 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 		if err != nil {
 			t.Fatalf("build %s override: %v", mode, err)
 		}
-		parts := []string{"mcp_servers.semedit.args=", "--expected-root", expectedRoot, "--metrics-file", benchmarkMCPMetricsPath(fixtureRoot)}
+		parts := []string{"mcp_servers.semedit.args=", "--expected-root", expectedRoot, "--go-base-dir", filepath.Join(expectedRoot, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(fixtureRoot)}
 		if want != "" {
 			parts = append(parts, want, "--instructions")
 		}
@@ -1691,19 +1687,12 @@ func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
 	if !ok {
 		t.Fatalf("Agy MCP config missing semedit: %s", data)
 	}
-	expectedRoot, rootErr := canonicalFixtureRoot(workDir)
-	if rootErr != nil {
-		t.Fatal(rootErr)
-	}
+	assertFixtureMCPWorkspace(t, server.Args, workDir)
+
 	if !slices.Contains(server.Args, "--metrics-file") || !slices.Contains(server.Args, benchmarkMCPMetricsPath(workDir)) {
 		t.Errorf("Agy MCP args = %#v, want fixture-local metrics file", server.Args)
 	}
-	for i := range len(server.Args) {
-		if server.Args[i] == "--expected-root" && i+1 < len(server.Args) && server.Args[i+1] == expectedRoot {
-			return
-		}
-	}
-	t.Errorf("Agy MCP args = %#v, want --expected-root %q", server.Args, expectedRoot)
+
 }
 
 func TestParseMCPServerInstructionModesCanonicalizesAndDeduplicates(t *testing.T) {
@@ -1927,5 +1916,25 @@ func TestRunnerInstructionModesReachCodexMCPArgs(t *testing.T) {
 				t.Errorf("Codex MCP args = %#v, want --instructions followed by %q", args, test.want)
 			}
 		})
+	}
+}
+
+func assertFixtureMCPWorkspace(t *testing.T, args []string, workDir string) {
+	t.Helper()
+	expectedRoot, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []struct {
+		flag  string
+		value string
+	}{
+		{flag: "--expected-root", value: expectedRoot},
+		{flag: "--go-base-dir", value: filepath.Join(expectedRoot, ".scratch", "go")},
+	} {
+		index := slices.Index(args, expected.flag)
+		if index < 0 || index+1 >= len(args) || args[index+1] != expected.value {
+			t.Errorf("MCP args = %#v, want %s %q", args, expected.flag, expected.value)
+		}
 	}
 }

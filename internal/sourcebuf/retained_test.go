@@ -16,7 +16,7 @@ func TestRetainedForkKeepsParentRevision(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package sample\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestPublishRetainedReportsZeroPublicationWithoutClearing(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestFlushPublishesNewGoFileOnlyAtPublication(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/buffer\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +101,7 @@ func TestWriteFileRejectsNewFileBelowSymlinkedParent(t *testing.T) {
 	if symlinkErr := os.Symlink(outside, filepath.Join(root, "outside")); symlinkErr != nil {
 		t.Fatal(symlinkErr)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestPublishRetainedRejectsNewParentReplacedBySymlink(t *testing.T) {
 	if err := os.Mkdir(sibling, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
+	buffer, err := sourcebuf.New(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}

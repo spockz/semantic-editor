@@ -8,12 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/mcp"
 	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/mcp"
 )
 
 const (
@@ -335,7 +336,7 @@ func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 		args = append(args, "--instructions", "")

@@ -862,9 +862,9 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 	var out bytes.Buffer
 	srv := mcptest.NewServer(t, "full", "", &out)
 
-	// Ensure .scratch/go is not eagerly created before Initialize
+	// Ambient initialization must not create workspace-local Go cache state.
 	if _, err := os.Stat(filepath.Join(temp, ".scratch", "go")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("expected .scratch/go to not exist before Initialize, got %v", err)
+		t.Fatalf("expected .scratch/go to be absent before Initialize, got %v", err)
 	}
 
 	rawParams, err := json.Marshal(map[string]any{
@@ -880,8 +880,28 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 	if result["protocolVersion"] != "2025-06-18" {
 		t.Errorf("unexpected protocolVersion: %v", result["protocolVersion"])
 	}
-	if _, err := os.Stat(filepath.Join(temp, ".scratch", "go")); err != nil {
-		t.Errorf("expected .scratch/go to be created on Initialize: %v", err)
+	if _, err := os.Stat(filepath.Join(temp, ".scratch", "go")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("ambient Initialize created .scratch/go, stat error = %v", err)
+	}
+}
+
+func TestMCPServerInitializeCreatesOnlyExplicitGoBaseDir(t *testing.T) {
+	root := t.TempDir()
+	baseDir := filepath.Join(t.TempDir(), "isolated-go-state")
+	var out bytes.Buffer
+	srv := mcptest.NewServer(t, "full", "", &out, mcp.WithGoBaseDir(baseDir))
+	params, err := json.Marshal(map[string]any{"rootUri": "file://" + root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Initialize(t.Context(), params); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "build")); err != nil {
+		t.Errorf("explicit Go isolation cache was not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".scratch", "go")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("explicit external isolation created workspace-local state: %v", err)
 	}
 }
 
