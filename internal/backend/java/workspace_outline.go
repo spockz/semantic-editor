@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -18,11 +19,13 @@ import (
 )
 
 type javaWorkspacePOM struct {
-	GroupID    string `xml:"groupId"`
-	ArtifactID string `xml:"artifactId"`
-	Version    string `xml:"version"`
-	Packaging  string `xml:"packaging"`
-	Parent     struct {
+	GroupID     string `xml:"groupId"`
+	ArtifactID  string `xml:"artifactId"`
+	Version     string `xml:"version"`
+	Packaging   string `xml:"packaging"`
+	Name        string `xml:"name"`
+	Description string `xml:"description"`
+	Parent      struct {
 		GroupID string `xml:"groupId"`
 		Version string `xml:"version"`
 	} `xml:"parent"`
@@ -35,29 +38,35 @@ func LooksLikeJavaWorkspace(root, path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	for _, marker := range []string{"pom.xml", "build.gradle", "build.gradle.kts"} {
-		if info, statErr := os.Stat(filepath.Join(root, marker)); statErr == nil && info.Mode().IsRegular() {
-			return true, nil
-		} else if statErr != nil && !os.IsNotExist(statErr) {
-			return false, fmt.Errorf("inspect Java workspace marker %q: %w", marker, statErr)
-		}
+	explicitScope := path != "" && path != "."
+	scanRoot := target
+	if !explicitScope {
+		scanRoot = root
 	}
 	found := false
-	err = filepath.WalkDir(target, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(scanRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() && path != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+		if entry.IsDir() && path != scanRoot && sourcefiles.IsIgnoredDirectory(entry.Name()) {
 			return filepath.SkipDir
 		}
-		if !entry.IsDir() && strings.EqualFold(filepath.Ext(entry.Name()), ".java") {
+		if entry.IsDir() {
+			return nil
+		}
+		name := strings.ToLower(entry.Name())
+		if name == "pom.xml" || name == "build.gradle" || name == "build.gradle.kts" {
+			found = true
+			return fs.SkipAll
+		}
+		if strings.EqualFold(filepath.Ext(entry.Name()), ".java") && (explicitScope || filepath.Dir(path) == scanRoot) {
 			found = true
 			return fs.SkipAll
 		}
 		return nil
 	})
 	if err != nil && !errorsIsSkipAll(err) {
-		return false, fmt.Errorf("scan Java workspace %q: %w", target, err)
+		return false, fmt.Errorf("scan Java workspace %q: %w", scanRoot, err)
 	}
 	return found, nil
 }
@@ -84,13 +93,65 @@ func WorkspaceOutline(root, path string, includeTests bool) (*backend.WorkspaceO
 	if err != nil {
 		return nil, err
 	}
-	result.Modules = modules
+	result.Modules = scopedJavaModules(modules, filepath.ToSlash(relScope))
 	packages, err := discoverJavaPackages(root, target, includeTests)
 	if err != nil {
 		return nil, err
 	}
 	result.Packages = packages
+	for i := range result.Modules {
+		result.Modules[i].Language = string(backend.LanguageJava)
+	}
+	for i := range result.Packages {
+		pkg := &result.Packages[i]
+		pkg.Language = string(backend.LanguageJava)
+		moduleIndex := -1
+		modulePathLength := -1
+		for j := range result.Modules {
+			modulePath := result.Modules[j].Path
+			if modulePath == "." || pkg.Path == modulePath || strings.HasPrefix(pkg.Path, modulePath+"/") {
+				if len(modulePath) > modulePathLength {
+					moduleIndex = j
+					modulePathLength = len(modulePath)
+				}
+			}
+		}
+		if moduleIndex >= 0 {
+			module := result.Modules[moduleIndex]
+			pkg.Module = module.Path
+			if module.GroupID != "" && module.ArtifactID != "" {
+				pkg.Module = module.GroupID + ":" + module.ArtifactID
+			}
+			result.Modules[moduleIndex].PackagesCount++
+		}
+	}
 	return result, nil
+}
+
+func scopedJavaModules(modules []backend.WorkspaceModule, scope string) []backend.WorkspaceModule {
+	if scope == "." {
+		return modules
+	}
+	nearest := ""
+	for _, module := range modules {
+		if module.Path == "." {
+			nearest = "."
+		}
+	}
+	for _, module := range modules {
+		if module.Path != "." && (module.Path == scope || strings.HasPrefix(scope, module.Path+"/")) {
+			if len(module.Path) > len(nearest) {
+				nearest = module.Path
+			}
+		}
+	}
+	result := make([]backend.WorkspaceModule, 0, len(modules))
+	for _, module := range modules {
+		if module.Path == nearest || module.Path == scope || strings.HasPrefix(module.Path, scope+"/") {
+			result = append(result, module)
+		}
+	}
+	return result
 }
 
 func javaOutlinePaths(root, path string) (string, string, error) {
@@ -163,16 +224,39 @@ func javaSourceFiles(target, root string) ([]string, error) {
 }
 
 func discoverJavaModules(root, target string) ([]backend.WorkspaceModule, error) {
-	rootPOM := filepath.Join(root, "pom.xml")
-	if _, err := os.Stat(rootPOM); err != nil {
-		if os.IsNotExist(err) {
-			return []backend.WorkspaceModule{}, nil
-		}
-		return nil, fmt.Errorf("inspect Maven root POM %q: %w", rootPOM, err)
-	}
 	discovery := javaModuleDiscovery{root: root, target: target, visited: make(map[string]bool)}
-	if err := discovery.visit(rootPOM, "", ""); err != nil {
-		return nil, err
+	var ancestors []string
+	for dir := target; ; dir = filepath.Dir(dir) {
+		ancestors = append(ancestors, dir)
+		if dir == root {
+			break
+		}
+	}
+	for _, dir := range slices.Backward(ancestors) {
+
+		pomPath := filepath.Join(dir, "pom.xml")
+		if _, statErr := os.Stat(pomPath); statErr == nil {
+			if err := discovery.visit(pomPath, "", ""); err != nil {
+				return nil, err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("inspect Maven module POM %q: %w", pomPath, statErr)
+		}
+	}
+	walkErr := filepath.WalkDir(target, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("scan Maven modules at %q: %w", current, walkErr)
+		}
+		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && entry.Name() == "pom.xml" {
+			return discovery.visit(current, "", "")
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, fmt.Errorf("scan Maven modules under %q: %w", target, walkErr)
 	}
 	sort.Slice(discovery.modules, func(i, j int) bool {
 		if discovery.modules[i].Path == "." {
@@ -215,7 +299,12 @@ func (d *javaModuleDiscovery) visit(pomPath, inheritedGroup, inheritedVersion st
 	version := firstNonEmpty(pom.Version, pom.Parent.Version, inheritedVersion)
 	modulePath := filepath.ToSlash(rel)
 	if modulePath == "." || pathWithin(d.target, filepath.Dir(pomPath)) || pathWithin(filepath.Dir(pomPath), d.target) {
-		d.modules = append(d.modules, backend.WorkspaceModule{Path: modulePath, GroupID: groupID, ArtifactID: pom.ArtifactID, Version: firstNonEmpty(pom.Version, pom.Parent.Version, inheritedVersion), Packaging: firstNonEmpty(pom.Packaging, "jar"), IsRoot: modulePath == "."})
+		var doc *string
+		if pom.Description != "" {
+			description := pom.Description
+			doc = &description
+		}
+		d.modules = append(d.modules, backend.WorkspaceModule{Path: modulePath, GroupID: groupID, ArtifactID: pom.ArtifactID, Version: firstNonEmpty(pom.Version, pom.Parent.Version, inheritedVersion), Packaging: firstNonEmpty(pom.Packaging, "jar"), IsRoot: modulePath == ".", Language: string(backend.LanguageJava), Synopsis: javaModuleSynopsis(pom.Description, pom.Name), Doc: doc})
 	}
 	for _, declared := range pom.Modules {
 		if err := d.visitJavaDeclaredModule(pomPath, declared, groupID, version); err != nil {
@@ -230,6 +319,9 @@ func (d *javaModuleDiscovery) visitJavaDeclaredModule(parentPOM, declared, group
 	moduleRel, err := filepath.Rel(d.root, moduleDir)
 	if err != nil || moduleRel == ".." || strings.HasPrefix(moduleRel, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("maven module path %q escapes workspace root", declared)
+	}
+	if !pathWithin(moduleDir, d.target) && !pathWithin(d.target, moduleDir) {
+		return nil
 	}
 	return d.visit(filepath.Join(moduleDir, "pom.xml"), groupID, version)
 }
@@ -476,6 +568,10 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func javaModuleSynopsis(description, name string) string {
+	return strings.Join(strings.Fields(firstNonEmpty(description, name)), " ")
 }
 
 func pathWithin(root, path string) bool {

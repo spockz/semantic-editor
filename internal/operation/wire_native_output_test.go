@@ -5,10 +5,57 @@ import (
 	"errors"
 	"fmt"
 	"semedit/internal/astedit"
+	"semedit/internal/backend"
 	"semedit/internal/maven"
 	"semedit/internal/projectverify"
 	"testing"
 )
+
+func TestWorkspaceOutlineNativeMixedMetadataMatchesSchema(t *testing.T) {
+	entry, ok := DefaultRegistry().LookupMCP("semantic_workspace_outline")
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil || entry.ProjectOutput == nil {
+		t.Fatal("semantic_workspace_outline output contract is incomplete")
+	}
+	doc := "An app module."
+	result := WorkspaceOutlineRes{Result: &backend.WorkspaceOutlineResult{
+		Scope: backend.ReadScope{Kind: "workspace", Path: ".", Complete: true},
+		Modules: []backend.WorkspaceModule{
+			{Path: "go", ModulePath: "example.test/go", IsRoot: false, Language: "go", PackagesCount: 0},
+			{Path: "java", GroupID: "com.example", ArtifactID: "app", IsRoot: false, Language: "java", Synopsis: "Application module", Doc: &doc, PackagesCount: 1},
+		},
+		Packages: []backend.WorkspacePackage{
+			{Path: "go/pkg", Name: "pkg", Language: "go", Module: "example.test/go"},
+			{Path: "java/src", Name: "com.example", Language: "java", Module: "com.example:app"},
+		},
+	}}
+	projected, err := entry.ProjectOutput(result)
+	if err != nil {
+		t.Fatalf("project workspace outline: %v", err)
+	}
+	output, ok := projected.(map[string]any)
+	if !ok {
+		t.Fatalf("projected workspace outline type = %T", projected)
+	}
+	if err := ValidateValue(*entry.Output.ResultSchema, output); err != nil {
+		t.Fatalf("projected workspace outline violates result schema: %v", err)
+	}
+	modules, ok := output["modules"].([]any)
+	if !ok || len(modules) != 2 {
+		t.Fatalf("projected modules = %#v", output["modules"])
+	}
+	firstModule, ok := modules[0].(map[string]any)
+	if !ok || firstModule["language"] != "go" || fmt.Sprint(firstModule["packages_count"]) != "0" {
+		t.Fatalf("first module metadata = %#v", modules[0])
+	}
+	packages, ok := output["packages"].([]any)
+	if !ok || len(packages) != 2 {
+		t.Fatalf("projected packages = %#v", output["packages"])
+	}
+	javaPackage, ok := packages[1].(map[string]any)
+	if !ok || javaPackage["language"] != "java" || javaPackage["module"] != "com.example:app" {
+		t.Fatalf("Java package metadata = %#v", packages[1])
+	}
+}
 
 func TestVerifyNativeResultProjectionPreservesWireShape(t *testing.T) {
 	entry, ok := DefaultRegistry().LookupMCP("semantic_verify")

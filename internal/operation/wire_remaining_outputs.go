@@ -120,12 +120,13 @@ func workspaceOutlineOutputSchema() *ValueSchema {
 	module := outputObject(map[string]ValueSchema{
 		"path": outputString(), "module_path": outputString(), "go_version": outputString(),
 		"group_id": outputString(), "artifact_id": outputString(), "version": outputString(), "packaging": outputString(),
-		"is_root": {Kind: SchemaBoolean},
-	}, "path", "is_root")
+		"is_root": {Kind: SchemaBoolean}, "language": outputString(), "synopsis": outputString(), "doc": outputString(),
+		"packages_count": {Kind: SchemaInteger},
+	}, "path", "is_root", "language", "packages_count")
 	pkg := outputObject(map[string]ValueSchema{
 		"path": outputString(), "name": outputString(), "synopsis": outputString(), "doc": outputString(),
-		"depth": {Kind: SchemaInteger}, "files_count": {Kind: SchemaInteger},
-	}, "path", "name", "synopsis", "depth", "files_count")
+		"depth": {Kind: SchemaInteger}, "files_count": {Kind: SchemaInteger}, "module": outputString(), "language": outputString(),
+	}, "path", "name", "synopsis", "depth", "files_count", "language")
 	modules := ValueSchema{Kind: SchemaArray, Items: &module}
 	packages := ValueSchema{Kind: SchemaArray, Items: &pkg}
 	return new(outputObject(map[string]ValueSchema{

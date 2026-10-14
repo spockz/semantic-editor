@@ -688,7 +688,11 @@ var baseToolKeys = map[string]bool{
 	"semantic_lookup":            true,
 	"semantic_inspect_symbol":    true,
 	"semantic_outline":           true,
+	"semantic_workspace_outline": true,
 	"semantic_find_references":   true,
+	"semantic_change_signature":  true,
+	"semantic_extract_function":  true,
+	"semantic_set_doc_comment":   true,
 	"semantic_verify":            true,
 	"semantic_snapshot":          true,
 	"semantic_undo":              true,
@@ -875,16 +879,7 @@ func toolSchemaDescription(entry operation.Entry, _ map[string]any) string {
 	if entry.Output == nil || len(entry.Output.Continuations) == 0 {
 		return description
 	}
-	fields := make([]string, 0, len(entry.Output.Continuations))
-	for _, continuation := range entry.Output.Continuations {
-		name := continuation.Path
-		if name == "" {
-			name = continuation.Field
-		}
-		fields = append(fields, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
-	}
-	slices.Sort(fields)
-	return description + " Structured results may expose declared continuations when resolved: " + strings.Join(fields, "; ") + ". An absent continuation means there is no resolved continuation target."
+	return description + " Structured results may include resolved continuations; copy fields from the same record into follow-up calls. Missing continuation fields indicate no target."
 }
 
 // ValidateSourceFields verifies every parameter continuation references an advertised top-level output field.
@@ -1269,38 +1264,7 @@ func parameterDescription(param operation.ParameterContract) string {
 	if len(param.SourceFields) == 0 {
 		return param.Description
 	}
-	fieldTools := make(map[string][]string)
-	fieldOrder := make([]string, 0)
-	for _, source := range param.SourceFields {
-		tool, field, ok := strings.Cut(source, ".")
-		if !ok || tool == "" || field == "" {
-			continue
-		}
-		if _, exists := fieldTools[field]; !exists {
-			fieldOrder = append(fieldOrder, field)
-		}
-		if !slices.Contains(fieldTools[field], tool) {
-			fieldTools[field] = append(fieldTools[field], tool)
-		}
-	}
-	var description strings.Builder
-	description.WriteString(param.Description)
-	for _, field := range fieldOrder {
-		tools := fieldTools[field]
-		if len(tools) == 0 {
-			continue
-		}
-		if receipt, ok := strings.CutPrefix(field, "result.continuations[]."); ok {
-			fmt.Fprintf(&description, " Receipt %s from %s.", receipt, joinToolNames(tools))
-			continue
-		}
-		fmt.Fprintf(&description, " Copy %s from %s.", field, joinToolNames(tools))
-	}
-	return description.String()
-}
-
-func joinToolNames(names []string) string {
-	return strings.Join(names, ",")
+	return param.Description + " Copy " + param.JSONName + " from a resolved preceding result when available."
 }
 
 func operationInputSchemaForParams(params []operation.ParameterContract) (map[string]any, error) {

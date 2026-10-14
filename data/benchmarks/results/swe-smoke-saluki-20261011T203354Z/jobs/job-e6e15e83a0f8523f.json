@@ -1,0 +1,708 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-e6e15e83a0f8523f",
+    "pair_id": "pair-b12a599ee2a89be4",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "opencode",
+      "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "semedit-agentic",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Allow callers to tune the connection retry schedule beyond its maximum delay, including the initial delay, growth factor, randomization, and minimum time allowed for a connection attempt. Preserve the existing default behavior for callers that do not opt in. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Expose these settings through a public connection-parameter value and a dial option, and ensure the selected parameters control both retry delays and the minimum connection-attempt timeout. Keep the existing backoff configuration options working for compatibility. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Add grpc.ConnectParams with BackoffBaseDelay, BackoffMultiplier, BackoffJitter, BackoffMaxDelay, and MinConnectTimeout, and wire grpc.WithConnectParams into the dial options and retry strategy. Keep defaults equivalent to the current behavior, retain the legacy WithBackoffConfig and WithBackoffMaxDelay behavior while marking those APIs deprecated, and replace fixed internal backoff configurations with internal/backoff.NewExponentialBuilder and its fluent StrategyBuilder methods. Update the backoff users in ClientConn, health checking, DNS resolution, grpclb, and xDS to use the new strategy API. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-agentic",
+        "cached_prompt_tokens": 967222,
+        "comparison_pair_id": "pair-b12a599ee2a89be4",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "diagnostic_reflection_skipped": "task execution or oracle evaluation failed",
+        "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 1285,
+        "initial_context_tokens": 24707,
+        "initial_load_turns": 33,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 967222,
+            "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+            "initial_load_turns": 33,
+            "internal_turns": 33,
+            "mcp_load_turns": 0,
+            "output_tokens": 8400,
+            "process_start_to_first_event_ms": 25135,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 1013248,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "command": "pwd \u0026\u0026 ls -la"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/backoff.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls Documentation/ \u0026\u0026 ls internal/"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "cat Documentation/connection-backoff.md 2\u003e/dev/null || ls Documentation"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff/backoff.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "url": "https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md"
+                },
+                "failure": "Transport error (GET https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md)",
+                "functional_status": "failed",
+                "name": "webfetch",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "url": "https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md"
+                },
+                "failure": "Transport error (GET https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md)",
+                "functional_status": "failed",
+                "name": "webfetch",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "curl -sL https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "grep -rn \"BackoffConfig\\|DefaultBackoffConfig\\|backoff.Exponential\\|baseDelay\\|factor\\|jitter\" --include=\"*.go\" . | grep -v \"_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git log --oneline -10 \u0026\u0026 git status"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "command git --version 2\u003e\u00261; which git 2\u003e\u00261; ls /usr/local/bin/git 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls /Library/Developer/ 2\u003e\u00261; ls /Applications/Xcode.app 2\u003e\u00261 | head -5"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "DEVELOPER_DIR=/tmp git --version 2\u003e\u00261 | head -3"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/dialoptions.go",
+                  "limit": 60,
+                  "offset": 230
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/health/client.go",
+                  "limit": 40,
+                  "offset": 20
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn.go",
+                  "limit": 30,
+                  "offset": 220
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/grpclb/grpclb.go",
+                  "limit": 30,
+                  "offset": 45
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/xds/xds_client.go",
+                  "limit": 20,
+                  "offset": 40
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/resolver/dns/dns_resolver.go",
+                  "limit": 15,
+                  "offset": 120
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls *.go | head -40; ls internal/backoff/"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "grep -rn \"BackoffConfig\\|WithBackoffConfig\\|WithBackoffMaxDelay\" --include=\"*_test.go\" ."
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn_test.go",
+                  "limit": 45,
+                  "offset": 815
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "curl -sL https://api.github.com/repos/grpc/grpc-go/issues/2735 2\u003e\u00261 | head -50"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls -la /usr/bin/git 2\u003e\u00261; file /usr/bin/git 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git --version 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "type git 2\u003e\u00261; echo \"---\"; /usr/bin/git --version 2\u003e\u00261; echo \"---\"; ls -la /usr/local/bin/git /opt/homebrew/bin/git 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "find / -name \"git\" -type f 2\u003e/dev/null | grep -v \"proc\\|sys\" | head -20; echo \"===\"; ls /Users/alessandro/.local/bin 2\u003e/dev/null | head; ls /usr/local/bin 2\u003e/dev/null | head -30"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "DEVELOPER_DIR=/Users/alessandro /usr/bin/git --version 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "which go 2\u003e\u00261; go version 2\u003e\u00261; echo \"PATH=$PATH\""
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "find /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/.scratch -type f 2\u003e/dev/null | head -50"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "ls -la .git/ \u0026\u0026 cat .git/HEAD 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "cat .git/logs/HEAD 2\u003e\u00261; echo \"===\"; head -20 .git/packed-refs 2\u003e\u00261"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 46026,
+            "wall_clock_ms": 300009
+          }
+        ],
+        "internal_turns": 33,
+        "job_id": "job-e6e15e83a0f8523f",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "opencode_exit_code": -1,
+        "oracle": null,
+        "output_tokens": 8400,
+        "process_start_to_first_event_ms": 25135,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 1013248,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "local_model_context_tokens": "212992",
+          "local_model_limits_source": "llama.cpp-props",
+          "local_model_output_tokens": "8192",
+          "provider_transport": "opencode_attached_server_v1",
+          "retained_working_directory": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000",
+          "semedit_prewarm_skipped": "no_go_target",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "harness": "opencode",
+          "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "arguments": {
+              "command": "pwd \u0026\u0026 ls -la"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/backoff.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls Documentation/ \u0026\u0026 ls internal/"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "cat Documentation/connection-backoff.md 2\u003e/dev/null || ls Documentation"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff/backoff.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "url": "https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md"
+            },
+            "failure": "Transport error (GET https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md)",
+            "functional_status": "failed",
+            "name": "webfetch",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "url": "https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md"
+            },
+            "failure": "Transport error (GET https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md)",
+            "functional_status": "failed",
+            "name": "webfetch",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "curl -sL https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "grep -rn \"BackoffConfig\\|DefaultBackoffConfig\\|backoff.Exponential\\|baseDelay\\|factor\\|jitter\" --include=\"*.go\" . | grep -v \"_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git log --oneline -10 \u0026\u0026 git status"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "command git --version 2\u003e\u00261; which git 2\u003e\u00261; ls /usr/local/bin/git 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls /Library/Developer/ 2\u003e\u00261; ls /Applications/Xcode.app 2\u003e\u00261 | head -5"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "DEVELOPER_DIR=/tmp git --version 2\u003e\u00261 | head -3"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/dialoptions.go",
+              "limit": 60,
+              "offset": 230
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/health/client.go",
+              "limit": 40,
+              "offset": 20
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn.go",
+              "limit": 30,
+              "offset": 220
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/grpclb/grpclb.go",
+              "limit": 30,
+              "offset": 45
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/xds/xds_client.go",
+              "limit": 20,
+              "offset": 40
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/resolver/dns/dns_resolver.go",
+              "limit": 15,
+              "offset": 120
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls *.go | head -40; ls internal/backoff/"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "grep -rn \"BackoffConfig\\|WithBackoffConfig\\|WithBackoffMaxDelay\" --include=\"*_test.go\" ."
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn_test.go",
+              "limit": 45,
+              "offset": 815
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "curl -sL https://api.github.com/repos/grpc/grpc-go/issues/2735 2\u003e\u00261 | head -50"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls -la /usr/bin/git 2\u003e\u00261; file /usr/bin/git 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git --version 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "type git 2\u003e\u00261; echo \"---\"; /usr/bin/git --version 2\u003e\u00261; echo \"---\"; ls -la /usr/local/bin/git /opt/homebrew/bin/git 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "find / -name \"git\" -type f 2\u003e/dev/null | grep -v \"proc\\|sys\" | head -20; echo \"===\"; ls /Users/alessandro/.local/bin 2\u003e/dev/null | head; ls /usr/local/bin 2\u003e/dev/null | head -30"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "DEVELOPER_DIR=/Users/alessandro /usr/bin/git --version 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "which go 2\u003e\u00261; go version 2\u003e\u00261; echo \"PATH=$PATH\""
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "find /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/.scratch -type f 2\u003e/dev/null | head -50"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "ls -la .git/ \u0026\u0026 cat .git/HEAD 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "cat .git/logs/HEAD 2\u003e\u00261; echo \"===\"; head -20 .git/packed-refs 2\u003e\u00261"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 33,
+        "tools_used": [
+          "bash",
+          "read",
+          "bash",
+          "read",
+          "bash",
+          "read",
+          "webfetch",
+          "webfetch",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "bash",
+          "bash",
+          "read",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash",
+          "bash"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 46026,
+        "variant": "small:implicit",
+        "wall_clock_ms": 300009
+      }
+    ],
+    "timestamp": "2026-10-11T21:13:13.551439Z"
+  }
+}

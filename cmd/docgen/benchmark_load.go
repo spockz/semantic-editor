@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,12 +13,15 @@ import (
 	"time"
 )
 
+type benchmarkSource struct {
+	RunID  string
+	Report BenchReport
+	Rows   []map[string]json.RawMessage
+}
+
 func loadAllBenchmarkComparisons(rootDir string) ([]*BenchComparisonSummary, error) {
 	runs, err := loadBenchmarkDocumentationRuns(rootDir)
-	if err != nil {
-		return nil, err
-	}
-	return collectBenchmarkComparisons(runs), nil
+	return collectBenchmarkComparisons(runs), err
 }
 
 func collectBenchmarkComparisons(runs []benchmarkDocumentationRun) []*BenchComparisonSummary {
@@ -30,67 +34,8 @@ func collectBenchmarkComparisons(runs []benchmarkDocumentationRun) []*BenchCompa
 }
 
 func loadBenchmarkDocumentationRuns(rootDir string) ([]benchmarkDocumentationRun, error) {
-	resultsDir := filepath.Join(rootDir, "data", "benchmarks", "results")
-	if _, err := os.Stat(resultsDir); os.IsNotExist(err) {
-		return nil, nil
-	} else if err != nil {
-		return nil, fmt.Errorf("stat benchmark results directory: %w", err)
-	}
-
-	runsByID := make(map[string]*benchmarkDocumentationRun)
-	err := filepath.WalkDir(resultsDir, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() || filepath.Ext(path) != ".json" {
-			return nil
-		}
-
-		// #nosec G304,G122 -- reading benchmark result JSON
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return fmt.Errorf("read benchmark file %s: %w", path, readErr)
-		}
-
-		var report BenchReport
-		if err := unmarshalBenchmarkReport(data, &report); err != nil {
-			return fmt.Errorf("unmarshal benchmark json %s: %w", path, err)
-		}
-		runID, err := benchmarkRunID(resultsDir, path)
-		if err != nil {
-			return err
-		}
-		run := runsByID[runID]
-		if run == nil {
-			run = &benchmarkDocumentationRun{ID: runID}
-			runsByID[runID] = run
-		}
-
-		for _, comp := range report.Comparisons {
-			comp = filterPublishableBenchmarkComparison(comp)
-			if comp == nil {
-				continue
-			}
-			if comp.TxtarPath != "" {
-				comp.TxtarProvenance = resolveTxtarProvenance(rootDir, comp.TxtarPath)
-			}
-			run.Comparisons = append(run.Comparisons, comp)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	runs := make([]benchmarkDocumentationRun, 0, len(runsByID))
-	for _, run := range runsByID {
-		sortBenchmarkComparisons(run.Comparisons)
-		runs = append(runs, *run)
-	}
-	slices.SortFunc(runs, func(a, b benchmarkDocumentationRun) int {
-		return cmp.Compare(a.ID, b.ID)
-	})
-	return runs, nil
+	sources, err := loadBenchmarkSources(filepath.Join(rootDir, "data", "benchmarks", "results"))
+	return collectBenchmarkDocumentationRuns(rootDir, sources), err
 }
 
 func unmarshalBenchmarkReport(data []byte, report *BenchReport) error {
@@ -197,4 +142,94 @@ func benchmarkRunID(resultsDir, resultPath string) (string, error) {
 		return "", fmt.Errorf("invalid benchmark run identifier in %s", resultPath)
 	}
 	return parts[0], nil
+}
+
+func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
+	resultsRoot, err := os.OpenRoot(resultsDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("open benchmark results directory: %w", err)
+	}
+	var sources []benchmarkSource
+	var failures []error
+	walkErr := filepath.WalkDir(resultsDir, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			failures = append(failures, fmt.Errorf("walk benchmark path %s: %w", path, walkErr))
+			return nil
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".json" {
+			return nil
+		}
+		source, loadErr := loadBenchmarkSource(resultsDir, path, resultsRoot)
+		if loadErr != nil {
+			failures = append(failures, loadErr)
+		} else {
+			sources = append(sources, source)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		failures = append(failures, fmt.Errorf("walk benchmark results: %w", walkErr))
+	}
+	if closeErr := resultsRoot.Close(); closeErr != nil {
+		failures = append(failures, fmt.Errorf("close benchmark results directory: %w", closeErr))
+	}
+	return sources, errors.Join(failures...)
+}
+
+func collectBenchmarkDocumentationRuns(rootDir string, sources []benchmarkSource) []benchmarkDocumentationRun {
+	runsByID := make(map[string]*benchmarkDocumentationRun)
+	for _, source := range sources {
+		if len(source.Rows) == 0 {
+			continue
+		}
+		run := runsByID[source.RunID]
+		if run == nil {
+			run = &benchmarkDocumentationRun{ID: source.RunID}
+			runsByID[source.RunID] = run
+		}
+		for _, comp := range source.Report.Comparisons {
+			comp = filterPublishableBenchmarkComparison(comp)
+			if comp == nil {
+				continue
+			}
+			if comp.TxtarPath != "" {
+				comp.TxtarProvenance = resolveTxtarProvenance(rootDir, comp.TxtarPath)
+			}
+			run.Comparisons = append(run.Comparisons, comp)
+		}
+	}
+	runs := make([]benchmarkDocumentationRun, 0, len(runsByID))
+	for _, run := range runsByID {
+		sortBenchmarkComparisons(run.Comparisons)
+		runs = append(runs, *run)
+	}
+	slices.SortFunc(runs, func(a, b benchmarkDocumentationRun) int { return cmp.Compare(a.ID, b.ID) })
+	return runs
+}
+
+func loadBenchmarkSource(resultsDir, path string, resultsRoot *os.Root) (benchmarkSource, error) {
+	relativePath, err := filepath.Rel(resultsDir, path)
+	if err != nil {
+		return benchmarkSource{}, fmt.Errorf("make benchmark result path relative %s: %w", path, err)
+	}
+	data, err := resultsRoot.ReadFile(relativePath)
+	if err != nil {
+		return benchmarkSource{}, fmt.Errorf("read benchmark result %s: %w", path, err)
+	}
+	var source benchmarkSource
+	if decodeErr := unmarshalBenchmarkReport(data, &source.Report); decodeErr != nil {
+		return benchmarkSource{}, fmt.Errorf("decode benchmark report %s: %w", path, decodeErr)
+	}
+	source.RunID, err = benchmarkRunID(resultsDir, path)
+	if err != nil {
+		return benchmarkSource{}, err
+	}
+	source.Rows, err = loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
+	if err != nil {
+		return benchmarkSource{}, fmt.Errorf("load benchmark browser report: %w", err)
+	}
+	return source, nil
 }

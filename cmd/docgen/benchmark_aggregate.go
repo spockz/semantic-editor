@@ -4,11 +4,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -203,6 +205,9 @@ try {
   const response = await fetch('{{ "data/benchmarks.json" | relURL }}');
   if (!response.ok) throw new Error("Benchmark data request failed: " + response.status);
   const rows = await response.json();
+  if (rows.length === 0) {
+    status.textContent = "No valid benchmark results are available.";
+  } else {
   const populateDimensionFilter = (control, column) => {
     const values = [...new Set(rows.map(row => row[column]).filter(value => typeof value === "string" && value !== ""))].sort((a, b) => a.localeCompare(b));
     for (const value of values) {
@@ -256,6 +261,7 @@ try {
     for (const control of group.controls) control.addEventListener("change", () => updateFilters(group, control));
   }
   status.textContent = "";
+  }
 } catch (error) {
   status.textContent = "Could not load benchmark results: " + error.message;
   status.setAttribute("role", "alert");
@@ -264,44 +270,8 @@ try {
 `
 
 func writeBenchmarkBrowserAssets(rootDir, outputDir string) error {
-	resultsDir := filepath.Join(rootDir, "data", "benchmarks", "results")
-	rows, err := readBenchmarkBrowserRows(resultsDir)
-	if err != nil {
-		return err
-	}
-	if err := addBenchmarkBrowserComparisonDeltas(rows); err != nil {
-		return fmt.Errorf("derive benchmark comparison changes: %w", err)
-	}
-	columns := make(map[string]struct{})
-	for _, row := range rows {
-		for column := range row {
-			columns[column] = struct{}{}
-		}
-	}
-	for _, row := range rows {
-		for column := range columns {
-			if _, ok := row[column]; !ok {
-				row[column] = json.RawMessage("null")
-			}
-		}
-	}
-	if err := writeBenchmarkBrowserData(outputDir, "data/benchmarks.json", rows); err != nil {
-		return err
-	}
-	rowsByRun := make(map[string][]map[string]json.RawMessage)
-	for _, row := range rows {
-		var runID string
-		if err := json.Unmarshal(row["_run_id"], &runID); err != nil {
-			return fmt.Errorf("decode benchmark browser run identifier: %w", err)
-		}
-		rowsByRun[runID] = append(rowsByRun[runID], row)
-	}
-	for runID, runRows := range rowsByRun {
-		if err := writeBenchmarkBrowserData(outputDir, filepath.Join("data", "benchmarks", "runs", runID+".json"), runRows); err != nil {
-			return fmt.Errorf("write benchmark browser data for run %s: %w", runID, err)
-		}
-	}
-	return writeBenchmarkBrowserViewerAssets(rootDir, outputDir)
+	rows, err := readBenchmarkBrowserRows(filepath.Join(rootDir, "data", "benchmarks", "results"))
+	return errors.Join(err, writeBenchmarkBrowserRowsAssets(rootDir, outputDir, rows))
 }
 
 func addBenchmarkBrowserComparisonDeltas(rows []map[string]json.RawMessage) error {
@@ -825,56 +795,12 @@ func loadBenchmarkBrowserEntry(entry json.RawMessage, report map[string]json.Raw
 }
 
 func readBenchmarkBrowserRows(resultsDir string) ([]map[string]json.RawMessage, error) {
-	var rows []map[string]json.RawMessage
-	resultsRoot, err := os.OpenRoot(resultsDir)
-	if os.IsNotExist(err) {
-		err = nil
-	} else if err != nil {
-		return nil, fmt.Errorf("open benchmark results directory: %w", err)
+	sources, err := loadBenchmarkSources(resultsDir)
+	rows := make([]map[string]json.RawMessage, 0)
+	for _, source := range sources {
+		rows = append(rows, source.Rows...)
 	}
-	if resultsRoot != nil {
-		err = filepath.WalkDir(resultsDir, func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() || filepath.Ext(path) != ".json" {
-				return nil
-			}
-			relativePath, relativeErr := filepath.Rel(resultsDir, path)
-			if relativeErr != nil {
-				return fmt.Errorf("make benchmark result path relative: %w", relativeErr)
-			}
-			resultFile, openErr := resultsRoot.Open(relativePath)
-			if openErr != nil {
-				return fmt.Errorf("open benchmark result %s: %w", relativePath, openErr)
-			}
-			data, readErr := io.ReadAll(resultFile)
-			closeErr := resultFile.Close()
-			if readErr != nil {
-				return fmt.Errorf("read benchmark result %s: %w", relativePath, readErr)
-			}
-			if closeErr != nil {
-				return fmt.Errorf("close benchmark result %s: %w", relativePath, closeErr)
-			}
-			resultRows, loadErr := loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
-			if loadErr != nil {
-				return loadErr
-			}
-			rows = append(rows, resultRows...)
-			return nil
-		})
-		closeErr := resultsRoot.Close()
-		if err == nil {
-			err = closeErr
-		}
-	}
-	if err != nil {
-		return nil, fmt.Errorf("aggregate benchmark results: %w", err)
-	}
-	if rows == nil {
-		rows = make([]map[string]json.RawMessage, 0)
-	}
-	return rows, nil
+	return rows, err
 }
 
 func writeBenchmarkBrowserViewerAssets(rootDir, outputDir string) error {
@@ -1165,4 +1091,44 @@ func scopedBenchmarkBrowserShortcode() string {
 	shortcode = strings.Replace(shortcode, `    aggregates: { baseline_cost:`, "    filter: [[\"arm\", \"==\", \"semedit\"]],\n    aggregates: { baseline_cost:", 1)
 	shortcode = strings.ReplaceAll(shortcode, "await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })));", "await viewer.restore({ filter: filters });\n    await comparisonViewer.restore({ filter: [...filters, [\"arm\", \"==\", \"semedit\"]] });")
 	return shortcode
+}
+
+func writeBenchmarkBrowserRowsAssets(rootDir, outputDir string, rows []map[string]json.RawMessage) error {
+	if err := addBenchmarkBrowserComparisonDeltas(rows); err != nil {
+		return fmt.Errorf("derive benchmark comparison changes: %w", err)
+	}
+	columns := make(map[string]struct{})
+	for _, row := range rows {
+		for column := range row {
+			columns[column] = struct{}{}
+		}
+	}
+	for _, row := range rows {
+		for column := range columns {
+			if _, ok := row[column]; !ok {
+				row[column] = json.RawMessage("null")
+			}
+		}
+	}
+	var failures []error
+	if err := writeBenchmarkBrowserData(outputDir, "data/benchmarks.json", rows); err != nil {
+		failures = append(failures, err)
+	}
+	rowsByRun := make(map[string][]map[string]json.RawMessage)
+	for _, row := range rows {
+		var runID string
+		if err := json.Unmarshal(row["_run_id"], &runID); err != nil {
+			return errors.Join(errors.Join(failures...), fmt.Errorf("decode benchmark browser run identifier: %w", err))
+		}
+		rowsByRun[runID] = append(rowsByRun[runID], row)
+	}
+	for _, runID := range slices.Sorted(maps.Keys(rowsByRun)) {
+		if err := writeBenchmarkBrowserData(outputDir, filepath.Join("data", "benchmarks", "runs", runID+".json"), rowsByRun[runID]); err != nil {
+			failures = append(failures, fmt.Errorf("write benchmark browser data for run %s: %w", runID, err))
+		}
+	}
+	if err := writeBenchmarkBrowserViewerAssets(rootDir, outputDir); err != nil {
+		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
 }

@@ -99,18 +99,24 @@ type WorkspacePackage struct {
 	Doc        *string `json:"doc,omitempty"`
 	Depth      int     `json:"depth"`
 	FilesCount int     `json:"files_count"`
+	Module     string  `json:"module,omitempty"`
+	Language   string  `json:"language,omitempty"`
 }
 
 // WorkspaceModule describes one module discovered in the workspace.
 type WorkspaceModule struct {
-	Path       string `json:"path"`
-	ModulePath string `json:"module_path,omitempty"`
-	GoVersion  string `json:"go_version,omitempty"`
-	GroupID    string `json:"group_id,omitempty"`
-	ArtifactID string `json:"artifact_id,omitempty"`
-	Version    string `json:"version,omitempty"`
-	Packaging  string `json:"packaging,omitempty"`
-	IsRoot     bool   `json:"is_root"`
+	Path          string  `json:"path"`
+	ModulePath    string  `json:"module_path,omitempty"`
+	GoVersion     string  `json:"go_version,omitempty"`
+	GroupID       string  `json:"group_id,omitempty"`
+	ArtifactID    string  `json:"artifact_id,omitempty"`
+	Version       string  `json:"version,omitempty"`
+	Packaging     string  `json:"packaging,omitempty"`
+	IsRoot        bool    `json:"is_root"`
+	Language      string  `json:"language,omitempty"`
+	Synopsis      string  `json:"synopsis,omitempty"`
+	Doc           *string `json:"doc,omitempty"`
+	PackagesCount int     `json:"packages_count"`
 }
 
 // WorkspaceOutlineResult contains discovered packages and modules for a workspace.

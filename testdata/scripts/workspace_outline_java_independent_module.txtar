@@ -1,0 +1,32 @@
+# Java outline discovers standalone Maven modules and keeps their packages attached.
+exec semedit workspace-outline --language java
+stdout 'independent/org/example \(org\.example\)'
+stdout 'independent \(org\.independent:standalone:2\.0, jar\)'
+
+exec semedit workspace-outline --language java --path independent
+stdout 'Modules:'
+stdout 'independent \(org\.independent:standalone:2\.0, jar\)'
+! stdout '\. \(com\.acme:reactor'
+! stdout 'core \('
+
+-- pom.xml --
+<project>
+  <groupId>com.acme</groupId>
+  <artifactId>reactor</artifactId>
+  <packaging>pom</packaging>
+  <modules><module>core</module></modules>
+</project>
+
+-- core/pom.xml --
+<project><groupId>com.acme</groupId><artifactId>core</artifactId></project>
+
+-- independent/pom.xml --
+<project>
+  <groupId>org.independent</groupId>
+  <artifactId>standalone</artifactId>
+  <version>2.0</version>
+</project>
+
+-- independent/src/main/java/org/example/Standalone.java --
+package org.example;
+class Standalone {}

@@ -497,8 +497,29 @@ func (b BrokenCodeSupport) Validate() error {
 	return nil
 }
 
-// Description summarizes single faults, exact status counts, and bitmap masks.
+// Description summarizes single-fault behavior and the mixed-fault rule.
 func (b BrokenCodeSupport) Description() string {
+	if err := b.Validate(); err != nil {
+		return "invalid broken-code support: " + err.Error()
+	}
+	singles := []CodeFaults{0, FaultTargetSyntax, FaultTargetType, FaultSamePackageSyntax, FaultSamePackageType, FaultOtherPackageSyntax, FaultOtherPackageType}
+	statuses := make([]string, 0, len(singles))
+	for _, faults := range singles {
+		support, err := b.Classify(faults)
+		if err != nil {
+			return "invalid broken-code support: " + err.Error()
+		}
+		statuses = append(statuses, faults.String()+"="+support.String())
+	}
+	description := strings.Join(statuses, ", ") + "; mixed faults follow the declared fault matrix"
+	if b.Condition != RecoveryNone {
+		description += "; conditional when " + b.Condition.Description()
+	}
+	return description
+}
+
+// DetailedDescription retains the complete fault matrix for reference documentation.
+func (b BrokenCodeSupport) DetailedDescription() string {
 	if err := b.Validate(); err != nil {
 		return "invalid broken-code support: " + err.Error()
 	}
@@ -510,23 +531,7 @@ func (b BrokenCodeSupport) Description() string {
 	for _, faultCase := range cases {
 		counts[faultCase.Support]++
 	}
-	singles := []CodeFaults{0, FaultTargetSyntax, FaultTargetType, FaultSamePackageSyntax, FaultSamePackageType, FaultOtherPackageSyntax, FaultOtherPackageType}
-	statuses := make([]string, 0, len(singles))
-	for _, faults := range singles {
-		support, err := b.Classify(faults)
-		if err != nil {
-			return "invalid broken-code support: " + err.Error()
-		}
-		statuses = append(statuses, faults.String()+"="+support.String())
-	}
-	return fmt.Sprintf("%s (exact cases: supported=%d, rejected=%d, conditional=%d, unknown=%d; masks: supported=0x%016x, rejected=0x%016x, conditional=0x%016x; mixed-fault cases use the exact matrix with no subset or superset closure%s)", strings.Join(statuses, ", "), counts[FaultSupported], counts[FaultRejected], counts[FaultConditional], counts[FaultUnknown], uint64(b.Supported), uint64(b.Rejected), uint64(b.Conditional), conditionSuffix(b.Condition))
-}
-func conditionSuffix(c RecoveryCondition) string {
-	d := c.Description()
-	if d == "" {
-		return ""
-	}
-	return "; conditional when " + d
+	return fmt.Sprintf("%s (exact cases: supported=%d, rejected=%d, conditional=%d, unknown=%d; masks: supported=0x%016x, rejected=0x%016x, conditional=0x%016x; mixed-fault cases use the exact matrix with no subset or superset closure)", b.Description(), counts[FaultSupported], counts[FaultRejected], counts[FaultConditional], counts[FaultUnknown], uint64(b.Supported), uint64(b.Rejected), uint64(b.Conditional))
 }
 
 // ContractVariant describes one exact selector profile and its typed contract.

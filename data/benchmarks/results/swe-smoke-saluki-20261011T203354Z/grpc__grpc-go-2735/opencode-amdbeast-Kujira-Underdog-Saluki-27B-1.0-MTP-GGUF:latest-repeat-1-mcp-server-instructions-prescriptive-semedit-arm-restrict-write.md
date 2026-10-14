@@ -1,0 +1,716 @@
+# Empirical Benchmark Report: Vanilla LLM vs. Semedit MCP
+
+<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+* **Date**: 2026-10-12 00:16:35 CEST
+
+## Test case: `grpc__grpc-go-2735`
+
+### Target: `opencode/amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest (repeat 1)`
+
+#### Configuration: explicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Run Provenance**: `fixture_dependency_preparation=go-list-readonly-deps-test,local_model_context_tokens=212992,local_model_limits_source=llama.cpp-props,local_model_output_tokens=8192,provider_transport=opencode_attached_server_v1`
+
+* **Fixture**: [testdata/bench/grpc__grpc-go-2735.txtar](https://github.com/spockz/semantic-editor/blob/3089a8ddc50051bfbd8b5f556d022c75c8040b30/testdata/bench/grpc__grpc-go-2735.txtar)
+
+**Vanilla LLM Prompt**:
+> ### Use case(s) - what problem will this feature solve?
+> 
+> In some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).
+> 
+> ### Proposed Solution
+> 
+> Add tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).
+> 
+> It can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).
+>
+
+| Metric | Vanilla (Small) | Semedit Explicit (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 300.01s | 232.24s | <span class="benchmark-delta-positive">-22.6%</span> | — | — | — |
+| **Process Start → First Event** | 8.67s | 35.19s | — | — | — | — |
+| **First Event → First Tool Call** | 7.37s | 139.13s | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | 0% | — | — | — |
+| **Internal Tool Cycles** | 23 | 1 | <span class="benchmark-delta-positive">-95.7%</span> | — | — | — |
+| **Initial Load / Discovery Turns** | 23 | 0 | <span class="benchmark-delta-positive">-100.0%</span> | — | — | — |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | — | — | — |
+| **Total Tool Invocations** | 23 | 1 | <span class="benchmark-delta-positive">-95.7%</span> | — | — | — |
+| **Output Tokens** | 10875 | 4392 | <span class="benchmark-delta-positive">-59.6%</span> | — | — | — |
+| **Reasoning / Thinking Tokens** | 0 | 0 | 0% | — | — | — |
+| **Total Input Tokens** | 264161 | 77315 | <span class="benchmark-delta-positive">-70.7%</span> | — | — | — |
+| **Cached Input Tokens** | 250241 | 29459 | <span class="benchmark-delta-negative">-88.2%</span> | — | — | — |
+| **Uncached Input Tokens** | 13920 | 47856 | <span class="benchmark-delta-negative">+243.8%</span> | — | — | — |
+| **Cached vs Uncached Token Ratio** | 17.98:1 | 0.62:1 | <span class="benchmark-delta-negative">-96.6%</span> | — | — | — |
+| **Oracle L1: Mutation Policy** | — | ✅ PASS | — | — | — | — |
+| **Oracle L2: AST Invariants** | — | ✅ PASS | — | — | — | — |
+| **Oracle L3: Clean Build** | — | ✅ PASS | — | — | — | — |
+| **Oracle L4: Verification Test** | — | ✅ PASS | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ✅ YES | — | — | — | — |
+
+##### Baseline vs Semedit Explicit in Small Context
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls&#34;
+}</code></pre></td><td><code>semedit_semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;auto_organize_imports&#34;: false,
+  &#34;edits&#34;: [
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;language&#34;: &#34;go&#34;,
+        &#34;symbol&#34;: &#34;factor&#34;,
+        &#34;to&#34;: &#34;multiplier&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_rename&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;group&#34;: &#34;append&#34;,
+        &#34;kind&#34;: &#34;const&#34;,
+        &#34;source&#34;: &#34;const maxDelay = 120 * time.Second&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;type Exponential struct {\n\t// baseDelay is the amount of time to backoff after the first connection\n\t// failure.\n\tbaseDelay time.Duration\n\t// multiplier is the factor with which to multiply backoffs after a failed\n\t// retry.\n\tmultiplier float64\n\t// jitter is the factor with which backoffs are randomized.\n\tjitter float64\n\t// maxDelay is the upper bound of backoff delay.\n\tmaxDelay time.Duration\n}&#34;,
+        &#34;symbol&#34;: &#34;Exponential&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;access_modifier&#34;: &#34;public&#34;,
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;// StrategyBuilder helps build an implementation of the Strategy interface,\n// with setters provided to set individual parameters of the backoff strategy.\ntype StrategyBuilder interface {\n\t// BaseDelay sets the amount of time to backoff after the first connection\n\t// failure.\n\tBaseDelay(time.Duration) StrategyBuilder\n\t// Multiplier sets the the factor with which to multiply backoffs after a\n\t// failed retry.\n\tMultiplier(float64) StrategyBuilder\n\t// Jitter sets the factor with which backoffs are randomized.\n\tJitter(float64) StrategyBuilder\n\t// MaxDelay sets the upper bound of backoff delay.\n\tMaxDelay(time.Duration) StrategyBuilder\n\t// Build builds an implementation of the Strategy interface configured using\n\t// the above setter methods.\n\tBuild() Strategy\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;// exponentialBuilder implements the StrategyBuilder interface for an\n// exponential backoff strategy.\ntype exponentialBuilder struct {\n\tbd     time.Duration\n\tmltpr  float64\n\tjitter float64\n\tmd     time.Duration\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;access_modifier&#34;: &#34;public&#34;,
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;function&#34;,
+        &#34;source&#34;: &#34;// NewExponentialBuilder returns an implementation of the StrategyBuilder\n// interface used to build an exponential backoff strategy implementation, as\n// defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nfunc NewExponentialBuilder() StrategyBuilder {\n\treturn \u0026exponentialBuilder{\n\t\tbd:     baseDelay,\n\t\tmltpr:  multiplier,\n\t\tjitter: jitter,\n\t\tmd:     maxDelay,\n\t}\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) BaseDelay(bd time.Duration) StrategyBuilder {\n\teb.bd = bd\n\treturn eb\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Multiplier(m float64) StrategyBuilder {\n\teb.mltpr = m\n\treturn eb\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Jitter(j float64) StrategyBuilder {\n\teb.jitter = j\n\treturn eb\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) MaxDelay(md time.Duration) StrategyBuilder {\n\teb.md = md\n\treturn eb\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Build() Strategy {\n\treturn Exponential{\n\t\tbaseDelay:  eb.bd,\n\t\tmultiplier: eb.mltpr,\n\t\tjitter:     eb.jitter,\n\t\tmaxDelay:   eb.md,\n\t}\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;internal/backoff/backoff.go&#34;,
+        &#34;kind&#34;: &#34;method&#34;,
+        &#34;source&#34;: &#34;// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\n// Helps implement Strategy.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.baseDelay\n\t}\n\tbackoff, max := float64(bc.baseDelay), float64(bc.maxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= bc.multiplier\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won&#39;t operate in lockstep.\n\tbackoff *= 1 + bc.jitter*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}&#34;,
+        &#34;symbol&#34;: &#34;Exponential.Backoff&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;backoff.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;// BackoffConfig defines the parameters for the default gRPC backoff strategy.\n// Deprecated: use ConnectParams instead.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}&#34;,
+        &#34;symbol&#34;: &#34;BackoffConfig&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;access_modifier&#34;: &#34;public&#34;,
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;backoff.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;// ConnectParams defines the parameters for connecting and retrying. Users\n// are encouraged to use this instead of BackoffConfig.\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n//\n// This API is EXPERIMENTAL.\ntype ConnectParams struct {\n\t// BackoffBaseDelay is the amount of time to backoff after the first\n\t// connection failure.\n\tBackoffBaseDelay time.Duration\n\t// BackoffMultiplier is the factor with which to multiply backoffs after a\n\t// failed retry. Should ideally be greater than 1.\n\tBackoffMultiplier float64\n\t// BackoffJitter is the factor with which backoffs are randomized.\n\tBackoffJitter float64\n\t// BackoffMaxDelay is the upper bound of backoff delay.\n\tBackoffMaxDelay time.Duration\n\t// MinConnectTimeout is the minimum amount of time we are willing to give a\n\t// connection to complete.\n\tMinConnectTimeout time.Duration\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;backoff.go&#34;,
+        &#34;kind&#34;: &#34;var&#34;,
+        &#34;source&#34;: &#34;// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n// Deprecated: use ConnectParams instead.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay: 120 * time.Second,\n}&#34;,
+        &#34;symbol&#34;: &#34;DefaultBackoffConfig&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;in_type&#34;: &#34;dialOptions&#34;,
+        &#34;kind&#34;: &#34;field&#34;,
+        &#34;placement&#34;: &#34;type_end&#34;,
+        &#34;source&#34;: &#34;mct time.Duration&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;clientconn.go&#34;,
+        &#34;kind&#34;: &#34;const&#34;,
+        &#34;symbol&#34;: &#34;minConnectTimeout&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_remove_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;group&#34;: &#34;append&#34;,
+        &#34;kind&#34;: &#34;const&#34;,
+        &#34;source&#34;: &#34;const (\n\t// Minimum time to give a connection to complete.\n\tminConnectTimeout = 20 * time.Second\n)&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;source&#34;: &#34;// WithConnectParams configures the dialer to use the provided backoff\n// parameters for the algorithm defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n// This will override all the default values with the ones provided here. So,\n// use with caution.\n//\n// This API is EXPERIMENTAL.\nfunc WithConnectParams(p ConnectParams) DialOption {\n\tb := backoff.NewExponentialBuilder()\n\tb.BaseDelay(p.BackoffBaseDelay).Multiplier(p.BackoffMultiplier).Jitter(p.BackoffJitter).MaxDelay(p.BackoffMaxDelay)\n\treturn newFuncDialOption(func(o *dialOptions) {\n\t\to.bs = b.Build()\n\t\to.mct = p.MinConnectTimeout\n\t})\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_insert_function&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;kind&#34;: &#34;function&#34;,
+        &#34;source&#34;: &#34;// WithBackoffMaxDelay configures the dialer to use the provided maximum delay\n// when backing off after failed connection attempts.\n//\n// Deprecated: use WithConnectParams instead.\nfunc WithBackoffMaxDelay(md time.Duration) DialOption {\n\treturn WithBackoffConfig(BackoffConfig{MaxDelay: md})\n}&#34;,
+        &#34;symbol&#34;: &#34;WithBackoffMaxDelay&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;kind&#34;: &#34;function&#34;,
+        &#34;source&#34;: &#34;// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\n//\n// Deprecated: use WithConnectParams instead.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.NewExponentialBuilder().MaxDelay(b.MaxDelay).Build())\n}&#34;,
+        &#34;symbol&#34;: &#34;WithBackoffConfig&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;body&#34;: &#34;return dialOptions{\n\tdisableRetry:    !envconfig.Retry,\n\treqHandshake:    envconfig.RequireHandshake,\n\thealthCheckFunc: internal.HealthCheckFunc,\n\tcopts: transport.ConnectOptions{\n\t\tWriteBufferSize: defaultWriteBufSize,\n\t\tReadBufferSize:  defaultReadBufSize,\n\t},\n\tmct: minConnectTimeout,\n}&#34;,
+        &#34;file&#34;: &#34;dialoptions.go&#34;,
+        &#34;symbol&#34;: &#34;defaultDialOptions&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_body&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;discriminator&#34;: &#34;cc.dopts.bs == nil&#34;,
+        &#34;file&#34;: &#34;clientconn.go&#34;,
+        &#34;in_function&#34;: &#34;DialContext&#34;,
+        &#34;kind&#34;: &#34;if&#34;,
+        &#34;source&#34;: &#34;if cc.dopts.bs == nil {\n\tcc.dopts.bs = backoff.NewExponentialBuilder().Build()\n}&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;discriminator&#34;: &#34;dialDuration := minConnectTimeout&#34;,
+        &#34;file&#34;: &#34;clientconn.go&#34;,
+        &#34;in_function&#34;: &#34;addrConn.resetTransport&#34;,
+        &#34;kind&#34;: &#34;statement/expression&#34;,
+        &#34;source&#34;: &#34;dialDuration := ac.dopts.mct&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;balancer/grpclb/grpclb.go&#34;,
+        &#34;language&#34;: &#34;go&#34;,
+        &#34;symbol&#34;: &#34;defaultBackoffConfig&#34;,
+        &#34;to&#34;: &#34;defaultBackoffStrategy&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_rename&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;balancer/grpclb/grpclb.go&#34;,
+        &#34;source&#34;: &#34;// defaultBackoffStrategy configures the backoff strategy that&#39;s used when the\n// init handshake in the RPC is unsuccessful. It&#39;s not for the clientconn\n// reconnect backoff.\n//\n// It has the same value as the default grpc.DefaultBackoffConfig.\n//\n// TODO: make backoff configurable.\nvar defaultBackoffStrategy = backoff.NewExponentialBuilder().Build()&#34;,
+        &#34;symbol&#34;: &#34;defaultBackoffStrategy&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_decl&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;balancer/xds/xds_client.go&#34;,
+        &#34;language&#34;: &#34;go&#34;,
+        &#34;symbol&#34;: &#34;defaultBackoffConfig&#34;,
+        &#34;to&#34;: &#34;defaultBackoffStrategy&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_rename&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;balancer/xds/xds_client.go&#34;,
+        &#34;kind&#34;: &#34;var&#34;,
+        &#34;source&#34;: &#34;var defaultBackoffStrategy = backoff.NewExponentialBuilder().Build()&#34;,
+        &#34;symbol&#34;: &#34;defaultBackoffStrategy&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;health/client.go&#34;,
+        &#34;kind&#34;: &#34;var&#34;,
+        &#34;source&#34;: &#34;var backoffStrategy = backoff.NewExponentialBuilder().Build()&#34;,
+        &#34;symbol&#34;: &#34;backoffStrategy&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;health/client.go&#34;,
+        &#34;kind&#34;: &#34;const&#34;,
+        &#34;safe_delete&#34;: false,
+        &#34;symbol&#34;: &#34;maxDelay&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_remove_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;file&#34;: &#34;resolver/dns/dns_resolver.go&#34;,
+        &#34;kind&#34;: &#34;type&#34;,
+        &#34;source&#34;: &#34;// dnsResolver watches for the name resolution update for a non-IP target.\ntype dnsResolver struct {\n\tfreq       time.Duration\n\tbackoff    backoff.Strategy\n\tretryCount int\n\thost       string\n\tport       string\n\tresolver   netResolver\n\tctx        context.Context\n\tcancel     context.CancelFunc\n\tcc         resolver.ClientConn\n\t// rn channel is used by ResolveNow() to force an immediate resolution of the target.\n\trn chan struct{}\n\tt  *time.Timer\n\t// wg is used to enforce Close() to return after the watcher() goroutine has finished.\n\t// Otherwise, data race will be possible. [Race Example] in dns_resolver_test we\n\t// replace the real lookup functions with mocked ones to facilitate testing.\n\t// If Close() doesn&#39;t wait for watcher() goroutine finishes, race detector sometimes\n\t// will warns lookup (READ the lookup function pointers) inside watcher() goroutine\n\t// has data race with replaceNetFunc (WRITE the lookup function pointers).\n\twg                   sync.WaitGroup\n\tdisableServiceConfig bool\n}&#34;,
+        &#34;symbol&#34;: &#34;dnsResolver&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_construct&#34;
+    },
+    {
+      &#34;params&#34;: {
+        &#34;auto_organize_imports&#34;: false,
+        &#34;body&#34;: &#34;\thost, port, err := parseTarget(target.Endpoint, defaultPort)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\n\t// IP address.\n\tif net.ParseIP(host) != nil {\n\t\thost, _ = formatIP(host)\n\t\taddr := []resolver.Address{{Addr: host + \&#34;:\&#34; + port}}\n\t\ti := \u0026ipResolver{\n\t\t\tcc: cc,\n\t\t\tip: addr,\n\t\t\trn: make(chan struct{}, 1),\n\t\t\tq:  make(chan struct{}),\n\t\t}\n\t\tcc.NewAddress(addr)\n\t\tgo i.watcher()\n\t\treturn i, nil\n\t}\n\n\t// DNS address (non-IP).\n\tctx, cancel := context.WithCancel(context.Background())\n\td := \u0026dnsResolver{\n\t\tfreq:                 b.minFreq,\n\t\tbackoff:              backoff.NewExponentialBuilder().MaxDelay(b.minFreq).Build(),\n\t\thost:                 host,\n\t\tport:                 port,\n\t\tctx:                  ctx,\n\t\tcancel:               cancel,\n\t\tcc:                   cc,\n\t\tt:                    time.NewTimer(0),\n\t\trn:                   make(chan struct{}, 1),\n\t\tdisableServiceConfig: opts.DisableServiceConfig,\n\t}\n\n\tif target.Authority == \&#34;\&#34; {\n\t\td.resolver = defaultResolver\n\t} else {\n\t\td.resolver, err = customAuthorityResolver(target.Authority)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t}\n\n\td.wg.Add(1)\n\tgo d.watcher()\n\treturn d, nil&#34;,
+        &#34;file&#34;: &#34;resolver/dns/dns_resolver.go&#34;,
+        &#34;symbol&#34;: &#34;(*dnsBuilder).Build&#34;
+      },
+      &#34;tool&#34;: &#34;semantic_replace_body&#34;
+    }
+  ],
+  &#34;trust_workspace&#34;: true
+}</code></pre></td></tr>
+<tr><td>2</td><td><code>grep</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;pattern&#34;: &#34;BackoffConfig&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>3</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/backoff.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>4</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/dialoptions.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 230
+}</code></pre></td><td>—</td></tr>
+<tr><td>5</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/internal/backoff&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>6</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/internal/backoff/backoff.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>7</td><td><code>glob</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;pattern&#34;: &#34;Documentation/connection-backoff.md&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>8</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls Documentation&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>9</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;git log --oneline -5 2\u003e\u00261; git status 2\u003e\u00261 | head -5&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>10</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;which git; ls -la .git 2\u003e\u00261 | head -3&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>11</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;DEVELOPER_DIR=/tmp git log --oneline -5 2\u003e\u00261 | head -10&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>12</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;file /usr/bin/git; git --version 2\u003e\u00261&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>13</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls /opt/homebrew/bin/git 2\u003e\u00261; ls /usr/local/bin/git 2\u003e\u00261&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>14</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/clientconn.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 210
+}</code></pre></td><td>—</td></tr>
+<tr><td>15</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/clientconn_test.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 810
+}</code></pre></td><td>—</td></tr>
+<tr><td>16</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://raw.githubusercontent.com/grpc/grpc-go/master/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://raw.githubusercontent.com/grpc/grpc-go/master/backoff.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>17</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://raw.githubusercontent.com/grpc/grpc-go/master/internal/backoff/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://raw.githubusercontent.com/grpc/grpc-go/master/internal/backoff/backoff.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>18</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://github.com/grpc/grpc-go/blob/master/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://github.com/grpc/grpc-go/blob/master/backoff.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>19</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/go.mod&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>20</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;go version 2\u003e\u00261&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>21</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/version.go&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>22</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://github.com/grpc/grpc-go/issues/2735)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://github.com/grpc/grpc-go/issues/2735&#34;
+}</code></pre></td><td>—</td></tr>
+<tr><td>23</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://api.github.com/repos/grpc/grpc-go/issues/2735)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://api.github.com/repos/grpc/grpc-go/issues/2735&#34;
+}</code></pre></td><td>—</td></tr>
+</tbody>
+</table>
+
+#### Configuration: implicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Run Provenance**: `fixture_dependency_preparation=go-list-readonly-deps-test,local_model_context_tokens=212992,local_model_limits_source=llama.cpp-props,local_model_output_tokens=8192,provider_transport=opencode_attached_server_v1`
+
+* **Fixture**: [testdata/bench/grpc__grpc-go-2735.txtar](https://github.com/spockz/semantic-editor/blob/3089a8ddc50051bfbd8b5f556d022c75c8040b30/testdata/bench/grpc__grpc-go-2735.txtar)
+
+**Vanilla LLM Prompt**:
+> ### Use case(s) - what problem will this feature solve?
+> 
+> In some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).
+> 
+> ### Proposed Solution
+> 
+> Add tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).
+> 
+> It can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).
+>
+
+**Semedit MCP Prompt**:
+> ### Use case(s) - what problem will this feature solve?
+> 
+> In some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).
+> 
+> ### Proposed Solution
+> 
+> Add tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).
+> 
+> It can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+| Metric | Vanilla (Small) | <span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> Semedit Agentic (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 300.01s | 300.01s | N/A | — | — | — |
+| **Process Start → First Event** | 8.67s | 25.14s | — | — | — | — |
+| **First Event → First Tool Call** | 7.37s | 1.29s | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | N/A | — | — | — |
+| **Internal Tool Cycles** | 23 | 33 | N/A | — | — | — |
+| **Initial Load / Discovery Turns** | 23 | 33 | N/A | — | — | — |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | — | — | — |
+| **Total Tool Invocations** | 23 | 33 | N/A | — | — | — |
+| **Output Tokens** | 10875 | 8400 | N/A | — | — | — |
+| **Reasoning / Thinking Tokens** | 0 | 0 | 0% | — | — | — |
+| **Total Input Tokens** | 264161 | 1013248 | N/A | — | — | — |
+| **Cached Input Tokens** | 250241 | 967222 | N/A | — | — | — |
+| **Uncached Input Tokens** | 13920 | 46026 | N/A | — | — | — |
+| **Cached vs Uncached Token Ratio** | 17.98:1 | 21.01:1 | N/A | — | — | — |
+| **Oracle L1: Mutation Policy** | — | — | — | — | — | — |
+| **Oracle L2: AST Invariants** | — | — | — | — | — | — |
+| **Oracle L3: Clean Build** | — | — | — | — | — | — |
+| **Oracle L4: Verification Test** | — | — | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ⚠️ NO (Fallback) | — | — | — | — |
+
+##### Baseline vs Semedit Agentic in Small Context
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;pwd \u0026\u0026 ls -la&#34;
+}</code></pre></td></tr>
+<tr><td>2</td><td><code>grep</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;pattern&#34;: &#34;BackoffConfig&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/backoff.go&#34;
+}</code></pre></td></tr>
+<tr><td>3</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/backoff.go&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls Documentation/ \u0026\u0026 ls internal/&#34;
+}</code></pre></td></tr>
+<tr><td>4</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/dialoptions.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 230
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff&#34;
+}</code></pre></td></tr>
+<tr><td>5</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/internal/backoff&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;cat Documentation/connection-backoff.md 2\u003e/dev/null || ls Documentation&#34;
+}</code></pre></td></tr>
+<tr><td>6</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/internal/backoff/backoff.go&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/internal/backoff/backoff.go&#34;
+}</code></pre></td></tr>
+<tr><td>7</td><td><code>glob</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;pattern&#34;: &#34;Documentation/connection-backoff.md&#34;
+}</code></pre></td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md&#34;
+}</code></pre></td></tr>
+<tr><td>8</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls Documentation&#34;
+}</code></pre></td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md&#34;
+}</code></pre></td></tr>
+<tr><td>9</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;git log --oneline -5 2\u003e\u00261; git status 2\u003e\u00261 | head -5&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;curl -sL https://raw.githubusercontent.com/grpc/grpc/master/doc/connection-backoff.md&#34;
+}</code></pre></td></tr>
+<tr><td>10</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;which git; ls -la .git 2\u003e\u00261 | head -3&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;grep -rn \&#34;BackoffConfig\\|DefaultBackoffConfig\\|backoff.Exponential\\|baseDelay\\|factor\\|jitter\&#34; --include=\&#34;*.go\&#34; . | grep -v \&#34;_test.go\&#34;&#34;
+}</code></pre></td></tr>
+<tr><td>11</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;DEVELOPER_DIR=/tmp git log --oneline -5 2\u003e\u00261 | head -10&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;git log --oneline -10 \u0026\u0026 git status&#34;
+}</code></pre></td></tr>
+<tr><td>12</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;file /usr/bin/git; git --version 2\u003e\u00261&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;command git --version 2\u003e\u00261; which git 2\u003e\u00261; ls /usr/local/bin/git 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>13</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls /opt/homebrew/bin/git 2\u003e\u00261; ls /usr/local/bin/git 2\u003e\u00261&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls /Library/Developer/ 2\u003e\u00261; ls /Applications/Xcode.app 2\u003e\u00261 | head -5&#34;
+}</code></pre></td></tr>
+<tr><td>14</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/clientconn.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 210
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;DEVELOPER_DIR=/tmp git --version 2\u003e\u00261 | head -3&#34;
+}</code></pre></td></tr>
+<tr><td>15</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/clientconn_test.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 810
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/dialoptions.go&#34;,
+  &#34;limit&#34;: 60,
+  &#34;offset&#34;: 230
+}</code></pre></td></tr>
+<tr><td>16</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://raw.githubusercontent.com/grpc/grpc-go/master/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://raw.githubusercontent.com/grpc/grpc-go/master/backoff.go&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/health/client.go&#34;,
+  &#34;limit&#34;: 40,
+  &#34;offset&#34;: 20
+}</code></pre></td></tr>
+<tr><td>17</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://raw.githubusercontent.com/grpc/grpc-go/master/internal/backoff/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://raw.githubusercontent.com/grpc/grpc-go/master/internal/backoff/backoff.go&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn.go&#34;,
+  &#34;limit&#34;: 30,
+  &#34;offset&#34;: 220
+}</code></pre></td></tr>
+<tr><td>18</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://github.com/grpc/grpc-go/blob/master/backoff.go)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://github.com/grpc/grpc-go/blob/master/backoff.go&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/grpclb/grpclb.go&#34;,
+  &#34;limit&#34;: 30,
+  &#34;offset&#34;: 45
+}</code></pre></td></tr>
+<tr><td>19</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/go.mod&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/balancer/xds/xds_client.go&#34;,
+  &#34;limit&#34;: 20,
+  &#34;offset&#34;: 40
+}</code></pre></td></tr>
+<tr><td>20</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;go version 2\u003e\u00261&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/resolver/dns/dns_resolver.go&#34;,
+  &#34;limit&#34;: 15,
+  &#34;offset&#34;: 120
+}</code></pre></td></tr>
+<tr><td>21</td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small_grpc__grpc-go-2735_1791752589687808000/version.go&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls *.go | head -40; ls internal/backoff/&#34;
+}</code></pre></td></tr>
+<tr><td>22</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://github.com/grpc/grpc-go/issues/2735)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://github.com/grpc/grpc-go/issues/2735&#34;
+}</code></pre></td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;grep -rn \&#34;BackoffConfig\\|WithBackoffConfig\\|WithBackoffMaxDelay\&#34; --include=\&#34;*_test.go\&#34; .&#34;
+}</code></pre></td></tr>
+<tr><td>23</td><td><code>webfetch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Transport error (GET https://api.github.com/repos/grpc/grpc-go/issues/2735)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;url&#34;: &#34;https://api.github.com/repos/grpc/grpc-go/issues/2735&#34;
+}</code></pre></td><td><code>read</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;filePath&#34;: &#34;/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/clientconn_test.go&#34;,
+  &#34;limit&#34;: 45,
+  &#34;offset&#34;: 815
+}</code></pre></td></tr>
+<tr><td>24</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;curl -sL https://api.github.com/repos/grpc/grpc-go/issues/2735 2\u003e\u00261 | head -50&#34;
+}</code></pre></td></tr>
+<tr><td>25</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls -la /usr/bin/git 2\u003e\u00261; file /usr/bin/git 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>26</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;git --version 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>27</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;type git 2\u003e\u00261; echo \&#34;---\&#34;; /usr/bin/git --version 2\u003e\u00261; echo \&#34;---\&#34;; ls -la /usr/local/bin/git /opt/homebrew/bin/git 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>28</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;find / -name \&#34;git\&#34; -type f 2\u003e/dev/null | grep -v \&#34;proc\\|sys\&#34; | head -20; echo \&#34;===\&#34;; ls /Users/alessandro/.local/bin 2\u003e/dev/null | head; ls /usr/local/bin 2\u003e/dev/null | head -30&#34;
+}</code></pre></td></tr>
+<tr><td>29</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;DEVELOPER_DIR=/Users/alessandro /usr/bin/git --version 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>30</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;which go 2\u003e\u00261; go version 2\u003e\u00261; echo \&#34;PATH=$PATH\&#34;&#34;
+}</code></pre></td></tr>
+<tr><td>31</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;find /Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit-agentic_small-implicit_grpc__grpc-go-2735_1791752891648373000/.scratch -type f 2\u003e/dev/null | head -50&#34;
+}</code></pre></td></tr>
+<tr><td>32</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;ls -la .git/ \u0026\u0026 cat .git/HEAD 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+<tr><td>33</td><td>—</td><td><code>bash</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;command&#34;: &#34;cat .git/logs/HEAD 2\u003e\u00261; echo \&#34;===\&#34;; head -20 .git/packed-refs 2\u003e\u00261&#34;
+}</code></pre></td></tr>
+</tbody>
+</table>
+

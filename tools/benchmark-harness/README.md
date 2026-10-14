@@ -347,7 +347,7 @@ The publisher is a separate Go command, so its JSON read model is separate from 
 | File in `cmd/docgen` | Responsibility |
 | :--- | :--- |
 | [benchmark_model.go](../../cmd/docgen/benchmark_model.go) | Read-side result, comparison, and publication structures. |
-| [benchmark_load.go](../../cmd/docgen/benchmark_load.go) | Load saved runs and normalize supported duration formats. |
+| [benchmark_load.go](../../cmd/docgen/benchmark_load.go) | Shared report intake for pages and browser rows; normalize supported duration formats, reject invalid files consistently, and collect all input failures. |
 | [benchmark_publish.go](../../cmd/docgen/benchmark_publish.go) | Publication eligibility, ordering, and source provenance. |
 | [benchmark_compare.go](../../cmd/docgen/benchmark_compare.go) | Pair selection, ranking, cost calculations, aggregate condition identities, the compact aggregate overview, and per-benchmark pooled detail pages. |
 | [benchmark_best.go](../../cmd/docgen/benchmark_best.go) | Best-case pages, first-attempt rates, corrective-turn histograms, and policy-separated headlines. |
@@ -355,6 +355,8 @@ The publisher is a separate Go command, so its JSON read model is separate from 
 | [benchmark_aggregate.go](../../cmd/docgen/benchmark_aggregate.go) | Browser row flattening, paired deltas, filters, and grouping. Excludes diagnostic reflection objects from metric rows. |
 
 For a new experiment dimension, trace it from `PlanOptions` and `Job` through result serialization and every publication grouping key. For a new metric, establish its measurement boundary and missing-value semantics before updating both result models and rendering paths.
+
+Documentation generation continues through independent input and output failures. Valid benchmark reports still produce pages and browser data; rejected reports appear in neither. After attempting all independent sections, the command reports collected errors and exits nonzero. Repository discovery and output-directory preparation remain prerequisites. `cmd/docgen/error_collection_test.go` protects partial generation, multiple diagnostics, empty datasets, and independent output failures.
 
 ## Verification and related decisions
 

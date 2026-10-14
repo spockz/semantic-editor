@@ -4,6 +4,7 @@ package operation
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"semedit/internal/astedit"
@@ -57,31 +58,85 @@ func parseWorkspaceOutline(raw map[string]any) (WorkspaceOutlineReq, error) {
 
 func runWorkspaceOutline(ctx context.Context, cc CallContext, req WorkspaceOutlineReq) (WorkspaceOutlineRes, error) {
 	project := effectiveProject(cc, req.Project)
-	if project.Language == backend.LanguageJava {
+	requestedLanguage := req.Project.Language
+	if requestedLanguage == "" {
+		requestedLanguage = cc.Project.Language
+	}
+	if requestedLanguage == backend.LanguageGo {
+		result, err := astedit.WorkspaceOutlineGo(project.RootDir, req.Path, req.IncludeTests)
+		if err != nil {
+			return WorkspaceOutlineRes{}, err
+		}
+		return WorkspaceOutlineRes{Result: result}, nil
+	}
+	if requestedLanguage == backend.LanguageJava {
 		result, err := javabackend.WorkspaceOutline(project.RootDir, req.Path, req.IncludeTests)
 		if err != nil {
 			return WorkspaceOutlineRes{}, err
 		}
 		return WorkspaceOutlineRes{Result: result}, nil
 	}
-	if project.Language == "" || project.Language == backend.LanguageAuto {
-		isJava, err := javabackend.LooksLikeJavaWorkspace(project.RootDir, req.Path)
-		if err != nil {
-			return WorkspaceOutlineRes{}, err
-		}
-		if isJava {
-			result, outlineErr := javabackend.WorkspaceOutline(project.RootDir, req.Path, req.IncludeTests)
-			if outlineErr != nil {
-				return WorkspaceOutlineRes{}, outlineErr
-			}
-			return WorkspaceOutlineRes{Result: result}, nil
-		}
-	}
-	result, err := astedit.WorkspaceOutlineGo(cc.WorkDir, req.Path, req.IncludeTests)
+
+	isGo, err := astedit.LooksLikeGoWorkspace(project.RootDir, req.Path)
 	if err != nil {
-		return WorkspaceOutlineRes{}, err
+		return WorkspaceOutlineRes{}, fmt.Errorf("detect Go workspace outline: %w", err)
 	}
-	return WorkspaceOutlineRes{Result: result}, nil
+	combined := &backend.WorkspaceOutlineResult{
+		Scope: backend.ReadScope{
+			Kind:     "workspace",
+			Path:     req.Path,
+			Complete: true,
+		},
+		Modules:  make([]backend.WorkspaceModule, 0),
+		Packages: make([]backend.WorkspacePackage, 0),
+	}
+	if combined.Scope.Path == "" {
+		combined.Scope.Path = "."
+	}
+	if isGo {
+		goResult, outlineErr := astedit.WorkspaceOutlineGo(project.RootDir, req.Path, req.IncludeTests)
+		if outlineErr != nil {
+			return WorkspaceOutlineRes{}, fmt.Errorf("discover Go workspace outline: %w", outlineErr)
+		}
+		if goResult != nil {
+			combined.Scope = goResult.Scope
+			combined.Modules = append(combined.Modules, goResult.Modules...)
+			combined.Packages = append(combined.Packages, goResult.Packages...)
+		}
+	}
+	isJava, err := javabackend.LooksLikeJavaWorkspace(project.RootDir, req.Path)
+	if err != nil {
+		return WorkspaceOutlineRes{}, fmt.Errorf("detect Java workspace outline: %w", err)
+	}
+	if isJava {
+		javaResult, outlineErr := javabackend.WorkspaceOutline(project.RootDir, req.Path, req.IncludeTests)
+		if outlineErr != nil {
+			return WorkspaceOutlineRes{}, fmt.Errorf("discover Java workspace outline: %w", outlineErr)
+		}
+		if javaResult != nil {
+			if !isGo {
+				combined.Scope = javaResult.Scope
+			}
+			combined.Modules = append(combined.Modules, javaResult.Modules...)
+			combined.Packages = append(combined.Packages, javaResult.Packages...)
+		}
+	}
+	slices.SortFunc(combined.Modules, func(a, b backend.WorkspaceModule) int {
+		if a.Path != b.Path {
+			return strings.Compare(a.Path, b.Path)
+		}
+		return strings.Compare(a.Language, b.Language)
+	})
+	slices.SortFunc(combined.Packages, func(a, b backend.WorkspacePackage) int {
+		if a.Depth != b.Depth {
+			return a.Depth - b.Depth
+		}
+		if a.Path != b.Path {
+			return strings.Compare(a.Path, b.Path)
+		}
+		return strings.Compare(a.Language, b.Language)
+	})
+	return WorkspaceOutlineRes{Result: combined}, nil
 }
 
 func formatWorkspaceOutline(res WorkspaceOutlineRes) (string, error) {
@@ -89,38 +144,78 @@ func formatWorkspaceOutline(res WorkspaceOutlineRes) (string, error) {
 		return "", nil
 	}
 	var b strings.Builder
-	b.WriteString("Packages:\n")
-	if len(res.Result.Packages) == 0 {
-		b.WriteString("  (no packages found)\n")
-	} else {
-		for _, pkg := range res.Result.Packages {
-			fmt.Fprintf(&b, "  %s (%s) — %s\n", pkg.Path, pkg.Name, pkg.Synopsis)
+	polyglot := len(workspaceOutlineLanguages(res.Result)) > 1
+	writeWorkspacePackageLines(&b, res.Result.Packages, polyglot)
+	writeWorkspaceModuleLines(&b, res.Result.Modules, polyglot)
+	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func workspaceOutlineLanguages(result *backend.WorkspaceOutlineResult) map[string]struct{} {
+	languages := make(map[string]struct{})
+	for _, mod := range result.Modules {
+		if mod.Language != "" {
+			languages[mod.Language] = struct{}{}
 		}
 	}
-	if len(res.Result.Modules) > 0 {
-		b.WriteString("\nModules:\n")
-		for _, mod := range res.Result.Modules {
-			rootMarker := ""
-			if mod.IsRoot {
-				rootMarker = " [root]"
-			}
+	for _, pkg := range result.Packages {
+		if pkg.Language != "" {
+			languages[pkg.Language] = struct{}{}
+		}
+	}
+	return languages
+}
+
+func writeWorkspacePackageLines(b *strings.Builder, packages []backend.WorkspacePackage, polyglot bool) {
+	b.WriteString("Packages:\n")
+	if len(packages) == 0 {
+		b.WriteString("  (no packages found)\n")
+		return
+	}
+	for _, pkg := range packages {
+		language := ""
+		if polyglot && pkg.Language != "" {
+			language = " [" + pkg.Language + "]"
+		}
+		fmt.Fprintf(b, "  %s (%s)%s — %s\n", pkg.Path, pkg.Name, language, pkg.Synopsis)
+	}
+}
+
+func writeWorkspaceModuleLines(b *strings.Builder, modules []backend.WorkspaceModule, polyglot bool) {
+	if len(modules) == 0 {
+		return
+	}
+	b.WriteString("\nModules:\n")
+	for _, mod := range modules {
+		rootMarker := workspaceModuleMarker(mod, polyglot)
+		if mod.ModulePath != "" {
 			goVer := ""
 			if mod.GoVersion != "" {
 				goVer = ", go " + mod.GoVersion
 			}
-			if mod.ModulePath != "" {
-				fmt.Fprintf(&b, "  %s (%s%s)%s\n", mod.Path, mod.ModulePath, goVer, rootMarker)
-			} else {
-				coordinates := strings.Join([]string{mod.GroupID, mod.ArtifactID, mod.Version}, ":")
-				packaging := ""
-				if mod.Packaging != "" {
-					packaging = ", " + mod.Packaging
-				}
-				fmt.Fprintf(&b, "  %s (%s%s)%s\n", mod.Path, coordinates, packaging, rootMarker)
-			}
+			fmt.Fprintf(b, "  %s (%s%s)%s\n", mod.Path, mod.ModulePath, goVer, rootMarker)
+			continue
 		}
+		coordinates := strings.Join([]string{mod.GroupID, mod.ArtifactID, mod.Version}, ":")
+		packaging := ""
+		if mod.Packaging != "" {
+			packaging = ", " + mod.Packaging
+		}
+		fmt.Fprintf(b, "  %s (%s%s)%s\n", mod.Path, coordinates, packaging, rootMarker)
 	}
-	return strings.TrimRight(b.String(), "\n"), nil
+}
+
+func workspaceModuleMarker(module backend.WorkspaceModule, polyglot bool) string {
+	marker := ""
+	if module.IsRoot {
+		marker = " [root]"
+	}
+	if polyglot && module.Language != "" {
+		marker += " [" + module.Language + "]"
+	}
+	if module.Synopsis != "" {
+		marker += " — " + module.Synopsis
+	}
+	return marker
 }
 
 func workspaceOutlineDef() Def[WorkspaceOutlineReq, WorkspaceOutlineRes] {
@@ -135,6 +230,7 @@ func workspaceOutlineDef() Def[WorkspaceOutlineReq, WorkspaceOutlineRes] {
 		Parse:    parseWorkspaceOutline,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, WorkspaceOutlineReq) (WorkspaceOutlineRes, error){
 			backend.LanguageAuto: runWorkspaceOutline,
+			backend.LanguageGo:   runWorkspaceOutline,
 			backend.LanguageJava: runWorkspaceOutline,
 		},
 		Format:        formatWorkspaceOutline,

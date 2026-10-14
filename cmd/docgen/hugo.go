@@ -4,6 +4,7 @@ package main
 import (
 	"bytes"
 	"embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,7 +116,7 @@ func writeOperationContracts(buf *bytes.Buffer, caps []CodeCapability) {
 					markdownCell(variant.PreconditionsDescription()),
 					markdownCell(strings.Join(capabilities, "; ")),
 					markdownCell(variant.GuaranteesDescription()),
-					markdownCell(variant.ErrorTolerance.Description()),
+					markdownCell(variant.ErrorTolerance.DetailedDescription()),
 				)
 			}
 		}
@@ -539,19 +540,18 @@ Start with the installation guide, then use the reference when you need a specif
 `
 
 func writeHugoConfig(outputDir string, enableRSS bool) error {
+	var failures []error
 	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(renderHugoConfig(enableRSS))); err != nil {
-		return fmt.Errorf("write hugo.toml: %w", err)
+		failures = append(failures, fmt.Errorf("write hugo.toml: %w", err))
 	}
-	if err := writeHugoModule(outputDir); err != nil {
-		return err
-	}
+	failures = append(failures, writeHugoModule(outputDir))
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(hugoLandingPage)); err != nil {
-		return fmt.Errorf("write Hugo landing page: %w", err)
+		failures = append(failures, fmt.Errorf("write Hugo landing page: %w", err))
 	}
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(hugoDocsSection)); err != nil {
-		return fmt.Errorf("write Hugo docs section: %w", err)
+		failures = append(failures, fmt.Errorf("write Hugo docs section: %w", err))
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func writeHugoModule(outputDir string) error {

@@ -53,6 +53,12 @@ run with an oracle result and no harness execution error. A completed agent
 attempt that fails its oracle remains publishable data; a run that never
 reaches oracle evaluation does not.
 
+The documentation generator validates each saved report once for both page rendering and
+browser rows. A report rejected by either consumer is excluded from both. Independent
+report and output failures are collected while valid sections continue; the command prints
+all collected failures at the end and exits nonzero. Repository discovery and output setup
+remain prerequisites. An empty accepted dataset displays an explicit browser empty state.
+
 For each project-size and prompt variant, documentation renders the ordered
 baseline and semedit tool-call sequences side by side. The report does not
 present a task-level tool list as evidence for every underlying run.
@@ -65,6 +71,8 @@ present a task-level tool list as evidence for every underlying run.
 - Semantic-tool availability claims identify the canonical server or semantic
   tool identity rather than a display label alone.
 - Documentation excludes incomplete harness records before aggregation.
+- Invalid saved reports cannot prevent valid sibling reports from being generated, and
+  partial generation cannot be reported as success.
 - Published tool-call tables are qualified by their run variant and arm.
 - Missing structured MCP response content remains an unavailable observation, not a measured
   zero-duration startup boundary.

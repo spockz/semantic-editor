@@ -1,0 +1,46 @@
+# A scoped outline reports the nearest Go module and its packages, excluding ancestors
+exec semedit workspace-outline --path submod
+stdout 'Packages:'
+stdout 'submod \(submod\) — Package submod is an independently versioned service\.'
+stdout 'submod/internal \(internal\) — Package internal provides internal support for the submodule\.'
+stdout 'Modules:'
+stdout 'submod \(example\.com/scoped/submod, go 1\.24\)'
+! stdout 'example\.com/scoped, go'
+! stdout 'root \(root\)'
+
+# Structured ownership and counts agree with the selected module.
+stdin outline.json
+exec semedit mcp
+stdout '"module":"example\.com/scoped/submod"'
+stdout '"module_path":"example\.com/scoped/submod"'
+stdout '"packages_count":2'
+! stdout '"module_path":"example\.com/scoped"'
+
+-- outline.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_workspace_outline","arguments":{"path":"submod"}}}
+
+-- go.mod --
+module example.com/scoped
+
+go 1.24
+
+-- root.go --
+// Package root documents the outer module.
+package root
+
+-- submod/go.mod --
+module example.com/scoped/submod
+
+go 1.24
+
+-- submod/submod.go --
+// Package submod is an independently versioned service.
+package submod
+
+func Serve() {}
+
+-- submod/internal/support.go --
+// Package internal provides internal support for the submodule.
+package internal
+
+func helper() {}

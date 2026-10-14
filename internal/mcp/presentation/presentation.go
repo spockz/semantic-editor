@@ -23,6 +23,13 @@ const (
 
 // CriticalText renders outcome fields before potentially large formatter output.
 func CriticalText(structured map[string]any, body string) (string, error) {
+	if result, ok := structured["result"]; ok {
+		if summary, isOutline, err := outlineSummary(result); err != nil {
+			return "", fmt.Errorf("summarize outline result: %w", err)
+		} else if isOutline {
+			body = summary
+		}
+	}
 	presentation := make(map[string]any, len(structured))
 	for key, value := range structured {
 		if key == "tool_request" {
@@ -137,6 +144,11 @@ func sanitizeVerificationPresentation(verification map[string]any) {
 }
 
 func sanitizePresentationMap(result map[string]any) {
+	if isOutlinePresentation(result) {
+		for _, key := range []string{"files", "packages", "modules", "symbols"} {
+			delete(result, key)
+		}
+	}
 	if _, bulkDiff := result["diff"].(string); bulkDiff {
 		delete(result, "diff")
 	}
@@ -156,6 +168,72 @@ func sanitizePresentationMap(result map[string]any) {
 				delete(receipt, "diff")
 			}
 		}
+	}
+}
+
+func outlineSummary(value any) (string, bool, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", false, fmt.Errorf("encode outline result: %w", err)
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return "", false, fmt.Errorf("decode outline result: %w", err)
+	}
+	result, ok := decoded.(map[string]any)
+	if !ok {
+		return "", false, nil
+	}
+	if !isOutlinePresentation(result) {
+		return "", false, nil
+	}
+	scope := result["scope"].(map[string]any)
+	path, _ := scope["path"].(string)
+	if modules, ok := result["modules"].([]any); ok {
+		packages := result["packages"].([]any)
+		return fmt.Sprintf("Workspace outline for %q: %d %s, %d %s.", path, len(modules), plural(len(modules), "module", "modules"), len(packages), plural(len(packages), "package", "packages")), true, nil
+	}
+	if files, ok := result["files"].([]any); ok {
+		symbolCount := 0
+		for _, value := range files {
+			if file, ok := value.(map[string]any); ok {
+				if symbols, ok := file["symbols"].([]any); ok {
+					symbolCount += len(symbols)
+				}
+			}
+		}
+		return fmt.Sprintf("Declaration outline for %q: %d %s, %d %s.", path, len(files), plural(len(files), "file", "files"), symbolCount, plural(symbolCount, "symbol", "symbols")), true, nil
+	}
+	symbols := result["symbols"].([]any)
+	return fmt.Sprintf("Declaration outline for %q: %d %s.", path, len(symbols), plural(len(symbols), "symbol", "symbols")), true, nil
+}
+
+func plural(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}
+
+func isOutlinePresentation(result map[string]any) bool {
+	scope, ok := result["scope"].(map[string]any)
+	if !ok {
+		return false
+	}
+	kind, _ := scope["kind"].(string)
+	switch kind {
+	case "workspace":
+		_, modules := result["modules"].([]any)
+		_, packages := result["packages"].([]any)
+		return modules && packages
+	case "directory", "selected_file":
+		if _, files := result["files"].([]any); files {
+			return true
+		}
+		_, symbols := result["symbols"].([]any)
+		return symbols
+	default:
+		return false
 	}
 }
 

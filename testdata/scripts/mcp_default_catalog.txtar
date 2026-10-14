@@ -1,0 +1,15 @@
+# The installer uses --profile full; tool discovery still defaults to base.
+stdin input.json
+exec semedit mcp --profile full --enabled-languages go
+stdout '"name":\s*"semantic_workspace_outline"'
+stdout '"name":\s*"semantic_change_signature"'
+stdout '"name":\s*"semantic_extract_function"'
+stdout '"name":\s*"semantic_set_doc_comment"'
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","method":"notifications/initialized"}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+
+-- main.go --
+package main

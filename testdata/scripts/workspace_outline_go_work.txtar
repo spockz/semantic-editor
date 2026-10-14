@@ -1,0 +1,50 @@
+# go.work reports every declared module, including an external module path
+exec mkdir ../workspace_outline_go_work_external
+exec cp .scratch/outside_fixture/go.mod ../workspace_outline_go_work_external/go.mod
+exec cp .scratch/outside_fixture/external.go ../workspace_outline_go_work_external/external.go
+exec semedit workspace-outline
+stdout 'Modules:'
+stdout '\. \(example\.com/workspace, go 1\.24\) \[root\]'
+stdout '\.\./workspace_outline_go_work_external \(example\.com/outside, go 1\.24\)'
+stdout 'modules/local \(example\.com/local, go 1\.24\)'
+stdout 'modules/local/pkg \(pkg\) — Package pkg is a local workspace package\.'
+! stdout 'externalpkg'
+
+-- go.work --
+go 1.24
+
+use (
+  .
+  ./modules/local
+  ../workspace_outline_go_work_external
+)
+
+-- go.mod --
+module example.com/workspace
+
+go 1.24
+
+-- root.go --
+// Package workspace documents the workspace module.
+package workspace
+
+-- modules/local/go.mod --
+module example.com/local
+
+go 1.24
+
+-- modules/local/pkg/pkg.go --
+// Package pkg is a local workspace package.
+package pkg
+
+func Local() {}
+
+-- .scratch/outside_fixture/go.mod --
+module example.com/outside
+
+go 1.24
+
+-- .scratch/outside_fixture/external.go --
+package externalpkg
+
+func External() {}

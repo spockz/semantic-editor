@@ -3,8 +3,10 @@ package backend
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -13,6 +15,9 @@ import (
 
 	"semedit/internal/backend/pathutil"
 	"semedit/internal/capability"
+	"semedit/internal/sourcefiles"
+
+	"golang.org/x/mod/modfile"
 )
 
 // LanguageID identifies a source language supported by a backend registry.
@@ -514,35 +519,152 @@ func (r *Registry) Select(project ProjectContext) (Backend, error) {
 }
 
 func (r *Registry) detectLanguage(project ProjectContext) (LanguageID, error) {
-	if language := LanguageIDFromFile(project.File); language != "" {
-		if language == LanguageHaskell {
-			return "", nil
-		}
-		return language, nil
+	root, target, sourceLanguage, err := resolveDetectionTarget(project)
+	if err != nil {
+		return "", err
 	}
+	if r.hasBackend(sourceLanguage) {
+		return sourceLanguage, nil
+	}
+	// An unsupported source-file selection must not fall back to an unrelated
+	// workspace manifest (for example, a Haskell file inside a Go repository).
+	if sourceLanguage != "" {
+		return "", nil
+	}
+	direct, err := r.directLanguages(target)
+	if err != nil {
+		return "", err
+	}
+	if len(direct) == 1 {
+		return direct[0], nil
+	}
+	languages, err := r.detectedLanguages(target)
+	if err != nil {
+		return "", err
+	}
+	return r.selectDetectedLanguage(root, target, languages)
+}
+
+func resolveDetectionTarget(project ProjectContext) (string, string, LanguageID, error) {
 	root := project.RootDir
 	if root == "" {
 		root = "."
 	}
-	languages, err := DetectLanguages(root)
+	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return "", fmt.Errorf("detect workspace language: %w", err)
+		return "", "", "", fmt.Errorf("resolve language detection root %q: %w", root, err)
 	}
-	var autoLanguages []LanguageID
+	canonicalRoot, err := filepath.EvalSymlinks(absRoot)
+	if err != nil {
+		return "", "", "", fmt.Errorf("resolve language detection root symlinks %q: %w", absRoot, err)
+	}
+	absRoot = canonicalRoot
+	target := absRoot
+	if project.File != "" {
+		target = project.File
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(absRoot, target)
+		}
+	}
+	target = filepath.Clean(target)
+	sourceLanguage := LanguageIDFromFile(target)
+	canonicalTarget, err := filepath.EvalSymlinks(target)
+	if err != nil && !os.IsNotExist(err) {
+		return "", "", "", fmt.Errorf("resolve language detection target symlinks %q: %w", target, err)
+	}
+	if err == nil {
+		target = canonicalTarget
+	}
+	if !pathWithin(absRoot, target) {
+		return "", "", "", fmt.Errorf("language detection target %q is outside workspace root %q", target, absRoot)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		if os.IsNotExist(err) && sourceLanguage != "" {
+			return absRoot, filepath.Dir(target), sourceLanguage, nil
+		}
+		return "", "", "", fmt.Errorf("inspect language detection target %q: %w", target, err)
+	}
+	if !targetInfo.IsDir() {
+		if sourceLanguage == "" {
+			sourceLanguage = LanguageIDFromFile(target)
+		}
+		target = filepath.Dir(target)
+	}
+	return absRoot, target, sourceLanguage, nil
+}
+
+func (r *Registry) hasBackend(language LanguageID) bool {
+	if language == "" || language == LanguageHaskell {
+		return false
+	}
+	_, ok := r.backends[language]
+	return ok
+}
+
+func (r *Registry) directLanguages(target string) ([]LanguageID, error) {
+	entries, err := os.ReadDir(target)
+	if err != nil {
+		return nil, fmt.Errorf("read language detection target %q: %w", target, err)
+	}
+	var result []LanguageID
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		language := LanguageIDFromFile(entry.Name())
+		if r.hasBackend(language) && !slices.Contains(result, language) {
+			result = append(result, language)
+		}
+	}
+	return result, nil
+}
+
+func (r *Registry) detectedLanguages(target string) ([]LanguageID, error) {
+	languages, err := DetectLanguages(target)
+	if err != nil {
+		return nil, fmt.Errorf("detect languages under target %q: %w", target, err)
+	}
+	var result []LanguageID
 	for _, language := range languages {
-		if _, registered := r.backends[language]; registered && language != LanguageHaskell {
-			autoLanguages = append(autoLanguages, language)
+		if r.hasBackend(language) {
+			result = append(result, language)
 		}
 	}
-	if slices.Contains(autoLanguages, LanguageGo) {
-		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
-			return LanguageGo, nil
-		}
+	return result, nil
+}
+
+func (r *Registry) selectDetectedLanguage(root, target string, languages []LanguageID) (LanguageID, error) {
+	goSource := slices.Contains(languages, LanguageGo)
+	javaSource := slices.Contains(languages, LanguageJava)
+	if goSource && !javaSource {
+		return LanguageGo, nil
 	}
-	if len(autoLanguages) != 1 {
-		return "", nil
+	if javaSource && !goSource {
+		return LanguageJava, nil
 	}
-	return autoLanguages[0], nil
+	boundary, err := discoveryBoundary(target)
+	if err != nil {
+		return "", err
+	}
+	goContext, err := goWorkspaceContext(boundary, target, root)
+	if err != nil {
+		return "", err
+	}
+	if goSource || goContext {
+		return LanguageGo, nil
+	}
+	javaContext, err := javaWorkspaceContext(boundary, target)
+	if err != nil {
+		return "", err
+	}
+	if javaSource || javaContext {
+		return LanguageJava, nil
+	}
+	if len(languages) == 1 {
+		return languages[0], nil
+	}
+	return "", nil
 }
 
 // Service is the ingress-facing orchestration boundary shared by CLI and MCP.
@@ -659,4 +781,163 @@ func PositionFromByteOffset(source []byte, offset int) Position {
 		}
 	}
 	return Position{Line: line, Character: UTF16Length(string(source[lineStart:offset]))}
+}
+
+func pathWithin(parent, child string) bool {
+	rel, err := filepath.Rel(parent, child)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func discoveryBoundary(target string) (string, error) {
+	target, err := filepath.Abs(target)
+	if err != nil {
+		return "", fmt.Errorf("resolve discovery target %q: %w", target, err)
+	}
+	for dir := target; ; dir = filepath.Dir(dir) {
+		marker := filepath.Join(dir, ".git")
+		if _, err := os.Stat(marker); err == nil {
+			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("inspect repository boundary %q: %w", marker, err)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return dir, nil
+		}
+	}
+}
+
+func goWorkspaceContext(root, target, scopeRoot string) (bool, error) {
+	stopAt := root
+	if ignoredBoundary := ignoredScopeBoundary(root, scopeRoot); ignoredBoundary != "" {
+		stopAt = ignoredBoundary
+	}
+	for dir := target; ; dir = filepath.Dir(dir) {
+		modulePath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(modulePath); err == nil {
+			if dir == scopeRoot && target == scopeRoot {
+				return false, nil
+			}
+			return true, nil
+		} else if !os.IsNotExist(err) {
+			return false, fmt.Errorf("inspect Go module manifest %q: %w", modulePath, err)
+		}
+		workPath := filepath.Join(dir, "go.work")
+		data, err := readFileWithin(root, workPath)
+		if err == nil {
+			work, parseErr := modfile.ParseWork(workPath, data, nil)
+			if parseErr != nil {
+				return false, fmt.Errorf("parse Go workspace manifest %q: %w", workPath, parseErr)
+			}
+			for _, use := range work.Use {
+				moduleDir := use.Path
+				if !filepath.IsAbs(moduleDir) {
+					moduleDir = filepath.Join(dir, moduleDir)
+				}
+				moduleDir = filepath.Clean(moduleDir)
+				if pathWithin(moduleDir, target) || pathWithin(target, moduleDir) || target == dir {
+					return true, nil
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return false, fmt.Errorf("read Go workspace manifest %q: %w", workPath, err)
+		}
+		if dir == stopAt {
+			break
+		}
+	}
+	return false, nil
+}
+
+func javaWorkspaceContext(root, target string) (bool, error) {
+	stopAt := root
+	if ignoredBoundary := ignoredScopeBoundary(root, target); ignoredBoundary != "" {
+		stopAt = ignoredBoundary
+	}
+	for dir := target; ; dir = filepath.Dir(dir) {
+		for _, name := range []string{"build.gradle", "build.gradle.kts"} {
+			marker := filepath.Join(dir, name)
+			if _, err := os.Stat(marker); err == nil {
+				return true, nil
+			} else if !os.IsNotExist(err) {
+				return false, fmt.Errorf("inspect Java build marker %q: %w", marker, err)
+			}
+		}
+		pomPath := filepath.Join(dir, "pom.xml")
+		data, err := readFileWithin(root, pomPath)
+		if err == nil {
+			var pom struct {
+				Modules []string `xml:"modules>module"`
+			}
+			if decodeErr := xml.Unmarshal(data, &pom); decodeErr != nil {
+				return false, fmt.Errorf("parse Maven manifest %q: %w", pomPath, decodeErr)
+			}
+			if target == dir {
+				return true, nil
+			}
+			for _, module := range pom.Modules {
+				moduleDir := filepath.Clean(filepath.Join(dir, module))
+				if pathWithin(moduleDir, target) || pathWithin(target, moduleDir) {
+					return true, nil
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return false, fmt.Errorf("read Maven manifest %q: %w", pomPath, err)
+		}
+		if dir == stopAt {
+			break
+		}
+	}
+	return false, nil
+}
+
+func ignoredScopeBoundary(root, scope string) string {
+	rel, err := filepath.Rel(root, scope)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	dir := root
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		if part == "." || part == "" {
+			continue
+		}
+		next := filepath.Join(dir, part)
+		if sourcefiles.IsIgnoredDirectory(part) {
+			return next
+		}
+		dir = next
+	}
+	return ""
+}
+
+func readFileWithin(root, path string) ([]byte, error) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("path %q is outside discovery root %q", path, root)
+	}
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open discovery root %q: %w", root, err)
+	}
+	file, openErr := rootFS.Open(rel)
+	if openErr != nil {
+		closeErr := rootFS.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("close discovery root %q: %w", root, closeErr)
+		}
+		return nil, openErr
+	}
+	data, readErr := io.ReadAll(file)
+	fileCloseErr := file.Close()
+	rootCloseErr := rootFS.Close()
+	if readErr != nil {
+		return nil, readErr
+	}
+	if fileCloseErr != nil {
+		return nil, fileCloseErr
+	}
+	if rootCloseErr != nil {
+		return nil, rootCloseErr
+	}
+	return data, nil
 }

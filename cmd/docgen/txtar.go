@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,36 +19,30 @@ func extractTxtarExamples(rootDir string) ([]TxtarExample, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read scripts dir: %w", err)
 	}
-
 	var examples []TxtarExample
-
+	var failures []error
 	for _, file := range files {
 		if !strings.HasSuffix(file.Name(), ".txtar") {
 			continue
 		}
-
 		cleanFilePath := filepath.Clean(filepath.Join(scriptsDir, file.Name()))
 		// #nosec G304 -- reading verified test archive for example synthesis
 		content, err := os.ReadFile(cleanFilePath)
 		if err != nil {
-			return nil, fmt.Errorf("read txtar example %s: %w", cleanFilePath, err)
+			failures = append(failures, fmt.Errorf("read txtar example %s: %w", cleanFilePath, err))
+			continue
 		}
-
 		ex, parseErr := parseTxtarFile(file.Name(), string(content))
 		if parseErr != nil {
-			return nil, fmt.Errorf("parse txtar example %s: %w", file.Name(), parseErr)
+			failures = append(failures, fmt.Errorf("parse txtar example %s: %w", file.Name(), parseErr))
+			continue
 		}
 		if ex != nil {
 			examples = append(examples, *ex)
 		}
 	}
-
-	// Sort examples with specialized and declaration first
-	slices.SortFunc(examples, func(a, b TxtarExample) int {
-		return cmp.Compare(a.Filename, b.Filename)
-	})
-
-	return examples, nil
+	slices.SortFunc(examples, func(a, b TxtarExample) int { return cmp.Compare(a.Filename, b.Filename) })
+	return examples, errors.Join(failures...)
 }
 
 func parseTxtarFile(filename string, content string) (*TxtarExample, error) {
@@ -259,10 +254,15 @@ func firstTxtarExampleFiles(files map[string]string, outputs []TxtarFileOutput) 
 			outputContent: first.Content, diff: first.DiffLines,
 		}
 	}
-	for name, content := range files {
+	names := make([]string, 0, len(files))
+	for name := range files {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	for _, name := range names {
 		ext := filepath.Ext(name)
 		if (ext == ".go" || ext == ".java" || ext == ".rs" || ext == ".scala" || ext == ".kt" || ext == ".hs" || ext == ".sh" || name == "Makefile") && !strings.HasPrefix(name, "want") {
-			return txtarFirstFiles{input: name, inputContent: content}
+			return txtarFirstFiles{input: name, inputContent: files[name]}
 		}
 	}
 	return txtarFirstFiles{}

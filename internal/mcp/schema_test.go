@@ -41,7 +41,7 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 	root := schemaWorkspace(t)
 	base := toolsForOptions(t, root, mcp.WithToolProfile("base"))
 	baseNames := toolNameSet(base)
-	for _, name := range []string{"semantic_insert_construct", "semantic_replace_construct", "semantic_remove_construct", "semantic_move_construct", "semantic_rename", "semantic_lookup", "semantic_inspect_symbol", "semantic_outline", "semantic_find_references", "semantic_verify", "semantic_batch", "semantic_snapshot", "semantic_undo"} {
+	for _, name := range []string{"semantic_insert_construct", "semantic_replace_construct", "semantic_remove_construct", "semantic_move_construct", "semantic_rename", "semantic_lookup", "semantic_inspect_symbol", "semantic_outline", "semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment", "semantic_find_references", "semantic_verify", "semantic_batch", "semantic_snapshot", "semantic_undo"} {
 		if !baseNames[name] {
 			t.Errorf("base tools/list omitted %s", name)
 		}
@@ -53,9 +53,21 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 	}
 
 	full := toolNameSet(toolsForOptions(t, root, mcp.WithToolProfile("full")))
-	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body"} {
+	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body", "semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
 		if !full[name] {
 			t.Errorf("full tools/list omitted %s", name)
+		}
+	}
+
+	mutationsOnly := toolNameSet(toolsForProfile(t, "mutations-only", root, mcp.WithToolProfile("base")))
+	for _, name := range []string{"semantic_workspace_outline", "semantic_find_references", "semantic_lookup"} {
+		if mutationsOnly[name] {
+			t.Errorf("mutations-only tools/list exposed read-only %s", name)
+		}
+	}
+	for _, name := range []string{"semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+		if !mutationsOnly[name] {
+			t.Errorf("mutations-only tools/list omitted mutation %s", name)
 		}
 	}
 
@@ -75,6 +87,38 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 		}
 		if len(got) != len(baseNames)+len(test.want) {
 			t.Errorf("patterns %v exposed %d tools; base %d plus %d variants expected", test.patterns, len(got), len(baseNames), len(test.want))
+		}
+	}
+}
+
+func TestMCPDefaultToolCatalogAfterInitialize(t *testing.T) {
+	t.Parallel()
+	root := schemaWorkspace(t)
+	requests := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"catalog-test","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+	}, "\n") + "\n"
+	var out bytes.Buffer
+	if err := mcptest.NewServer(t, "full", root, &out).Serve(context.Background(), strings.NewReader(requests)); err != nil {
+		t.Fatalf("MCP initialize/tools/list failed: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("MCP responses = %d, want initialize and tools/list: %s", len(lines), out.String())
+	}
+	var listed struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &listed); err != nil {
+		t.Fatal(err)
+	}
+	names := toolNameSet(listed.Result.Tools)
+	for _, name := range []string{"semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+		if !names[name] {
+			t.Errorf("default tools/list omitted %s", name)
 		}
 	}
 }
@@ -146,10 +190,14 @@ func TestMCPBaseCatalogStillDispatchesSpecializedBatchChild(t *testing.T) {
 }
 
 func toolsForOptions(t *testing.T, root string, options ...mcp.Option) []map[string]any {
+	return toolsForProfile(t, "full", root, options...)
+}
+
+func toolsForProfile(t *testing.T, profile, root string, options ...mcp.Option) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
 	request := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
-	if err := mcptest.NewServer(t, "full", root, &out, options...).Serve(context.Background(), strings.NewReader(request)); err != nil {
+	if err := mcptest.NewServer(t, profile, root, &out, options...).Serve(context.Background(), strings.NewReader(request)); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -233,15 +281,11 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 	if len(description) > 500 {
 		t.Fatalf("file parameter description is %d bytes, exceeds 500-byte budget: %s", len(description), description)
 	}
-	for _, source := range []string{
-		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
-		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_insert_declaration", "semantic_insert_construct", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
-	} {
-		if !strings.Contains(description, source) {
-			t.Errorf("file description %q omitted relevant source tool %s", description, source)
-		}
+	if !strings.Contains(description, "Copy file from a resolved preceding result") {
+		t.Errorf("file description %q omitted the continuation handoff guidance", description)
+	}
+	if strings.Contains(description, "semantic_") {
+		t.Errorf("file description %q enumerates continuation routing", description)
 	}
 	t.Logf("semantic_insert_function.file continuation description: %d bytes", len(description))
 	for _, candidate := range listTools(t, "full") {
@@ -250,12 +294,35 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 		}
 		props := candidate["inputSchema"].(map[string]any)["properties"].(map[string]any)
 		symbolDescription := props["symbol"].(map[string]any)["description"].(string)
-		if !strings.Contains(symbolDescription, "semantic_insert_function") {
-			t.Fatalf("replace_body.symbol description omitted insert_function continuation: %s", symbolDescription)
+		if !strings.Contains(symbolDescription, "Copy symbol from a resolved preceding result") || strings.Contains(symbolDescription, "semantic_insert_function") {
+			t.Fatalf("replace_body.symbol description is not concise continuation guidance: %s", symbolDescription)
 		}
 		return
 	}
 	t.Fatal("tools/list omitted semantic_replace_body")
+}
+
+func TestMCPToolDescriptionsCondenseFaultContracts(t *testing.T) {
+	t.Parallel()
+	var sawMixedFaultRule, sawConditionalRule bool
+	for _, tool := range listTools(t, "full") {
+		description := tool["description"].(string)
+		if strings.Contains(description, "masks:") || strings.Contains(description, "exact cases:") {
+			t.Errorf("%s description exposes a fault matrix encoding: %s", tool["name"], description)
+		}
+		if strings.Contains(description, "mixed faults follow the declared fault matrix") {
+			sawMixedFaultRule = true
+		}
+		if strings.Contains(description, "conditional when") {
+			sawConditionalRule = true
+		}
+	}
+	if !sawMixedFaultRule {
+		t.Fatal("tool descriptions omitted the mixed-fault classification caveat")
+	}
+	if !sawConditionalRule {
+		t.Fatal("tool descriptions omitted conditional tolerance details")
+	}
 }
 
 func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
@@ -1461,6 +1528,11 @@ func TestMCPEnabledLanguagesFilterMixedAndSourceLessWorkspaces(t *testing.T) {
 	if !byName["semantic_replace_construct"] {
 		t.Fatal("Go construct tool missing from enabled mixed workspace")
 	}
+	for _, name := range []string{"semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+		if !byName[name] {
+			t.Errorf("Go-capable %s missing from enabled mixed workspace", name)
+		}
+	}
 	if byName["semantic_maven_compile"] {
 		t.Fatal("Java-only Maven tool exposed when only Go is enabled")
 	}
@@ -1769,17 +1841,7 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	for _, tool := range listTools(t, "full") {
 		tools[tool["name"].(string)] = tool
 	}
-	fileSources := []string{
-		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
-		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_insert_declaration", "semantic_insert_construct", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
-	}
-	inFunctionSources := []string{
-		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_construct",
-	}
-	discriminatorSources := []string{"semantic_insert_case", "semantic_insert_construct"}
-	assertSources := func(toolName, parameter string, sources []string) {
+	assertGuidance := func(toolName, parameter string) {
 		t.Helper()
 		tool, ok := tools[toolName]
 		if !ok {
@@ -1794,14 +1856,14 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s.%s has no description", toolName, parameter)
 		}
-		for _, source := range sources {
-			if !strings.Contains(description, source) {
-				t.Errorf("%s.%s description omitted %s: %s", toolName, parameter, source, description)
-			}
+		if !strings.Contains(description, "resolved preceding result") {
+			t.Errorf("%s.%s description omitted continuation guidance: %s", toolName, parameter, description)
+		}
+		if strings.Contains(description, "semantic_") {
+			t.Errorf("%s.%s description enumerates continuation routing: %s", toolName, parameter, description)
 		}
 	}
-	assertSources("semantic_insert_decl", "file", fileSources)
-	assertSources("semantic_insert_decl", "file", []string{"Receipt file from semantic_extract_function"})
+	assertGuidance("semantic_insert_decl", "file")
 	for _, toolName := range []string{"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable"} {
 		entry, ok := operation.DefaultRegistry().LookupMCP(toolName)
 		if !ok {
@@ -1812,11 +1874,11 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 				t.Errorf("%s.symbol creation name declares source fields: %v", toolName, param.SourceFields)
 			}
 		}
-		assertSources(toolName, "in_function", inFunctionSources)
+		assertGuidance(toolName, "in_function")
 	}
-	for _, tool := range inFunctionSources {
-		assertSources(tool, "in_function", inFunctionSources)
-		assertSources(tool, "discriminator", discriminatorSources)
+	for _, tool := range []string{"semantic_replace_construct", "semantic_insert_case", "semantic_insert_construct"} {
+		assertGuidance(tool, "in_function")
+		assertGuidance(tool, "discriminator")
 	}
 }
 

@@ -50,6 +50,9 @@ func (r *Registry) installLanguageContracts() error {
 }
 
 func registeredLanguageContract(key string, language backend.LanguageID) (capability.OperationContract, bool) {
+	if key == "workspace_outline" && (language == backend.LanguageGo || language == backend.LanguageJava) {
+		return autoOperationContract(key)
+	}
 	switch language {
 	case backend.LanguageGo:
 		return goOperationContract(key)

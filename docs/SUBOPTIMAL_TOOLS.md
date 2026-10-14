@@ -1,5 +1,45 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-14: peer-review process exited before returning a review
+
+* Tool: `codex_ask`.
+* Target: documentation error aggregation changes in `cmd/docgen`.
+* Observed failure: Codex process exited with status 1 after reading the prompt; no review was returned.
+* Workaround: use the existing read-only Terra reviewer and continue the explicit lint fixes.
+* Root cause: unavailable peer-review process; no further diagnostics were supplied.
+
+## 2026-10-14: body replacement omitted standard-library imports
+
+* Tool: `semedit-next replace-body`.
+* Target: `cmd/docgen/main.go`, `cmd/docgen/txtar.go`, and `cmd/docgen/benchmarks.go`.
+* Observed failure: replacement bodies referencing `errors.Join`, `json.RawMessage`, and `filepath.Join` were published without their imports; `make check` caught undefined identifiers.
+* Workaround: explicitly add the missing packages with the semantic import organizer, then rerun checks.
+* Root cause: body replacement does not guarantee import inference for newly referenced packages.
+
+## 2026-10-14: replacement rejected a concurrent file publication
+
+* Tool: `semedit-next replace-body`, `writeReferenceDocumentation`.
+* Target: `cmd/docgen/main.go`.
+* Observed failure: orphan-import pruning rejected changed identity or permissions of `benchmark_aggregate.go` after an independent embedded JavaScript edit; no body replacement was published.
+* Workaround: retry sequentially after the JavaScript publication completes.
+* Root cause: semantic verification tracks other package files, so changes to different files in the same package cannot overlap.
+
+## 2026-10-14: function insertion CLI spelling rejected
+
+* Tool: `semedit-next insert-function`.
+* Target: `cmd/docgen`.
+* Observed failure: unknown command; no mutation occurred.
+* Workaround: use the advertised `insert` command for top-level declarations.
+* Root cause: specialized MCP operation name has no matching CLI subcommand.
+
+## 2026-10-14: workspace outline CLI spelling rejected
+
+* Tool: `semedit-next semantic_workspace_outline`.
+* Target: `cmd/docgen`.
+* Observed failure: unknown command; no mutation occurred.
+* Workaround: use `workspace-outline`, the CLI command shown by help.
+* Root cause: MCP operation spelling was supplied to the CLI.
+
 ## 2026-10-13: replace-construct could not select a nested install callback
 
 * Tool: `semantic_replace_construct`.
@@ -6905,3 +6945,59 @@ A second hunk for the same txtar newline cleanup also failed to match the blank-
 `semantic_inspect_symbol` could not find `publishJavaResourceRename` or `prepareJavaWorkspaceEdits` in `internal/backend/java/codeactions.go`. No source mutation occurred. The symbols are shared backend helpers in another file; locate them with `semantic_lookup` before inspection.
 
 `semantic_inspect_symbol` could not resolve `JavaBackend.startJavaSessionLocked` in `internal/backend/java/java.go`. No source mutation occurred. The session initializer is named differently; use `semantic_lookup` to find the actual method before inspection.
+
+## RQ-0069 navigation failure (2026-10-13)
+
+* Tool: `semantic_outline`
+* Target: `cmd/docgen/txtar_test.go`
+* Observed failure: the selected file does not exist.
+* Workaround: enumerate actual test filenames before requesting a declaration outline.
+* Root cause: caller guessed the test filename rather than checking the repository inventory.
+
+## RQ-0069 CLI import resolution failure (2026-10-13)
+
+* Tool: `semantic_replace_body` through the CLI.
+* Target: `cmd/docgen/txtar.go`, `firstTxtarExampleFiles`.
+* Observed failure: orphan-import pruning could not resolve the standard library package `cmp` and refused publication.
+* Workaround: retry using the repository's configured Go environment and populated toolchain cache.
+* Root cause: the direct CLI process did not inherit the Makefile's isolated Go environment.
+
+The retry with the configured Go environment also refused `cmp` resolution. No source publication occurred. Use a targeted patch to sort candidate fixture filenames before source selection; the import-pruning path cannot resolve this valid standard library import in this session.
+
+## RQ-0069 advertised expression replacement rejected (2026-10-13)
+
+* Tool: `semantic_replace_construct`.
+* Target: `cmd/docgen/main_test.go`, `TestPolyglotTxtarDocumentationIsDeterministic`.
+* Observed failure: the live MCP server rejected the advertised Go `expression` kind.
+* Workaround: apply a targeted correction to the expected trimmed source string.
+* Root cause: the running server's supported construct kinds differ from its description.
+
+## RQ-0069 dispatch inspection miss (2026-10-13)
+
+* Tool: `semantic_inspect_symbol` through the CLI.
+* Target: `internal/operation/dispatch.go`, `dispatchWire`.
+* Observed failure: no declaration matches that name.
+* Workaround: obtain declaration names from an outline before inspection.
+* Root cause: caller guessed an internal helper name.
+
+The same inspection mistake requested `presentationValue` in `internal/mcp/presentation/presentation.go`, where the helper is named `essentialPresentationValue`. No mutation occurred; use the actual name from `CriticalText` before further inspection.
+
+The CLI inspection also requested the nonexistent `prepareReadProjectContext` in `internal/operation/wire_read_project.go`. No mutation occurred. Enumerate that file's declarations before inspecting its actual project preparation function.
+
+## RQ-0069 semantic batch diagnostics timeout (2026-10-13)
+
+* Tool: `semantic_batch`.
+* Target: `internal/capability/contract_model.go` and `internal/mcp/server.go` in the schema worktree.
+* Observed failure: pre-edit Go diagnostics for `internal/operation/wire_backend.go` exceeded the request deadline. No edits occurred.
+* Workaround: apply the smallest targeted edits after verifying that the batch left the worktree unchanged.
+* Root cause: workspace-wide pre-edit diagnostics exceeded the tool's deadline in this large workspace.
+
+## RQ-0069 construct insertion and parameter failures (2026-10-14)
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/backend/backend.go` in the discovery worktree.
+* Observed failure: multiple helper declarations in one source value were rejected because function insertion accepts exactly one declaration. No mutation occurred.
+* Workaround: insert each helper separately.
+* Root cause: caller supplied several declarations to a single-construct operation.
+
+`semantic_replace_construct` also rejected an unsupported `language` parameter while targeting `goWorkspaceContext` in that file. No mutation occurred. Retry without the parameter; the operation selects Go from the source file.

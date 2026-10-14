@@ -1,0 +1,34 @@
+# Scoped Java workspace outline skips an unrelated malformed Maven sibling.
+exec semedit workspace-outline --language java --path core
+stdout 'Modules:'
+stdout 'core \(com\.acme:core:1\.0, jar\)'
+stdout 'core/com/acme \(com\.acme\)'
+! stdout 'api'
+
+! semedit workspace-outline --language java
+stderr 'parse Maven module POM.*api/pom\.xml'
+
+-- pom.xml --
+<project>
+  <groupId>com.acme</groupId>
+  <artifactId>root</artifactId>
+  <version>1.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>core</module>
+    <module>api</module>
+  </modules>
+</project>
+
+-- core/pom.xml --
+<project>
+  <parent><groupId>com.acme</groupId><version>1.0</version></parent>
+  <artifactId>core</artifactId>
+</project>
+
+-- core/src/main/java/com/acme/Core.java --
+package com.acme;
+class Core {}
+
+-- api/pom.xml --
+<project>

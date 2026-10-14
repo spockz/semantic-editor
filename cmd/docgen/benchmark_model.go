@@ -246,4 +246,5 @@ type benchmarkDocumentation struct {
 	Aggregates       string
 	AggregateDetails []benchmarkAggregatePage
 	Runs             []benchmarkDocumentationRun
+	BrowserRows      []map[string]json.RawMessage
 }

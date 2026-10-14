@@ -26,10 +26,10 @@ We introduce a dedicated, zero-token read operation: **`workspace_outline`** (`s
    * Single-line package synopsis extracted from `doc.go` or package doc comments.
    * Total source file count.
 3. **Module Manifest Discovery**:
-   The engine discovers all module boundary manifests (`go.mod` files) across the repository and classifies them into the root module versus nested submodules, recording their declared module path and language version.
+   Auto mode aggregates supported Go and Java ecosystems without making their presence mutually exclusive. Explicit language selection restricts discovery to that backend. Go discovery reads module manifests and `go.work` use directives. Scoped requests report the nearest enclosing module and nested modules within the requested subtree, with packages attributed to their exact owning module. Modules carry synopses, documentation, language ownership, and package counts for the selected scope.
 4. **Dual Output Delivery**:
-   * **Command-Line Interface (CLI) and Model Context Protocol (MCP) Text Content**: Emits clean, depth-ordered lines mimicking `ls`, minimising token consumption (~10 tokens per package) and allowing linear Large Language Model (LLM) attention scanning.
-   * **Structured MCP Schema**: Returns typed `WorkspaceOutlineResult` for automated harnesses and programmatic clients.
+   * **Command-Line Interface (CLI)**: Emits depth-ordered package lines and module coordinates with synopses; mixed results identify their languages.
+   * **Model Context Protocol (MCP)**: Returns complete records once in structured content. Text contains a concise summary and critical scope/status metadata without repeating bulk arrays or serialized result strings. Declaration outlines follow the same projection boundary.
 5. **Bidirectional Navigation Integration**:
    * MCP server prescriptive instructions recommend `semantic_workspace_outline` as the primary starting orientation tool before inspecting declarations or mutating code.
    * `semantic_outline` refers callers to `semantic_workspace_outline` to determine candidate package directories.
@@ -40,6 +40,10 @@ We introduce a dedicated, zero-token read operation: **`workspace_outline`** (`s
 * Package discovery respects standard directory exclusions (`.git`, `.scratch`, `vendor`, `node_modules`, `.cache`, build targets).
 * Depth ordering is deterministic: packages at shallower directory depths strictly precede deeper packages.
 * Discovery fails closed on unreadable or non-directory target paths.
+* Parent manifest ascent stops at the applicable repository boundary. Broad input paths never change the precision of module ownership in results.
+* Discovery errors propagate with backend context; a failed backend never becomes an apparently complete empty result.
+* Isolated documentation examples do not activate repository-wide Java discovery without a Java build manifest; an explicitly selected example directory can discover its sources.
+* Reading `go.work` never authorizes creating or changing a workspace manifest.
 
 ## Consequences
 

@@ -1,0 +1,89 @@
+# Automatic workspace discovery combines the root Go module and nested Maven reactor
+exec semedit workspace-outline
+stdout 'Packages:'
+stdout 'cmd \(cmd\) \[go\] — Package cmd is the command entry point\.'
+stdout 'go \(worker\) \[go\] — Package worker owns the Go subtree\.'
+stdout 'java/client/com/example/client \(com\.example\.client\) \[java\] — Client API contracts\.'
+stdout 'Modules:'
+stdout '\. \(example\.com/polyglot, go 1\.24\) \[root\] \[go\]'
+stdout 'java \(com\.example:polyglot-java:1\.0\.0, pom\) \[java\]'
+stdout 'java/client \(com\.example:polyglot-client:1\.0\.0, jar\) \[java\]'
+
+# MCP exposes the complete structured module and package contract.
+stdin outline.json
+exec semedit mcp
+stdout 'Critical result \(JSON\):'
+stdout '"language":"java"'
+stdout '"module":"com\.example:polyglot-client"'
+stdout '"synopsis":"Coordinates modules in this polyglot workspace\."'
+stdout '"doc":"Coordinates modules in this polyglot workspace\."'
+stdout '"packages_count":1'
+stdout '"packages_count":0'
+stdout '"language":"go"'
+stdout '"module":"example\.com/polyglot"'
+stdout '"packages_count":2'
+
+# Explicit language selection returns only that backend's packages and modules
+exec semedit workspace-outline --language go
+stdout 'go \(worker\) — Package worker owns the Go subtree\.'
+! stdout 'java/client/com/example/client'
+! stdout 'com\.example:polyglot'
+
+exec semedit workspace-outline --language java
+stdout 'java/client/com/example/client \(com\.example\.client\) — Client API contracts\.'
+stdout 'java \(com\.example:polyglot-java:1\.0\.0, pom\)'
+! stdout 'go \(worker\)'
+! stdout 'example\.com/polyglot'
+
+# Automatic selection also recognizes a Go ownership subtree beneath the root module
+exec semedit workspace-outline --path go
+stdout 'go \(worker\) — Package worker owns the Go subtree\.'
+! stdout 'cmd \(cmd\)'
+! stdout 'java/client/com/example/client'
+
+-- go.mod --
+module example.com/polyglot
+
+go 1.24
+
+-- cmd/main.go --
+// Package cmd is the command entry point.
+package cmd
+
+func Main() {}
+
+-- go/worker.go --
+// Package worker owns the Go subtree.
+package worker
+
+func Run() {}
+
+-- java/pom.xml --
+<project>
+  <groupId>com.example</groupId>
+  <artifactId>polyglot-java</artifactId>
+  <name>Polyglot Reactor</name>
+  <description>Coordinates modules in this polyglot workspace.</description>
+  <version>1.0.0</version>
+  <packaging>pom</packaging>
+  <modules>
+    <module>client</module>
+  </modules>
+</project>
+
+-- java/client/pom.xml --
+<project>
+  <parent><groupId>com.example</groupId><version>1.0.0</version></parent>
+  <artifactId>polyglot-client</artifactId>
+</project>
+
+-- java/client/src/main/java/com/example/client/package-info.java --
+/** Client API contracts. */
+package com.example.client;
+
+-- java/client/src/main/java/com/example/client/Client.java --
+package com.example.client;
+public final class Client {}
+
+-- outline.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_workspace_outline","arguments":{}}}

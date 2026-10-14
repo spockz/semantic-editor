@@ -2,9 +2,19 @@
 
 This reference provides concrete patterns and workflows for executing Go refactorings with `semedit` primitives. Read this document only when refactoring or modifying Go source files.
 
+The default MCP base catalog includes `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment`; `--tool-profile full` exposes all registered tools. The execution profile `mutations-only` independently removes read-only tools, including workspace outline.
+
 When scripting semedit harness setup from a Go project, use `--json` with `install`, `integration status`, or `uninstall` for structured administrative output. Semantic operation output is unchanged.
 
 ---
+
+## Workspace discovery
+
+Start with `semantic_workspace_outline`. Auto mode aggregates supported Go and Java ecosystems in mixed repositories. Pass `language: "go"` to discover only Go packages and modules. A `path` such as `internal/api` scopes package discovery while resolving its nearest enclosing module; a nested module path reports that module and any modules below it rather than unrelated root modules.
+
+Go discovery reads `go.work` use directives without changing the workspace manifest. Module records include documentation from comments before the `module` directive, falling back to root package documentation, and counts of packages in the requested scope. Package records carry `module` and `language` ownership. Use these records to choose the exact source scope for subsequent lookup and edits; do not infer ownership from directory names alone.
+
+MCP outline text carries a concise summary and critical metadata. Read the complete package/module and declaration arrays from `structuredContent`; they do not repeat in the text projection.
 
 ## Publication and verification
 

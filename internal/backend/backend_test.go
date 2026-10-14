@@ -13,6 +13,7 @@ import (
 
 	"semedit/internal/backend"
 	gobackend "semedit/internal/backend/golang"
+	javabackend "semedit/internal/backend/java"
 	"semedit/internal/backends"
 )
 
@@ -156,6 +157,91 @@ func TestRegistryAutoSelectionIgnoresDetectedLanguagesWithoutBackends(t *testing
 		t.Fatalf("detected languages = %v, want Go and Make", detected)
 	}
 	selected, err := registry.Select(backend.ProjectContext{RootDir: root})
+	if err != nil || selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto selection = %v, backend = %v; want Go backend", err, selected)
+	}
+}
+
+func TestRegistryAutoSelectionUsesLocalJavaBeforeNestedGo(t *testing.T) {
+	root := t.TempDir()
+	javaScope := filepath.Join(root, "java")
+	if err := os.MkdirAll(filepath.Join(javaScope, "nested", "go"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, contents := range map[string]string{
+		filepath.Join(javaScope, "App.java"):                "class App {}\n",
+		filepath.Join(javaScope, "nested", "go", "go.mod"):  "module example.test/nested\n\ngo 1.25\n",
+		filepath.Join(javaScope, "nested", "go", "main.go"): "package main\n",
+	} {
+		if err := os.WriteFile(name, []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend(), javabackend.NewJavaBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := registry.Select(backend.ProjectContext{RootDir: root, File: "java"})
+	if err != nil || selected.Language() != backend.LanguageJava {
+		t.Fatalf("auto selection = %v, backend = %v; want local Java backend", err, selected)
+	}
+}
+
+func TestRegistryAutoSelectionFindsEnclosingGoModuleForWorkspaceSubtree(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/root\n\ngo 1.25\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	subtree := filepath.Join(root, "empty")
+	if err := os.Mkdir(subtree, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := registry.Select(backend.ProjectContext{RootDir: subtree})
+	if err != nil || selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto selection = %v, backend = %v; want enclosing Go backend", err, selected)
+	}
+}
+
+func TestRegistryAutoSelectionFindsRootMavenProject(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend(), javabackend.NewJavaBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := registry.Select(backend.ProjectContext{RootDir: root})
+	if err != nil || selected.Language() != backend.LanguageJava {
+		t.Fatalf("auto selection = %v, backend = %v; want Java backend", err, selected)
+	}
+}
+
+func TestRegistryAutoSelectionGoScopeIgnoresMalformedJavaManifest(t *testing.T) {
+	root := t.TempDir()
+	goScope := filepath.Join(root, "go")
+	javaScope := filepath.Join(root, "java")
+	if err := os.MkdirAll(goScope, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(javaScope, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(goScope, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(javaScope, "pom.xml"), []byte("<project>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := registry.Select(backend.ProjectContext{RootDir: root, File: "go"})
 	if err != nil || selected.Language() != backend.LanguageGo {
 		t.Fatalf("auto selection = %v, backend = %v; want Go backend", err, selected)
 	}

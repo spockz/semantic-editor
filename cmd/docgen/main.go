@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -72,10 +73,14 @@ func removeStaleDocumentation(outputDir string) error {
 	for _, stalePath := range []string{
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
+		filepath.Join(outputDir, "content", "docs", "getting-started.md"),
 		filepath.Join(outputDir, "content", "docs", "reference"),
+		filepath.Join(outputDir, "content", "docs", "reference.md"),
 		filepath.Join(outputDir, "content", "docs", "benchmarks.md"),
 		filepath.Join(outputDir, "content", "docs", "benchmarks"),
 		filepath.Join(outputDir, "data", "landing.yaml"),
+		filepath.Join(outputDir, "static", "data", "benchmarks.json"),
+		filepath.Join(outputDir, "static", "data", "benchmarks", "runs"),
 	} {
 		if err := os.RemoveAll(stalePath); err != nil {
 			return fmt.Errorf("removing stale documentation output: %w", err)
@@ -85,29 +90,38 @@ func removeStaleDocumentation(outputDir string) error {
 }
 
 func generateDocumentation(rootDir, outputDir string, enableRSS bool) error {
+	var failures []error
 	capabilities, placements, capabilitiesErr := extractCodeCapabilities(rootDir)
 	if capabilitiesErr != nil {
-		return fmt.Errorf("extracting code capabilities: %w", capabilitiesErr)
+		failures = append(failures, fmt.Errorf("extracting code capabilities: %w", capabilitiesErr))
 	}
 	examples, examplesErr := extractTxtarExamples(rootDir)
 	if examplesErr != nil {
-		return fmt.Errorf("extracting txtar examples: %w", examplesErr)
+		failures = append(failures, fmt.Errorf("extracting txtar examples: %w", examplesErr))
 	}
-	if writeErr := writeReferenceDocumentation(outputDir, capabilities, placements, examples); writeErr != nil {
-		return writeErr
+	if capabilitiesErr == nil {
+		if err := writeReferenceDocumentation(outputDir, capabilities, placements, examples); err != nil {
+			failures = append(failures, err)
+		}
+	}
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "getting-started.md"), []byte(renderGettingStarted())); err != nil {
+		failures = append(failures, fmt.Errorf("writing getting started output: %w", err))
 	}
 	documentation, renderErr := renderBenchmarkDocumentation(rootDir)
 	if renderErr != nil {
-		return fmt.Errorf("rendering benchmark documentation: %w", renderErr)
+		failures = append(failures, fmt.Errorf("rendering benchmark documentation: %w", renderErr))
 	}
-	if writeErr := writeBenchmarkDocumentation(rootDir, outputDir, documentation); writeErr != nil {
-		return writeErr
+	if err := writeBenchmarkDocumentation(rootDir, outputDir, documentation); err != nil {
+		failures = append(failures, err)
 	}
 	if err := writeLandingAssets(outputDir); err != nil {
-		return fmt.Errorf("writing landing assets: %w", err)
+		failures = append(failures, fmt.Errorf("writing landing assets: %w", err))
 	}
 	if err := writeHugoConfig(outputDir, enableRSS); err != nil {
-		return fmt.Errorf("writing Hugo configuration: %w", err)
+		failures = append(failures, fmt.Errorf("writing Hugo configuration: %w", err))
+	}
+	if err := errors.Join(failures...); err != nil {
+		return fmt.Errorf("documentation generation completed with errors: %w", err)
 	}
 	fmt.Printf("Successfully synthesized Hugo documentation source: %s\n", filepath.Join(outputDir, "content", "docs", "reference.md"))
 	fmt.Printf("Extracted %d languages, %d placement modes, %d txtar workflows.\n", len(capabilities), len(placements), len(examples))
@@ -115,37 +129,28 @@ func generateDocumentation(rootDir, outputDir string, enableRSS bool) error {
 }
 
 func writeReferenceDocumentation(outputDir string, capabilities []CodeCapability, placements []string, examples []TxtarExample) error {
-	docsDir := filepath.Join(outputDir, "content", "docs")
-	if err := writeGeneratedFile(filepath.Join(docsDir, "reference.md"), []byte(renderMarkdown(capabilities, placements, examples))); err != nil {
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "reference.md"), []byte(renderMarkdown(capabilities, placements, examples))); err != nil {
 		return fmt.Errorf("writing Markdown output: %w", err)
-	}
-	if err := writeGeneratedFile(filepath.Join(docsDir, "getting-started.md"), []byte(renderGettingStarted())); err != nil {
-		return fmt.Errorf("writing getting started output: %w", err)
 	}
 	return nil
 }
 
 func writeBenchmarkDocumentation(rootDir, outputDir string, documentation benchmarkDocumentation) error {
-	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
-		return fmt.Errorf("generating benchmark browser assets: %w", err)
+	var failures []error
+	if err := writeBenchmarkBrowserRowsAssets(rootDir, outputDir, documentation.BrowserRows); err != nil {
+		failures = append(failures, fmt.Errorf("generating benchmark browser assets: %w", err))
 	}
 	benchmarksDir := filepath.Join(outputDir, "content", "docs", "benchmarks")
 	if err := os.MkdirAll(benchmarksDir, 0o750); err != nil {
-		return fmt.Errorf("creating benchmarks documentation directory: %w", err)
+		failures = append(failures, fmt.Errorf("creating benchmarks documentation directory: %w", err))
+	} else {
+		if err := writeGeneratedFile(filepath.Join(benchmarksDir, "_index.md"), []byte(documentation.Index)); err != nil {
+			failures = append(failures, fmt.Errorf("writing benchmarks index: %w", err))
+		}
+		failures = append(failures, writeBenchmarkAggregates(benchmarksDir, documentation.Aggregates), writeBenchmarkAggregateDetails(benchmarksDir, documentation.AggregateDetails), writeBenchmarkRuns(benchmarksDir, documentation.Runs))
 	}
-	if err := writeGeneratedFile(filepath.Join(benchmarksDir, "_index.md"), []byte(documentation.Index)); err != nil {
-		return fmt.Errorf("writing benchmarks index: %w", err)
-	}
-	if err := writeBenchmarkAggregates(benchmarksDir, documentation.Aggregates); err != nil {
-		return err
-	}
-	if err := writeBenchmarkAggregateDetails(benchmarksDir, documentation.AggregateDetails); err != nil {
-		return err
-	}
-	if err := writeBenchmarkRuns(benchmarksDir, documentation.Runs); err != nil {
-		return err
-	}
-	return writeBenchmarkShortcode(outputDir)
+	failures = append(failures, writeBenchmarkShortcode(outputDir))
+	return errors.Join(failures...)
 }
 
 func writeBenchmarkAggregates(benchmarksDir, content string) error {
@@ -161,16 +166,18 @@ func writeBenchmarkAggregates(benchmarksDir, content string) error {
 
 func writeBenchmarkAggregateDetails(benchmarksDir string, pages []benchmarkAggregatePage) error {
 	tasksDir := filepath.Join(benchmarksDir, "aggregates", "tasks")
+	var failures []error
 	for _, page := range pages {
 		pageDir := filepath.Join(tasksDir, page.ID)
 		if err := os.MkdirAll(pageDir, 0o750); err != nil {
-			return fmt.Errorf("creating benchmark aggregate detail directory for %s: %w", page.Task, err)
+			failures = append(failures, fmt.Errorf("creating benchmark aggregate detail directory for %s: %w", page.Task, err))
+			continue
 		}
 		if err := writeGeneratedFile(filepath.Join(pageDir, "index.md"), []byte(page.Content)); err != nil {
-			return fmt.Errorf("writing benchmark aggregate detail for %s: %w", page.Task, err)
+			failures = append(failures, fmt.Errorf("writing benchmark aggregate detail for %s: %w", page.Task, err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func writeBenchmarkRuns(benchmarksDir string, runs []benchmarkDocumentationRun) error {
@@ -178,6 +185,7 @@ func writeBenchmarkRuns(benchmarksDir string, runs []benchmarkDocumentationRun) 
 	if err := os.MkdirAll(runsDir, 0o750); err != nil {
 		return fmt.Errorf("creating benchmark runs directory: %w", err)
 	}
+	var failures []error
 	if err := writeGeneratedFile(filepath.Join(runsDir, "_index.md"), []byte(`---
 title: "Benchmark runs"
 draft: false
@@ -186,18 +194,19 @@ weight: 22
 
 The [empirical benchmark overview](/docs/benchmarks/) links individual benchmark observations.
 `)); err != nil {
-		return fmt.Errorf("writing benchmark runs index: %w", err)
+		failures = append(failures, fmt.Errorf("writing benchmark runs index: %w", err))
 	}
 	for _, run := range runs {
 		runDir := filepath.Join(runsDir, run.ID)
 		if err := os.MkdirAll(runDir, 0o750); err != nil {
-			return fmt.Errorf("creating benchmark run directory: %w", err)
+			failures = append(failures, fmt.Errorf("creating benchmark run directory %s: %w", run.ID, err))
+			continue
 		}
 		if err := writeGeneratedFile(filepath.Join(runDir, "index.md"), []byte(renderBenchmarkRunDoc(run))); err != nil {
-			return fmt.Errorf("writing benchmark run %s: %w", run.ID, err)
+			failures = append(failures, fmt.Errorf("writing benchmark run %s: %w", run.ID, err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func writeBenchmarkShortcode(outputDir string) error {

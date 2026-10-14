@@ -433,6 +433,8 @@ func TestOperationCapabilityContractsCoverAllLanguagesAndRender(t *testing.T) {
 		"Guarantees",
 		"healthy=supported",
 		"target_syntax=",
+		"masks: supported=0x",
+		"mixed-fault cases use the exact matrix with no subset or superset closure",
 	} {
 		if !strings.Contains(page, phrase) {
 			t.Errorf("rendered contract documentation missing %q", phrase)
@@ -445,5 +447,31 @@ func TestOperationCapabilityContractsCoverAllLanguagesAndRender(t *testing.T) {
 		strings.Index(page, "### Kotlin") > strings.Index(page, "### Bash") ||
 		strings.Index(page, "### Bash") > strings.Index(page, "### Make") {
 		t.Error("contract language sections are not rendered in registry order")
+	}
+}
+
+func TestPolyglotTxtarDocumentationIsDeterministic(t *testing.T) {
+	content := `# Polyglot discovery
+exec semedit workspace-outline --language go --path api --include-tests
+stdout 'Packages:'
+
+-- java/src/Thing.java --
+package example;
+public class Thing {}
+-- api/doc.go --
+package api
+`
+	for range 30 {
+		example, err := parseTxtarFile("workspace_outline_polyglot.txtar", content)
+		if err != nil {
+			t.Fatalf("parse polyglot txtar: %v", err)
+		}
+		if example.InputFile != "api/doc.go" || example.InputCode != "package api" {
+			t.Fatalf("polyglot source selection = %q %q", example.InputFile, example.InputCode)
+		}
+		if len(example.Steps) != 1 || example.Steps[0].MCPTool != "semantic_workspace_outline" {
+			t.Fatalf("polyglot steps = %+v", example.Steps)
+		}
+		assertContainsAll(t, example.Steps[0].MCPArgsJSON, []string{`"language": "go"`, `"path": "api"`, `"include_tests": true`}, "workspace outline arguments")
 	}
 }

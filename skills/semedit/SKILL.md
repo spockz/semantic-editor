@@ -7,11 +7,15 @@ description: Use semedit tools for symbol lookup, code inspection, outlines, ref
 
 When the request matches an operation exposed by the active semedit server, use that semantic operation as the primary code-editing path. It resolves symbols and applies supported structural changes through the language backend. Before calling the selected operation, read its description for scope, preconditions, and behavior, then follow its input schema for required fields and allowed values. Follow the result diagnostics; operation availability and scope vary by language.
 
+The default MCP `--tool-profile base` includes workspace outline, signature change, function extraction, and doc-comment operations. `--tool-profile full` exposes every registered tool; execution `--profile mutations-only` filters read-only tools independently of that catalog choice.
+
+Tool descriptions summarize single-fault support and conditional recovery. The generated capability reference retains the exact mixed-fault matrices; do not infer support for combinations from individual fault classes. Copy continuation fields from the same resolved structured record into follow-up calls, including its revision when required. Missing continuation fields mean no resolved target.
+
 ## Choose the operation by intent
 
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
-| Discover packages, synopses, and module boundaries across the workspace | `semantic_workspace_outline` with optional `path` and `include_tests` | Directory listing, `find`, or `tree` shell exploration |
+| Discover packages, synopses, and module boundaries across a polyglot workspace | `semantic_workspace_outline` with optional `path` and `include_tests`; `language: "auto"` aggregates Go and Java, while `"go"` or `"java"` restricts discovery | Directory listing, `find`, or `tree` shell exploration |
 | Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
 | Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
 | Inspect matching nested Go or Java constructs before selecting an ambiguous target | `semantic_inspect_construct`; copy a candidate path and selection revision from the same result | Guessing structural paths or retrying unchanged selectors |

@@ -31,7 +31,7 @@ semantic_replace_body remains a specialized Go operation that changes a function
 
 move_construct expresses relocation only. It accepts destination placement, has no replacement source or overwrite option, and performs same-file reordering atomically. It does not sort declarations automatically.
 
-The MCP catalog defaults to base: generic lifecycle, rename, navigation, verification, batch, snapshots, and undo. full exposes all registered tools and support utilities. Repeatable --expose-tool-variant verb:kind adds selected specialized variants to base; comma-separated patterns and * wildcards are accepted. Invalid patterns and patterns matching no specialized operation fail before server startup. Filtering changes only top-level discovery; specialized operations remain available to CLI and batch dispatch.
+The MCP catalog defaults to base: generic lifecycle, rename, navigation (including workspace outline), verification, batch, snapshots, undo, and the registered signature-change, function-extraction, and documentation-comment operations. These focused registered operations are part of the supported default surface, alongside generic lifecycle operations. full exposes all registered tools and support utilities. Repeatable --expose-tool-variant verb:kind adds selected specialized variants to base; comma-separated patterns and * wildcards are accepted. Invalid patterns and patterns matching no specialized operation fail before server startup. Filtering changes only top-level discovery; specialized operations remain available to CLI and batch dispatch. The execution `--profile` remains independent: `mutations-only` removes read-only entries from either tool catalog.
 
 ## Invariants
 

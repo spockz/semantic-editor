@@ -1,0 +1,53 @@
+# Invalid Go manifests return contextual errors and remain unchanged on disk
+exec cp bad.go.mod go.mod
+! exec semedit workspace-outline --language go
+stderr '.*go\.mod.*'
+cmp go.mod bad.go.mod
+
+exec cp good.go.mod go.mod
+exec cp bad.go.work go.work
+! exec semedit workspace-outline --language go
+stderr '.*go\.work.*'
+cmp go.work bad.go.work
+
+exec rm go.work
+exec mkdir .scratch
+exec cp java/pom.xml .scratch/original-pom.xml
+! exec semedit workspace-outline --language java
+stderr '.*pom\.xml.*'
+cmp java/pom.xml .scratch/original-pom.xml
+
+-- go.mod --
+module example.com/errors
+
+go 1.24
+
+-- good.go.mod --
+module example.com/errors
+
+go 1.24
+
+-- bad.go.mod --
+module
+
+go 1.24
+
+-- bad.go.work --
+go 1.24
+
+use (
+  ./missing
+
+-- java/pom.xml --
+<project>
+  <groupId>com.example</groupId>
+  <modules>
+    <module>broken</module>
+  </modules>
+
+-- bad.pom.xml --
+<project>
+  <groupId>com.example</groupId>
+  <modules>
+    <module>broken</module>
+  </modules>

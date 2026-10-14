@@ -118,7 +118,7 @@ Kotlin, Bash, and Makefile boundaries are documented in [ADR-0047](docs/adr/0047
 
 ## 4. Editing operations
 
-Registered semantic operations share CLI and MCP definitions. Use command help or the active MCP tool schema for exact parameters and language constraints.
+Registered semantic operations share CLI and MCP definitions. MCP `--profile` selects execution behavior (`full` or `mutations-only`); `--tool-profile` independently selects discovery (`base` by default, or `full`). The default base catalog includes `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment`. `mutations-only` filters read-only tools even when the full tool catalog is selected. Use command help or the active MCP tool schema for exact parameters and language constraints.
 
 | Intent | CLI command | MCP tool |
 | :--- | :--- | :--- |

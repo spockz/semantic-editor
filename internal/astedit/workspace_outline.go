@@ -2,11 +2,13 @@
 package astedit
 
 import (
+	"errors"
 	"fmt"
 	"go/parser"
 	"go/token"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,38 +21,9 @@ import (
 
 // WorkspaceOutlineGo discovers modules and packages under target path within root.
 func WorkspaceOutlineGo(root, path string, includeTests bool) (*backend.WorkspaceOutlineResult, error) {
-	if root == "" {
-		root = "."
-	}
-	absRoot, err := filepath.Abs(root)
+	absRoot, targetDir, err := resolveOutlineTarget(root, path)
 	if err != nil {
-		return nil, fmt.Errorf("resolve workspace root %q: %w", root, err)
-	}
-	canonicalRoot, err := filepath.EvalSymlinks(absRoot)
-	if err == nil {
-		absRoot = canonicalRoot
-	}
-
-	targetDir := absRoot
-	if strings.TrimSpace(path) != "" && path != "." {
-		if filepath.IsAbs(path) {
-			targetDir = path
-		} else {
-			targetDir = filepath.Join(absRoot, path)
-		}
-	}
-	targetDir = filepath.Clean(targetDir)
-	canonicalTarget, err := filepath.EvalSymlinks(targetDir)
-	if err == nil {
-		targetDir = canonicalTarget
-	}
-
-	targetInfo, err := os.Stat(targetDir)
-	if err != nil {
-		return nil, fmt.Errorf("stat target directory %q: %w", targetDir, err)
-	}
-	if !targetInfo.IsDir() {
-		return nil, fmt.Errorf("target path %q is not a directory", targetDir)
+		return nil, err
 	}
 
 	relScope, err := filepath.Rel(absRoot, targetDir)
@@ -72,11 +45,7 @@ func WorkspaceOutlineGo(root, path string, includeTests bool) (*backend.Workspac
 		Packages: make([]backend.WorkspacePackage, 0),
 	}
 
-	moduleScanDir := absRoot
-	if !strings.HasPrefix(targetDir, absRoot) {
-		moduleScanDir = targetDir
-	}
-	modules, err := discoverGoModules(absRoot, moduleScanDir)
+	modules, err := discoverScopedGoModules(absRoot, targetDir)
 	if err != nil {
 		return nil, err
 	}
@@ -87,54 +56,79 @@ func WorkspaceOutlineGo(root, path string, includeTests bool) (*backend.Workspac
 		return nil, err
 	}
 	result.Packages = packages
+	assignGoPackageModules(result.Packages, result.Modules)
+	for i := range result.Modules {
+		result.Modules[i].PackagesCount = countModulePackages(result.Packages, result.Modules[i].ModulePath)
+		result.Modules[i].Language = "go"
+		if result.Modules[i].Doc == nil {
+			if doc := fallbackModuleDoc(result.Packages, result.Modules[i]); doc != nil {
+				result.Modules[i].Doc = doc
+				result.Modules[i].Synopsis = formatPackageSynopsis(*doc)
+			}
+		}
+	}
 
 	return result, nil
 }
 
-func discoverGoModules(root, scanDir string) ([]backend.WorkspaceModule, error) {
-	modules := make([]backend.WorkspaceModule, 0)
-	err := filepath.WalkDir(scanDir, func(current string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			if current != scanDir && sourcefiles.IsIgnoredDirectory(d.Name()) {
-				return filepath.SkipDir
-			}
+func discoverScopedGoModules(root, target string) ([]backend.WorkspaceModule, error) {
+	rootScope := filepath.Clean(target) == filepath.Clean(root)
+	modules := make(map[string]backend.WorkspaceModule)
+	add := func(dir string, isRoot bool) error {
+		dir = filepath.Clean(dir)
+		if _, exists := modules[dir]; exists {
 			return nil
 		}
-		if d.Name() != "go.mod" {
-			return nil
+		manifest := filepath.Join(dir, "go.mod")
+		data, err := fs.ReadFile(os.DirFS(dir), "go.mod")
+		if err != nil {
+			return fmt.Errorf("read Go module manifest %q: %w", manifest, err)
 		}
-		modDir := filepath.Dir(current)
-		rel, relErr := filepath.Rel(root, modDir)
-		if relErr != nil {
-			rel = modDir
+		modPath, goVersion, doc, err := parseGoModDetails(manifest, data)
+		if err != nil {
+			return fmt.Errorf("parse Go module manifest %q: %w", manifest, err)
 		}
-		displayPath := filepath.ToSlash(rel)
-		if displayPath == "" {
-			displayPath = "."
+		rel, err := filepath.Rel(root, dir)
+		if err != nil {
+			return fmt.Errorf("relativize Go module %q: %w", dir, err)
 		}
-
-		cleanPath := filepath.Clean(current)
-		data, readErr := os.ReadFile(cleanPath) // #nosec G122,G304 -- WalkDir visits validated workspace paths.
-		if readErr != nil {
-			return fmt.Errorf("read Go module manifest %s: %w", cleanPath, readErr)
+		display := filepath.ToSlash(rel)
+		if display == "" {
+			display = "."
 		}
-		modPath, goVer := parseGoMod(cleanPath, data)
-		modules = append(modules, backend.WorkspaceModule{
-			Path:       displayPath,
-			ModulePath: modPath,
-			GoVersion:  goVer,
-			IsRoot:     modDir == root,
-		})
+		modules[dir] = backend.WorkspaceModule{Path: display, ModulePath: modPath, GoVersion: goVersion, IsRoot: isRoot, Language: "go", Doc: doc}
+		if doc != nil {
+			modules[dir] = withModuleSynopsis(modules[dir], *doc)
+		}
 		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("discover Go modules: %w", err)
 	}
 
-	slices.SortFunc(modules, func(a, b backend.WorkspaceModule) int {
+	if rootScope {
+		if err := walkGoModuleDirs(root, func(dir string) error { return add(dir, dir == root) }); err != nil {
+			return nil, err
+		}
+		if err := addGoWorkModules(root, add); err != nil {
+			return nil, err
+		}
+	} else {
+		owner, err := nearestGoModule(root, target)
+		if err != nil {
+			return nil, err
+		}
+		if owner != "" {
+			if err := add(owner, owner == root); err != nil {
+				return nil, err
+			}
+		}
+		if err := walkGoModuleDirs(target, func(dir string) error { return add(dir, dir == root) }); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]backend.WorkspaceModule, 0, len(modules))
+	for _, module := range modules {
+		out = append(out, module)
+	}
+	slices.SortFunc(out, func(a, b backend.WorkspaceModule) int {
 		if a.IsRoot != b.IsRoot {
 			if a.IsRoot {
 				return -1
@@ -143,34 +137,154 @@ func discoverGoModules(root, scanDir string) ([]backend.WorkspaceModule, error) 
 		}
 		return strings.Compare(a.Path, b.Path)
 	})
-	return modules, nil
+	return out, nil
 }
 
-func parseGoMod(path string, data []byte) (string, string) {
-	file, err := modfile.Parse(path, data, nil)
-	if err == nil {
-		var modPath, goVer string
-		if file.Module != nil {
-			modPath = file.Module.Mod.Path
+func addGoWorkModules(root string, add func(string, bool) error) error {
+	workPath := filepath.Join(root, "go.work")
+	data, err := fs.ReadFile(os.DirFS(root), "go.work")
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read Go workspace manifest %q: %w", workPath, err)
+	}
+	work, err := modfile.ParseWork(workPath, data, nil)
+	if err != nil {
+		return fmt.Errorf("parse Go workspace manifest %q: %w", workPath, err)
+	}
+	for _, use := range work.Use {
+		dir := use.Path
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(root, dir)
 		}
-		if file.Go != nil {
-			goVer = file.Go.Version
+		dir, err = filepath.Abs(dir)
+		if err != nil {
+			return fmt.Errorf("resolve Go workspace module %q: %w", use.Path, err)
 		}
-		if modPath != "" {
-			return modPath, goVer
+		dir, err = filepath.EvalSymlinks(dir)
+		if err != nil {
+			return fmt.Errorf("resolve Go workspace module symlinks %q: %w", use.Path, err)
+		}
+		if err := add(dir, false); err != nil {
+			return fmt.Errorf("load go.work use %q: %w", use.Path, err)
 		}
 	}
+	return nil
+}
 
-	var modPath, goVer string
-	for line := range strings.SplitSeq(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if after, ok := strings.CutPrefix(trimmed, "module "); ok {
-			modPath = strings.TrimSpace(after)
-		} else if after, ok := strings.CutPrefix(trimmed, "go "); ok {
-			goVer = strings.TrimSpace(after)
+func walkGoModuleDirs(start string, visit func(string) error) error {
+	err := filepath.WalkDir(start, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("scan Go modules at %q: %w", current, walkErr)
+		}
+		if entry.IsDir() {
+			if current != start && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "go.mod" {
+			return visit(filepath.Dir(current))
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("discover Go modules: %w", err)
+	}
+	return nil
+}
+
+func nearestGoModule(root, target string) (string, error) {
+	for dir := target; ; dir = filepath.Dir(dir) {
+		if info, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil && !info.IsDir() {
+			return dir, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("inspect Go module manifest in %q: %w", dir, err)
+		}
+		if dir == root {
+			break
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
 		}
 	}
-	return modPath, goVer
+	return "", nil
+}
+
+func parseGoModDetails(name string, data []byte) (string, string, *string, error) {
+	file, err := modfile.Parse(name, data, nil)
+	if err != nil {
+		return "", "", nil, err
+	}
+	modPath, goVersion := "", ""
+	var doc *string
+	if file.Module != nil {
+		modPath = file.Module.Mod.Path
+		if file.Module.Syntax != nil && len(file.Module.Syntax.Before) > 0 {
+			lines := make([]string, 0, len(file.Module.Syntax.Before))
+			for _, comment := range file.Module.Syntax.Before {
+				lines = append(lines, strings.TrimSpace(strings.TrimPrefix(comment.Token, "//")))
+			}
+			text := strings.TrimSpace(strings.Join(lines, "\n"))
+			if text != "" {
+				doc = &text
+			}
+		}
+	}
+	if file.Go != nil {
+		goVersion = file.Go.Version
+	}
+	if modPath == "" {
+		return "", "", nil, fmt.Errorf("module directive is missing")
+	}
+	return modPath, goVersion, doc, nil
+}
+
+func withModuleSynopsis(module backend.WorkspaceModule, doc string) backend.WorkspaceModule {
+	module.Synopsis = formatPackageSynopsis(doc)
+	return module
+}
+
+func assignGoPackageModules(packages []backend.WorkspacePackage, modules []backend.WorkspaceModule) {
+	for i := range packages {
+		bestDepth := -1
+		for _, module := range modules {
+			if module.ModulePath == "" {
+				continue
+			}
+			modPath := filepath.Clean(filepath.FromSlash(module.Path))
+			pkgPath := filepath.Clean(filepath.FromSlash(packages[i].Path))
+			if modPath == "." || pkgPath == modPath || strings.HasPrefix(pkgPath, modPath+string(filepath.Separator)) {
+				depth := strings.Count(modPath, string(filepath.Separator))
+				if depth > bestDepth {
+					bestDepth = depth
+					packages[i].Module = module.ModulePath
+				}
+			}
+		}
+		packages[i].Language = "go"
+	}
+}
+
+func countModulePackages(packages []backend.WorkspacePackage, modulePath string) int {
+	count := 0
+	for _, pkg := range packages {
+		if pkg.Module == modulePath {
+			count++
+		}
+	}
+	return count
+}
+
+func fallbackModuleDoc(packages []backend.WorkspacePackage, module backend.WorkspaceModule) *string {
+	for _, pkg := range packages {
+		if pkg.Path == module.Path && (pkg.Name == "main" || pkg.Name == path.Base(module.ModulePath)) {
+			return pkg.Doc
+		}
+	}
+	return nil
 }
 
 func discoverGoPackages(root, targetDir string, includeTests bool) ([]backend.WorkspacePackage, error) {
@@ -352,4 +466,131 @@ func formatPackageSynopsis(doc string) string {
 		return result[:157] + "..."
 	}
 	return result
+}
+
+// LooksLikeGoWorkspace lets auto routing recognize Go module and go.work scopes.
+func LooksLikeGoWorkspace(root, path string) (bool, error) {
+	absRoot, target, err := resolveOutlineTarget(root, path)
+	if err != nil {
+		return false, err
+	}
+	moduleFound, err := hasEnclosingGoModule(absRoot, target)
+	if err != nil {
+		return false, err
+	}
+	if moduleFound {
+		return true, nil
+	}
+	matched, err := matchesGoWorkUse(absRoot, target)
+	if err != nil {
+		return false, err
+	}
+	if matched {
+		return true, nil
+	}
+	return directoryHasGoSource(target)
+}
+
+func resolveOutlineTarget(root, requested string) (string, string, error) {
+	if root == "" {
+		root = "."
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve Go workspace root %q: %w", root, err)
+	}
+	if canonicalRoot, evalErr := filepath.EvalSymlinks(absRoot); evalErr == nil {
+		absRoot = canonicalRoot
+	} else if !os.IsNotExist(evalErr) {
+		return "", "", fmt.Errorf("resolve Go workspace root symlinks %q: %w", absRoot, evalErr)
+	}
+	target := absRoot
+	if strings.TrimSpace(requested) != "" && requested != "." {
+		if filepath.IsAbs(requested) {
+			target = requested
+		} else {
+			target = filepath.Join(absRoot, requested)
+		}
+	}
+	target = filepath.Clean(target)
+	if canonicalTarget, evalErr := filepath.EvalSymlinks(target); evalErr == nil {
+		target = canonicalTarget
+	} else if !os.IsNotExist(evalErr) {
+		return "", "", fmt.Errorf("resolve Go outline path symlinks %q: %w", target, evalErr)
+	}
+	rel, err := filepath.Rel(absRoot, target)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("go outline path %q is outside workspace root %q", target, absRoot)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		return "", "", fmt.Errorf("stat Go outline path %q: %w", target, err)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("go outline path %q is not a directory", target)
+	}
+	return absRoot, target, nil
+}
+
+func matchesGoWorkUse(absRoot, target string) (bool, error) {
+	workPath := filepath.Join(absRoot, "go.work")
+	if data, readErr := fs.ReadFile(os.DirFS(absRoot), "go.work"); readErr == nil {
+		work, parseErr := modfile.ParseWork(workPath, data, nil)
+		if parseErr != nil {
+			return false, fmt.Errorf("parse Go workspace manifest %q: %w", workPath, parseErr)
+		}
+		for _, use := range work.Use {
+			moduleDir := use.Path
+			if !filepath.IsAbs(moduleDir) {
+				moduleDir = filepath.Join(absRoot, moduleDir)
+			}
+			moduleDir = filepath.Clean(moduleDir)
+			moduleToTarget, relErr := filepath.Rel(moduleDir, target)
+			if relErr == nil && moduleToTarget != ".." && !strings.HasPrefix(moduleToTarget, ".."+string(filepath.Separator)) {
+				return true, nil
+			}
+			targetToModule, relErr := filepath.Rel(target, moduleDir)
+			if relErr == nil && targetToModule != ".." && !strings.HasPrefix(targetToModule, ".."+string(filepath.Separator)) {
+				return true, nil
+			}
+		}
+	} else if !os.IsNotExist(readErr) {
+		return false, fmt.Errorf("read Go workspace manifest %q: %w", workPath, readErr)
+	}
+	return false, nil
+}
+
+func directoryHasGoSource(target string) (bool, error) {
+	found := false
+	err := filepath.WalkDir(target, func(current string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("scan Go source at %q: %w", current, walkErr)
+		}
+		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && (filepath.Ext(entry.Name()) == ".go" || entry.Name() == "go.mod") {
+			found = true
+			return fs.SkipAll
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, fs.SkipAll) {
+		return false, fmt.Errorf("scan Go workspace %q: %w", target, err)
+	}
+	return found, nil
+}
+
+func hasEnclosingGoModule(root, target string) (bool, error) {
+	for dir := target; ; dir = filepath.Dir(dir) {
+		manifest := filepath.Join(dir, "go.mod")
+		if info, err := os.Stat(manifest); err == nil && !info.IsDir() {
+			return true, nil
+		} else if err != nil && !os.IsNotExist(err) {
+			return false, fmt.Errorf("inspect Go module manifest %q: %w", manifest, err)
+		}
+		if dir == root {
+			return false, nil
+		}
+	}
 }
