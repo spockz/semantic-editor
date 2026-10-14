@@ -297,14 +297,15 @@ func elapsedTaskTime(start time.Time) time.Duration {
 
 // Runner coordinates execution across evaluation arms and benchmarks.
 type Runner struct {
-	baseScratchDir            string
-	mcpServerInstructionsMode MCPServerInstructionMode
-	semeditArmRestriction     SemeditArmRestriction
-	semeditPrewarmVerify      bool
-	provenance                ProvenanceSet
-	agyExecutable             string
-	openCodeRelayURL          string
-	openCodeModelLimits       *openCodeModelLimits
+	baseScratchDir                string
+	mcpServerInstructionsMode     MCPServerInstructionMode
+	semeditArmRestriction         SemeditArmRestriction
+	semeditPrewarmVerify          bool
+	provenance                    ProvenanceSet
+	agyExecutable                 string
+	openCodeRelayURL              string
+	openCodeModelLimits           *openCodeModelLimits
+	openCodeSandboxProfileFactory func(workDir, openCodePath, modelURL string) (string, string, error)
 }
 
 // RunnerOption configures one benchmark runner without adding global process state.

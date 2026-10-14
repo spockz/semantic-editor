@@ -17,6 +17,7 @@ The central operation registry exposes Java-only `maven-compile` and `maven-test
 - No shell, user-supplied goals, profiles, properties, or arbitrary arguments are accepted.
 - Trust is never persisted and must contain the canonical selected root for each request.
 - Failures retain typed process/exit information, bounded stdout/stderr, truncation metadata, and a log tail.
+- Cancellation and timeouts terminate the Maven process group on Unix, including descendants holding output pipes open after the launcher exits. Windows terminates the direct process. Captured output and typed cancellation errors remain available.
 
 ## Consequences
 

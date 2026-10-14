@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spockz/semantic-editor/internal/backend"
@@ -93,6 +94,19 @@ type boundedBuffer struct {
 	truncated bool
 }
 
+type cancellationResult struct {
+	observed bool
+	err      error
+}
+
+type processResult struct {
+	stdout       boundedBuffer
+	stderr       boundedBuffer
+	err          error
+	cancellation cancellationResult
+	durationMS   int64
+}
+
 func (b *boundedBuffer) Write(p []byte) (int, error) {
 	length := len(p)
 	if b.b.Len() < captureLimit {
@@ -151,30 +165,87 @@ func Run(ctx context.Context, req Request) (Result, error) {
 		ctx, cancel = context.WithTimeout(ctx, executionTimeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, bin, args...) // #nosec G204 -- validated wrapper/system executable.
-	cmd.Dir = root
-	cmd.Env = isolatedEnvironment(home)
-	var stdout, stderr boundedBuffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	started := time.Now()
-	err = cmd.Run()
-	result := Result{Goal: req.Goal, Tool: selected, Command: append([]string{bin}, args...), Stdout: stdout.String(), Stderr: stderr.String(), StdoutTruncated: stdout.truncated, StderrTruncated: stderr.truncated, LogTail: logTail(stdout.String(), stderr.String()), DurationMS: time.Since(started).Milliseconds()}
+	process := runMavenProcess(ctx, bin, args, root, home)
+	return processResultForRequest(ctx, req, bin, selected, args, process)
+}
+
+func processResultForRequest(ctx context.Context, req Request, bin, selected string, args []string, process processResult) (Result, error) {
+	err := process.err
+	stdout, stderr := process.stdout.String(), process.stderr.String()
+	result := Result{Goal: req.Goal, Tool: selected, Command: append([]string{bin}, args...), Stdout: stdout, Stderr: stderr, StdoutTruncated: process.stdout.truncated, StderrTruncated: process.stderr.truncated, LogTail: logTail(stdout, stderr), DurationMS: process.durationMS}
+	if err != nil {
+		result.ExitCode = 1
+		if exit, ok := errors.AsType[*exec.ExitError](err); ok {
+			result.ExitCode = exit.ExitCode()
+		}
+	}
+	if process.cancellation.observed {
+		ctxErr := ctx.Err()
+		if ctxErr == nil {
+			ctxErr = context.Canceled
+		}
+		result.Error = ctxErr.Error()
+		cancelCause := errors.Join(ctxErr, process.cancellation.err)
+		if process.cancellation.err != nil {
+			result.Error += ": " + process.cancellation.err.Error()
+		}
+		return result, &Error{Kind: "Maven canceled", Err: cancelCause, Result: &result}
+	}
 	if err == nil {
 		result.ExitCode = 0
 		return result, nil
 	}
-	result.ExitCode = 1
-	if exit, ok := errors.AsType[*exec.ExitError](err); ok {
-		result.ExitCode = exit.ExitCode()
+	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		result.Error = fmt.Sprintf("exit code %d", result.ExitCode)
 		return result, &Error{Kind: "Maven failed", Err: fmt.Errorf("exit code %d: %w", result.ExitCode, err), Result: &result}
 	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		result.Error = err.Error()
-		return result, &Error{Kind: "Maven canceled", Err: err, Result: &result}
-	}
 	result.Error = err.Error()
 	return result, &Error{Kind: "Maven execution", Err: err, Result: &result}
+}
+
+func runMavenProcess(ctx context.Context, bin string, args []string, root, home string) processResult {
+	//nolint:noctx // Cancellation must kill the process group until Wait drains inherited output pipes.
+	cmd := exec.Command(bin, args...) // #nosec G204 -- validated wrapper/system executable.
+	cmd.Dir = root
+	cmd.Env = isolatedEnvironment(home)
+	var stdout, stderr boundedBuffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	configureMavenProcess(cmd)
+	started := time.Now()
+	cancellation := cancellationResult{}
+	err := ctx.Err()
+	if err == nil {
+		err = cmd.Start()
+	} else {
+		cancellation.observed = true
+	}
+	if err == nil {
+		processDone := make(chan struct{})
+		watchDone := make(chan cancellationResult, 1)
+		var processMu sync.Mutex
+		finished := false
+		go func() {
+			select {
+			case <-ctx.Done():
+				processMu.Lock()
+				result := cancellationResult{}
+				if !finished {
+					result = cancellationResult{observed: true, err: stopMavenProcess(cmd)}
+				}
+				processMu.Unlock()
+				watchDone <- result
+			case <-processDone:
+				watchDone <- cancellationResult{}
+			}
+		}()
+		err = cmd.Wait()
+		processMu.Lock()
+		finished = true
+		processMu.Unlock()
+		close(processDone)
+		cancellation = <-watchDone
+	}
+	return processResult{stdout: stdout, stderr: stderr, err: err, cancellation: cancellation, durationMS: time.Since(started).Milliseconds()}
 }
 
 func validateRunRequest(req Request) (string, string, error) {

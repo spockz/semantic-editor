@@ -13,11 +13,30 @@ import (
 	"testing"
 )
 
-func installPassthroughOpenCodeSandbox(t *testing.T, binDir string) {
+func installPassthroughOpenCodeSandbox(t *testing.T, binDir string) RunnerOption {
 	t.Helper()
 	script := "#!/bin/sh\n[ \"$1\" = -f ] || exit 2\nshift 2\nexec \"$@\"\n"
 	if err := os.WriteFile(filepath.Join(binDir, "sandbox-exec"), []byte(script), 0o750); err != nil {
 		t.Fatal(err)
+	}
+	return func(runner *Runner) {
+		runner.openCodeSandboxProfileFactory = func(_, _, _ string) (string, string, error) {
+			profilePath := filepath.Join(runner.baseScratchDir, ".opencode-sandboxes", "test.sb")
+			if err := prepareRuntimeLayout(runner.baseScratchDir, []string{".opencode-sandboxes"}, map[string][]byte{".opencode-sandboxes/test.sb": nil}); err != nil {
+				return "", "", err
+			}
+			return filepath.Join(binDir, "sandbox-exec"), profilePath, nil
+		}
+	}
+}
+
+func TestOpenCodeSandboxRequiresSeatbeltOutsideMacOS(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("unsupported-platform guard is specific to non-macOS hosts")
+	}
+	_, _, err := NewRunner(t.TempDir()).openCodeSandboxProfile("", "", "")
+	if err == nil || !strings.Contains(err.Error(), "requires macOS Seatbelt") {
+		t.Fatalf("sandbox profile error = %v, want macOS Seatbelt requirement", err)
 	}
 }
 

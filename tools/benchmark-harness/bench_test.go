@@ -195,12 +195,12 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 	if err := os.Chmod(script, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	installPassthroughOpenCodeSandbox(t, binDir)
+	sandboxOption := installPassthroughOpenCodeSandbox(t, binDir)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	workDir := t.TempDir()
 	res := &RunResult{Arm: ArmSemedit}
-	sessionID, err := NewRunner(t.TempDir()).runOpenCode(t.Context(), workDir, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"}, "prompt", res, "")
+	sessionID, err := NewRunner(t.TempDir(), sandboxOption).runOpenCode(t.Context(), workDir, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"}, "prompt", res, "")
 	if err != nil {
 		t.Fatal(err)
 	}

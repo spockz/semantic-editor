@@ -19,6 +19,9 @@ import (
 )
 
 func (r *Runner) openCodeSandboxProfile(workDir, openCodePath, modelURL string) (string, string, error) {
+	if r.openCodeSandboxProfileFactory != nil {
+		return r.openCodeSandboxProfileFactory(workDir, openCodePath, modelURL)
+	}
 	if runtime.GOOS != "darwin" {
 		return "", "", fmt.Errorf("OpenCode benchmark containment requires macOS Seatbelt")
 	}

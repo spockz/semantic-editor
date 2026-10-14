@@ -1,5 +1,21 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-14: targeted Codex second opinion could not start
+
+* Tool: `codex_ask` with model `gpt-6-sol`.
+* Target: final Maven cancellation process-lifecycle diff.
+* Observed failure: three reviewer attempts, including a continuation, rejected an unexpected `-s` argument and exited before returning a review; no source changes occurred.
+* Workaround: rely on the earlier independent Sol review of the process-group design, the separate read-only code review, and local Maven package tests.
+* Root cause: the reviewer launcher passed an unsupported CLI option.
+
+## 2026-10-14: workspace outline operation was unavailable in the active tool inventory
+
+* Tool: `semantic_workspace_outline`.
+* Target: `internal/maven` package discovery before inspecting Maven cancellation code.
+* Observed failure: the operation was not callable in the active MCP tool inventory (`TypeError: ... is not a function`); no workspace change occurred.
+* Workaround: inspect the relevant declaration with the available `semantic_inspect_symbol` tool and consult the Maven ADR and package tests.
+* Root cause: the workspace outline tool was not exposed in the active MCP tool inventory.
+
 ## 2026-10-14: statement insertion could not anchor inside a walker callback
 
 * Tool: `semantic_insert_construct`.

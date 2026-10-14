@@ -572,9 +572,9 @@ exit 0
 	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	installPassthroughOpenCodeSandbox(t, bin)
+	sandboxOption := installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	runner := NewRunner(filepath.Join(root, "scratch"), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
+	runner := NewRunner(filepath.Join(root, "scratch"), sandboxOption, WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
 	for _, mode := range []string{"empty", "malformed", "null", "object"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("SEMEDIT_OPENCODE_STREAM", mode)
