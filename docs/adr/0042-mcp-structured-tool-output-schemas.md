@@ -72,6 +72,10 @@ projection. Outcomes and continuations precede bulk source, diffs, and logs;
 the prefix excludes those bulk payloads rather than repeating them. Numeric
 values must survive serialization without conversion through floating point.
 Presentation budgets remain open, and client truncation can still hide fields.
+For symbol navigation, ADR-0051 defines a compact projection instead of exposing
+the complete native declaration or reference records. Its listing appears once
+in the emitted payload; structured content is treated as model-visible. Required
+scope, ambiguity, source-view, and continuation fields remain schema-validated.
 
 Batch text first labels child results as intermediate evidence. Its critical
 projection omits child continuation records because later edits and publication

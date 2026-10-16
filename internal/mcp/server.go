@@ -1632,7 +1632,7 @@ func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text str
 }
 
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
-	structured := map[string]any{"error": text, applicationStateField: "unknown"}
+	structured := map[string]any{"error": structuredToolErrorText(text, errs...), applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
@@ -1655,7 +1655,7 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 
 func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, errs ...error) {
 	s.recordToolMetrics(timing)
-	structured := map[string]any{"error": text, applicationStateField: "unknown"}
+	structured := map[string]any{"error": structuredToolErrorText(text, errs...), applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
@@ -1674,6 +1674,16 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 		result["location"] = location
 	}
 	s.sendResult(id, result)
+}
+
+func structuredToolErrorText(text string, errs ...error) string {
+	if len(errs) == 0 || errs[0] == nil || !errors.Is(errs[0], backend.ErrAmbiguous) {
+		return text
+	}
+	if headline, _, ok := strings.Cut(text, "\n"); ok {
+		return headline
+	}
+	return text
 }
 
 func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, entry operation.Entry, operationErr error) {

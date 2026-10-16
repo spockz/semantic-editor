@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backends"
 	"github.com/spockz/semantic-editor/internal/capability"
-	"os"
-	"path/filepath"
 )
 
 // OutlineReq requests a filtered Go source outline.
@@ -138,11 +139,7 @@ func formatInspectRead(result *backend.InspectResult) (string, error) {
 }
 
 func formatOutlineRead(result *backend.OutlineResult) (string, error) {
-	output, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("format outline result: %w", err)
-	}
-	return string(output), nil
+	return renderOutlineNavigation(result), nil
 }
 
 func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
@@ -180,7 +177,7 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 
 func outlineReadDef() Def[OutlineReq, *backend.OutlineResult] {
 	return Def[OutlineReq, *backend.OutlineResult]{
-		Key: capability.OpOutline, Summary: "Use this tool instead of scanning source files with shell commands when you need a declaration outline for a selected source scope; use semantic_workspace_outline first to discover which packages to inspect. Directory scopes are Go-only.",
+		Key: capability.OpOutline, Summary: ("Use this tool instead of scanning source files with shell commands when you need declarations for a selected source scope; use semantic_workspace_outline first to discover which packages to inspect. Returns one normalized declaration listing in text with workspace-relative file paths, inclusive declaration line spans, and native selectors separate from optional signatures. The listing appears once in text; structured output carries scope and file/declaration counts only. Use a listed file path and native selector with ordinary file-reading tools or semantic_inspect_symbol when that backend supports it. Go and Java support directory scopes."),
 		Params: outlineReadParams, Level: LevelSymbol, CLIName: "outline", MCPName: "semantic_outline",
 		ReadOnly: true, Parse: parseOutlineRead, PrepareProject: prepareOutlineProject,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, OutlineReq) (*backend.OutlineResult, error){

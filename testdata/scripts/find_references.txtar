@@ -1,9 +1,8 @@
 # Find method references across the active module even when the selected file only scopes the target.
 exec semedit find-references --language go --file api/store.go --symbol Store.Read
-stdout '"kind": "workspace_active_build"'
-stdout '"qualified_name": "Store.Read"'
-stdout '"file": "client/client.go"'
-stdout '"enclosing_symbol": "Use"'
+stdout 'References to Store\.Read'
+stdout 'client/client\.go:[0-9]+.*func Use'
+stdout 'references at L[0-9]+:C[0-9]+'
 ! stderr .
 
 -- go.mod --

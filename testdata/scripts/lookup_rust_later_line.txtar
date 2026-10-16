@@ -1,11 +1,9 @@
-# Later-line Rust lookup reports the absolute UTF-8 byte offset.
+# Later-line Rust lookup keeps the declaration line and native kind/name.
 env SEMEDIT_RUST_SYMBOL_LINE=1
 # fake server symbol starts after the UTF-16 encoding of "// 😀 ".
 env SEMEDIT_RUST_SYMBOL_START=6
 exec semedit lookup --language rust --trust-workspace --file src/lib.rs --symbol Widget
-stdout '"line": 2'
-! stdout '"offset":'
-stdout '"column": 7'
+stdout 'src/lib\.rs:2  struct Widget'
 
 -- Cargo.toml --
 [package]

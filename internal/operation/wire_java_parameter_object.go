@@ -240,7 +240,7 @@ func resolveJavaParameterObjectCalls(ctx context.Context, service *backend.Servi
 	}
 	callsByFile := make(map[string][]javaLocatedCall)
 	for _, reference := range references.References {
-		call, err := inspectJavaParameterObjectCall(ctx, reference, targetPackage, len(parameters), revisionByFile)
+		call, err := inspectJavaParameterObjectCall(ctx, root, reference, targetPackage, len(parameters), revisionByFile)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -253,7 +253,7 @@ func verifyJavaParameterObjectRevisions(ctx context.Context, root string, files 
 	readSet := make(map[string]string)
 	revisions := make(map[string]string, len(files))
 	for _, revision := range files {
-		file := filepath.Clean(revision.File)
+		file := javaReferenceAbsolutePath(root, revision.File)
 		content, err := sourcebuf.ReadFile(ctx, file)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read Java reference source %s: %w", file, err)
@@ -271,8 +271,8 @@ func verifyJavaParameterObjectRevisions(ctx context.Context, root string, files 
 	return readSet, revisions, nil
 }
 
-func inspectJavaParameterObjectCall(ctx context.Context, reference backend.Reference, targetPackage string, parameterCount int, revisions map[string]string) (javaLocatedCall, error) {
-	file := filepath.Clean(reference.File)
+func inspectJavaParameterObjectCall(ctx context.Context, root string, reference backend.Reference, targetPackage string, parameterCount int, revisions map[string]string) (javaLocatedCall, error) {
+	file := javaReferenceAbsolutePath(root, reference.File)
 	if _, found := revisions[file]; !found {
 		return javaLocatedCall{}, fmt.Errorf("java reference source %s has no recorded revision", reference.File)
 	}
@@ -295,6 +295,13 @@ func inspectJavaParameterObjectCall(ctx context.Context, reference backend.Refer
 		return javaLocatedCall{}, fmt.Errorf("java parameter-object call in %s has %d arguments for %d parameters", file, len(arguments), parameterCount)
 	}
 	return javaLocatedCall{file: file, position: reference.Range.Start, arguments: arguments}, nil
+}
+
+func javaReferenceAbsolutePath(root, file string) string {
+	if filepath.IsAbs(file) {
+		return filepath.Clean(file)
+	}
+	return filepath.Join(root, file)
 }
 
 func sortedJavaParameterObjectCallSites(callsByFile map[string][]javaLocatedCall, capacity int) []backend.CodeActionCallSite {

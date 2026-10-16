@@ -330,9 +330,22 @@ func TestMCPAmbiguousLookupDoesNotPublishSelectedScopeAsContinuation(t *testing.
 		t.Fatalf("ambiguous lookup failed: %s", out.String())
 	}
 	text := response.Result.Content[0].Text
-	for _, evidence := range []string{`"ambiguous": true`, "Server.Serve", "Other.Serve"} {
+	structuredResult := response.Result.Structured["result"].(map[string]any)
+	summary := structuredResult["summary"].(string)
+	if structuredResult["ambiguous"] != true || structuredResult["candidate_count"] != float64(2) {
+		t.Fatalf("ambiguous lookup structured selection = %#v", structuredResult)
+	}
+	if !strings.Contains(summary, "2 candidates") || strings.Contains(summary, "Server.Serve") || strings.Contains(summary, "Other.Serve") {
+		t.Fatalf("ambiguous lookup structured summary should contain counts only: %s", summary)
+	}
+	for _, evidence := range []string{"symbol: Server.Serve", "symbol: Other.Serve"} {
+		if strings.Count(text, evidence) != 1 {
+			t.Errorf("MCP text listing should contain candidate row %q once: %s", evidence, text)
+		}
+	}
+	for _, evidence := range []string{`"ambiguous":true`, "2 candidates"} {
 		if !strings.Contains(text, evidence) {
-			t.Errorf("lookup text omitted ambiguity evidence %q: %s", evidence, text)
+			t.Errorf("lookup MCP text omitted ambiguity evidence %q: %s", evidence, text)
 		}
 	}
 	for _, alias := range []string{"file", "symbol", "kind", "line", "column"} {
@@ -340,6 +353,130 @@ func TestMCPAmbiguousLookupDoesNotPublishSelectedScopeAsContinuation(t *testing.
 			t.Errorf("ambiguous lookup advertised unproven continuation alias %q: %#v", alias, response.Result.Structured)
 		}
 	}
+}
+
+func TestMCPLookupTargetContinuesIntoInspect(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/lookupinspect\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original := "package lookupinspect\n\nfunc Keep() string { return \"stable\" }\n"
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lookup := callReadMCP(t, root, "semantic_lookup", map[string]any{"symbol": "Keep"})
+	if lookup.IsError {
+		t.Fatalf("lookup failed: %s", lookup.Text)
+	}
+	lookupResult := lookup.Structured["result"].(map[string]any)
+	file, _ := lookupResult["file"].(string)
+	symbol, _ := lookupResult["symbol"].(string)
+	if file == "" || symbol == "" {
+		t.Fatalf("lookup omitted follow-up target: %#v", lookupResult)
+	}
+	inspection := callReadMCP(t, root, "semantic_inspect_symbol", map[string]any{"file": file, "symbol": symbol})
+	if inspection.IsError {
+		t.Fatalf("inspect follow-up failed for file %q and symbol %q: %s", file, symbol, inspection.Text)
+	}
+	inspectionResult := inspection.Structured["result"].(map[string]any)
+	inspectionText, ok := inspectionResult["inspection"].(string)
+	if !ok {
+		t.Fatalf("inspect follow-up omitted inspection payload: %#v", inspectionResult)
+	}
+	var inspected struct {
+		Matches []struct {
+			Source string `json:"source"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(inspectionText), &inspected); err != nil {
+		t.Fatalf("decode inspect follow-up: %v\n%s", err, inspectionText)
+	}
+	if len(inspected.Matches) != 1 || inspected.Matches[0].Source != "func Keep() string { return \"stable\" }" {
+		t.Fatalf("inspect follow-up did not retrieve the unchanged declaration: %s", inspectionText)
+	}
+	got, err := os.ReadFile(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatalf("read source after lookup and inspect: %v", err)
+	}
+	if string(got) != original {
+		t.Fatalf("read-only lookup/inspect changed source: %q", got)
+	}
+}
+
+func TestMCPReferencesKeepCallSitesAttachedToTheirCallers(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/referencecallers\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := "package referencecallers\n\nfunc Target() {}\n\nfunc Caller() { Target() }\n\nfunc OtherCaller() { Target() }\n"
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	response := callReadMCP(t, root, "semantic_find_references", map[string]any{"symbol": "Target"})
+	if response.IsError {
+		t.Fatalf("find references failed: %s", response.Text)
+	}
+	result := response.Structured["result"].(map[string]any)
+	if result["reference_count"] != float64(2) || result["file_count"] != float64(1) {
+		t.Fatalf("reference counts = %#v", result)
+	}
+	summary := result["summary"].(string)
+	if !strings.Contains(summary, "2 references") || strings.Contains(summary, "Caller") || strings.Contains(summary, "OtherCaller") {
+		t.Fatalf("reference structured summary should contain counts only: %s", summary)
+	}
+	for _, association := range []struct{ caller, reference string }{
+		{caller: "func Caller()", reference: "references at L5:C17"},
+		{caller: "func OtherCaller()", reference: "references at L7:C22"},
+	} {
+		callerAt := strings.Index(response.Text, association.caller)
+		referenceAt := strings.Index(response.Text, association.reference)
+		if callerAt < 0 || referenceAt <= callerAt {
+			t.Errorf("reference text did not group the call site beneath %s: %s", association.caller, response.Text)
+		}
+	}
+	if strings.Contains(response.Text, "func Target()") || !strings.Contains(response.Text, "limitations:") {
+		t.Fatalf("reference text misidentified callers or omitted scope limitations: %s", response.Text)
+	}
+	if !strings.Contains(response.Text, "2 locations in 1 file") {
+		t.Fatalf("references MCP text omitted counts: %s", response.Text)
+	}
+	if _, hasFullRecords := result["references"]; hasFullRecords {
+		t.Fatalf("structured reference result duplicated full records: %#v", result)
+	}
+}
+
+type readMCPResponse struct {
+	IsError    bool
+	Text       string
+	Structured map[string]any
+}
+
+func callReadMCP(t *testing.T, root, tool string, arguments map[string]any) readMCPResponse {
+	t.Helper()
+	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": arguments}}
+	var input, output bytes.Buffer
+	if err := json.NewEncoder(&input).Encode(request); err != nil {
+		t.Fatalf("encode %s request: %v", tool, err)
+	}
+	if err := mcptest.NewServer(t, "full", root, &output).Serve(t.Context(), &input); err != nil {
+		t.Fatalf("serve %s request: %v", tool, err)
+	}
+	var decoded struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode %s response: %v\n%s", tool, err, output.String())
+	}
+	if len(decoded.Result.Content) != 1 {
+		t.Fatalf("%s response content blocks = %d: %s", tool, len(decoded.Result.Content), output.String())
+	}
+	return readMCPResponse{IsError: decoded.Result.IsError, Text: decoded.Result.Content[0].Text, Structured: decoded.Result.Structured}
 }
 
 func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
@@ -471,6 +608,77 @@ func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
 	}
 	if lookup.Result.IsError || lookup.Result.Structured["symbol"] != continuedSymbol {
 		t.Fatalf("follow-up lookup did not resolve rename continuation: %s", lookupResponses[1])
+	}
+}
+
+func TestMCPAmbiguousRenameKeepsCandidateRowsOnce(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":          "module example.com/ambiguousrename\n\ngo 1.24\n",
+		"first/serve.go":  "package first\n\nfunc Serve() {}\n",
+		"second/serve.go": "package second\n\nfunc Serve() {}\n",
+	}
+	for name, content := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_rename\",\"arguments\":{\"symbol\":\"Serve\",\"to\":\"Run\"}}}\n", root)
+	var out bytes.Buffer
+	if err := mcptest.NewServer(t, "full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	responses := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(responses) != 2 {
+		t.Fatalf("rename responses = %d: %s", len(responses), out.String())
+	}
+	var response struct {
+		Result struct {
+			IsError    bool             `json:"isError"`
+			Content    []map[string]any `json:"content"`
+			Structured map[string]any   `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(responses[1]), &response); err != nil {
+		t.Fatalf("decode ambiguous rename: %v\\n%s", err, responses[1])
+	}
+	if !response.Result.IsError {
+		t.Fatalf("ambiguous rename was not reported as an error: %s", responses[1])
+	}
+	errorText, ok := response.Result.Structured["error"].(string)
+	if !ok || !strings.Contains(errorText, "matches 2 candidates") || strings.Contains(errorText, "first.Serve") || strings.Contains(errorText, "second.Serve") {
+		t.Fatalf("structured ambiguity error is not a headline: %#v", response.Result.Structured)
+	}
+	if response.Result.Structured["application_state"] != "unknown" {
+		t.Fatalf("ambiguous rename state = %#v, want unknown", response.Result.Structured["application_state"])
+	}
+	if _, exists := response.Result.Structured["symbol"]; exists {
+		t.Fatalf("ambiguous rename published a continuation: %#v", response.Result.Structured)
+	}
+	if len(response.Result.Content) != 1 {
+		t.Fatalf("ambiguous rename content = %#v", response.Result.Content)
+	}
+	text, _ := response.Result.Content[0]["text"].(string)
+	for _, row := range []string{"first/serve.go:3  func Serve()", "second/serve.go:3  func Serve()"} {
+		if strings.Count(text, row) != 1 {
+			t.Errorf("candidate row %q occurs %d times in MCP text: %s", row, strings.Count(text, row), text)
+		}
+	}
+	for name, content := range files {
+		if name == "go.mod" {
+			continue
+		}
+		actual, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(actual) != content {
+			t.Errorf("ambiguous rename mutated %s:\n%s", name, actual)
+		}
 	}
 }
 

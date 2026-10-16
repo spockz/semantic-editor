@@ -2,9 +2,14 @@
 package gobackend
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"maps"
 	"path/filepath"
 	"strings"
@@ -15,6 +20,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"github.com/spockz/semantic-editor/internal/symbol"
 	"github.com/spockz/semantic-editor/internal/telemetry"
 )
@@ -234,7 +240,12 @@ func (GoBackend) Lookup(ctx context.Context, project backend.ProjectContext, que
 	if err != nil {
 		return nil, fmt.Errorf("resolve Go lookup snapshot: %w", err)
 	}
-	return convertLookup(project.RootDir, snapshot)
+	result, err := convertLookup(project.RootDir, snapshot)
+	if err != nil {
+		return nil, err
+	}
+	result.SourceView = goSourceView(ctx)
+	return result, nil
 }
 
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
@@ -248,7 +259,7 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 		return nil, fmt.Errorf("capture Go rename lookup: %w", err)
 	}
 	if lookup.IsAmbiguous() {
-		return nil, renameAmbiguity(request.Project.RootDir, request.Symbol, lookup.Candidates)
+		return nil, renameAmbiguity(request.Project.RootDir, request.Symbol, lookup.Candidates, goSourceView(ctx))
 	}
 	if lookup.Definition == nil {
 		return nil, fmt.Errorf("rename lookup lacks a declaration identity")
@@ -384,12 +395,96 @@ func (GoBackend) Outline(_ context.Context, request backend.OutlineRequest) (*ba
 	return astedit.OutlineGo(request.Project.RootDir, request.Path, request.Kinds, request.IncludeUnexported, request.IncludeTests)
 }
 
-func convertCandidate(root string, candidate *symbol.Symbol, sources map[string][]byte) (*backend.NamedTarget, error) {
+type goLookupMetadata struct {
+	declarationRange *backend.Range
+	signature        *string
+}
+
+func convertCandidate(root string, candidate *symbol.Symbol, sources map[string][]byte, metadataByPath map[string]map[int]goLookupMetadata) (*backend.NamedTarget, error) {
 	location, err := sourceLocation(root, candidate.File, candidate.Offset, candidate.Name, sources)
 	if err != nil {
 		return nil, fmt.Errorf("capture Go lookup candidate: %w", err)
 	}
-	return &backend.NamedTarget{Name: candidate.Name, QualifiedName: candidate.BuildQualifiedName(), Kind: candidate.Kind, Location: location}, nil
+	path := candidate.File
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	path = filepath.Clean(path)
+	source, ok := sources[path]
+	if !ok {
+		return nil, fmt.Errorf("lookup snapshot lacks source for %s", path)
+	}
+	metadata, ok := metadataByPath[path]
+	if !ok {
+		metadata, err = goLookupDeclarationMetadata(path, source)
+		if err != nil {
+			return nil, fmt.Errorf("capture Go lookup declaration metadata: %w", err)
+		}
+		metadataByPath[path] = metadata
+	}
+	value, ok := metadata[candidate.Offset]
+	if !ok {
+		return &backend.NamedTarget{Name: candidate.Name, QualifiedName: candidate.BuildQualifiedName(), Kind: candidate.Kind, Location: location}, nil
+	}
+	return &backend.NamedTarget{Name: candidate.Name, QualifiedName: candidate.BuildQualifiedName(), Kind: candidate.Kind, Location: location, DeclarationRange: value.declarationRange, Signature: value.signature}, nil
+}
+
+func goLookupDeclarationMetadata(path string, source []byte) (map[int]goLookupMetadata, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, source, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("parse captured source %s: %w", path, err)
+	}
+	metadata := make(map[int]goLookupMetadata)
+	for _, declaration := range file.Decls {
+		switch typed := declaration.(type) {
+		case *ast.FuncDecl:
+			declarationRange, rangeErr := goLookupRange(source, fset, typed.Pos(), typed.End())
+			if rangeErr != nil {
+				return nil, rangeErr
+			}
+			signatureDecl := *typed
+			signatureDecl.Doc = nil
+			signatureDecl.Body = nil
+			var rendered bytes.Buffer
+			if formatErr := format.Node(&rendered, fset, &signatureDecl); formatErr != nil {
+				return nil, fmt.Errorf("format declaration signature: %w", formatErr)
+			}
+			signature := rendered.String()
+			metadata[fset.PositionFor(typed.Name.Pos(), false).Offset] = goLookupMetadata{declarationRange: &declarationRange, signature: &signature}
+		case *ast.GenDecl:
+			for _, spec := range typed.Specs {
+				for _, name := range goLookupSpecNames(spec) {
+					declarationRange, rangeErr := goLookupRange(source, fset, spec.Pos(), spec.End())
+					if rangeErr != nil {
+						return nil, rangeErr
+					}
+					metadata[fset.PositionFor(name.Pos(), false).Offset] = goLookupMetadata{declarationRange: &declarationRange}
+				}
+			}
+		}
+	}
+	return metadata, nil
+}
+
+func goLookupSpecNames(spec ast.Spec) []*ast.Ident {
+	switch typed := spec.(type) {
+	case *ast.TypeSpec:
+		return []*ast.Ident{typed.Name}
+	case *ast.ValueSpec:
+		return typed.Names
+	default:
+		return nil
+	}
+}
+
+func goLookupRange(source []byte, fset *token.FileSet, start, end token.Pos) (backend.Range, error) {
+	startOffset := fset.PositionFor(start, false).Offset
+	endOffset := fset.PositionFor(end, false).Offset
+	if startOffset < 0 || endOffset < startOffset || endOffset > len(source) {
+		return backend.Range{}, fmt.Errorf("invalid declaration byte span [%d,%d) for %d bytes", startOffset, endOffset, len(source))
+	}
+	return backend.Range{Start: backend.PositionFromByteOffset(source, startOffset), End: backend.PositionFromByteOffset(source, endOffset)}, nil
 }
 
 func sourceLocation(root, file string, offset int, name string, sources map[string][]byte) (backend.SourceLocation, error) {
@@ -414,22 +509,23 @@ func sourceLocation(root, file string, offset int, name string, sources map[stri
 func convertLookup(root string, snapshot *symbol.ResolutionSnapshot) (*backend.LookupResult, error) {
 	result := snapshot.Result
 	converted := &backend.LookupResult{}
+	metadataByPath := make(map[string]map[int]goLookupMetadata)
 	var err error
 	if result.Definition != nil {
-		converted.Definition, err = convertCandidate(root, result.Definition, snapshot.Files)
+		converted.Definition, err = convertCandidate(root, result.Definition, snapshot.Files, metadataByPath)
 		if err != nil {
 			return nil, err
 		}
 	}
 	for _, usage := range result.Usages {
-		candidate, convertErr := convertCandidate(root, usage, snapshot.Files)
+		candidate, convertErr := convertCandidate(root, usage, snapshot.Files, metadataByPath)
 		if convertErr != nil {
 			return nil, convertErr
 		}
 		converted.Usages = append(converted.Usages, candidate)
 	}
 	for _, choice := range result.Candidates {
-		candidate, convertErr := convertCandidate(root, choice, snapshot.Files)
+		candidate, convertErr := convertCandidate(root, choice, snapshot.Files, metadataByPath)
 		if convertErr != nil {
 			return nil, convertErr
 		}
@@ -438,18 +534,17 @@ func convertLookup(root string, snapshot *symbol.ResolutionSnapshot) (*backend.L
 	return converted, nil
 }
 
-func renameAmbiguity(root, query string, candidates []*backend.NamedTarget) error {
-	locations := make([]string, 0, len(candidates))
-	for _, candidate := range candidates {
-		file, err := pathutil.FilePathFromURI(candidate.Location.URI)
-		if err != nil {
-			return fmt.Errorf("resolve ambiguous rename candidate location: %w", err)
-		}
-		relative, err := filepath.Rel(root, file)
-		if err != nil {
-			return fmt.Errorf("project ambiguous rename candidate location: %w", err)
-		}
-		locations = append(locations, fmt.Sprintf("%s (%s)", filepath.ToSlash(relative), candidate.Identity()))
+func goSourceView(ctx context.Context) string {
+	if sourcebuf.FromContext(ctx) != nil {
+		return "working"
 	}
-	return fmt.Errorf("%w: symbol %q matches %d candidates: [%s]. Specify 'file' or a receiver qualification (e.g. 'TypeName.%s') to disambiguate directly", backend.ErrAmbiguous, query, len(locations), strings.Join(locations, ", "), query)
+	return "disk"
+}
+
+func renameAmbiguity(root, query string, candidates []*backend.NamedTarget, sourceView string) error {
+	locations, err := backend.RenderAmbiguousCandidates(root, candidates)
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: symbol %q in %s source matches %d candidates:\n%s\nSpecify 'file' or a receiver qualification (e.g. 'TypeName.%s') to disambiguate directly", backend.ErrAmbiguous, query, sourceView, len(candidates), locations, query)
 }

@@ -86,34 +86,17 @@ func referencesOutputSchema() *ValueSchema {
 		"name": outputString(), outputQualifiedNameField: outputString(), "kind": outputString(), "file": outputString(),
 		"range": rangeSchema, "selection_range": rangeSchema,
 	}, "name", outputQualifiedNameField, "kind", "file", "range", "selection_range")
-	reference := outputObject(map[string]ValueSchema{
-		"file": outputString(), "range": rangeSchema, "enclosing_symbol": outputString(), "snippet": outputString(),
-	}, "file", "range", "snippet")
-	referenceList := ValueSchema{Kind: SchemaArray, Items: &reference}
-	fileRevision := outputObject(map[string]ValueSchema{"file": outputString(), "revision": outputString()}, "file", "revision")
-	fileList := ValueSchema{Kind: SchemaArray, Items: &fileRevision}
 	return new(outputObject(map[string]ValueSchema{
-		"scope": scope, "symbol": symbol, "references": referenceList, "files": fileList,
-	}, "scope", "symbol", "references", "files"))
+		"summary": outputString(), "scope": scope, "symbol": symbol,
+		"reference_count": {Kind: SchemaInteger}, "file_count": {Kind: SchemaInteger},
+	}, "summary", "scope", "symbol", "reference_count", "file_count"))
 }
 
 func outlineOutputSchema() *ValueSchema {
-	position := outputObject(map[string]ValueSchema{"line": {Kind: SchemaInteger}, "character": {Kind: SchemaInteger}}, "line", "character")
-	rangeSchema := outputObject(map[string]ValueSchema{"start": position, "end": position}, "start", "end")
-	symbol := outputObject(map[string]ValueSchema{
-		"name": outputString(), outputQualifiedNameField: outputString(), "kind": outputString(), "file": outputString(),
-		"range": rangeSchema, "selection_range": rangeSchema, "signature": outputString(), "doc": outputString(),
-		"type": outputString(), "tag": outputString(), "server_detail": outputString(), "parent": outputString(),
-	}, "name", outputQualifiedNameField, "kind", "file", "range", "selection_range")
-	imports := outputObject(map[string]ValueSchema{"path": outputString(), "name": outputString()}, "path")
-	importList := ValueSchema{Kind: SchemaArray, Items: &imports}
-	symbolList := ValueSchema{Kind: SchemaArray, Items: &symbol}
-	file := outputObject(map[string]ValueSchema{
-		"file": outputString(), "language": outputString(), "revision": outputString(), "package": outputString(),
-		"doc": outputString(), "imports": importList, "symbols": symbolList,
-	}, "file", "language", "revision", "imports", "symbols")
-	files := ValueSchema{Kind: SchemaArray, Items: &file}
-	return new(outputObject(map[string]ValueSchema{"scope": readScopeOutputSchema(), "files": files}, "scope", "files"))
+	return new(outputObject(map[string]ValueSchema{
+		"summary": outputString(), "scope": readScopeOutputSchema(),
+		"file_count": {Kind: SchemaInteger}, "symbol_count": {Kind: SchemaInteger},
+	}, "summary", "scope", "file_count", "symbol_count"))
 }
 
 func workspaceOutlineOutputSchema() *ValueSchema {
@@ -211,20 +194,13 @@ func projectReferencesOutput(result *backend.ReferencesResult) (any, error) {
 	if result == nil {
 		return nil, fmt.Errorf("references result is missing")
 	}
-	references := result.References
-	if references == nil {
-		references = []backend.Reference{}
-	}
-	files := result.Files
-	if files == nil {
-		files = []backend.FileRevision{}
-	}
 	symbol := result.Symbol
 	return map[string]any{
-		"scope":      result.Scope,
-		"symbol":     map[string]any{"name": symbol.Name, outputQualifiedNameField: symbol.QualifiedName, "kind": symbol.Kind, "file": symbol.File, "range": symbol.Range, "selection_range": symbol.SelectionRange},
-		"references": references,
-		"files":      files,
+		"summary":         fmt.Sprintf("References to %s: %d references in %d files.", declarationIdentity(symbol.Name, symbol.QualifiedName), len(result.References), countReferenceFiles(result.References)),
+		"scope":           result.Scope,
+		"symbol":          map[string]any{"name": symbol.Name, outputQualifiedNameField: symbol.QualifiedName, "kind": symbol.Kind, "file": symbol.File, "range": symbol.Range, "selection_range": symbol.SelectionRange},
+		"reference_count": len(result.References),
+		"file_count":      countReferenceFiles(result.References),
 	}, nil
 }
 
@@ -232,42 +208,11 @@ func projectOutlineOutput(result *backend.OutlineResult) (any, error) {
 	if result == nil {
 		return nil, fmt.Errorf("outline result is missing")
 	}
-	files := make([]map[string]any, 0, len(result.Files))
-	for _, file := range result.Files {
-		imports := file.Imports
-		if imports == nil {
-			imports = []backend.ReadImport{}
-		}
-		symbols := make([]map[string]any, 0)
-		for _, entry := range file.Symbols {
-			flattenOutlineSymbol(&symbols, entry, "")
-		}
-		projected := map[string]any{"file": file.File, "language": file.Language, "revision": file.Revision, "package": file.Package, "imports": imports, "symbols": symbols}
-		if file.Doc != nil {
-			projected["doc"] = *file.Doc
-		}
-		files = append(files, projected)
-	}
-	return map[string]any{"scope": result.Scope, "files": files}, nil
-}
-
-func flattenOutlineSymbol(out *[]map[string]any, symbol backend.ReadSymbol, parent string) {
-	entry := map[string]any{
-		"name": symbol.Name, outputQualifiedNameField: symbol.QualifiedName, "kind": symbol.Kind, "file": symbol.File,
-		"range": symbol.Range, "selection_range": symbol.SelectionRange,
-	}
-	for key, value := range map[string]*string{"signature": symbol.Signature, "doc": symbol.Doc, "type": symbol.Type, "tag": symbol.Tag, "server_detail": symbol.ServerDetail} {
-		if value != nil {
-			entry[key] = *value
-		}
-	}
-	if parent != "" {
-		entry["parent"] = parent
-	}
-	*out = append(*out, entry)
-	for _, child := range symbol.Children {
-		flattenOutlineSymbol(out, child, symbol.QualifiedName)
-	}
+	symbolCount := countReadSymbols(result.Files)
+	return map[string]any{
+		"summary": fmt.Sprintf("Declaration outline: %d files, %d declarations.", len(result.Files), symbolCount), "scope": result.Scope,
+		"file_count": len(result.Files), "symbol_count": symbolCount,
+	}, nil
 }
 
 func projectWorkspaceOutlineOutput(result WorkspaceOutlineRes) (any, error) {

@@ -1,42 +1,35 @@
 # Outline a Go directory with visibility, kind, empty-file, test, and exclusion coverage
 exec semedit outline --path api
-stdout '"path":\s*"api"'
-stdout '"kind":\s*"interface"'
-stdout '"qualified_name":\s*"Server.Start"'
-stdout '"qualified_name":\s*"PublicFunction"'
-stdout '"name":\s*"Visible"'
-stdout '"name":\s*"secretField"'
-stdout '"name":\s*"hiddenMethod"'
-stdout '"name":\s*"fmtx"'
-stdout '"name":\s*"\."'
-stdout '"symbols":\s*\[\]'
-stdout '"path":\s*"net/http"'
-stdout '"path":\s*"net/http/httptest"'
+stdout 'Outline of directory_syntax "api" \(complete\): 2 files, 13 declarations\.'
+stdout 'Server\.Start'
+stdout 'PublicFunction'
+stdout 'Server\.Visible'
+stdout 'Server\.secretField'
+stdout 'Server\.hiddenMethod'
+stdout 'api/empty\.go'
 cmp api/server.go want/api/server.go
 exec semedit outline --path api --include-unexported=false --kind field
-stdout '"kind":\s*"type"'
-stdout '"name":\s*"Visible"'
-! stdout '"name":\s*"secretField"'
-! stdout '"qualified_name":\s*"PublicFunction"'
+stdout 'Server\.Visible'
+! stdout 'Server\.secretField'
+! stdout 'PublicFunction'
 exec semedit outline --path api --include-tests=true
-stdout '"name":\s*"TestServer"'
+stdout 'TestServer'
 exec semedit outline --path api/server_test.go
-stdout '"name":\s*"TestServer"'
+stdout 'TestServer'
 exec semedit outline --path api --kind method
-stdout '"qualified_name":\s*"Service.Do"'
-stdout '"symbols":\s*\[\]'
+stdout 'Service\.Do'
 ! semedit outline --path api --kind mystery
 stderr 'unknown outline kind'
 exec semedit outline --path api/server.go --kind class --kind target
-stdout '"symbols":\s*\[\]'
+stdout 'Outline of selected_file "api/server\.go"'
 exec semedit outline --path api/server.go --kind class --kind function
-stdout '"qualified_name":\s*"PublicFunction"'
+stdout 'PublicFunction'
 exec semedit outline --path .
-stdout '"file":\s*"other/extra.go"'
+stdout 'other/extra\.go'
 exec semedit outline --path generated.java
-stdout '"name":\s*"DirectorySymbol"'
+stdout 'DirectorySymbol'
 exec semedit outline --path generated.java --language go
-stdout '"name":\s*"DirectorySymbol"'
+stdout 'DirectorySymbol'
 
 -- go.mod --
 module example.com/readoutline

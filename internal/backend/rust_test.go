@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"crypto/sha256"
@@ -64,6 +65,16 @@ func TestREQ003BackendRejectsUnsafeRenameWithoutWrite(t *testing.T) {
 	got, _ := os.ReadFile(file) // #nosec G304 -- test fixture path is created in t.TempDir.
 	if string(got) != "fn value() {}\n" {
 		t.Fatalf("source changed: %q", got)
+	}
+}
+
+func TestRustRenameAmbiguityListsRenderedCandidates(t *testing.T) {
+	root, file := rustProject(t, "struct First {}\nstruct Second {}\n")
+	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"First","kind":23,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":7},"end":{"line":0,"character":12}},"children":[{"name":"run","kind":6,"range":{"start":{"line":0,"character":7},"end":{"line":0,"character":12}},"selectionRange":{"start":{"line":0,"character":7},"end":{"line":0,"character":10}}}]},{"name":"Second","kind":23,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":15}},"selectionRange":{"start":{"line":1,"character":7},"end":{"line":1,"character":13}},"children":[{"name":"run","kind":6,"range":{"start":{"line":1,"character":7},"end":{"line":1,"character":13}},"selectionRange":{"start":{"line":1,"character":7},"end":{"line":1,"character":10}}}]}]`)}
+	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) { return session, nil })
+	_, err := b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "run", To: "other"})
+	if !errors.Is(err, backend.ErrAmbiguous) || !strings.Contains(err.Error(), "lib.rs:1") || !strings.Contains(err.Error(), "symbol: First::run") || !strings.Contains(err.Error(), "symbol: Second::run") {
+		t.Fatalf("rename ambiguity = %v", err)
 	}
 }
 

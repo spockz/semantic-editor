@@ -4,6 +4,12 @@ This reference provides workflows for inspecting and refactoring Makefiles with 
 
 ---
 
+Compact lookup and outline listings use workspace-relative paths and one-based
+inclusive declaration lines. Copy native target or variable selectors verbatim.
+Read disk-backed source directly, or use supported `semantic_inspect_symbol`
+inspection to retrieve source and revision information. Navigation does not grant
+mutation capability.
+
 ## 1. Macro Refactorings in Makefiles
 
 `semedit` core operations for Makefiles are indexed in the primary `SKILL.md` table. Makefile backend operations require workspace trust and an installed `make-ls`. This reference defines target structuring patterns and verification practices.

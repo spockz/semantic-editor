@@ -445,6 +445,14 @@ func fakeInitializeResult(params json.RawMessage) (any, bool) {
 func fakeDocumentSymbols(state *fakeLanguageServerState, raw json.RawMessage) []fakeDocumentSymbol {
 	symbol := state.symbol
 	codeActionSeen := state.codeActionSeen
+	if os.Getenv("SEMEDIT_TEST_RUST_AMBIGUOUS") != "" {
+		return []fakeDocumentSymbol{
+			{Name: "first", Kind: 2, Range: fakeLSPRange{Start: fakeLSPPosition{Line: 0}, End: fakeLSPPosition{Line: 2, Character: 1}}, SelectionRange: fakeRangeAt(0, 4, 9),
+				Children: []fakeDocumentSymbol{{Name: "Widget", Kind: 23, Range: fakeRangeAt(1, 4, 21), SelectionRange: fakeRangeAt(1, 15, 21)}}},
+			{Name: "second", Kind: 2, Range: fakeLSPRange{Start: fakeLSPPosition{Line: 3}, End: fakeLSPPosition{Line: 5, Character: 1}}, SelectionRange: fakeRangeAt(3, 4, 10),
+				Children: []fakeDocumentSymbol{{Name: "Widget", Kind: 23, Range: fakeRangeAt(4, 4, 21), SelectionRange: fakeRangeAt(4, 15, 21)}}},
+		}
+	}
 	if os.Getenv("SEMEDIT_TEST_JAVA_ELEMENT") != "" {
 		return []fakeDocumentSymbol{{Name: "Widget", Kind: 5,
 			Range: fakeLSPRange{Start: fakeLSPPosition{Line: 2}, End: fakeLSPPosition{Line: 4, Character: 1}}, SelectionRange: fakeRangeAt(2, 6, 12),

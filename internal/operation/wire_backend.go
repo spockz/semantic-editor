@@ -183,12 +183,14 @@ func (r *VerifyReq) SetProjectContext(project backend.ProjectContext) { r.Projec
 
 // LookupTarget describes one public lookup target without exposing source URIs.
 type LookupTarget struct {
-	Name          string `json:"name,omitempty"`
-	QualifiedName string `json:"qualified_name,omitempty"`
-	Kind          string `json:"kind,omitempty"`
-	File          string `json:"file,omitempty"`
-	Line          int    `json:"line,omitempty"`
-	Column        int    `json:"column,omitempty"`
+	Name             string         `json:"name,omitempty"`
+	QualifiedName    string         `json:"qualified_name,omitempty"`
+	Kind             string         `json:"kind,omitempty"`
+	File             string         `json:"file,omitempty"`
+	Line             int            `json:"line,omitempty"`
+	Column           int            `json:"column,omitempty"`
+	DeclarationRange *backend.Range `json:"declaration_range,omitempty"`
+	Signature        *string        `json:"signature,omitempty"`
 }
 
 // LookupRes contains the public lookup projection.
@@ -202,6 +204,7 @@ type LookupRes struct {
 	Usages     []LookupTarget `json:"usages,omitempty"`
 	Ambiguous  bool           `json:"ambiguous,omitempty"`
 	Candidates []LookupTarget `json:"candidates,omitempty"`
+	SourceView string         `json:"source_view,omitempty"`
 	WorkRoot   string         `json:"-"`
 }
 
@@ -401,7 +404,15 @@ func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*LookupR
 	if workRoot == "" {
 		workRoot = request.WorkRoot
 	}
-	return lookupResponse(workRoot, request.Symbol, result)
+	response, err := lookupResponse(workRoot, request.Symbol, result)
+	if err != nil {
+		return nil, err
+	}
+	response.SourceView = result.SourceView
+	if response.SourceView == "" {
+		response.SourceView = "disk"
+	}
+	return response, nil
 }
 
 func lookupResponse(root, query string, result *backend.LookupResult) (*LookupRes, error) {
@@ -464,6 +475,7 @@ func lookupTarget(root string, target *backend.NamedTarget) (LookupTarget, error
 	return LookupTarget{
 		Name: target.Name, QualifiedName: qualifiedName, Kind: target.Kind,
 		File: lookupWorkspacePath(root, file), Line: position.Line + 1, Column: position.Character + 1,
+		DeclarationRange: target.DeclarationRange, Signature: target.Signature,
 	}, nil
 }
 
@@ -527,11 +539,7 @@ func SelectedGoModuleRoots(projectRoot string, selectedPaths []string) ([]string
 }
 
 func formatLookup(result *LookupRes) (string, error) {
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("format lookup result: %w", err)
-	}
-	return string(data), nil
+	return renderLookupNavigation(result), nil
 }
 
 func formatRename(result *backend.RenameResult) (string, error) {
@@ -584,17 +592,14 @@ func formatVerify(result VerifyRes) (string, error) {
 
 func lookupDef() Def[LookupReq, *LookupRes] {
 	text := ValueSchema{Kind: SchemaString}
-	candidate := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"name": text, outputQualifiedNameField: text, "kind": text, "file": text,
-		"line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
-	}, Required: []string{"name", "kind"}}
 	schema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"symbol": text, "file": text, "kind": text, "line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
-		"ambiguous": {Kind: SchemaBoolean}, "candidates": {Kind: SchemaArray, Items: &candidate},
-	}, Required: []string{"ambiguous"}}
+		"summary": text, "symbol": text, "file": text, "kind": text, "line": {Kind: SchemaInteger}, "column": {Kind: SchemaInteger},
+		"source_view": {Kind: SchemaString, Enum: []any{"disk", "working"}},
+		"ambiguous":   {Kind: SchemaBoolean}, "candidate_count": {Kind: SchemaInteger},
+	}, Required: []string{"summary", "ambiguous"}}
 	return Def[LookupReq, *LookupRes]{
 		Key:     capability.OpLookup,
-		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed. Returns symbol, file, kind, line, and column. Pass symbol and file to follow-up semedit calls. Use line and column only for file-navigation reads; they are not accepted as semedit tool parameters.",
+		Summary: ("Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed. Returns one normalized declaration listing in text with workspace-relative file paths, inclusive declaration line spans, and native selectors separate from optional signatures; line and column remain one-based UTF-16 navigation coordinates. The text result carries the listing once; structured output carries status, source view, ambiguity count, or unique target fields needed for follow-up calls. Use a listed file path and native selector with ordinary file-reading tools or semantic_inspect_symbol where the selected backend supports it; coordinates are navigation hints, not mutation parameters. Inputs are not accepted as semedit tool parameters unless declared in the schema."),
 		Params:  lookupParams, Level: LevelSymbol, ReadOnly: true,
 		CLIName: "lookup", MCPName: semanticLookupToolName, Parse: parseLookup,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, LookupReq) (*LookupRes, error){
@@ -615,15 +620,28 @@ func projectLookupResult(result *LookupRes) (any, error) {
 	if result == nil {
 		return nil, fmt.Errorf("project lookup: missing result: %w", ErrInvalidDefinition)
 	}
-	projected := map[string]any{"ambiguous": result.Ambiguous}
+	sourceView := result.SourceView
+	if sourceView == "" {
+		sourceView = "disk"
+	}
+	projected := map[string]any{"summary": compactLookupSummary(result), "ambiguous": result.Ambiguous, "source_view": sourceView}
 	if !result.Ambiguous {
 		projectResolvedLookup(result, projected)
 		return projected, nil
 	}
-	candidates := make([]LookupTarget, 0, len(result.Candidates))
-	candidates = append(candidates, result.Candidates...)
-	projected["candidates"] = candidates
+	projected["candidate_count"] = len(result.Candidates)
 	return projected, nil
+}
+
+func compactLookupSummary(result *LookupRes) string {
+	view := result.SourceView
+	if view == "" {
+		view = "disk"
+	}
+	if result.Ambiguous {
+		return fmt.Sprintf("Ambiguous lookup %q: %d candidates in %s source.", result.Symbol, len(result.Candidates), view)
+	}
+	return fmt.Sprintf("Resolved %s (%s) at %s:%d:%d in %s source.", result.Symbol, result.Kind, result.File, result.Line, result.Column, view)
 }
 
 func projectResolvedLookup(result *LookupRes, projected map[string]any) {

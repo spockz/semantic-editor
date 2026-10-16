@@ -484,7 +484,12 @@ func (b *JavaBackend) Lookup(ctx context.Context, project backend.ProjectContext
 	if err != nil {
 		return nil, err
 	}
-	return selectJavaSymbol(query, file, symbols)
+	result, err := selectJavaSymbol(query, file, symbols)
+	if err != nil {
+		return nil, err
+	}
+	result.SourceView = javaSourceView(ctx)
+	return result, nil
 }
 
 func (b *JavaBackend) lookupJavaDirectory(ctx context.Context, project backend.ProjectContext, root, target, query string) (*backend.LookupResult, error) {
@@ -539,7 +544,7 @@ func (b *JavaBackend) lookupJavaDirectory(ctx context.Context, project backend.P
 		return nil, &JavaError{Op: "lookup", File: target, Symbol: query, Err: ErrJavaSymbolNotFound}
 	}
 	if len(candidates) == 1 {
-		return &backend.LookupResult{Definition: candidates[0]}, nil
+		return &backend.LookupResult{Definition: candidates[0], SourceView: javaSourceView(ctx)}, nil
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].Location.URI != candidates[j].Location.URI {
@@ -547,7 +552,14 @@ func (b *JavaBackend) lookupJavaDirectory(ctx context.Context, project backend.P
 		}
 		return candidates[i].QualifiedName < candidates[j].QualifiedName
 	})
-	return &backend.LookupResult{Candidates: candidates}, nil
+	return &backend.LookupResult{Candidates: candidates, SourceView: javaSourceView(ctx)}, nil
+}
+
+func javaSourceView(ctx context.Context) string {
+	if sourcebuf.FromContext(ctx) != nil {
+		return "working"
+	}
+	return "disk"
 }
 
 type javaLocation struct {
@@ -591,7 +603,11 @@ func (b *JavaBackend) FindReferences(ctx context.Context, request backend.Refere
 		return nil, err
 	}
 	if lookup.IsAmbiguous() || lookup.Definition == nil {
-		return nil, &JavaError{Op: javaOperationReferences, File: file, Symbol: request.Symbol, Err: errors.New("references require one unique target")}
+		locations, renderErr := backend.RenderAmbiguousCandidates(root, lookup.Candidates)
+		if renderErr != nil {
+			return nil, &JavaError{Op: javaOperationReferences, File: file, Symbol: request.Symbol, Err: renderErr}
+		}
+		return nil, &JavaError{Op: javaOperationReferences, File: file, Symbol: request.Symbol, Err: fmt.Errorf("%w: references require one unique target in %s source:\n%s", backend.ErrAmbiguous, javaSourceView(ctx), locations)}
 	}
 	params := map[string]any{
 		lspTextDocumentKey: map[string]string{"uri": lookup.Definition.Location.URI},
@@ -615,17 +631,26 @@ func (b *JavaBackend) FindReferences(ctx context.Context, request backend.Refere
 	if err != nil {
 		return nil, err
 	}
+	return buildJavaReferencesResult(ctx, root, file, source, lookup.Definition, locations)
+}
+
+func buildJavaReferencesResult(ctx context.Context, root, file string, source []byte, definition *backend.NamedTarget, locations []javaLocation) (*backend.ReferencesResult, error) {
+	declarationRange := definition.Location.Range
+	if definition.DeclarationRange != nil {
+		declarationRange = *definition.DeclarationRange
+	}
 	result := &backend.ReferencesResult{
 		Scope: backend.ReadScope{
-			Kind: "workspace", Path: root, Complete: false,
+			Kind: "workspace", Path: ".", Complete: false,
 			Limitations: []string{"JDT LS does not expose whether its workspace reference index is complete."},
 		},
 		Symbol: backend.ReadSymbol{
-			Name: lookup.Definition.Name, QualifiedName: lookup.Definition.QualifiedName,
-			Kind: lookup.Definition.Kind, File: file, Range: lookup.Definition.Location.Range,
-			SelectionRange: lookup.Definition.Location.Range,
+			Name: definition.Name, QualifiedName: definition.QualifiedName,
+			Kind: definition.Kind, File: javaScopeDisplay(root, file), Range: declarationRange,
+			SelectionRange: definition.Location.Range,
 		},
 		References: make([]backend.Reference, 0, len(locations)),
+		SourceView: javaSourceView(ctx),
 	}
 	files := map[string][32]byte{file: sha256.Sum256(source)}
 	for _, location := range locations {
@@ -635,11 +660,21 @@ func (b *JavaBackend) FindReferences(ctx context.Context, request backend.Refere
 		}
 		result.References = append(result.References, reference)
 	}
-	result.Files = javaReferenceFileRevisions(files)
+	sort.Slice(result.References, func(i, j int) bool {
+		left, right := result.References[i], result.References[j]
+		if left.File != right.File {
+			return left.File < right.File
+		}
+		if left.Range.Start.Line != right.Range.Start.Line {
+			return left.Range.Start.Line < right.Range.Start.Line
+		}
+		return left.Range.Start.Character < right.Range.Start.Character
+	})
+	result.Files = javaReferenceFileRevisions(root, files)
 	return result, nil
 }
 
-func javaReferenceFileRevisions(files map[string][32]byte) []backend.FileRevision {
+func javaReferenceFileRevisions(root string, files map[string][32]byte) []backend.FileRevision {
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
@@ -648,7 +683,7 @@ func javaReferenceFileRevisions(files map[string][32]byte) []backend.FileRevisio
 	revisions := make([]backend.FileRevision, 0, len(paths))
 	for _, path := range paths {
 		digest := files[path]
-		revisions = append(revisions, backend.FileRevision{File: path, Revision: hex.EncodeToString(digest[:])})
+		revisions = append(revisions, backend.FileRevision{File: javaScopeDisplay(root, path), Revision: hex.EncodeToString(digest[:])})
 	}
 	return revisions
 }
@@ -675,7 +710,7 @@ func appendJavaReference(ctx context.Context, root, sourceFile string, source []
 		return backend.Reference{}, &JavaError{Op: javaOperationReferences, File: refFile, Err: ErrJavaMalformedResponse}
 	}
 	return backend.Reference{
-		File: refFile, Range: backend.Range{Start: backend.Position(location.Range.Start), End: backend.Position(location.Range.End)},
+		File: javaScopeDisplay(root, refFile), Range: backend.Range{Start: backend.Position(location.Range.Start), End: backend.Position(location.Range.End)},
 		Snippet: string(refSource[start:end]),
 	}, nil
 }
@@ -961,7 +996,11 @@ func prepareJavaRenameEdit(ctx context.Context, session JavaSession, root, file 
 		return javaRenameEdit{}, err
 	}
 	if lookup.IsAmbiguous() || lookup.Definition == nil {
-		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: errors.New("rename requires one unique target")}
+		locations, renderErr := backend.RenderAmbiguousCandidates(root, lookup.Candidates)
+		if renderErr != nil {
+			return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: renderErr}
+		}
+		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: fmt.Errorf("%w: rename requires one unique target in %s source:\n%s", backend.ErrAmbiguous, javaSourceView(ctx), locations)}
 	}
 	position := lookup.Definition.Location.Range.Start
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": position})
@@ -2442,7 +2481,8 @@ func javaSimpleParameterType(parameter string) string {
 func javaCandidate(file string, symbol javaDocumentSymbol, path []string) *backend.NamedTarget {
 	start := symbol.SelectionRange.Start
 	location := backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: backend.Position(start), End: backend.Position(symbol.SelectionRange.End)}}
-	return &backend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: javaKindName(symbol.Kind), Location: location}
+	declarationRange := backend.Range{Start: backend.Position(symbol.Range.Start), End: backend.Position(symbol.Range.End)}
+	return &backend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: javaKindName(symbol.Kind), Location: location, DeclarationRange: &declarationRange}
 }
 
 func javaByteOffset(source []byte, position javaPosition) (int, error) {
@@ -2696,6 +2736,11 @@ func (b *JavaBackend) Outline(ctx context.Context, request backend.OutlineReques
 		return nil, &JavaError{Op: "outline", File: file, Err: err}
 	}
 	result, err := readlsp.Outline(readlsp.Document{Root: root, File: file, Language: backend.LanguageJava, Source: source, Symbols: mapped, Complete: true}, outlineRequest)
+	if result != nil {
+		for index := range result.Files {
+			result.Files[index].SourceView = javaSourceView(ctx)
+		}
+	}
 	if err == nil && !request.IncludeUnexported {
 		filterJavaPublicSymbols(source, &result.Files[0].Symbols)
 	}
@@ -2769,6 +2814,7 @@ func (b *JavaBackend) outlineJavaFile(ctx context.Context, request backend.Outli
 		return backend.OutlineFile{}, err
 	}
 	fileOutline := outlined.Files[0]
+	fileOutline.SourceView = javaSourceView(ctx)
 	if !request.IncludeUnexported {
 		filterJavaPublicSymbols(source, &fileOutline.Symbols)
 	}

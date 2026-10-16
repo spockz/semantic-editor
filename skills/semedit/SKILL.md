@@ -17,11 +17,26 @@ Tool descriptions summarize single-fault support and conditional recovery. The g
 
 ## Choose the operation by intent
 
+Lookup, declaration outlines, and references return compact navigation summaries,
+without declaration bodies. Paths resolve from the selected workspace root. Line
+ranges are one-based and inclusive declaration extents; reference coordinates
+identify occurrences separately. Copy an explicit `symbol` selector verbatim,
+including receiver or overload qualification. Read disk-backed files directly,
+or call `semantic_inspect_symbol` with the returned file and native selector where
+the backend supports inspection. An overlay source label identifies unpublished
+contents that require overlay-aware inspection. Discovery alone does not grant
+mutation capability or replace guarded inspection continuations.
+
+The CLI and MCP text contain the navigation listing. MCP structured results retain
+counts, scope, source-view metadata, and required resolved target fields without
+duplicating declaration or occurrence arrays. Workspace outlines retain their
+separate package/module records; inspection still returns source and revisions.
+
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
 | Discover packages, synopses, and module boundaries across a polyglot workspace | `semantic_workspace_outline` with optional `path` and `include_tests`; `language: "auto"` aggregates Go and Java, while `"go"` or `"java"` restricts discovery | Directory listing, `find`, or `tree` shell exploration |
-| Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
-| Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
+| Find a named symbol in Go, Java, Rust, Scala, Kotlin, Bash, Make, or standalone Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
+| Retrieve a discovered declaration's source, signature, doc comment, and revision | `semantic_inspect_symbol` where supported, or ordinary file reading for disk-backed coordinates | Guessing signatures or reading disk for unpublished overlay results |
 | Inspect matching nested Go or Java constructs before selecting an ambiguous target | `semantic_inspect_construct`; copy a candidate path and selection revision from the same result | Guessing structural paths or retrying unchanged selectors |
 | View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` (use `semantic_workspace_outline` first to discover packages) | Reading whole files or manual grep navigation |
 | Find usages, call sites, or references of a Go or trusted Java symbol | `semantic_find_references` | Broad text search or regex |

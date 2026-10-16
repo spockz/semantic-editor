@@ -3,8 +3,7 @@ package operation
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backends"
 	"github.com/spockz/semantic-editor/internal/capability"
@@ -65,17 +64,13 @@ func referencesRun(ctx context.Context, cc CallContext, request ReferencesReq) (
 }
 
 func formatReferences(result *backend.ReferencesResult) (string, error) {
-	data, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("format references result: %w", err)
-	}
-	return string(data), nil
+	return renderReferencesNavigation(result), nil
 }
 
 func referencesDef() Def[ReferencesReq, *backend.ReferencesResult] {
 	return Def[ReferencesReq, *backend.ReferencesResult]{
 		Key:     capability.OpFindReferences,
-		Summary: "Use this tool instead of text search when finding typed references to a Go or Java declaration. The optional file selects the target; results span the active Go module or trusted Java workspace.",
+		Summary: ("Use this tool instead of text search when finding typed references to a Go or Java declaration. The optional file selects the target; results span the active Go module or trusted Java workspace. Returns one normalized reference listing in text with workspace-relative file paths, positions, and enclosing declaration rows when resolved. The listing appears once in text; structured output carries scope, target identity, and reference/file counts only. Use a listed file path and native selector with ordinary file-reading tools or semantic_inspect_symbol where the selected backend supports it; coordinates are navigation hints, not mutation parameters."),
 		Params:  referencesParams, Level: LevelSymbol, CLIName: "find-references", MCPName: semanticFindReferencesToolName,
 		ReadOnly: true, Batchable: false, Parse: parseReferences,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReferencesReq) (*backend.ReferencesResult, error){

@@ -27,7 +27,7 @@ We introduce three dedicated, zero-token read operations across the core engine,
    `revision` field.
 
 2. **Hierarchical Outline (`semantic_outline` / `semedit outline`)**:
-   Projects declaration hierarchies for a selected file or directory. Function and method bodies are elided to conserve context budget. Supports kind filtering (`kinds`), unexported symbol inclusion (`include_unexported`), and test symbol inclusion (`include_tests`). Preserves package documentation comments on empty extension points.
+   Projects declaration hierarchies for a selected file or directory. Function and method bodies are elided to conserve context budget. Supports kind filtering (`kinds`), unexported symbol inclusion (`include_unexported`), and test symbol inclusion (`include_tests`). Native records preserve package documentation comments on empty extension points; agent navigation presents concise declaration summaries.
 
 3. **Symbol References (`semantic_find_references` / `semedit references`)**:
    Separates declaration definitions from usages. Resolves call sites, parameter bindings, type usages, and field accesses across workspace source files.
@@ -42,7 +42,7 @@ We extend cross-language parity for these read capabilities:
 
 - Read operations preserve workspace immutability: disk state, git worktrees, and file modification timestamps remain untouched.
 - Ambiguous symbol queries return complete candidate sets with distinct locations rather than aborting or arbitrarily selecting a single match.
-- Hierarchical outlines omit executable statement bodies while retaining canonical signatures, doc comments, and parent-child declaration relationships.
+- Hierarchical outlines omit executable statement bodies while retaining available signatures and parent-child declaration relationships. Full documentation remains available through source inspection and native records.
 - Language backends declare read capabilities explicitly in the backend registry; unsupported combinations reject execution with structured errors.
 - Every public language-operation combination maintains executable CLI txtar contract test coverage.
 
@@ -65,3 +65,51 @@ remain stable, but Go byte-column behavior is deliberately canonicalized. Go
 compiler and AST positions stay byte-based internally. Conversion to a byte
 position uses captured source, never a best-effort disk reread. Staged lookup and
 inspection therefore observe the same unpublished revision.
+
+## Compact navigation projection: 2026-10-16
+
+Lookup and its ambiguity candidates, declaration outlines, and reference results
+share a normalized declaration summary and line-oriented renderer. Backend data
+remains typed; the agent-facing projection carries the useful navigation listing
+once, together with scope, completeness, source-view information, and required
+continuation fields. Full serialized declaration trees are not paired with the
+compact listing. This replaces the declaration-outline delivery requirement in
+ADR-0066 without changing workspace package or module records.
+
+CLI output and MCP text carry that listing. MCP structured results retain compact
+status summaries, counts, scope, source view, and required resolved target fields.
+The text listing therefore reaches clients that forward only text, while clients
+that expose both MCP representations receive no duplicate bulk listing.
+
+Locations resolve from the active workspace root. Declaration extents display as
+one-based inclusive lines, converting native end-exclusive ranges correctly.
+A start-only location remains a point. Descriptive signatures and exact native
+selectors remain distinct; receiver and overload qualification must survive the
+projection. Missing signatures or unsupported inspection are not invented.
+
+References retain occurrence coordinates separately from declaration extents.
+Lookup local bindings retain their own navigation-only section; they are neither
+semantic references nor resolved inspection or mutation targets.
+Grouping uses known enclosing declarations without inventing call relationships;
+unresolved owners remain plain occurrences. Native result limits, ambiguity,
+ordering, and coverage limitations remain intact. Snapshot metadata and selectors
+describe one source view. Overlay groups identify unpublished source and require
+overlay-aware inspection; they do not promise disk contents or live mutation
+continuations.
+
+Inspection remains the explicit source-bearing operation with its revision and
+same-record continuation contract. Construct inspection retains anonymous
+construct selectors and selection revisions. Registry review found no additional
+search, caller, callee, or related-symbol operation. Existing ambiguous Go, Java,
+and Rust rename alternatives and Go and Java reference alternatives use the same
+declaration-summary conventions; adding a symbol suggestion
+provider or an external search integration is outside this decision.
+Typed ambiguous navigation errors retain their complete alternatives in MCP text;
+the structured error carries their headline instead of duplicating the listing.
+Error state and continuation restrictions remain unchanged.
+
+Java source snapshots carry their disk or working provenance through lookup,
+outline, and references. Reference target, occurrence, and revision paths are
+workspace-relative; internal mutation planning resolves them against that root.
+Flat language-server symbols without a declaration extent remain start-only
+navigation points rather than presenting their identifier range as a declaration.

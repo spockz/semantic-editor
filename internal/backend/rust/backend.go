@@ -374,7 +374,11 @@ func performRustRename(ctx context.Context, session RustSession, root, file stri
 		return nil, err
 	}
 	if lookup.IsAmbiguous() || lookup.Definition == nil {
-		return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: errors.New("rename requires one unique target")}
+		locations, renderErr := neutralbackend.RenderAmbiguousCandidates(root, lookup.Candidates)
+		if renderErr != nil {
+			return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: renderErr}
+		}
+		return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: fmt.Errorf("%w: rename requires one unique target in disk source:\n%s", neutralbackend.ErrAmbiguous, locations)}
 	}
 	position := lookup.Definition.Location.Range.Start
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position})
@@ -882,7 +886,8 @@ func rustCandidate(file string, symbol rustDocumentSymbol, path []string) *neutr
 			End:   neutralbackend.Position{Line: symbol.SelectionRange.End.Line, Character: symbol.SelectionRange.End.Character},
 		},
 	}
-	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "::"), Kind: rustKindName(symbol.Kind), Location: location}
+	declarationRange := neutralbackend.Range{Start: neutralbackend.Position(symbol.Range.Start), End: neutralbackend.Position(symbol.Range.End)}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "::"), Kind: rustKindName(symbol.Kind), Location: location, DeclarationRange: &declarationRange}
 }
 
 func rustByteOffset(source []byte, position rustPosition) (int, error) {

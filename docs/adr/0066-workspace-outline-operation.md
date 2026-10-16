@@ -29,7 +29,7 @@ We introduce a dedicated, zero-token read operation: **`workspace_outline`** (`s
    Auto mode aggregates supported Go and Java ecosystems without making their presence mutually exclusive. Explicit language selection restricts discovery to that backend. Go discovery reads module manifests and `go.work` use directives. Scoped requests report the nearest enclosing module and nested modules within the requested subtree, with packages attributed to their exact owning module. Modules carry synopses, documentation, language ownership, and package counts for the selected scope.
 4. **Dual Output Delivery**:
    * **Command-Line Interface (CLI)**: Emits depth-ordered package lines and module coordinates with synopses; mixed results identify their languages.
-   * **Model Context Protocol (MCP)**: Returns complete records once in structured content. Text contains a concise summary and critical scope/status metadata without repeating bulk arrays or serialized result strings. Declaration outlines follow the same projection boundary.
+   * **Model Context Protocol (MCP)**: Returns complete package and module records once in structured content. Text contains a concise summary and critical scope/status metadata without repeating bulk arrays or serialized result strings. Declaration outlines instead use the compact navigation projection defined in ADR-0051; package and module records retain their own schema.
 5. **Bidirectional Navigation Integration**:
    * MCP server prescriptive instructions recommend `semantic_workspace_outline` as the primary starting orientation tool before inspecting declarations or mutating code.
    * `semantic_outline` refers callers to `semantic_workspace_outline` to determine candidate package directories.

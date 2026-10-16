@@ -348,10 +348,12 @@ type MakeConfig struct {
 
 // NamedTarget identifies a named source target by its exact identifier range.
 type NamedTarget struct {
-	Name          string         `json:"-"`
-	QualifiedName string         `json:"-"`
-	Kind          string         `json:"-"`
-	Location      SourceLocation `json:"-"`
+	Name             string         `json:"-"`
+	QualifiedName    string         `json:"-"`
+	Kind             string         `json:"-"`
+	Location         SourceLocation `json:"-"`
+	DeclarationRange *Range         `json:"-"`
+	Signature        *string        `json:"-"`
 }
 
 // Identity returns the qualified identity when present, falling back to the simple name.
@@ -370,6 +372,7 @@ type LookupResult struct {
 	Definition *NamedTarget   `json:"-"`
 	Usages     []*NamedTarget `json:"-"`
 	Candidates []*NamedTarget `json:"-"`
+	SourceView string         `json:"-"`
 }
 
 // IsAmbiguous reports whether lookup found multiple candidate targets.

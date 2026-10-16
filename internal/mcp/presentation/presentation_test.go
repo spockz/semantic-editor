@@ -70,3 +70,66 @@ func TestCriticalTextSummarizesOutlinesWithoutPruningUserCollections(t *testing.
 		t.Fatalf("ordinary user collections were pruned: %s", ordinaryText)
 	}
 }
+
+func TestCriticalTextKeepsReadNavigationListingInTextOnly(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name      string
+		result    map[string]any
+		body      string
+		listing   string
+		critical  string
+		preserved []string
+	}{
+		{
+			name: "outline",
+			result: map[string]any{
+				"summary":    "Declaration outline for \"main.go\": 1 file, 1 symbol.",
+				"scope":      map[string]any{"kind": "selected_file", "path": "main.go", "complete": true, "limitations": []any{"limited fixture scope"}},
+				"file_count": 1, "symbol_count": 1,
+			},
+			body:    "Declaration outline of main.go (1 file).\nfunction sample.Keep in main.go:L3-L3; selector L3:C6-L3:C10\nsignature: func Keep()",
+			listing: "function sample.Keep", critical: "1 file, 1 symbol", preserved: []string{`"symbol_count":1`, `"limitations":["limited fixture scope"]`},
+		},
+		{
+			name: "references",
+			result: map[string]any{
+				"summary":         "References to sample.Keep: 2 locations in 1 file.",
+				"scope":           map[string]any{"kind": "module", "path": ".", "complete": true},
+				"symbol":          map[string]any{"name": "Keep", "qualified_name": "sample.Keep", "kind": "function", "file": "main.go"},
+				"reference_count": 2, "file_count": 1,
+			},
+			body:    "References to sample.Keep (2 locations in 1 file).\nmain.go:L5:C20 in Caller",
+			listing: "in Caller", critical: "2 locations in 1 file", preserved: []string{`"reference_count":2`},
+		},
+		{
+			name: "ambiguous lookup",
+			result: map[string]any{
+				"summary":   "Ambiguous lookup for \"Keep\": 2 candidates.",
+				"ambiguous": true, "candidate_count": 2,
+			},
+			body:    "Ambiguous lookup for \"Keep\": 2 candidates.\nfunction A.Keep at a.go:3:6\nfunction B.Keep at b.go:3:6",
+			listing: "A.Keep", critical: "2 candidates", preserved: []string{`"candidate_count":2`},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			structured := map[string]any{"result": test.result}
+			structuredSummary := test.result["summary"]
+			text, err := CriticalText(structured, test.body)
+			if err != nil {
+				t.Fatalf("CriticalText() error = %v", err)
+			}
+			if !strings.Contains(text, test.critical) || strings.Count(text, test.listing) != 1 {
+				t.Fatalf("critical text omitted counts or duplicated listing: %s", text)
+			}
+			for _, field := range test.preserved {
+				if !strings.Contains(text, field) {
+					t.Errorf("critical text dropped preserved field %s: %s", field, text)
+				}
+			}
+			if structured["result"].(map[string]any)["summary"] != structuredSummary {
+				t.Fatalf("CriticalText mutated the structured navigation listing: %#v", structured)
+			}
+		})
+	}
+}

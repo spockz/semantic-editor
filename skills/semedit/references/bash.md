@@ -4,6 +4,12 @@ This reference provides workflows for inspecting and refactoring shell scripts w
 
 ---
 
+Compact lookup and outline listings use workspace-relative paths and one-based
+inclusive declaration lines. Signatures describe declarations; explicit native
+selectors remain separate and must be copied verbatim. Use ordinary file reading
+for disk-backed results. A navigation result does not imply that this backend
+supports symbol inspection or mutation.
+
 ## 1. Macro Refactorings in Bash
 
 `semedit` core operations for Bash (`semantic_outline`, `semantic_lookup`, `semantic_verify`) are indexed in the primary `SKILL.md` table. Bash backend operations require workspace trust and an installed `bash-language-server`. This reference defines script modularization patterns and ShellCheck verification practices.

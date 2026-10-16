@@ -842,7 +842,15 @@ func selectSymbol(query, file string, items []symbol) (*backend.LookupResult, er
 			r = m.s.Location.Range
 		}
 		kind := symbolKind(m.s.Kind)
+		declaration := m.s.Range
+		if declaration == (sourceRange{}) {
+			declaration = r
+		}
+		declarationRange := backend.Range{Start: backend.Position(declaration.Start), End: backend.Position(declaration.End)}
 		candidate := &backend.NamedTarget{Name: m.s.Name, QualifiedName: strings.Join(m.path, "."), Kind: kind, Location: backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: backend.Position(r.Start), End: backend.Position(r.End)}}}
+		if m.s.Range != (sourceRange{}) {
+			candidate.DeclarationRange = &declarationRange
+		}
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) > 1 {

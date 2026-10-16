@@ -4,9 +4,15 @@ This reference provides workflows for inspecting and refactoring Haskell source 
 
 ---
 
+Compact lookup listings use workspace-relative paths and one-based
+inclusive declaration lines. Signatures describe declarations; explicit native
+selectors remain separate and must be copied verbatim. Use ordinary file reading
+for disk-backed results. A navigation result does not imply that this backend
+supports symbol inspection or mutation.
+
 ## 1. Macro Refactorings in Haskell
 
-`semedit` core operations for standalone Haskell (`semantic_lookup`, `semantic_outline`) are indexed in the primary `SKILL.md` table. Standalone Haskell lookup requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. This reference defines macro patterns and verification practices.
+Standalone Haskell exposes `semantic_lookup`; declaration outlines and symbol inspection remain unsupported. Read the returned disk location with ordinary file-reading tools. Lookup requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. This reference defines macro patterns and verification practices.
 
 ---
 

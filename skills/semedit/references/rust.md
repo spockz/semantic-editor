@@ -4,6 +4,12 @@ This reference provides workflows for executing Rust refactorings with `semedit`
 
 ---
 
+Compact lookup and outline listings use workspace-relative paths and one-based
+inclusive declaration lines. Signatures describe declarations; explicit native
+selectors remain separate and must be copied verbatim. Use ordinary file reading
+for disk-backed results. A navigation result does not imply that this backend
+supports symbol inspection or mutation.
+
 ## 1. Macro Refactorings in Rust
 
 `semedit` core operations for Rust are indexed in the primary `SKILL.md` table. High-level idioms (e.g., Newtype Pattern, Trait Extraction) are orchestrated by the agent composing targeted edits and verifying via `cargo`.
