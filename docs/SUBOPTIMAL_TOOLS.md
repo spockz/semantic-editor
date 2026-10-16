@@ -3148,6 +3148,10 @@ Runtime conclusion: semantic attempt durations are measured, but no semantic/bui
 
 Integration update: the earlier dirty-main blocker cleared when `main` advanced to `4362b028a3cde1ce16a5a3cc16b3c98123a45a9c`. Its wrap-up skill and friction-log cleanup were merged into this branch. The append conflict retains both new incident sets without restoring removed historical entries. Final verification, commit, integration, cleanup, and archive evidence belong in the thread after this last log change.
 
+### Cleanup follow-up
+
+The implementation and session assessment were integrated as `a535efa095d269e836604bcc6d2f8df9c7af0a01`, which remains an ancestor of current `main`. Git worktree removal failed with `Permission denied` after deleting the linked checkout's registration; its partial directory and dangling `.git` pointer remain. The worktree-local `.scratch/go/mod` cache subsequently cleared successfully with an explicitly scoped `GOMODCACHE=... go clean -modcache`, and the cache path no longer exists. The wrap-up skill now requires this cache cleanup before either removal path. The independent skill validator passed after installing PyYAML in an isolated temporary environment. These follow-up turns made no semantic calls, so the 48-attempt inventory and runtime limitations above remain unchanged. No additional manual source edits occurred. The prescribed Git removal path is unavailable without the deleted registration; cleanup remains incomplete and this chat stays open. Final verification evidence belongs in the thread rather than a post-check log edit.
+
 ### Net effect and follow-up
 
 * Exact lookup, outlines, and source/revision inspection were useful, and seven clean construct mutations avoided larger function rewrites. The old source-bearing inspection payloads remained verbose; that operation intentionally retains source.
