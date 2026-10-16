@@ -1,3 +1,5 @@
+<!-- Defines accepted symbol addressing separately from the undecided session-handle proposal. -->
+
 # ADR-0003: Symbol-Based Addressing Over File Coordinates
 
 * **Status**: Accepted
@@ -17,11 +19,14 @@ This semantic-editing layer lets the model name the intended symbol directly ins
 
 1. The agent addresses targets using semantic symbol identifiers (e.g. `--file pkg/auth/token.go --symbol "TokenService.Validate"`).
 2. The selected language backend resolves the identifier to its exact native coordinate and feeds it into the underlying language server or compiler adapter. Go currently uses its existing AST resolver.
-3. For multi-step interactions, `semedit` generates ephemeral session symbol handles (`sym_e4f91b`) that remain stable regardless of line shifts.
 
 Go symbol addressing accepts direct short names scoped by `file`, receiver-qualified names such as `Type.Method`, and three-part `package.Type.Method` identifiers. A known file and symbol can therefore be sent directly to a mutation without a preliminary discovery lookup.
 
 Backend-native lookup is also permitted when an adapter can resolve symbols more accurately than a shared resolver. This decision does not require a broken-source fallback engine; syntax-error recovery remains outside this foundation slice. Scope and path resolution follow the lenient in, precise out contract defined in [ADR-0065](0065-lenient-in-precise-out-input-resolution.md), accepting package directories as well as specific files.
+
+## Undecided proposal: Stable session symbol handles
+
+Clarified 2026-10-16: ephemeral session symbol handles such as `sym_e4f91b`, proposed to remain stable across line shifts, are **Undecided and unimplemented**. They are not part of the accepted addressing contract. Current operations use backend-native symbol selectors and file scopes.
 
 ## Invariants
 

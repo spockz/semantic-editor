@@ -76,13 +76,14 @@ type InspectResult struct {
 
 // OutlineFile contains the symbols and file metadata from one source snapshot.
 type OutlineFile struct {
-	File     string       `json:"file"`
-	Language LanguageID   `json:"language"`
-	Revision string       `json:"revision"`
-	Package  string       `json:"package,omitempty"`
-	Doc      *string      `json:"doc,omitempty"`
-	Imports  []ReadImport `json:"imports"`
-	Symbols  []ReadSymbol `json:"symbols"`
+	File       string       `json:"file"`
+	Language   LanguageID   `json:"language"`
+	Revision   string       `json:"revision"`
+	SourceView string       `json:"-"`
+	Package    string       `json:"package,omitempty"`
+	Doc        *string      `json:"doc,omitempty"`
+	Imports    []ReadImport `json:"imports"`
+	Symbols    []ReadSymbol `json:"symbols"`
 }
 
 // OutlineResult contains per-file outline data for its declared scope.
@@ -128,10 +129,11 @@ type WorkspaceOutlineResult struct {
 
 // Reference identifies a source use of a resolved declaration.
 type Reference struct {
-	File            string `json:"file"`
-	Range           Range  `json:"range"`
-	EnclosingSymbol string `json:"enclosing_symbol,omitempty"`
-	Snippet         string `json:"snippet"`
+	File                 string      `json:"file"`
+	Range                Range       `json:"range"`
+	EnclosingSymbol      string      `json:"enclosing_symbol,omitempty"`
+	EnclosingDeclaration *ReadSymbol `json:"enclosing_declaration,omitempty"`
+	Snippet              string      `json:"snippet"`
 }
 
 // FileRevision records the source snapshot used for reference analysis.
@@ -146,6 +148,7 @@ type ReferencesResult struct {
 	Symbol     ReadSymbol     `json:"symbol"`
 	References []Reference    `json:"references"`
 	Files      []FileRevision `json:"files"`
+	SourceView string         `json:"-"`
 }
 
 // InspectRequest selects a symbol and optional file scope for inspection.

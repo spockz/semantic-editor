@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backends"
 	"github.com/spockz/semantic-editor/internal/mcptest"
 )
 
@@ -19,7 +21,7 @@ func TestMCPOutlineTextSummarizesBulkCollections(t *testing.T) {
 	root := largeOutlineWorkspace(t)
 	responses := callOutlineMCP(t, root)
 	for _, response := range responses {
-		assertOutlineMCPResponse(t, response)
+		assertOutlineMCPResponse(t, root, response)
 	}
 }
 
@@ -55,6 +57,7 @@ func writeOutlineFixtureFile(t *testing.T, path, contents string) {
 type outlineMCPResponse struct {
 	Text             string
 	StructuredResult map[string]any
+	Payload          []byte
 }
 
 func callOutlineMCP(t *testing.T, root string) []outlineMCPResponse {
@@ -98,18 +101,18 @@ func callOutlineMCP(t *testing.T, root string) []outlineMCPResponse {
 			t.Fatalf("outline MCP call failed: %s", line)
 		}
 		responses = append(responses, outlineMCPResponse{
-			Text: response.Result.Content[0].Text, StructuredResult: response.Result.Structured["result"].(map[string]any),
+			Text: response.Result.Content[0].Text, StructuredResult: response.Result.Structured["result"].(map[string]any), Payload: []byte(line),
 		})
 	}
 	return responses
 }
 
-func assertOutlineMCPResponse(t *testing.T, response outlineMCPResponse) {
+func assertOutlineMCPResponse(t *testing.T, root string, response outlineMCPResponse) {
 	t.Helper()
 	scope := response.StructuredResult["scope"].(map[string]any)
 	switch scope["kind"] {
 	case "selected_file":
-		assertDeclarationOutlineMCPResponse(t, response)
+		assertDeclarationOutlineMCPResponse(t, root, response)
 	case "workspace":
 		assertWorkspaceOutlineMCPResponse(t, response)
 	default:
@@ -117,19 +120,87 @@ func assertOutlineMCPResponse(t *testing.T, response outlineMCPResponse) {
 	}
 }
 
-func assertDeclarationOutlineMCPResponse(t *testing.T, response outlineMCPResponse) {
+func assertDeclarationOutlineMCPResponse(t *testing.T, root string, response outlineMCPResponse) {
 	t.Helper()
-	files := response.StructuredResult["files"].([]any)
-	file := files[0].(map[string]any)
-	if len(file["symbols"].([]any)) != 160 {
-		t.Fatalf("structured outline lost symbols: %d", len(file["symbols"].([]any)))
+	if response.StructuredResult["file_count"] != float64(1) || response.StructuredResult["symbol_count"] != float64(160) {
+		t.Fatalf("structured outline counts = %#v", response.StructuredResult)
 	}
-	if !strings.Contains(response.Text, "1 file, 160 symbols") {
-		t.Fatalf("outline summary omitted file and symbol counts: %s", response.Text)
+	for _, bulkField := range []string{"files", "symbols"} {
+		if _, exists := response.StructuredResult[bulkField]; exists {
+			t.Fatalf("structured outline duplicated bulk field %q: %#v", bulkField, response.StructuredResult)
+		}
 	}
-	if strings.Contains(response.Text, "BulkSymbol") || strings.Contains(response.Text, `"files"`) || strings.Contains(response.Text, `"symbols"`) {
-		t.Fatalf("outline text duplicated declaration data: %s", response.Text)
+	summary := response.StructuredResult["summary"].(string)
+	if !strings.Contains(summary, "160 declarations") || strings.Contains(summary, "BulkSymbol") {
+		t.Fatalf("structured outline summary should contain counts only: %s", summary)
 	}
+	for index := range 160 {
+		name := fmt.Sprintf("BulkSymbol%03d", index)
+		if strings.Count(response.Text, name) != 1 {
+			t.Fatalf("MCP text listing retained %s %d times", name, strings.Count(response.Text, name))
+		}
+		if bytes.Count(response.Payload, []byte(name)) != 1 {
+			t.Fatalf("MCP payload contained %s %d times", name, bytes.Count(response.Payload, []byte(name)))
+		}
+	}
+	if strings.Contains(response.Text, `"files"`) || strings.Contains(response.Text, `"symbols"`) {
+		t.Fatalf("outline MCP text serialized bulk collections: %s", response.Text)
+	}
+	if !strings.Contains(response.Text, "160 declarations") || !strings.Contains(response.Text, "1 files") {
+		t.Fatalf("outline MCP text omitted file and declaration counts: %s", response.Text)
+	}
+	nativeBytes, err := minimalNativeOutlineBytes(t, root)
+	if err != nil {
+		t.Fatalf("marshal equivalent native navigation records: %v", err)
+	}
+	t.Logf("160-symbol navigation payload: MCP=%d bytes, equivalent native records=%d bytes", len(response.Payload), len(nativeBytes))
+	if len(response.Payload) >= len(nativeBytes) {
+		t.Fatalf("compact MCP payload (%d bytes) was not smaller than equivalent native records (%d bytes)", len(response.Payload), len(nativeBytes))
+	}
+}
+
+func minimalNativeOutlineBytes(t *testing.T, root string) ([]byte, error) {
+	t.Helper()
+	type navigationSymbol struct {
+		Name           string        `json:"name"`
+		QualifiedName  string        `json:"qualified_name"`
+		Kind           string        `json:"kind"`
+		File           string        `json:"file"`
+		Range          backend.Range `json:"range"`
+		SelectionRange backend.Range `json:"selection_range"`
+		Signature      *string       `json:"signature,omitempty"`
+	}
+	type navigationFile struct {
+		File     string             `json:"file"`
+		Language backend.LanguageID `json:"language"`
+		Symbols  []navigationSymbol `json:"symbols"`
+	}
+	type navigationOutline struct {
+		Scope       backend.ReadScope `json:"scope"`
+		FileCount   int               `json:"file_count"`
+		SymbolCount int               `json:"symbol_count"`
+		Files       []navigationFile  `json:"files"`
+	}
+	native, err := backends.NewDefaultService().Outline(context.Background(), backend.OutlineRequest{
+		Project: backend.ProjectContext{RootDir: root, File: "main.go", Language: backend.LanguageGo},
+		Path:    "main.go", IncludeUnexported: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("native outline: %w", err)
+	}
+	projection := navigationOutline{Scope: native.Scope, FileCount: len(native.Files), Files: make([]navigationFile, 0, len(native.Files))}
+	for _, file := range native.Files {
+		projectedFile := navigationFile{File: file.File, Language: file.Language, Symbols: make([]navigationSymbol, 0, len(file.Symbols))}
+		for _, symbol := range file.Symbols {
+			projectedFile.Symbols = append(projectedFile.Symbols, navigationSymbol{
+				Name: symbol.Name, QualifiedName: symbol.QualifiedName, Kind: symbol.Kind, File: symbol.File,
+				Range: symbol.Range, SelectionRange: symbol.SelectionRange, Signature: symbol.Signature,
+			})
+			projection.SymbolCount++
+		}
+		projection.Files = append(projection.Files, projectedFile)
+	}
+	return json.Marshal(projection)
 }
 
 func assertWorkspaceOutlineMCPResponse(t *testing.T, response outlineMCPResponse) {

@@ -9,6 +9,12 @@ This reference provides workflows for inspecting and refactoring Kotlin source f
 
 ---
 
+Compact lookup and outline listings use workspace-relative paths and one-based
+inclusive declaration lines. Signatures describe declarations; explicit native
+selectors remain separate and must be copied verbatim. Use ordinary file reading
+for disk-backed results. A navigation result does not imply that this backend
+supports symbol inspection or mutation.
+
 ## 1. Macro Refactorings in Kotlin
 
 `semedit` core operations for Kotlin (`semantic_lookup`, `semantic_outline`, `semantic_verify`) are indexed in the primary `SKILL.md` table. Kotlin backend operations require workspace trust and a preinstalled `kotlin-language-server`. This reference defines macro patterns and verification practices.

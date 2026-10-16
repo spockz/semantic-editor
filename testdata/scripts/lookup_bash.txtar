@@ -1,7 +1,6 @@
 # Bash CLI contracts: trusted selected-file lookup and explicit matching diagnostics; untrusted calls are rejected.
 exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh --symbol f
-stdout '"kind": "function"'
-stdout '"file": "scripts/tool.sh"'
+stdout 'scripts/tool\.sh:2:[0-9]+.*function f'
 ! semedit lookup --language bash --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh --symbol f
 stderr 'workspace trust required'
 exec semedit verify --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh
@@ -10,11 +9,11 @@ stdout 'Verification clean: 0 diagnostics.'
 stderr 'operation is not supported'
 cmp scripts/tool.sh want.sh
 exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/ambiguous.sh --symbol f
-stdout '"ambiguous": true'
+stdout 'Ambiguous lookup for "f".*2 candidates\.'
 exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/declarations.sh --symbol fun
-stdout '"kind": "function"'
+stdout 'scripts/declarations\.sh:[0-9]+.*function fun'
 exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/declarations.sh --symbol loc
-stdout '"kind": "variable"'
+stdout 'scripts/declarations\.sh:[0-9]+.*variable loc'
 
 -- scripts/tool.sh --
 #!/usr/bin/env bash

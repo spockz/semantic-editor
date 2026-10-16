@@ -19,6 +19,7 @@ import (
 	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 type fakeJavaSession struct {
@@ -35,6 +36,7 @@ type fakeJavaSession struct {
 	prepareRename        json.RawMessage
 	renameResult         json.RawMessage
 	postRenameSymbols    json.RawMessage
+	references           json.RawMessage
 	requestErrors        map[string]error
 	notifyErrors         map[string]error
 	diagnostics          []backend.Diagnostic
@@ -71,6 +73,9 @@ func (f *fakeJavaSession) Request(ctx context.Context, method string, params any
 			f.symbols = f.postRenameSymbols
 		}
 		return f.renameResult, nil
+	}
+	if method == "textDocument/references" && f.references != nil {
+		return f.references, nil
 	}
 	if f.cancel {
 		<-ctx.Done()
@@ -252,6 +257,69 @@ func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 		if values["java.import.maven.enabled"] != false || values["java.import.gradle.enabled"] != false || values["java.autobuild.enabled"] != false || values["java.import.generatesMetadataFilesAtProjectRoot"] != false {
 			t.Fatalf("unsafe %s settings: %#v", name, values)
 		}
+	}
+}
+
+func TestJavaReadOperationsReportBufferedViewAndRelativeReferencePaths(t *testing.T) {
+	root, file := javaFixture(t, "class Disk {}\n")
+	overlay := "class Overlay {\n  void run() {}\n}\n"
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
+		t.Fatal(authorizeErr)
+	}
+	ctx = sourcebuf.WithBuffer(ctx, buffer)
+	if writeErr := sourcebuf.WriteFile(ctx, file, []byte(overlay)); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	uri := pathutil.FileURI(file)
+	session := &fakeJavaSession{
+		symbols:    json.RawMessage(`[{"name":"Overlay","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":1}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":13}},"children":[{"name":"run","kind":6,"range":{"start":{"line":1,"character":2},"end":{"line":1,"character":15}},"selectionRange":{"start":{"line":1,"character":7},"end":{"line":1,"character":10}}}]}]`),
+		references: json.RawMessage(`[{"uri":"` + uri + `","range":{"start":{"line":1,"character":8},"end":{"line":1,"character":10}}},{"uri":"` + uri + `","range":{"start":{"line":1,"character":7},"end":{"line":1,"character":10}}}]`),
+	}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
+	project := trustedJavaProject(root, file)
+	lookup, err := underTest.Lookup(ctx, project, "Overlay")
+	if err != nil || lookup.SourceView != "working" || lookup.Definition == nil || lookup.Definition.DeclarationRange == nil || lookup.Definition.DeclarationRange.End.Line != 2 {
+		t.Fatalf("buffered lookup = %#v, err=%v", lookup, err)
+	}
+	outline, err := underTest.Outline(ctx, backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	digest := sha256.Sum256([]byte(overlay))
+	revision := fmt.Sprintf("%x", digest)
+	if err != nil || len(outline.Files) != 1 || outline.Files[0].SourceView != "working" || outline.Files[0].Revision != revision {
+		t.Fatalf("buffered outline = %#v, err=%v", outline, err)
+	}
+	references, err := underTest.FindReferences(ctx, backend.ReferencesRequest{Project: project, Symbol: "Overlay.run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if references.SourceView != "working" || references.Scope.Path != "." || references.Symbol.File != "Thing.java" || references.Symbol.Range.End.Character != 15 || references.Symbol.SelectionRange.Start.Character != 7 || len(references.References) != 2 || references.References[0].File != "Thing.java" || references.References[0].Range.Start.Character != 7 || len(references.Files) != 1 || references.Files[0].File != "Thing.java" || references.Files[0].Revision != revision {
+		t.Fatalf("buffered references = %#v", references)
+	}
+	if disk, readErr := os.ReadFile(file); readErr != nil || string(disk) != "class Disk {}\n" {
+		t.Fatalf("buffered reads changed disk=%q err=%v", disk, readErr)
+	}
+	opened := session.notifications["textDocument/didOpen"].(map[string]any)["textDocument"].(map[string]any)["text"]
+	if opened != overlay {
+		t.Fatalf("opened Java document = %q, want overlay", opened)
+	}
+}
+
+func TestJavaRenameAmbiguityListsRenderedCandidates(t *testing.T) {
+	root, file := javaFixture(t, "class Thing { void run() {} void run(int value) {} }\n")
+	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":52}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}},"children":[{"name":"run","kind":6,"detail":"run()","range":{"start":{"line":0,"character":14},"end":{"line":0,"character":27}},"selectionRange":{"start":{"line":0,"character":19},"end":{"line":0,"character":22}}},{"name":"run","kind":6,"detail":"run(int)","range":{"start":{"line":0,"character":28},"end":{"line":0,"character":49}},"selectionRange":{"start":{"line":0,"character":33},"end":{"line":0,"character":36}}}]}]`)}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
+	_, err := underTest.Rename(context.Background(), backend.RenameRequest{Project: trustedJavaProject(root, file), Symbol: "Thing.run", To: "other"})
+	if !errors.Is(err, backend.ErrAmbiguous) || !strings.Contains(err.Error(), "Thing.run") || !strings.Contains(err.Error(), "Thing.run(int)") || !strings.Contains(err.Error(), "Thing.java:1") {
+		t.Fatalf("rename ambiguity = %v", err)
 	}
 }
 

@@ -35,9 +35,15 @@ func TestLookupProjectionOmitsOutsideWorkspacePaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidates := projected.(map[string]any)["candidates"].([]LookupTarget)
-	if candidates[1].File != "" {
-		t.Fatalf("outside candidate projection exposed a file: %#v", candidates[1])
+	projection := projected.(map[string]any)
+	if projection["candidate_count"] != 2 {
+		t.Fatalf("candidate count = %#v, want 2", projection["candidate_count"])
+	}
+	if projection["source_view"] != "disk" {
+		t.Fatalf("source view = %#v, want disk", projection["source_view"])
+	}
+	if _, exists := projection["candidates"]; exists {
+		t.Fatalf("ambiguous projection duplicated its candidate listing: %#v", projection)
 	}
 	encoded, err := json.Marshal(projected)
 	if err != nil {

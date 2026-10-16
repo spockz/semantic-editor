@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 
+	"slices"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
 	javabackend "github.com/spockz/semantic-editor/internal/backend/java"
@@ -22,7 +24,6 @@ import (
 	"github.com/spockz/semantic-editor/internal/mcptest"
 	"github.com/spockz/semantic-editor/internal/operation"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
-	"slices"
 )
 
 const fieldInsertionToolName = "semantic_insert_field"
@@ -612,15 +613,13 @@ func assertAssertionOutputs(t *testing.T, results map[string]map[string]any) {
 
 func assertReadOutputs(t *testing.T, results map[string]map[string]any) {
 	t.Helper()
-	if len(results["semantic_find_references"]["references"].([]any)) != 1 {
+	references := results["semantic_find_references"]
+	if references["reference_count"] != float64(1) || references["file_count"] != float64(1) || references["summary"] == "" {
 		t.Fatalf("reference result = %#v", results["semantic_find_references"])
 	}
-	outlineFiles := results["semantic_outline"]["files"].([]any)
-	if len(outlineFiles) != 1 {
-		t.Fatalf("outline result = %#v", results["semantic_outline"])
-	}
-	if outlineFiles[0].(map[string]any)["doc"] != "// Package sample documents the typed output fixture." {
-		t.Fatalf("outline file documentation = %#v", outlineFiles[0])
+	outline := results["semantic_outline"]
+	if outline["file_count"] != float64(1) || outline["symbol_count"] == float64(0) || outline["summary"] == "" {
+		t.Fatalf("outline result = %#v", outline)
 	}
 }
 
@@ -758,8 +757,8 @@ func assertRemainingTypedOutputSchema(t *testing.T, name string, output any) {
 	want := map[string][]string{
 		"semantic_assertion_mode":       {"status", "file", "swapped", "edit_receipt"},
 		"semantic_add_build_dependency": {"status", "package", "go_mod"},
-		"semantic_find_references":      {"scope", "symbol", "references", "files"},
-		"semantic_outline":              {"scope", "files"},
+		"semantic_find_references":      {"summary", "scope", "symbol", "reference_count", "file_count"},
+		"semantic_outline":              {"summary", "scope", "file_count", "symbol_count"},
 		"semantic_snapshot":             {"status", "snapshot_id", "created_at", "captured_files", "captured_file_count", "captured_files_truncated"},
 		"semantic_undo":                 {"status", "restored_files", "restored_file_count", "restored_files_truncated", "diagnostics", "diagnostic_count", "diagnostics_truncated", "diagnostic_status"},
 		"semantic_workspace_outline":    {"scope", "modules", "packages"},
@@ -775,16 +774,6 @@ func assertRemainingTypedOutputSchema(t *testing.T, name string, output any) {
 		}
 		if got := properties[field].(map[string]any)["maxItems"]; got != limit {
 			t.Errorf("%s.%s maxItems = %#v, want %v", name, field, got, limit)
-		}
-	}
-	if name == "semantic_outline" {
-		files := properties["files"].(map[string]any)
-		fileProperties := files["items"].(map[string]any)["properties"].(map[string]any)
-		if fileProperties["doc"] == nil {
-			t.Error("semantic_outline file schema omitted optional doc")
-		}
-		if slices.Contains(files["items"].(map[string]any)["required"].([]any), "doc") {
-			t.Error("semantic_outline file doc must remain optional")
 		}
 	}
 }
@@ -1713,9 +1702,23 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_construct description", toolDescription("semantic_insert_construct"), "construct", "semantic_replace_construct")
 	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "flat form", "single-key", "sequentially against the working state", "zero-based edit index")
-	assertContains("semantic_lookup description", toolDescription("semantic_lookup"), "Returns symbol, file, kind, line, and column", "file-navigation reads", "not accepted as semedit tool parameters")
+	assertNavigationToolDescriptions(assertContains, toolDescription)
 	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact discriminator expression", "kind=case alone does not identify", "construct_path")
 	assertContains("semantic_insert_case.discriminator", paramDescription("semantic_insert_case", "discriminator"), "Selector: switch discriminant expression", "tagless switch", "Copy discriminator from")
+}
+
+func assertNavigationToolDescriptions(assertContains func(string, string, ...string), toolDescription func(string) string) {
+	checks := []struct {
+		name    string
+		phrases []string
+	}{
+		{"semantic_lookup", []string{"normalized declaration listing in text", "workspace-relative file paths", "native selectors separate from optional signatures", "text result carries the listing once", "structured output carries status, source view, ambiguity count", "semantic_inspect_symbol where the selected backend supports it", "not accepted as semedit tool parameters"}},
+		{"semantic_outline", []string{"normalized declaration listing in text", "workspace-relative file paths", "inclusive declaration line spans", "native selectors separate from optional signatures", "listing appears once in text", "structured output carries scope and file/declaration counts only", "semantic_inspect_symbol when that backend supports it", "Go and Java support directory scopes"}},
+		{"semantic_find_references", []string{"normalized reference listing in text", "workspace-relative file paths", "listing appears once in text", "structured output carries scope, target identity, and reference/file counts only", "ordinary file-reading tools", "semantic_inspect_symbol where the selected backend supports it", "coordinates are navigation hints, not mutation parameters"}},
+	}
+	for _, check := range checks {
+		assertContains(check.name+" description", toolDescription(check.name), check.phrases...)
+	}
 }
 
 func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {

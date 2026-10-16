@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	backend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
@@ -18,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -34,13 +36,14 @@ type referenceSourceSnapshot struct {
 }
 
 type referenceTarget struct {
-	object    types.Object
-	identity  string
-	candidate *symbol.Symbol
-	path      string
-	ident     *ast.Ident
-	fset      *token.FileSet
-	source    []byte
+	object      types.Object
+	identity    string
+	candidate   *symbol.Symbol
+	path        string
+	ident       *ast.Ident
+	fset        *token.FileSet
+	source      []byte
+	declaration ast.Node
 }
 
 func (snapshot *referenceSourceSnapshot) parseFile(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
@@ -298,12 +301,36 @@ func resolveTypedTarget(root, selectedFile, query string, loaded []*packages.Pac
 		return nil, fmt.Errorf("%w: %q", symbol.ErrNotFound, query)
 	}
 	if len(targets) > 1 {
-		return nil, backend.ErrAmbiguous
+		return nil, referenceTargetAmbiguity(root, query, targets)
 	}
 	for _, target := range targets {
 		return target, nil
 	}
 	return nil, fmt.Errorf("%w: %q", symbol.ErrNotFound, query)
+}
+
+func referenceTargetAmbiguity(root, query string, targets map[string]*referenceTarget) error {
+	keys := make([]string, 0, len(targets))
+	for key := range targets {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	candidates := make([]*backend.NamedTarget, 0, len(keys))
+	for _, key := range keys {
+		target := targets[key]
+		read, err := readTargetSymbol(root, target)
+		if err != nil {
+			return err
+		}
+		selection := read.SelectionRange
+		declaration := read.Range
+		candidates = append(candidates, &backend.NamedTarget{Name: read.Name, QualifiedName: read.QualifiedName, Kind: read.Kind, Location: backend.SourceLocation{URI: pathutil.FileURI(target.path), Range: selection}, DeclarationRange: &declaration, Signature: read.Signature})
+	}
+	locations, err := backend.RenderAmbiguousCandidates(root, candidates)
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("%w: references for %q match %d candidates in disk source:\n%s", backend.ErrAmbiguous, query, len(candidates), locations)
 }
 
 // FindReferences resolves one Go declaration and searches its active module source snapshot.
@@ -425,6 +452,10 @@ func relativeSourcePath(root, path string) (string, error) {
 func readTargetSymbol(root string, target *referenceTarget) (backend.ReadSymbol, error) {
 	start := target.fset.PositionFor(target.ident.Pos(), false).Offset
 	end := target.fset.PositionFor(target.ident.End(), false).Offset
+	if target.declaration != nil {
+		start = target.fset.PositionFor(target.declaration.Pos(), false).Offset
+		end = target.fset.PositionFor(target.declaration.End(), false).Offset
+	}
 	rangeValue, err := sourceRange(target.source, start, end)
 	if err != nil {
 		return backend.ReadSymbol{}, err
@@ -437,10 +468,31 @@ func readTargetSymbol(root string, target *referenceTarget) (backend.ReadSymbol,
 	if qualifiedName == "" {
 		qualifiedName = target.candidate.BuildQualifiedName()
 	}
-	return backend.ReadSymbol{
+	read := backend.ReadSymbol{
 		Name: target.candidate.Name, QualifiedName: qualifiedName, Kind: target.candidate.Kind,
-		File: file, Range: rangeValue, SelectionRange: rangeValue,
-	}, nil
+		File: file, Range: rangeValue,
+	}
+	selectionStart := target.fset.PositionFor(target.ident.Pos(), false).Offset
+	selectionEnd := target.fset.PositionFor(target.ident.End(), false).Offset
+	selection, err := sourceRange(target.source, selectionStart, selectionEnd)
+	if err != nil {
+		return backend.ReadSymbol{}, err
+	}
+	read.SelectionRange = selection
+	if function, ok := target.declaration.(*ast.FuncDecl); ok {
+		signatureEnd := function.End()
+		if function.Body != nil {
+			signatureEnd = function.Body.Pos()
+		}
+		signatureEndOffset := target.fset.PositionFor(signatureEnd, false).Offset
+		if signatureEndOffset >= start && signatureEndOffset <= len(target.source) {
+			signature := strings.TrimSpace(string(target.source[start:signatureEndOffset]))
+			if signature != "" {
+				read.Signature = &signature
+			}
+		}
+	}
+	return read, nil
 }
 
 type referenceRecord struct {
@@ -480,11 +532,12 @@ func collectTypedReferencesInFile(moduleRoot, outputRoot string, target *referen
 	if !originals[filePath] || !pathWithin(moduleRoot, filePath) {
 		return nil
 	}
+	owners := make(map[string]*backend.ReadSymbol)
 	for ident, object := range pkg.TypesInfo.Uses {
 		if !ident.Pos().IsValid() || ident.Pos() < file.Pos() || ident.Pos() >= file.End() {
 			continue
 		}
-		match, err := typedReferenceRecord(outputRoot, target, pkg, file, ident, object, originals, sources)
+		match, err := typedReferenceRecord(outputRoot, target, pkg, file, ident, object, originals, sources, owners)
 		if err != nil {
 			return err
 		}
@@ -504,7 +557,7 @@ type typedReferenceMatch struct {
 	include bool
 }
 
-func typedReferenceRecord(outputRoot string, target *referenceTarget, pkg *packages.Package, file *ast.File, ident *ast.Ident, object types.Object, originals map[string]bool, sources *referenceSourceSnapshot) (typedReferenceMatch, error) {
+func typedReferenceRecord(outputRoot string, target *referenceTarget, pkg *packages.Package, file *ast.File, ident *ast.Ident, object types.Object, originals map[string]bool, sources *referenceSourceSnapshot, owners map[string]*backend.ReadSymbol) (typedReferenceMatch, error) {
 	identity, valid, err := referenceObjectIdentity(object, pkg.Fset)
 	if err != nil || !valid || identity != target.identity {
 		return typedReferenceMatch{}, err
@@ -529,10 +582,15 @@ func typedReferenceRecord(outputRoot string, target *referenceTarget, pkg *packa
 		return typedReferenceMatch{}, err
 	}
 	key := fmt.Sprintf("%s:%d:%d", absolute, start, end)
-	record := referenceRecord{file: absolute, offset: start, reference: backend.Reference{
-		File: filePath, Range: rangeValue, EnclosingSymbol: enclosingReferenceSymbol(file, ident.Pos()),
-		Snippet: sourceLine(source, start),
-	}}
+	ownerResult, ownerErr := enclosingReferenceDeclaration(file, ident.Pos(), source, pkg.Fset, filePath, owners)
+	if ownerErr != nil {
+		return typedReferenceMatch{}, ownerErr
+	}
+	enclosing := ""
+	if ownerResult.Declaration != nil {
+		enclosing = ownerResult.Declaration.QualifiedName
+	}
+	record := referenceRecord{file: absolute, offset: start, reference: backend.Reference{File: filePath, Range: rangeValue, EnclosingSymbol: enclosing, EnclosingDeclaration: ownerResult.Declaration, Snippet: sourceLine(source, start)}}
 	return typedReferenceMatch{record: record, key: key, include: true}, nil
 }
 
@@ -584,9 +642,13 @@ func sourceLine(source []byte, offset int) string {
 	return strings.TrimSpace(string(source[start:end]))
 }
 
-func enclosingReferenceSymbol(file *ast.File, position token.Pos) string {
+type referenceDeclarationResult struct {
+	Declaration *backend.ReadSymbol
+}
+
+func enclosingReferenceDeclaration(file *ast.File, position token.Pos, source []byte, fset *token.FileSet, filePath string, owners map[string]*backend.ReadSymbol) (referenceDeclarationResult, error) {
 	if file == nil || !position.IsValid() {
-		return ""
+		return referenceDeclarationResult{}, nil
 	}
 	var selected *ast.FuncDecl
 	ast.Inspect(file, func(node ast.Node) bool {
@@ -600,12 +662,48 @@ func enclosingReferenceSymbol(file *ast.File, position token.Pos) string {
 		return true
 	})
 	if selected == nil || selected.Name == nil {
-		return ""
+		return referenceDeclarationResult{}, nil
 	}
-	if selected.Recv == nil || len(selected.Recv.List) == 0 {
-		return selected.Name.Name
+	qualified := selected.Name.Name
+	if selected.Recv != nil && len(selected.Recv.List) > 0 {
+		if receiver := referenceReceiverName(selected.Recv.List[0].Type); receiver != "" {
+			qualified = receiver + "." + selected.Name.Name
+		}
 	}
-	receiver := selected.Recv.List[0].Type
+	if cached, ok := owners[qualified]; ok {
+		return referenceDeclarationResult{Declaration: cached}, nil
+	}
+	start := fset.PositionFor(selected.Pos(), false).Offset
+	end := fset.PositionFor(selected.End(), false).Offset
+	rangeValue, err := sourceRange(source, start, end)
+	if err != nil {
+		return referenceDeclarationResult{}, err
+	}
+	selection, err := sourceRange(source, fset.PositionFor(selected.Name.Pos(), false).Offset, fset.PositionFor(selected.Name.End(), false).Offset)
+	if err != nil {
+		return referenceDeclarationResult{}, err
+	}
+	signatureEnd := selected.End()
+	if selected.Body != nil {
+		signatureEnd = selected.Body.Pos()
+	}
+	signatureEndOffset := fset.PositionFor(signatureEnd, false).Offset
+	if signatureEndOffset < start || signatureEndOffset > len(source) {
+		return referenceDeclarationResult{}, fmt.Errorf("capture enclosing declaration signature range for %s", filePath)
+	}
+	signature := strings.TrimSpace(string(source[start:signatureEndOffset]))
+	owner := &backend.ReadSymbol{Name: selected.Name.Name, QualifiedName: qualified, Kind: "function", File: filePath, Range: rangeValue, SelectionRange: selection}
+	if selected.Recv != nil {
+		owner.Kind = "method"
+	}
+	if signature != "" {
+		owner.Signature = &signature
+	}
+	owners[qualified] = owner
+	return referenceDeclarationResult{Declaration: owner}, nil
+}
+
+func referenceReceiverName(receiver ast.Expr) string {
 	for {
 		switch expression := receiver.(type) {
 		case *ast.StarExpr:
@@ -615,11 +713,11 @@ func enclosingReferenceSymbol(file *ast.File, position token.Pos) string {
 		case *ast.IndexListExpr:
 			receiver = expression.X
 		case *ast.Ident:
-			return expression.Name + "." + selected.Name.Name
+			return expression.Name
 		case *ast.SelectorExpr:
-			return expression.Sel.Name + "." + selected.Name.Name
+			return expression.Sel.Name
 		default:
-			return selected.Name.Name
+			return ""
 		}
 	}
 }
@@ -704,7 +802,60 @@ func typedReferenceTarget(root string, pkg *packages.Package, ident *ast.Ident, 
 	}
 	candidate.Line = lineRange.Start.Line + 1
 	candidate.Column = lineRange.Start.Character + 1
-	return &referenceTarget{object: object, identity: identity, candidate: candidate, path: path, ident: ident, fset: pkg.Fset, source: source}, nil
+	return &referenceTarget{object: object, identity: identity, candidate: candidate, path: path, ident: ident, fset: pkg.Fset, source: source, declaration: referenceDeclarationNode(pkg, ident)}, nil
+}
+
+func referenceDeclarationNode(pkg *packages.Package, ident *ast.Ident) ast.Node {
+	if pkg == nil || ident == nil {
+		return nil
+	}
+	var selected ast.Node
+	for _, file := range pkg.Syntax {
+		if ident.Pos() < file.Pos() || ident.Pos() >= file.End() {
+			continue
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			if node == nil || ident.Pos() < node.Pos() || ident.Pos() >= node.End() {
+				return true
+			}
+			if declaration := referenceNodeForIdent(node, ident); declaration != nil {
+				selected = declaration
+			}
+			return true
+		})
+		break
+	}
+	return selected
+}
+
+func referenceNodeForIdent(node ast.Node, ident *ast.Ident) ast.Node {
+	switch typed := node.(type) {
+	case *ast.FuncDecl:
+		if typed.Name == ident {
+			return typed
+		}
+	case *ast.Field:
+		if referenceFieldHasIdent(typed, ident) {
+			return typed
+		}
+	case *ast.TypeSpec:
+		if typed.Name == ident {
+			return typed
+		}
+	case *ast.ValueSpec:
+		if referenceNamesContain(typed.Names, ident) {
+			return typed
+		}
+	}
+	return nil
+}
+
+func referenceFieldHasIdent(field *ast.Field, ident *ast.Ident) bool {
+	return referenceNamesContain(field.Names, ident)
+}
+
+func referenceNamesContain(names []*ast.Ident, ident *ast.Ident) bool {
+	return slices.Contains(names, ident)
 }
 
 func findTypedDefinition(root, identity, receiver, name string, loaded []*packages.Package, originals map[string]bool, sources *referenceSourceSnapshot) (*referenceTarget, error) {

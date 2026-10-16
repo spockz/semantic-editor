@@ -1,14 +1,13 @@
 # Kotlin CLI contracts: trusted class/function lookup and ambiguity, not-found, untrusted denial, selected-file diagnostics, and timeout on wrong-URI diagnostics.
 env SEMEDIT_TEST_KOTLIN_FUNCTION=1
 exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol launch
-stdout '"kind": "function"'
+stdout 'src/Widget\.kt:[0-9]+.*launch'
 env SEMEDIT_TEST_KOTLIN_FUNCTION=
 exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
-stdout '\"file\":\s*\"src/Widget.kt\"'
-stdout '\"symbol\":\s*\"Widget\"'
+stdout 'src/Widget\.kt:[0-9]+.*Widget'
 env SEMEDIT_TEST_KOTLIN_AMBIGUOUS=1
 exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
-stdout '\"ambiguous\": true'
+stdout 'Ambiguous lookup for "Widget".*2 candidates\.'
 ! semedit lookup --language kotlin --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
 stderr 'workspace trust required'
 ! semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Missing

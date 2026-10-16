@@ -35,7 +35,7 @@ func resolveRenameTarget(ctx context.Context, project backend.ProjectContext, se
 		return nil, nil, fmt.Errorf("capture Go rename lookup: %w", err)
 	}
 	if lookup.IsAmbiguous() {
-		return nil, nil, renameAmbiguity(project.RootDir, selector, lookup.Candidates)
+		return nil, nil, renameAmbiguity(project.RootDir, selector, lookup.Candidates, goSourceView(ctx))
 	}
 	if lookup.Definition == nil {
 		return nil, nil, fmt.Errorf("rename lookup lacks a declaration identity")

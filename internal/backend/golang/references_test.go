@@ -7,8 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	backend "github.com/spockz/semantic-editor/internal/backend"
-	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/token"
 	"os"
 	"os/exec"
@@ -17,6 +15,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	backend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 func TestFindReferencesSearchesModuleFromSelectedFile(t *testing.T) {
@@ -35,6 +37,9 @@ func TestFindReferencesSearchesModuleFromSelectedFile(t *testing.T) {
 	if result.Symbol.File != "api/store.go" || result.Symbol.QualifiedName != "Store.Read" {
 		t.Errorf("resolved symbol = %#v", result.Symbol)
 	}
+	if result.Symbol.Range.Start.Line != 2 || result.Symbol.SelectionRange.Start.Line != 2 || result.Symbol.Range.Start.Character != 0 || result.Symbol.SelectionRange.Start.Character != 14 || result.Symbol.Signature == nil || *result.Symbol.Signature != "func (*Store) Read() string" {
+		t.Errorf("resolved declaration range/signature = %#v", result.Symbol)
+	}
 	if result.Scope.Kind != "workspace_active_build" || result.Scope.Path != "." || !result.Scope.Complete {
 		t.Errorf("scope = %#v", result.Scope)
 	}
@@ -43,6 +48,8 @@ func TestFindReferencesSearchesModuleFromSelectedFile(t *testing.T) {
 	}
 	if reference := result.References[0]; reference.File != "client/client.go" || reference.EnclosingSymbol != "Use" || reference.Snippet != "func Use(s *api.Store) { _ = s.Read() }" {
 		t.Errorf("reference = %#v", reference)
+	} else if declaration := reference.EnclosingDeclaration; declaration == nil || declaration.Name != "Use" || declaration.QualifiedName != "Use" || declaration.Kind != "function" || declaration.Signature == nil || *declaration.Signature != "func Use(s *api.Store)" {
+		t.Errorf("enclosing declaration = %#v", declaration)
 	}
 	foundSource, foundClient := false, false
 	for _, file := range result.Files {
@@ -67,10 +74,38 @@ func TestRenameAmbiguityListsCandidateLocations(t *testing.T) {
 	if !errors.Is(err, backend.ErrAmbiguous) {
 		t.Fatalf("Rename() error = %v, want ambiguity", err)
 	}
-	for _, candidate := range []string{"first/validate.go (Validate)", "second/validate.go (Validate)", "Specify 'file'"} {
+	for _, candidate := range []string{"in disk source matches", "first/validate.go:2  func Validate()", "second/validate.go:2  func Validate()", "Specify 'file'"} {
 		if !strings.Contains(err.Error(), candidate) {
 			t.Errorf("Rename() error %q does not contain %q", err, candidate)
 		}
+	}
+	if !strings.Contains(err.Error(), "candidates:\nfirst/validate.go:2  func Validate()\nsecond/validate.go:2  func Validate()\nSpecify") {
+		t.Errorf("Rename() error does not list candidates on separate lines: %q", err)
+	}
+}
+
+func TestRenameAmbiguityLabelsBufferedSourceView(t *testing.T) {
+	root := writeReferenceFixture(t, map[string]string{
+		"first/validate.go":  "package first\nfunc Validate() {}\n",
+		"second/validate.go": "package second\nfunc Validate() {}\n",
+	})
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(cancel)
+	if err = buffer.AuthorizeWrites(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	ctx = sourcebuf.WithBuffer(ctx, buffer)
+	_, err = (GoBackend{}).Rename(ctx, backend.RenameRequest{
+		Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo},
+		Symbol:  "Validate",
+		To:      "Check",
+	})
+	if !errors.Is(err, backend.ErrAmbiguous) || !strings.Contains(err.Error(), "in working source matches") {
+		t.Fatalf("Rename() buffered ambiguity error = %v", err)
 	}
 }
 
@@ -344,6 +379,9 @@ func TestFindReferencesResolvesTypedBindingsAndPhysicalRanges(t *testing.T) {
 	}
 	if reused.Symbol.Kind != "variable" || len(reused.References) != 3 {
 		t.Errorf("reused binding result = symbol %#v, references %#v", reused.Symbol, reused.References)
+	}
+	if reused.Symbol.Range != reused.Symbol.SelectionRange || reused.Symbol.Range.Start.Line != 6 || reused.Symbol.Signature != nil {
+		t.Errorf("local binding target fabricated a declaration extent: %#v", reused.Symbol)
 	}
 
 	localConstant, err := backendValue.FindReferences(context.Background(), request("Label"))

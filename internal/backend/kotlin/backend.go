@@ -860,7 +860,8 @@ func selectKotlinSymbol(query, file string, symbols []kotlinDocumentSymbol) (*ne
 func kotlinCandidate(file string, symbol kotlinDocumentSymbol, path []string) *neutralbackend.NamedTarget {
 	start := symbol.SelectionRange.Start
 	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
-	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: kotlinKindName(symbol.Kind), Location: location}
+	declarationRange := neutralbackend.Range{Start: neutralbackend.Position(symbol.Range.Start), End: neutralbackend.Position(symbol.Range.End)}
+	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: kotlinKindName(symbol.Kind), Location: location, DeclarationRange: &declarationRange}
 }
 
 func kotlinByteOffset(source []byte, position kotlinPosition) (int, error) {

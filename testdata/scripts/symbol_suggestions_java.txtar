@@ -8,13 +8,13 @@ stdout '"qualified_name":\s*"Widget"'
 ! exec semedit lookup --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widgte
 stderr 'Suggested target: Widget \(src/Widget.java:1\)'
 exec semedit lookup --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget
-stdout '"symbol":\s*"Widget"'
+stdout 'src/Widget.java:1  class Widget'
 
 env SEMEDIT_JAVA_REFERENCE_URI=file://$WORK/src/Widget.java SEMEDIT_JAVA_REFERENCE_LINE=0 SEMEDIT_JAVA_REFERENCE_START=6 SEMEDIT_JAVA_REFERENCE_END=12
 ! exec semedit find-references --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widgte
 stderr 'Suggested target: Widget \(src/Widget.java:1\)'
 exec semedit find-references --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget
-stdout '"qualified_name":\s*"Widget"'
+stdout 'References to Widget'
 
 ! exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widgte --to Gadget
 stderr 'Suggested target: Widget \(src/Widget.java:1\)'

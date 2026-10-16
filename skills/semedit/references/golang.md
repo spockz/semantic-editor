@@ -51,7 +51,13 @@ Start with `semantic_workspace_outline`. Auto mode aggregates supported Go and J
 
 Go discovery reads `go.work` use directives without changing the workspace manifest. Module records include documentation from comments before the `module` directive, falling back to root package documentation, and counts of packages in the requested scope. Package records carry `module` and `language` ownership. Use these records to choose the exact source scope for subsequent lookup and edits; do not infer ownership from directory names alone.
 
-MCP outline text carries a concise summary and critical metadata. Read the complete package/module and declaration arrays from `structuredContent`; they do not repeat in the text projection.
+MCP workspace outline text carries a concise summary and critical metadata; package
+and module records appear once in `structuredContent`. Declaration outlines,
+lookup, and references instead use compact navigation listings. Paths resolve from
+the active workspace root. Declaration lines are one-based and inclusive; reference
+positions identify occurrences. Copy qualified method selectors verbatim. Use
+ordinary file reading for disk source or `semantic_inspect_symbol` for source and
+guarded revision continuations. Overlay labels identify unpublished contents.
 
 ## Publication and verification
 
@@ -135,7 +141,7 @@ When decomposing a large struct with grouped fields into a nested composition:
 When a function exceeds parameter limits or requires expanded configuration:
 
 1. **Call-Site Discovery**:
-   - Use `semantic_find_references` to locate all direct callers across the module.
+   - Use `semantic_find_references` to locate typed references across the module; inspect enclosing declarations to distinguish calls from other uses.
 2. **Transform Parameters**:
    - Use `semantic_introduce_parameter` to add a single new argument with caller updates.
    - Use `semantic_introduce_parameter_object` to bundle multiple parameters into a typed struct, converting callers to construct keyed literals.

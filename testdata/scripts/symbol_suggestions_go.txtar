@@ -5,7 +5,8 @@ cp api/client.go original.txt
 stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
 ! stderr 'Server.Connect'
 exec semedit lookup --file api/client.go --symbol Client.Connect
-stdout '"qualified_name":\s*"Client.Connect"'
+stdout 'api/client.go:5-7  func .* Connect\(\) int'
+stdout 'symbol: Client.Connect'
 
 ! exec semedit rename --file api/client.go --symbol Client.Conenct --to Open
 stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
@@ -18,7 +19,7 @@ stdout '"qualified_name":\s*"Client.Connect"'
 ! exec semedit find-references --file api/client.go --symbol Client.Conenct
 stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
 exec semedit find-references --file api/client.go --symbol Client.Connect
-stdout '"qualified_name":\s*"Client.Connect"'
+stdout 'References to Client.Connect'
 cmp api/client.go original.txt
 
 ! exec semedit replace-body --file api/client.go --symbol Client.Conenct --body 'return c.value'

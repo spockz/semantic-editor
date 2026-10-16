@@ -49,6 +49,15 @@ func TestLookupUsesOverlayBytesAndUTF16Location(t *testing.T) {
 	if location.Range.Start.Line != 3 || location.Range.Start.Character != 24 || location.Range.End.Line != 3 || location.Range.End.Character != 31 {
 		t.Fatalf("overlay UTF-16 location = %#v, want line 3 characters 24..31", location.Range)
 	}
+	if result.Definition.DeclarationRange == nil || result.Definition.DeclarationRange.Start.Line != 3 || result.Definition.DeclarationRange.End.Line != 3 {
+		t.Fatalf("overlay declaration range = %#v, want line 3 declaration", result.Definition.DeclarationRange)
+	}
+	if result.Definition.Signature == nil || *result.Definition.Signature != "func NewName()" {
+		t.Fatalf("overlay declaration signature = %#v, want func NewName()", result.Definition.Signature)
+	}
+	if result.SourceView != "working" {
+		t.Fatalf("source view = %q, want working", result.SourceView)
+	}
 	if _, lookupErr := (GoBackend{}).Lookup(ctx, project, "OldName"); lookupErr == nil {
 		t.Fatal("Lookup(OldName) resolved a name that exists only on disk")
 	}

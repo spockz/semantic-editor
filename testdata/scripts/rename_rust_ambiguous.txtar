@@ -1,0 +1,27 @@
+# Rust rename reports native alternatives for same-named declarations in separate modules.
+env SEMEDIT_TEST_RUST_AMBIGUOUS=1
+! exec semedit rename --language rust --trust-workspace --file src/lib.rs --symbol Widget --to Gadget
+stderr 'rename requires one unique target in disk source'
+stderr 'first::Widget'
+stderr 'second::Widget'
+cmp src/lib.rs original.rs
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- src/lib.rs --
+pub mod first {
+    pub struct Widget;
+}
+pub mod second {
+    pub struct Widget;
+}
+-- original.rs --
+pub mod first {
+    pub struct Widget;
+}
+pub mod second {
+    pub struct Widget;
+}

@@ -1,12 +1,18 @@
 # Java lookup distinguishes overloads by normalized parameter signatures.
 env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_OVERLOADS=1
 exec semedit lookup --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src --symbol OrderService.process
-stdout '"qualified_name":\s*"OrderService.process\(Order\)"'
-stdout '"qualified_name":\s*"OrderService.process\(Order, boolean\)"'
+stdout 'OrderService\.process\(Order\)'
+stdout 'OrderService\.process\(Order, boolean\)'
 
 exec semedit inspect-symbol --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src --symbol OrderService.process
 stdout '"qualified_name":\s*"OrderService.process\(Order\)"'
 stdout '"qualified_name":\s*"OrderService.process\(Order, boolean\)"'
+
+! exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/OrderService.java --symbol OrderService.process --to renamed
+stderr 'rename requires one unique target in disk source'
+stderr 'OrderService\.process\(Order\)'
+stderr 'OrderService\.process\(Order, boolean\)'
+cmp src/OrderService.java original/OrderService.java
 
 -- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
 placeholder
@@ -19,6 +25,11 @@ placeholder
 placeholder
 
 -- src/OrderService.java --
+class OrderService {
+  void process(Order o) {}
+  void process(Order o, boolean retry) {}
+}
+-- original/OrderService.java --
 class OrderService {
   void process(Order o) {}
   void process(Order o, boolean retry) {}

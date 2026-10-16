@@ -129,6 +129,43 @@ func TestLookupUsesSelectedFileAndUTF16Ranges(t *testing.T) {
 	}
 }
 
+func TestLookupFlatSymbolHasOnlyLocationRange(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "a.sh")
+	if err := pipeline.WriteAtomic(file, []byte("f() { :; }\n")); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeSession{response: json.RawMessage(`[{"name":"f","kind":12,"location":{"uri":"SELECTED_URI","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}}]`)}
+	adapter := &Adapter{Config: Config{Language: backend.LanguageBash, Extensions: []string{".sh"}, LanguageID: "shell"}, Factory: func(context.Context, string, string, []string) (Session, error) { return session, nil }}
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	got, err := adapter.Lookup(context.Background(), project, "f")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Definition == nil || got.Definition.Location.Range.Start != (backend.Position{Line: 0, Character: 0}) || got.Definition.DeclarationRange != nil {
+		t.Fatalf("flat symbol lookup=%+v, want location only", got.Definition)
+	}
+}
+
+func TestLookupPreservesHierarchicalDeclarationRange(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Makefile")
+	if err := pipeline.WriteAtomic(file, []byte("all:\n\t@echo one\n\t@echo two\n")); err != nil {
+		t.Fatal(err)
+	}
+	session := &fakeSession{response: json.RawMessage(`[{"name":"all","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":10}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":3}}}]`)}
+	adapter := &Adapter{Config: Config{Language: backend.LanguageMake, Basenames: []string{"Makefile"}, LanguageID: "makefile", SymbolSyntax: "make"}, Factory: func(context.Context, string, string, []string) (Session, error) { return session, nil }}
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	got, err := adapter.Lookup(context.Background(), project, "all")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := backend.Range{Start: backend.Position{Line: 0, Character: 0}, End: backend.Position{Line: 2, Character: 10}}
+	if got.Definition == nil || got.Definition.DeclarationRange == nil || *got.Definition.DeclarationRange != want {
+		t.Fatalf("lookup declaration range=%+v, want %+v", got.Definition, want)
+	}
+}
+
 func TestReadSymbolProjectionContracts(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "Makefile")

@@ -8,7 +8,7 @@ stdout 'Matched former name ParseConfig; now ReadConfig after an earlier retaine
 cmp config.go want/batch.go
 
 exec semedit lookup --file config.go --symbol ReadConfig
-stdout '"symbol":\s*"ReadConfig"'
+stdout 'config.go:3-5  func ReadConfig\(\) string'
 exec semedit replace-body --file config.go --symbol ReadConfig --body 'return "ready"'
 grep 'func ReadConfig' config.go
 grep 'return "ready"' config.go

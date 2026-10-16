@@ -4,9 +4,17 @@ This reference provides workflows for inspecting and refactoring Haskell source 
 
 ---
 
+Compact lookup listings use workspace-relative paths and one-based
+inclusive declaration lines. Signatures describe declarations; explicit native
+selectors remain separate and must be copied verbatim. Use ordinary file reading
+for disk-backed results. A navigation result does not imply that this backend
+supports symbol inspection or mutation.
+
 ## 1. Macro Refactorings in Haskell
 
-Standalone Haskell supports `semantic_lookup`. It requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. Failed lookups may return validated spelling alternatives from the server's current document symbols. Retry explicitly with a returned selector and file; suggestion retrieval does not add public outline or mutation support. This reference defines planning patterns and verification practices.
+Standalone Haskell exposes `semantic_lookup`; declaration outlines and symbol inspection remain unsupported. Read the returned disk location with ordinary file-reading tools. Lookup requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. This reference defines macro patterns and verification practices.
+
+Failed lookups may return validated spelling alternatives from the server's current document symbols. Retry explicitly with a returned selector and file; suggestion retrieval does not add public outline or mutation support.
 
 ---
 
