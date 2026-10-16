@@ -893,6 +893,11 @@ agent implementation calls and individual operations executed inside CLI test
 processes are not recoverable as a complete call inventory. Those omissions
 prevent an exhaustive session-wide count. Catalog discovery is not execution.
 
+Repeated wrap-up reconciled this branch with current main and preserved the
+exempt destination cleanup-log update in `6d3861b`. No additional semantic
+operations or manual source edits occurred in these follow-up turns. The seven
+recovered-call inventory and paired-timing limitations below remain unchanged.
+
 Stable references below are history execution IDs with their `exec-` prefix
 omitted. Totals for the seven recovered calls: four beneficial, two neutral,
 one harmful; no recovered semantic batch parents or children. No semantic
