@@ -1,0 +1,106 @@
+# Moving a production file relocates its declarations and matching tests while updating typed callers across the module.
+exec semedit move-file --file old/foo.go --destination-file api/moved.go
+stdout 'Successfully moved file declarations.'
+cmp old/foo.go .scratch/_want/old/foo.go
+cmp old/foo_test.go .scratch/_want/old/foo_test.go
+cmp api/moved.go .scratch/_want/api/moved.go
+cmp api/moved_test.go .scratch/_want/api/moved_test.go
+cmp old/api_test.go .scratch/_want/old/api_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/movefile
+
+go 1.24
+
+-- old/foo.go --
+package old
+
+// Widget is the public value.
+type Widget struct { value int }
+
+func (w Widget) Value() int { return helper(w.value) }
+
+func helper(value int) int { return value + 1 }
+
+const (
+	First = 1
+	Second = 2
+)
+
+func Compute(value int) int { return helper(value) }
+
+-- old/foo_test.go --
+package old
+
+import "testing"
+
+func TestPrivateHelper(t *testing.T) {
+	if got := helper(2); got != 3 { t.Fatalf("helper() = %d", got) }
+}
+
+-- api/moved.go --
+package api
+
+-- old/api_test.go --
+package old_test
+
+import (
+	"testing"
+	"example.com/movefile/old"
+)
+
+func TestCompute(t *testing.T) {
+	if got := old.Compute(2); got != 3 { t.Fatalf("Compute() = %d", got) }
+}
+
+-- client/client.go --
+package client
+
+import "example.com/movefile/old"
+
+func Read() int { return old.Widget{}.Value() + old.Compute(1) }
+
+-- .scratch/_want/old/foo.go --
+package old
+-- .scratch/_want/old/foo_test.go --
+package old
+-- .scratch/_want/api/moved.go --
+package api
+
+// Widget is the public value.
+type Widget struct{ value int }
+
+func (w Widget) Value() int { return helper(w.value) }
+
+func helper(value int) int { return value + 1 }
+
+const (
+	First  = 1
+	Second = 2
+)
+
+func Compute(value int) int { return helper(value) }
+-- .scratch/_want/api/moved_test.go --
+package api
+
+import "testing"
+
+func TestPrivateHelper(t *testing.T) {
+	if got := helper(2); got != 3 {
+		t.Fatalf("helper() = %d", got)
+	}
+}
+-- .scratch/_want/old/api_test.go --
+package old_test
+
+import (
+	"example.com/movefile/api"
+	"testing"
+)
+
+func TestCompute(t *testing.T) {
+	if got := api.Compute(2); got != 3 {
+		t.Fatalf("Compute() = %d", got)
+	}
+}

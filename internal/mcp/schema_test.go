@@ -731,12 +731,14 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertFileEditOutputSchema(t, name, output)
 		assertCompositeElementOutputSchema(t, output)
 	case "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_move_construct", "semantic_scaffold_file":
+		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_move_construct", "semantic_move_file", "semantic_scaffold_file":
 		assertFileEditOutputSchema(t, name, output)
 	case "semantic_batch":
 		assertBatchOutputSchema(t, output)
 	case "semantic_metrics":
 		assertMetricsOutputSchema(t, output)
+	case "semantic_diagnostics":
+		assertDiagnosticReportToolOutputSchema(t, name, output)
 	case "report_feedback":
 		assertFeedbackOutputSchema(t, output)
 	case "semantic_inspect_symbol":
@@ -745,6 +747,12 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	default:
 		assertStandardOutputSchema(t, output, "string")
 	}
+}
+
+func assertDiagnosticReportToolOutputSchema(t *testing.T, name string, output any) {
+	t.Helper()
+	assertStandardOutputSchema(t, output, "object")
+	assertObjectRequiredFields(t, name, nativeResultSchema(t, output), "report_id", "workspace_root", "status", "category", "total", "offset", "limit", "items")
 }
 
 func assertRemainingTypedOutputSchema(t *testing.T, name string, output any) {
@@ -869,6 +877,7 @@ func assertFileEditOutputSchema(t *testing.T, name string, output any) {
 		"semantic_replace_construct":  {"file", "in_function", "diff"},
 		"semantic_insert_case":        {"file", "in_function", "discriminator", "diff"},
 		"semantic_move_construct":     {"file", "symbol", "origin_file", "diff"},
+		"semantic_move_file":          {"file", "changed_files", "diff", "application_state"},
 		"semantic_scaffold_file":      {"file", "package"},
 	}
 	for _, field := range fieldsByTool[name] {

@@ -630,6 +630,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		return
 	}
 	structured := timing.structuredContentWithResult(response)
+	s.attachDiagnosticReport(structured, response.WorkspaceRoot, response)
 	critical, err := CriticalText(structured, string(bodyBytes))
 	if err != nil {
 		structured["presentation_error"] = err.Error()

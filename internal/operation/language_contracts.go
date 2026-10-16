@@ -639,7 +639,11 @@ func goTypedOperationContract(key string) (capability.OperationContract, bool) {
 			capability.GuaranteePackageOverlay|capability.GuaranteeAtomicWrites,
 			structuralSnapshotFaultSupport())
 		return typedContract(structural), true
+
+	case "move_file":
+		return goMoveFileOperationContract(), true
 	default:
 		return capability.OperationContract{}, false
+
 	}
 }

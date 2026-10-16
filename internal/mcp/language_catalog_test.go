@@ -125,8 +125,8 @@ func TestInjectedNilRegistryDoesNotFallBackToDefaults(t *testing.T) {
 			t.Fatalf("explicit nil registry exposed default operation %q", tool["name"])
 		}
 	}
-	if len(tools) != 2 {
-		t.Fatalf("explicit nil registry tool count = %d, want metrics and feedback only", len(tools))
+	if len(tools) != 3 {
+		t.Fatalf("explicit nil registry tool count = %d, want diagnostics, metrics, and feedback utilities only", len(tools))
 	}
 }
 

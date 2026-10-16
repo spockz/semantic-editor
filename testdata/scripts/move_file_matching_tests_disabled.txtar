@@ -1,0 +1,75 @@
+# Disabling test relocation leaves source-package tests intact and rewrites their references to the moved API.
+exec semedit move-file --file old/foo.go --destination-file api/moved.go --move-matching-tests=false
+stdout 'Successfully moved file declarations.'
+cmp old/foo.go .scratch/_want/old/foo.go
+cmp old/foo_test.go .scratch/_want/old/foo_test.go
+cmp api/moved.go .scratch/_want/api/moved.go
+cmp old/api_test.go .scratch/_want/old/api_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/movefiletests
+
+go 1.24
+
+-- old/foo.go --
+package old
+
+func Compute(value int) int { return value + 1 }
+
+-- old/foo_test.go --
+package old
+
+import "testing"
+
+func TestMovedExport(t *testing.T) {
+	if got := Compute(2); got != 3 { t.Fatalf("Compute() = %d", got) }
+}
+
+-- api/moved.go --
+package api
+
+-- old/api_test.go --
+package old_test
+
+import (
+	"testing"
+	"example.com/movefiletests/old"
+)
+
+func TestCompute(t *testing.T) {
+	if got := old.Compute(2); got != 3 { t.Fatalf("Compute() = %d", got) }
+}
+
+-- .scratch/_want/old/foo.go --
+package old
+-- .scratch/_want/old/foo_test.go --
+package old
+
+import (
+	"example.com/movefiletests/api"
+	"testing"
+)
+
+func TestMovedExport(t *testing.T) {
+	if got := api.Compute(2); got != 3 {
+		t.Fatalf("Compute() = %d", got)
+	}
+}
+-- .scratch/_want/api/moved.go --
+package api
+
+func Compute(value int) int { return value + 1 }
+-- .scratch/_want/old/api_test.go --
+package old_test
+
+import (
+	"example.com/movefiletests/api"
+	"testing"
+)
+
+func TestCompute(t *testing.T) {
+	if got := api.Compute(2); got != 3 {
+		t.Fatalf("Compute() = %d", got)
+	}
+}

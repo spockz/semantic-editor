@@ -280,9 +280,10 @@ func InvalidateWithContext(ctx context.Context) error {
 }
 
 type documentSnapshot struct {
-	saved   bool
-	version int
-	digest  [32]byte
+	saved     bool
+	published bool
+	version   int
+	digest    [32]byte
 }
 
 type diagnosticsScope struct {
@@ -429,61 +430,135 @@ func managedSessionMatches(session *managedSession, executable string, executabl
 		session.executableInfo.Size() == executableInfo.Size() &&
 		session.executableInfo.ModTime().Equal(executableInfo.ModTime()) &&
 		slices.Equal(session.environment, environment) &&
-		slices.Equal(session.files, scope.files) &&
 		maps.Equal(session.manifests, scope.manifests)
 }
 
+type selectedDocument struct {
+	content []byte
+	digest  [32]byte
+}
+
+type watchedFileChange struct {
+	uri  string
+	kind int
+}
+
 func (s *managedSession) syncDocuments(ctx context.Context, files []string) error {
-	type selectedDocument struct {
-		content []byte
-		digest  [32]byte
+	selected, err := readSelectedDocuments(ctx, files)
+	if err != nil {
+		return err
 	}
+	watchChanges, err := s.closeRemovedDocuments(ctx, selected)
+	if err != nil {
+		return err
+	}
+	for _, path := range files {
+		change, err := s.syncDocument(ctx, path, selected[path])
+		if err != nil {
+			return err
+		}
+		if change.kind != 0 {
+			watchChanges = append(watchChanges, change)
+		}
+	}
+	if err := s.notifyMembershipChanges(ctx, watchChanges); err != nil {
+		return err
+	}
+	s.documentsInitialized = true
+	s.files = slices.Clone(files)
+	return nil
+}
+
+func readSelectedDocuments(ctx context.Context, files []string) (map[string]selectedDocument, error) {
 	selected := make(map[string]selectedDocument, len(files))
 	for _, path := range files {
 		// #nosec G304 -- packages.Load selected this source from the project root.
 		content, err := sourcebuf.ReadFile(ctx, path)
 		if err != nil {
-			return fmt.Errorf("read Go source %q: %w", path, err)
+			return nil, fmt.Errorf("read Go source %q: %w", path, err)
 		}
 		selected[path] = selectedDocument{content: content, digest: sha256.Sum256(content)}
 	}
-	for _, path := range files {
-		document := selected[path]
-		uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
-		previous, opened := s.documents[path]
-		if !opened {
-			if err := s.client.Notify(ctx, "textDocument/didOpen", map[string]any{
-				textDocumentKey: map[string]any{"uri": uri, "languageId": "go", "version": 1, "text": string(document.content)},
-			}); err != nil {
-				return fmt.Errorf("open Go source %q in gopls: %w", path, err)
-			}
-			s.documents[path] = documentSnapshot{version: 1, digest: document.digest, saved: !sourcebuf.Dirty(ctx, path)}
-			continue
-		}
-		if previous.digest == document.digest && previous.saved {
-			continue
-		}
-		version := previous.version
-		if previous.digest != document.digest {
-			version++
-			if err := s.client.Notify(ctx, "textDocument/didChange", map[string]any{textDocumentKey: map[string]any{"uri": uri, "version": version}, "contentChanges": []map[string]any{{"text": string(document.content)}}}); err != nil {
-				return fmt.Errorf("synchronize Go source %q in gopls: %w", path, err)
-			}
-		}
-		if sourcebuf.Dirty(ctx, path) {
-			s.documents[path] = documentSnapshot{version: version, digest: document.digest, saved: false}
-			continue
-		}
+	return selected, nil
+}
 
-		if err := s.client.Notify(ctx, "textDocument/didSave", map[string]any{
-			textDocumentKey: map[string]any{"uri": uri},
+func (s *managedSession) closeRemovedDocuments(ctx context.Context, selected map[string]selectedDocument) ([]watchedFileChange, error) {
+	watchChanges := make([]watchedFileChange, 0)
+	removed := make([]string, 0)
+	for path := range s.documents {
+		if _, ok := selected[path]; ok {
+			continue
+		}
+		removed = append(removed, path)
+	}
+	slices.Sort(removed)
+	for _, path := range removed {
+		previous := s.documents[path]
+		uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+		if err := s.client.Notify(ctx, "textDocument/didClose", map[string]any{textDocumentKey: map[string]any{"uri": uri}}); err != nil {
+			return nil, fmt.Errorf("close removed Go source %q in gopls: %w", path, err)
+		}
+		if s.documentsInitialized && previous.published {
+			watchChanges = append(watchChanges, watchedFileChange{uri: uri, kind: 3})
+		}
+		delete(s.documents, path)
+	}
+	return watchChanges, nil
+}
+
+func (s *managedSession) syncDocument(ctx context.Context, path string, document selectedDocument) (watchedFileChange, error) {
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	previous, opened := s.documents[path]
+	if !opened {
+		if err := s.client.Notify(ctx, "textDocument/didOpen", map[string]any{
+			textDocumentKey: map[string]any{"uri": uri, "languageId": "go", "version": 1, "text": string(document.content)},
 		}); err != nil {
-			return fmt.Errorf("save Go source %q in gopls: %w", path, err)
+			return watchedFileChange{}, fmt.Errorf("open Go source %q in gopls: %w", path, err)
 		}
-		if err := s.client.Notify(ctx, "workspace/didChangeWatchedFiles", map[string]any{"changes": []map[string]any{{"uri": uri, "type": 2}}}); err != nil {
-			return fmt.Errorf("notify changed Go source %q: %w", path, err)
+		saved := !sourcebuf.Dirty(ctx, path)
+		s.documents[path] = documentSnapshot{version: 1, digest: document.digest, saved: saved, published: saved}
+		if s.documentsInitialized && saved {
+			return watchedFileChange{uri: uri, kind: 1}, nil
 		}
-		s.documents[path] = documentSnapshot{version: version, digest: document.digest, saved: true}
+		return watchedFileChange{}, nil
+	}
+	if previous.digest == document.digest && previous.saved {
+		return watchedFileChange{}, nil
+	}
+	version := previous.version
+	if previous.digest != document.digest {
+		version++
+		if err := s.client.Notify(ctx, "textDocument/didChange", map[string]any{textDocumentKey: map[string]any{"uri": uri, "version": version}, "contentChanges": []map[string]any{{"text": string(document.content)}}}); err != nil {
+			return watchedFileChange{}, fmt.Errorf("synchronize Go source %q in gopls: %w", path, err)
+		}
+	}
+	if sourcebuf.Dirty(ctx, path) {
+		s.documents[path] = documentSnapshot{version: version, digest: document.digest, saved: false, published: previous.published}
+		return watchedFileChange{}, nil
+	}
+	if err := s.client.Notify(ctx, "textDocument/didSave", map[string]any{textDocumentKey: map[string]any{"uri": uri}}); err != nil {
+		return watchedFileChange{}, fmt.Errorf("save Go source %q in gopls: %w", path, err)
+	}
+	changeType := 2
+	if !previous.published {
+		changeType = 1
+	}
+	if err := s.client.Notify(ctx, "workspace/didChangeWatchedFiles", map[string]any{"changes": []map[string]any{{"uri": uri, "type": changeType}}}); err != nil {
+		return watchedFileChange{}, fmt.Errorf("notify changed Go source %q: %w", path, err)
+	}
+	s.documents[path] = documentSnapshot{version: version, digest: document.digest, saved: true, published: true}
+	return watchedFileChange{}, nil
+}
+
+func (s *managedSession) notifyMembershipChanges(ctx context.Context, watchChanges []watchedFileChange) error {
+	if len(watchChanges) > 0 {
+		changes := make([]map[string]any, 0, len(watchChanges))
+		for _, change := range watchChanges {
+			changes = append(changes, map[string]any{"uri": change.uri, "type": change.kind})
+		}
+		if err := s.client.Notify(ctx, "workspace/didChangeWatchedFiles", map[string]any{"changes": changes}); err != nil {
+			return fmt.Errorf("notify changed Go source membership: %w", err)
+		}
 	}
 	return nil
 }
@@ -496,13 +571,14 @@ type manifestState struct {
 }
 
 type managedSession struct {
-	client         *lsp.Client
-	executableInfo os.FileInfo
-	executable     string
-	environment    []string
-	files          []string
-	documents      map[string]documentSnapshot
-	manifests      map[string]manifestState
+	client               *lsp.Client
+	executableInfo       os.FileInfo
+	executable           string
+	environment          []string
+	files                []string
+	documents            map[string]documentSnapshot
+	documentsInitialized bool
+	manifests            map[string]manifestState
 }
 
 func readManifestState(root string) (map[string]manifestState, error) {

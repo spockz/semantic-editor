@@ -545,3 +545,176 @@ func TestObservedReplacementRemainsReadOnly(t *testing.T) {
 		t.Fatalf("authorized output=%s", got)
 	}
 }
+
+func TestApplyCreateRejectsConflictsWithoutChangingOtherOutputs(t *testing.T) {
+	for _, scenario := range []string{"existing-empty", "appeared", "invalid-later", "non-nil-before", "nil-after", "empty-after"} {
+		t.Run(scenario, func(t *testing.T) {
+			fixture := prepareCreateConflict(t, scenario)
+			if applyErr := fixture.buffer.Apply(fixture.ctx, fixture.plan); applyErr == nil {
+				t.Fatal("conflicting Create plan succeeded")
+			}
+			working, readErr := sourcebuf.ReadFile(fixture.ctx, fixture.existing)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !bytes.Equal(working, fixture.prior) {
+				t.Fatalf("failed plan changed prior revision: %q", working)
+			}
+			if !fixture.diskTarget {
+				if _, missingErr := sourcebuf.ReadFile(fixture.ctx, fixture.created); !errors.Is(missingErr, os.ErrNotExist) {
+					t.Fatalf("failed plan created working output: %v", missingErr)
+				}
+			}
+		})
+	}
+}
+
+func TestApplyCreatePublishesOneMixedWorkingRevision(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing := filepath.Join(root, "existing.go")
+	created := filepath.Join(root, "nested", "created.go")
+	before := []byte("package sample\n")
+	after := []byte("package sample\nconst Value = 1\n")
+	writeFiles(t, []string{existing}, before)
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	plan := []sourcebuf.Change{{Path: existing, Before: before, After: after}, {Path: created, Create: true, After: after}}
+	if err := buffer.Apply(ctx, plan); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(sourcebuf.Overlay(ctx)[created], after) {
+		t.Fatal("new source absent from working overlay")
+	}
+	if _, err := os.Stat(created); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("new file published early: %v", err)
+	}
+	if err := buffer.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{existing, created} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, after) {
+			t.Fatalf("published %s = %q", path, got)
+		}
+	}
+}
+
+type cancelAfterDiskRevision struct {
+	context.Context
+
+	path     string
+	revision []byte
+}
+
+func (c cancelAfterDiskRevision) Err() error {
+	if err := c.Context.Err(); err != nil {
+		return err
+	}
+	data, err := os.ReadFile(c.path)
+	if err != nil {
+		return fmt.Errorf("observe publication: %w", err)
+	}
+	if bytes.Equal(data, c.revision) {
+		return context.Canceled
+	}
+	return nil
+}
+func TestFlushReportsActualPartialPublication(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, second := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
+	before := []byte("package sample\n")
+	after := []byte("package sample\nconst Value = 1\n")
+	writeFiles(t, []string{first, second}, before)
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if applyErr := buffer.Apply(ctx, []sourcebuf.Change{{Path: first, Before: before, After: after}, {Path: second, Before: before, After: after}}); applyErr != nil {
+		t.Fatal(applyErr)
+	}
+	err = buffer.Flush(cancelAfterDiskRevision{Context: t.Context(), path: first, revision: after})
+	var publication *sourcebuf.PublicationError
+	if !errors.As(err, &publication) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("Flush error = %v", err)
+	}
+	if len(publication.Published) != 1 || publication.Published[0] != first || len(publication.Planned) != 2 {
+		t.Fatalf("publication = %#v", publication)
+	}
+	firstDisk, err := os.ReadFile(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondDisk, err := os.ReadFile(second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(firstDisk, after) || !bytes.Equal(secondDisk, before) {
+		t.Fatalf("partial outputs = %q, %q", firstDisk, secondDisk)
+	}
+}
+
+type createConflictFixture struct {
+	buffer     *sourcebuf.Buffer
+	ctx        context.Context
+	existing   string
+	created    string
+	prior      []byte
+	plan       []sourcebuf.Change
+	diskTarget bool
+}
+
+func prepareCreateConflict(t *testing.T, scenario string) createConflictFixture {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, created := filepath.Join(root, "existing.go"), filepath.Join(root, "created.go")
+	original := []byte("package sample\n")
+	prior := []byte("package sample\nconst Prior = 1\n")
+	writeFiles(t, []string{existing}, original)
+	if scenario == "existing-empty" {
+		writeFiles(t, []string{created}, []byte{})
+	}
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if writeErr := sourcebuf.WriteFile(ctx, existing, prior); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if scenario == "appeared" {
+		if _, bindErr := sourcebuf.ReadFile(ctx, created); !errors.Is(bindErr, os.ErrNotExist) {
+			t.Fatalf("bind absence: %v", bindErr)
+		}
+		writeFiles(t, []string{created}, original)
+	}
+	creation := sourcebuf.Change{Path: created, Create: true, After: []byte("package sample\nconst Created = 1\n")}
+	switch scenario {
+	case "non-nil-before":
+		creation.Before = []byte{}
+	case "nil-after":
+		creation.After = nil
+	case "empty-after":
+		creation.After = []byte{}
+	}
+	plan := []sourcebuf.Change{{Path: existing, Before: prior, After: []byte("package sample\nconst Changed = 1\n")}, creation}
+	if scenario == "invalid-later" {
+		plan = append(plan, sourcebuf.Change{Path: existing, Before: prior, After: original})
+	}
+	return createConflictFixture{buffer: buffer, ctx: ctx, existing: existing, created: created, prior: prior, plan: plan, diskTarget: scenario == "existing-empty" || scenario == "appeared"}
+}

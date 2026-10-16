@@ -1,0 +1,537 @@
+# Refused file moves preserve both the source and destination files.
+! exec semedit move-file --file tagged/foo.go --destination-file destinations/tagged/moved.go
+stderr 'cross-package move refuses generated or build-constrained'
+cmp tagged/foo.go .scratch/_want/tagged/foo.go
+cmp destinations/tagged/moved.go .scratch/_want/destinations/tagged/moved.go
+! exec semedit move-file --file generated/foo.go --destination-file destinations/generated/moved.go
+stderr 'cross-package move refuses generated or build-constrained'
+cmp generated/foo.go .scratch/_want/generated/foo.go
+cmp destinations/generated/moved.go .scratch/_want/destinations/generated/moved.go
+! exec semedit move-file --file generatedcaller/foo.go --destination-file destinations/generatedcaller/moved.go
+stderr 'generated or build-constrained file.*generated_caller.go'
+cmp generatedcaller/foo.go .scratch/_want/generatedcaller/foo.go
+cmp generatedcaller/generated_caller.go .scratch/_want/generatedcaller/generated_caller.go
+cmp destinations/generatedcaller/moved.go .scratch/_want/destinations/generatedcaller/moved.go
+! exec semedit move-file --file shared/foo.go --destination-file destinations/shared/moved.go
+stderr 'refuses matching tests that depend on test helper sharedHelper.*helper_test.go'
+cmp shared/foo.go .scratch/_want/shared/foo.go
+cmp shared/foo_test.go .scratch/_want/shared/foo_test.go
+cmp shared/helper_test.go .scratch/_want/shared/helper_test.go
+cmp destinations/shared/moved.go .scratch/_want/destinations/shared/moved.go
+! exec semedit move-file --file testmain/foo.go --destination-file destinations/testmain/moved.go
+stderr 'refuses TestMain in affected package.*main_test.go'
+cmp testmain/foo.go .scratch/_want/testmain/foo.go
+cmp testmain/foo_test.go .scratch/_want/testmain/foo_test.go
+cmp testmain/main_test.go .scratch/_want/testmain/main_test.go
+cmp destinations/testmain/moved.go .scratch/_want/destinations/testmain/moved.go
+! exec semedit move-file --file collision/foo.go --destination-file destinations/testcollision/moved.go
+stderr 'matching test destination already exists'
+cmp collision/foo.go .scratch/_want/collision/foo.go
+cmp collision/foo_test.go .scratch/_want/collision/foo_test.go
+cmp destinations/testcollision/moved.go .scratch/_want/destinations/testcollision/moved.go
+cmp destinations/testcollision/moved_test.go .scratch/_want/destinations/testcollision/moved_test.go
+! exec semedit move-file --file symbolcollision/foo.go --destination-file destinations/symbolcollision/moved.go
+stderr 'Move redeclared in this block'
+cmp symbolcollision/foo.go .scratch/_want/symbolcollision/foo.go
+cmp destinations/symbolcollision/moved.go .scratch/_want/destinations/symbolcollision/moved.go
+cmp destinations/symbolcollision/other.go .scratch/_want/destinations/symbolcollision/other.go
+! exec semedit move-file --file private/foo.go --destination-file destinations/private/moved.go
+stderr 'source-package dependency'
+cmp private/foo.go .scratch/_want/private/foo.go
+cmp private/remaining.go .scratch/_want/private/remaining.go
+cmp destinations/private/moved.go .scratch/_want/destinations/private/moved.go
+! exec semedit move-file --file embedded/foo.go --destination-file destinations/embedded/moved.go
+stderr 'move_file refuses package variables'
+cmp embedded/foo.go .scratch/_want/embedded/foo.go
+cmp embedded/payload.txt .scratch/_want/embedded/payload.txt
+cmp destinations/embedded/moved.go .scratch/_want/destinations/embedded/moved.go
+! exec semedit move-file --file relative/foo.go --destination-file destinations/relative/moved.go
+stderr 'relative fixture path'
+cmp relative/foo.go .scratch/_want/relative/foo.go
+cmp relative/foo_test.go .scratch/_want/relative/foo_test.go
+cmp destinations/relative/moved.go .scratch/_want/destinations/relative/moved.go
+! exec semedit move-file --file cycleold/foo.go --destination-file cycleapi/moved.go
+stderr 'import cycle not allowed'
+cmp cycleold/foo.go .scratch/_want/cycleold/foo.go
+cmp cycleapi/moved.go .scratch/_want/cycleapi/moved.go
+! exec semedit move-file --file dependency/foo.go --destination-file destinations/dependency/moved.go
+stderr 'source-package dependency "Sibling at .*sibling.go" outside the moved declaration set'
+cmp dependency/foo.go .scratch/_want/dependency/foo.go
+cmp dependency/sibling.go .scratch/_want/dependency/sibling.go
+cmp destinations/dependency/moved.go .scratch/_want/destinations/dependency/moved.go
+! exec semedit move-file --file initialized/foo.go --destination-file destinations/initialized/moved.go
+stderr 'initialization'
+cmp initialized/foo.go .scratch/_want/initialized/foo.go
+cmp effectpkg/effect.go .scratch/_want/effectpkg/effect.go
+cmp destinations/initialized/moved.go .scratch/_want/destinations/initialized/moved.go
+! exec semedit move-file --file packageinit/foo.go --destination-file destinations/packageinit/moved.go
+stderr 'initialization'
+cmp packageinit/foo.go .scratch/_want/packageinit/foo.go
+cmp destinations/packageinit/moved.go .scratch/_want/destinations/packageinit/moved.go
+
+-- go.mod --
+module example.com/movefilerefusals
+
+go 1.24
+
+-- tagged/foo.go --
+//go:build linux
+
+package tagged
+
+func TaggedMove() {}
+
+-- generated/foo.go --
+// Code generated by a tool. DO NOT EDIT.
+
+package generated
+
+func GeneratedMove() {}
+
+-- shared/foo.go --
+package shared
+
+func Move() {}
+
+-- shared/foo_test.go --
+package shared
+
+import "testing"
+
+func TestMove(t *testing.T) { sharedHelper(t) }
+
+-- shared/helper_test.go --
+package shared
+
+import "testing"
+
+func sharedHelper(t *testing.T) { t.Helper() }
+
+func TestKeep(t *testing.T) { sharedHelper(t) }
+
+-- testmain/foo.go --
+package testmain
+
+func Move() {}
+
+-- testmain/foo_test.go --
+package testmain
+
+import "testing"
+
+func TestMove(t *testing.T) {}
+
+-- testmain/main_test.go --
+package testmain
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) { os.Exit(m.Run()) }
+
+-- collision/foo.go --
+package collision
+
+func Move() {}
+
+-- collision/foo_test.go --
+package collision
+
+import "testing"
+
+func TestMove(t *testing.T) {}
+
+-- symbolcollision/foo.go --
+package symbolcollision
+
+func Move() {}
+
+-- private/foo.go --
+package private
+
+func Move() { privateHelper() }
+
+func privateHelper() {}
+
+-- private/remaining.go --
+package private
+
+func Remaining() { privateHelper() }
+
+-- embedded/foo.go --
+package embedded
+
+import "embed"
+
+//go:embed payload.txt
+var payload embed.FS
+
+func Read() string { content, _ := payload.ReadFile("payload.txt"); return string(content) }
+
+-- embedded/payload.txt --
+content
+
+-- relative/foo.go --
+package relative
+
+func Move() {}
+
+-- relative/foo_test.go --
+package relative
+
+import (
+	"os"
+	"testing"
+)
+
+func TestFixture(t *testing.T) {
+	if _, err := os.ReadFile("fixture.txt"); err != nil { t.Fatal(err) }
+}
+
+-- relative/fixture.txt --
+fixture
+
+-- cycleold/foo.go --
+package cycleold
+
+import "example.com/movefilerefusals/bridge"
+
+func Move() int { return bridge.Use() }
+
+-- cycleapi/moved.go --
+package cycleapi
+
+-- cycleapi/existing.go --
+package cycleapi
+
+func Existing() int { return 1 }
+
+-- bridge/bridge.go --
+package bridge
+
+import "example.com/movefilerefusals/cycleapi"
+
+func Use() int { return cycleapi.Existing() }
+
+-- dependency/foo.go --
+package dependency
+
+func Move() int { return Sibling() }
+
+-- dependency/sibling.go --
+package dependency
+
+func Sibling() int { return 1 }
+
+-- initialized/foo.go --
+package initialized
+
+import "example.com/movefilerefusals/effectpkg"
+
+func Move() int { return effectpkg.State }
+
+-- effectpkg/effect.go --
+package effectpkg
+
+var State int
+
+func init() { State++ }
+
+-- packageinit/foo.go --
+package packageinit
+
+var State = initialize()
+
+func initialize() int { return 1 }
+
+func init() { State++ }
+
+-- generatedcaller/foo.go --
+package generatedcaller
+
+func Move() {}
+
+-- generatedcaller/generated_caller.go --
+// Code generated by a tool. DO NOT EDIT.
+
+package generatedcaller
+
+func Call() { Move() }
+
+-- destinations/tagged/moved.go --
+package destination
+
+-- destinations/generated/moved.go --
+package destination
+
+-- destinations/shared/moved.go --
+package destination
+
+-- destinations/testmain/moved.go --
+package destination
+
+-- destinations/testcollision/moved.go --
+package destination
+
+-- destinations/testcollision/moved_test.go --
+package destination
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+-- destinations/symbolcollision/moved.go --
+package destination
+
+-- destinations/symbolcollision/other.go --
+package destination
+
+func Move() {}
+
+-- destinations/private/moved.go --
+package destination
+
+-- destinations/embedded/moved.go --
+package destination
+
+-- destinations/relative/moved.go --
+package destination
+
+-- destinations/dependency/moved.go --
+package destination
+
+-- destinations/initialized/moved.go --
+package destination
+
+-- destinations/packageinit/moved.go --
+package destination
+
+-- destinations/generatedcaller/moved.go --
+package destination
+
+-- .scratch/_want/embedded/foo.go --
+package embedded
+
+import "embed"
+
+//go:embed payload.txt
+var payload embed.FS
+
+func Read() string { content, _ := payload.ReadFile("payload.txt"); return string(content) }
+
+-- .scratch/_want/embedded/payload.txt --
+content
+
+-- .scratch/_want/relative/foo.go --
+package relative
+
+func Move() {}
+
+-- .scratch/_want/relative/foo_test.go --
+package relative
+
+import (
+	"os"
+	"testing"
+)
+
+func TestFixture(t *testing.T) {
+	if _, err := os.ReadFile("fixture.txt"); err != nil { t.Fatal(err) }
+}
+
+-- .scratch/_want/cycleold/foo.go --
+package cycleold
+
+import "example.com/movefilerefusals/bridge"
+
+func Move() int { return bridge.Use() }
+
+-- .scratch/_want/cycleapi/moved.go --
+package cycleapi
+
+-- .scratch/_want/tagged/foo.go --
+//go:build linux
+
+package tagged
+
+func TaggedMove() {}
+
+-- .scratch/_want/generated/foo.go --
+// Code generated by a tool. DO NOT EDIT.
+
+package generated
+
+func GeneratedMove() {}
+
+-- .scratch/_want/shared/foo.go --
+package shared
+
+func Move() {}
+
+-- .scratch/_want/shared/foo_test.go --
+package shared
+
+import "testing"
+
+func TestMove(t *testing.T) { sharedHelper(t) }
+
+-- .scratch/_want/shared/helper_test.go --
+package shared
+
+import "testing"
+
+func sharedHelper(t *testing.T) { t.Helper() }
+
+func TestKeep(t *testing.T) { sharedHelper(t) }
+
+-- .scratch/_want/testmain/foo.go --
+package testmain
+
+func Move() {}
+
+-- .scratch/_want/testmain/foo_test.go --
+package testmain
+
+import "testing"
+
+func TestMove(t *testing.T) {}
+
+-- .scratch/_want/testmain/main_test.go --
+package testmain
+
+import (
+	"os"
+	"testing"
+)
+
+func TestMain(m *testing.M) { os.Exit(m.Run()) }
+
+-- .scratch/_want/collision/foo.go --
+package collision
+
+func Move() {}
+
+-- .scratch/_want/collision/foo_test.go --
+package collision
+
+import "testing"
+
+func TestMove(t *testing.T) {}
+
+-- .scratch/_want/private/foo.go --
+package private
+
+func Move() { privateHelper() }
+
+func privateHelper() {}
+
+-- .scratch/_want/private/remaining.go --
+package private
+
+func Remaining() { privateHelper() }
+
+-- .scratch/_want/destinations/tagged/moved.go --
+package destination
+
+-- .scratch/_want/destinations/generated/moved.go --
+package destination
+
+-- .scratch/_want/destinations/shared/moved.go --
+package destination
+
+-- .scratch/_want/destinations/testmain/moved.go --
+package destination
+
+-- .scratch/_want/destinations/testcollision/moved.go --
+package destination
+
+-- .scratch/_want/destinations/testcollision/moved_test.go --
+package destination
+
+import "testing"
+
+func TestExisting(t *testing.T) {}
+
+-- .scratch/_want/destinations/symbolcollision/moved.go --
+package destination
+
+-- .scratch/_want/destinations/symbolcollision/other.go --
+package destination
+
+func Move() {}
+
+-- .scratch/_want/symbolcollision/foo.go --
+package symbolcollision
+
+func Move() {}
+
+-- .scratch/_want/destinations/private/moved.go --
+package destination
+
+-- .scratch/_want/destinations/embedded/moved.go --
+package destination
+
+-- .scratch/_want/destinations/relative/moved.go --
+package destination
+
+-- .scratch/_want/dependency/foo.go --
+package dependency
+
+func Move() int { return Sibling() }
+
+-- .scratch/_want/dependency/sibling.go --
+package dependency
+
+func Sibling() int { return 1 }
+
+-- .scratch/_want/destinations/dependency/moved.go --
+package destination
+
+-- .scratch/_want/initialized/foo.go --
+package initialized
+
+import "example.com/movefilerefusals/effectpkg"
+
+func Move() int { return effectpkg.State }
+
+-- .scratch/_want/effectpkg/effect.go --
+package effectpkg
+
+var State int
+
+func init() { State++ }
+
+-- .scratch/_want/destinations/initialized/moved.go --
+package destination
+
+-- .scratch/_want/packageinit/foo.go --
+package packageinit
+
+var State = initialize()
+
+func initialize() int { return 1 }
+
+func init() { State++ }
+
+-- .scratch/_want/destinations/packageinit/moved.go --
+package destination
+
+-- .scratch/_want/generatedcaller/foo.go --
+package generatedcaller
+
+func Move() {}
+
+-- .scratch/_want/generatedcaller/generated_caller.go --
+// Code generated by a tool. DO NOT EDIT.
+
+package generatedcaller
+
+func Call() { Move() }
+
+-- .scratch/_want/destinations/generatedcaller/moved.go --
+package destination
+
+-- .scratch/_want/final_marker.txt --
+marker

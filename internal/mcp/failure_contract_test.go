@@ -304,6 +304,7 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_lookup":                     "unmatched symbol",
 		"semantic_migrate_type":               "missing source file",
 		"semantic_move_construct":             "unmatched source selector",
+		"semantic_move_file":                  "missing source file",
 		"semantic_organize_imports":           "missing source file",
 		"semantic_outline":                    "missing source path",
 		"semantic_remove_construct":           "unmatched enclosing-function selector",
@@ -323,6 +324,7 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_verify":                     "missing verification path",
 		"semantic_workspace_outline":          "missing directory path",
 		"semantic_batch":                      "child operation failure",
+		"semantic_diagnostics":                "unknown or expired report id",
 		"semantic_metrics":                    "out-of-range limit",
 		"report_feedback":                     "invalid interface value",
 	}
@@ -482,10 +484,15 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 	case "semantic_snapshot":
 		args["label"] = ""
 		args["paths"] = []string{"missing.go"}
+	case "semantic_move_file":
+		args["file"] = "missing.go"
+		args["destination_file"] = "destination.go"
 	case "semantic_undo":
 		args["snapshot_id"] = "latest"
 	case "semantic_metrics":
 		args["limit"] = 101
+	case "semantic_diagnostics":
+		args["report_id"] = "missing-report"
 	case "semantic_verify":
 		args["path"] = "missing.go"
 		args["language"] = "go"

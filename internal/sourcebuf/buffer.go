@@ -26,6 +26,7 @@ import (
 type Change struct {
 	Path          string
 	Before, After []byte
+	Create        bool
 }
 
 // Buffer retains source preimages and working bytes for one buffered batch segment.
@@ -337,8 +338,12 @@ func (b *Buffer) Flush(ctx context.Context) error {
 		clear(b.symbolAliases)
 		clear(b.invalidatedSymbolAliases)
 	}()
-	_, err := b.publishLocked(ctx)
-	return err
+	planned := b.changedPathsLocked()
+	published, err := b.publishLocked(ctx)
+	if err != nil {
+		return &PublicationError{Published: slices.Clone(planned[:published]), Planned: slices.Clone(planned), Err: err}
+	}
+	return nil
 }
 
 // PublishRetained publishes changed files while retaining the buffer for explicit lifecycle handling.
@@ -564,6 +569,7 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 		return fmt.Errorf("apply buffered operation: %w", err)
 	}
 	pending := make(map[string][]byte, len(changes))
+	parents := make(map[string]map[string]os.FileInfo)
 	for _, change := range changes {
 		absolute, err := filepath.Abs(change.Path)
 		if err != nil {
@@ -573,14 +579,21 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 		if err != nil {
 			return err
 		}
-		if canonical != absolute || !b.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") || (state.info == nil && state.content == nil) {
+		if canonical != absolute || !b.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") {
 			return fmt.Errorf("invalid buffered output %q", change.Path)
 		}
 		if _, exists := pending[canonical]; exists {
 			return fmt.Errorf("duplicate buffered output %q", change.Path)
 		}
-		if !bytes.Equal(change.Before, state.content) {
-			return fmt.Errorf("%w: working preimage of %s changed", ErrConflict, canonical)
+		if err := b.validateChangePreimage(change, canonical, state); err != nil {
+			return err
+		}
+		if change.Create {
+			captured, err := b.captureNewFileParents(canonical)
+			if err != nil {
+				return err
+			}
+			parents[canonical] = captured
 		}
 		pending[canonical] = bytes.Clone(change.After)
 	}
@@ -592,6 +605,9 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 	}
 	for path, content := range pending {
 		b.files[path].content = content
+		if captured, exists := parents[path]; exists {
+			b.files[path].parents = captured
+		}
 	}
 	return nil
 }
@@ -1312,3 +1328,35 @@ func (checkpoint Checkpoint) Content(path string) ([]byte, bool) {
 	content, ok := checkpoint.content[path]
 	return bytes.Clone(content), ok
 }
+
+func (b *Buffer) validateChangePreimage(change Change, path string, state *fileState) error {
+	missing := state.info == nil && state.content == nil
+	if change.Create {
+		if !missing || change.Before != nil {
+			return fmt.Errorf("%w: new output %s already exists", ErrConflict, path)
+		}
+		if len(change.After) == 0 {
+			return fmt.Errorf("new output %s requires nonempty source contents", path)
+		}
+		return nil
+	}
+	if missing {
+		return fmt.Errorf("invalid buffered output %q", change.Path)
+	}
+	if !bytes.Equal(change.Before, state.content) {
+		return fmt.Errorf("%w: working preimage of %s changed", ErrConflict, path)
+	}
+	return nil
+}
+
+// PublicationError records actual completed writes when a checked flush stops.
+type PublicationError struct {
+	Published []string
+	Planned   []string
+	Err       error
+}
+
+func (e *PublicationError) Error() string {
+	return fmt.Sprintf("published %d of %d files: %v", len(e.Published), len(e.Planned), e.Err)
+}
+func (e *PublicationError) Unwrap() error { return e.Err }

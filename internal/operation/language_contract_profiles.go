@@ -244,3 +244,10 @@ func goMoveOperationContract() capability.OperationContract {
 		moduleProofFaultSupport())
 	return typedContract(same, cross)
 }
+
+func goMoveFileOperationContract() capability.OperationContract {
+	scope := capability.ScopeActiveModule
+	return typedContract(contractVariant(capability.VariantSelectedFile|capability.VariantCrossPackage, scope,
+		contractRequirements(scope, capability.RequireModuleSnapshot, capability.RequireModuleTypes, capability.RequireTestVariants, capability.RequireExactSelector, capability.RequireBoundedSource, capability.RequireOverlayTypes),
+		capability.FeatureTypedRefactor|capability.FeatureFormat, capability.GuaranteeModuleProof|capability.GuaranteePackageOverlay|capability.GuaranteeAtomicWrites, moduleProofFaultSupport()))
+}

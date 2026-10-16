@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/pipeline"
@@ -186,6 +187,109 @@ func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
 	runManagedDiagnosticsSequence(ctx, t, harness)
 }
 
+func TestManagedDiagnosticsRetainsSessionAcrossFileMembershipChanges(t *testing.T) {
+	gopls, err := godiagnostics.FindGopls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	module := "module example.com/membership\n\ngo 1.24\n"
+	writeManagedFixture(t, root, "go.mod", module)
+	writeManagedFixture(t, root, "value.go", "package sample\n\nfunc Value() int { return 1 }\n")
+	counter := filepath.Join(root, "gopls-starts")
+	wrapper := filepath.Join(root, "gopls-wrapper")
+	writeManagedFixture(t, root, "gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n")
+	if chmodErr := os.Chmod(wrapper, 0o700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	environment, err := gocache.Environment(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment = append(environment, "SEMEDIT_GOPLS_COUNT="+counter, "SEMEDIT_REAL_GOPLS="+gopls)
+	manager := godiagnostics.NewSessionManager()
+	t.Cleanup(func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Errorf("Close: %v", closeErr)
+		}
+	})
+	check := func(wantDiagnostic string) {
+		t.Helper()
+		checkManagedFixtureDiagnostics(ctx, t, manager, root, wrapper, environment, counter, 1, wantDiagnostic)
+	}
+	check("")
+	sourcePath := filepath.Join(root, "extra.go")
+	writeManagedFixture(t, root, "extra.go", "package sample\n\nfunc Extra() int { return missingValue }\n")
+	check("missingValue")
+	writeManagedFixture(t, root, "extra.go", "package sample\n\nfunc Extra() int { return Value() }\n")
+	check("")
+	if err := os.Remove(sourcePath); err != nil {
+		t.Fatal(err)
+	}
+	check("")
+	testPath := filepath.Join(root, "membership_test.go")
+	writeManagedFixture(t, root, "membership_test.go", "package sample\n\nimport \"testing\"\n\nfunc TestMembership(t *testing.T) { _ = missingValue }\n")
+	check("missingValue")
+	writeManagedFixture(t, root, "membership_test.go", "package sample\n\nimport \"testing\"\n\nfunc TestMembership(t *testing.T) { _ = Value() }\n")
+	check("")
+	if err := os.Remove(testPath); err != nil {
+		t.Fatal(err)
+	}
+	check("")
+}
+
+func TestManagedDiagnosticsSessionSurvivesMoveFile(t *testing.T) {
+	gopls, err := godiagnostics.FindGopls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	writeManagedFixture(t, root, "go.mod", "module example.com/move\n\ngo 1.24\n")
+	writeManagedFixture(t, root, "old/value.go", "package old\n\nfunc Value() int { return 1 }\n")
+	writeManagedFixture(t, root, "old/value_test.go", "package old\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) { if Value() != 1 { t.Fatal(\"bad value\") } }\n")
+	writeManagedFixture(t, root, "new/destination.go", "package new\n")
+	counter := filepath.Join(root, "gopls-starts")
+	wrapper := filepath.Join(root, "gopls-wrapper")
+	writeManagedFixture(t, root, "gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n")
+	if chmodErr := os.Chmod(wrapper, 0o700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	environment, err := gocache.Environment(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment = append(environment, "SEMEDIT_GOPLS_COUNT="+counter, "SEMEDIT_REAL_GOPLS="+gopls)
+	manager := godiagnostics.NewSessionManager()
+	t.Cleanup(func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Errorf("Close: %v", closeErr)
+		}
+	})
+	checkManagedFixtureDiagnostics(ctx, t, manager, root, wrapper, environment, counter, 1, "")
+	if _, err := astedit.MoveFile(ctx, filepath.Join(root, "old/value.go"), filepath.Join(root, "new/destination.go"), astedit.MoveFileOptions{MoveMatchingTests: true}); err != nil {
+		t.Fatalf("MoveFile() error = %v", err)
+	}
+	for path, want := range map[string]string{
+		"old/value.go":            "package old",
+		"old/value_test.go":       "package old",
+		"new/destination.go":      "func Value() int",
+		"new/destination_test.go": "func TestValue",
+	} {
+		content, readErr := os.ReadFile(filepath.Join(root, path))
+		if readErr != nil {
+			t.Fatalf("read %s after MoveFile: %v", path, readErr)
+		}
+		if !strings.Contains(string(content), want) {
+			t.Errorf("%s after MoveFile = %q, want it to contain %q", path, content, want)
+		}
+	}
+	checkManagedFixtureDiagnostics(ctx, t, manager, root, wrapper, environment, counter, 1, "")
+}
+
 type managedDiagnosticsHarness struct {
 	root, module, clean, wrapper, counter string
 	ctx                                   context.Context
@@ -208,7 +312,7 @@ func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, harness ma
 	harness.write("go.mod", harness.module+"\n// changed module configuration\n")
 	check(2, "")
 	harness.write("extra.go", "package sample\n\nfunc Extra() int { return Value() }\n")
-	check(3, "")
+	check(2, "")
 	harness.write("../dependency/go.mod", "module example.com/dependency\n\ngo 1.24\n")
 	dependencySource := "package dependency\n\nfunc Value() int { return 1 }\n"
 	harness.write("../dependency/value.go", dependencySource)
@@ -216,21 +320,21 @@ func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, harness ma
 	harness.write("a/value.go", "package a\n\nimport \"example.com/dependency\"\n\nvar Value int = dependency.Value()\n")
 	harness.write("b/value.go", "package b\n\nimport \"example.com/manageddiagnostics/a\"\n\nvar Value int = a.Value\n")
 	*harness.scanRoot = filepath.Join(harness.root, "a")
-	check(4, "")
+	check(3, "")
 	*harness.scanRoot = filepath.Join(harness.root, "b")
-	check(4, "")
+	check(3, "")
 	harness.write("../dependency/value.go", "package dependency\n\nfunc Value() string { return \"changed\" }\n")
 	*harness.scanRoot = filepath.Join(harness.root, "a")
-	check(4, "cannot use")
+	check(3, "cannot use")
 	*harness.scanRoot = filepath.Join(harness.root, "b")
-	check(4, "")
+	check(3, "")
 	harness.write("../dependency/value.go", dependencySource)
 	*harness.scanRoot = filepath.Join(harness.root, "a")
-	check(4, "")
+	check(3, "")
 	harness.write("go.mod", harness.module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n// parent changed\n")
-	check(5, "")
+	check(4, "")
 	harness.write("gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n# executable replaced\n")
-	check(6, "")
+	check(5, "")
 	validManifest, manifestErr := os.ReadFile(filepath.Join(harness.root, "go.mod"))
 	if manifestErr != nil {
 		t.Fatal(manifestErr)
@@ -240,7 +344,7 @@ func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, harness ma
 		t.Fatal("invalid module configuration did not fail")
 	}
 	harness.write("go.mod", string(validManifest))
-	check(7, "")
+	check(6, "")
 	if err := harness.manager.Close(); err != nil {
 		t.Fatal(err)
 	}

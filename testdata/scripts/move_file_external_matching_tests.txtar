@@ -1,0 +1,55 @@
+# Moving an external-package matching test preserves its package and updates imports to the destination.
+exec semedit move-file --file old/foo.go --destination-file api/moved.go
+stdout 'Successfully moved file declarations.'
+cmp old/foo.go .scratch/_want/old/foo.go
+cmp old/foo_test.go .scratch/_want/old/foo_test.go
+cmp api/moved.go .scratch/_want/api/moved.go
+cmp api/moved_test.go .scratch/_want/api/moved_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/movefileexternaltests
+
+go 1.24
+
+-- old/foo.go --
+package old
+
+func Compute(value int) int { return value + 1 }
+
+-- old/foo_test.go --
+package old_test
+
+import (
+	"testing"
+	"example.com/movefileexternaltests/old"
+)
+
+func TestCompute(t *testing.T) {
+	if got := old.Compute(2); got != 3 { t.Fatalf("Compute() = %d", got) }
+}
+
+-- api/moved.go --
+package api
+
+-- .scratch/_want/old/foo.go --
+package old
+-- .scratch/_want/old/foo_test.go --
+package old_test
+-- .scratch/_want/api/moved.go --
+package api
+
+func Compute(value int) int { return value + 1 }
+-- .scratch/_want/api/moved_test.go --
+package api_test
+
+import (
+	"example.com/movefileexternaltests/api"
+	"testing"
+)
+
+func TestCompute(t *testing.T) {
+	if got := api.Compute(2); got != 3 {
+		t.Fatalf("Compute() = %d", got)
+	}
+}

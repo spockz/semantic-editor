@@ -73,6 +73,7 @@ type Server struct {
 	catalog               *catalogCache
 	stageLimits           stageLimits
 	stages                *stageManager
+	diagnosticReports     *diagnosticReportCache
 }
 
 type serverConfiguration struct {
@@ -237,6 +238,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	if !s.registryProvided {
 		s.registry = operation.DefaultRegistry()
 	}
+	s.diagnosticReports = newDiagnosticReportCache()
 	s.stages = newStageManager(s)
 	if s.toolProfile == "" {
 		s.toolProfile = "base"
@@ -664,6 +666,7 @@ func (s *Server) buildToolCatalog(root string) ([]map[string]any, error) {
 			toolFieldOutputSchema: reloadOutputSchema(),
 		})
 	}
+	tools = append(tools, diagnosticsToolSchema())
 	return tools, nil
 }
 
@@ -964,6 +967,7 @@ func standardOutputSchema(resultSchema, errorResultSchema map[string]any) map[st
 			"required": []string{"error", applicationStateField, "result"},
 		})
 	}
+	properties["diagnostic_report"] = diagnosticReportMetadataSchema()
 	return map[string]any{
 		"type":              "object",
 		schemaPropertiesKey: properties,
@@ -1004,6 +1008,7 @@ func batchOutputSchemaForEntries(entries []operation.Entry, verificationOutput *
 		"status":                map[string]any{"type": "string", "enum": []string{"ok", batchStatusAppliedWithDiagnostics, "error"}},
 		"workspace_root":        map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used by every child in this batch."},
 		"results":               map[string]any{"type": "array", "items": items},
+		"diagnostic_report":     diagnosticReportMetadataSchema(),
 		diagnosticDeltaField:    diagnosticDeltaSchema(),
 		"diagnostic_delta_note": map[string]any{"type": "string"},
 		finalDiffToolName:       map[string]any{"type": "string"},
@@ -1491,6 +1496,10 @@ func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessag
 		stageReceipt = &staged.Receipt
 	}
 	fields := map[string]any{"workspace_root": requestRoot}
+	s.attachDiagnosticReport(fields, requestRoot, result)
+	if !entry.ReadOnly && fields["diagnostic_report"] == nil {
+		fields["diagnostic_report"] = unavailableDiagnosticReport("unavailable", "This operation did not capture a diagnostic inventory.")
+	}
 	if stageReceipt != nil {
 		fields["stage_receipt"] = stageReceipt
 	}
@@ -1515,8 +1524,15 @@ func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessag
 		s.sendToolErrorWithTiming(id, formatErr.Error(), timing, formatErr)
 		return
 	}
+	compactMoveFile := false
+	if entry.Key == "move_file" {
+		if edit, ok := operation.DiagnosticFileEditResult(result); ok {
+			text = moveFileResponseText(edit, fields["diagnostic_report"])
+			compactMoveFile = true
+		}
+	}
 	verify, failedVerify := result.(operation.VerifyRes)
-	s.sendToolResultWithNative(id, text, timing, result, fields, failedVerify && verify.Failure != "")
+	s.sendToolResultWithNativeAndPresentation(id, text, timing, result, fields, failedVerify && verify.Failure != "", compactMoveFile)
 }
 
 func (s *Server) ensureInitialized(ctx context.Context, id json.RawMessage) bool {
@@ -1543,6 +1559,8 @@ func (s *Server) handleSpecialToolCall(ctx context.Context, id json.RawMessage, 
 		s.handleFeedbackReport(ctx, id, params.Arguments)
 	case "semantic_batch":
 		s.handleBatch(ctx, id, params.Arguments)
+	case "semantic_diagnostics":
+		s.handleDiagnosticsCall(id, params.Arguments)
 	default:
 		return false
 	}
@@ -1762,6 +1780,9 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 	}
 	if suggestions := operation.SuggestionsFromError(operationErr); len(suggestions) > 0 {
 		structured["suggestions"] = suggestions
+	}
+	if report := s.diagnosticReportForError(operationErr); report != nil {
+		structured["diagnostic_report"] = report
 	}
 	if _, refusal := errors.AsType[*operation.SafeDeleteRefusalError](operationErr); refusal {
 		structured[applicationStateField] = "not_applied"
@@ -2205,7 +2226,7 @@ func (s *Server) handleMetricsCall(id json.RawMessage, arguments json.RawMessage
 	})
 }
 
-func (s *Server) sendToolResultWithNative(id json.RawMessage, text string, timing *toolRequestTiming, native any, fields map[string]any, isError bool) {
+func (s *Server) sendToolResultWithNativeAndPresentation(id json.RawMessage, text string, timing *toolRequestTiming, native any, fields map[string]any, isError, compactMoveFile bool) {
 	s.recordToolMetrics(timing)
 	structured := timing.structuredContentWithResult(text)
 	maps.Copy(structured, fields)
@@ -2220,10 +2241,14 @@ func (s *Server) sendToolResultWithNative(id json.RawMessage, text string, timin
 		structured["presentation_error"] = nativeErr.Error()
 		structured["native_metadata_unavailable"] = true
 	}
-	presented, err := CriticalText(structured, text)
+	presentationFields := structured
+	if compactMoveFile {
+		presentationFields = moveFilePresentationFields(structured)
+	}
+	presented, err := CriticalText(presentationFields, text)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
-		presented = criticalTextFallback(structured, text, err)
+		presented = criticalTextFallback(presentationFields, text, err)
 	}
 	s.sendResult(id, map[string]any{
 		"content":            []map[string]any{{"type": "text", "text": presented}},

@@ -230,6 +230,9 @@ func qualifiedGoTarget(receiver, name string) string {
 
 // registerEngineOps adds the host-engine file and build operations to the registry.
 func registerEngineOps(registry *Registry) error {
+	if err := Register(registry, moveFileDef()); err != nil {
+		return err
+	}
 	{
 		if err := Register(registry, assertionModeDef()); err != nil {
 			return err
@@ -628,4 +631,18 @@ func finalizeFileEditOutput(cc CallContext, result FileEditRes) (FileEditRes, er
 	result.Receipt = receipt
 	result.SuppressContinuations = result.SuppressContinuations || cc.InBatch
 	return result, nil
+}
+
+// DiagnosticFileEditResult exposes captured evidence from native edit result wrappers.
+func DiagnosticFileEditResult(value any) (FileEditRes, bool) {
+	switch result := value.(type) {
+	case FileEditRes:
+		return result, true
+	case ExtractionResult:
+		return result.Edit, true
+	case structuralPlanResult:
+		return result.Edit, true
+	default:
+		return FileEditRes{}, false
+	}
 }
