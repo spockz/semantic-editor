@@ -2,6 +2,14 @@
 
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-16: suggestion worktree archival refused
+
+* Tool: `codex_app.archive_worktree`.
+* Target: the attached `ios-4216a269` semantic-editor checkout for chat `01a14595-6049-7143-9408-ba2a0d055060`.
+* Observed failure: after checked integration into local main at `b64cf98e`, the tool returned `The task's primary checkout cannot be removed.` No removal occurred.
+* Workaround: retain the checkout and leave the chat open; do not bypass the managed-worktree rejection with shell deletion.
+* Root cause: the application classifies this attached checkout as primary even though Git reports it as a linked worktree. The reason for that classification is unknown.
+
 ## 2026-10-16: session wrap-up, Optimize MCP package tests
 
 * Context: chat `01a145d6-be27-71f1-8e33-074391d6ef1a`, linked worktree `beb3`, original detached HEAD `1ff9655e`; replayed onto local main `22a3d539` on `codex/mcp-test-efficiency`. The main checkout was clean at discovery. This session owns the checkout according to chat metadata and matching task/path.
