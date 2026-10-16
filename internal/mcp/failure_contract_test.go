@@ -6,15 +6,16 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/mcp"
-	"github.com/spockz/semantic-editor/internal/mcptest"
-	"github.com/spockz/semantic-editor/internal/pipeline"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/mcptest"
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestAdvertisedMCPToolsReturnSchemaConformantFailures(t *testing.T) {
@@ -37,46 +38,51 @@ func TestUnknownAndDisabledReloadToolCallsAreJSONRPCFailures(t *testing.T) {
 			t.Fatalf("write fixture %s: %v", path, err)
 		}
 	}
-	for _, test := range []struct {
-		name        string
-		request     string
-		wantMessage string
-	}{
-		{name: "unknown tool", request: "{\"jsonrpc\":\"2.0\",\"id\":\"unknown\",\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_not_registered\",\"arguments\":{}}}", wantMessage: "Unknown tool"},
-		{name: "disabled live reload", request: "{\"jsonrpc\":\"2.0\",\"id\":\"reload\",\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_reload\",\"arguments\":{}}}", wantMessage: "semantic_reload"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			options := []mcp.Option{mcp.WithToolProfile("full"), mcp.WithGoBaseDir(t.TempDir()), mcp.WithLiveReload(false)}
-			var output bytes.Buffer
-			server := mcptest.NewServer(t, "full", root, &output, options...)
-			catalogRequest := "{\"jsonrpc\":\"2.0\",\"id\":\"list\",\"method\":\"tools/list\"}\n"
-			if err := server.Serve(t.Context(), strings.NewReader(catalogRequest)); err != nil {
-				t.Fatalf("list catalog: %v", err)
-			}
-			if strings.Contains(output.String(), "\"name\":\"semantic_reload\"") {
-				t.Fatal("disabled semantic_reload was advertised")
-			}
-			if err := server.Serve(t.Context(), strings.NewReader(test.request+"\n")); err != nil {
-				t.Fatalf("call %s: %v", test.name, err)
-			}
-			lines := strings.Split(strings.TrimSpace(output.String()), "\n")
-			lastLine := lines[len(lines)-1]
-			var response struct {
-				Error *struct {
-					Code    int    `json:"code"`
-					Message string `json:"message"`
-				} `json:"error"`
-				Result struct {
-					IsError bool `json:"isError"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal([]byte(lastLine), &response); err != nil {
-				t.Fatalf("decode %s response: %v", test.name, err)
-			}
-			if response.Error == nil || response.Error.Code != -32601 || !strings.Contains(response.Error.Message, test.wantMessage) {
-				t.Fatalf("%s was not reported as JSON-RPC method-not-found: %s", test.name, lastLine)
-			}
-		})
+	cases := []struct{ name, id, tool, wantMessage string }{
+		{name: "unknown tool", id: "unknown", tool: "semantic_not_registered", wantMessage: "Unknown tool"},
+		{name: "disabled live reload", id: "reload", tool: "semantic_reload", wantMessage: "semantic_reload"},
+	}
+	var input bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": "list", "method": "tools/list"}); err != nil {
+		t.Fatal(err)
+	}
+	ids := append(make([]string, 0, 1+len(cases)), "list")
+	for _, test := range cases {
+		ids = append(ids, test.id)
+		if err := encoder.Encode(map[string]any{
+			"jsonrpc": "2.0", "id": test.id, "method": "tools/call",
+			"params": map[string]any{"name": test.tool, "arguments": map[string]any{}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	server := mcptest.NewServer(t, "full", root, &output, mcp.WithToolProfile("full"), mcp.WithGoBaseDir(t.TempDir()), mcp.WithLiveReload(false))
+	if err := server.Serve(t.Context(), &input); err != nil {
+		t.Fatalf("serve catalog and rejected calls: %v", err)
+	}
+	responses := decodeMCPResponses(t, &output, ids)
+	var catalog struct {
+		Result struct {
+			Tools []struct {
+				Name string `json:"name"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(responses["list"], &catalog); err != nil {
+		t.Fatalf("decode catalog: %v", err)
+	}
+	if catalog.Result.Tools == nil {
+		t.Fatal("catalog response omitted tools")
+	}
+	for _, tool := range catalog.Result.Tools {
+		if tool.Name == "semantic_reload" {
+			t.Fatal("disabled semantic_reload was advertised")
+		}
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) { assertMCPMethodNotFound(t, responses[test.id], test.wantMessage) })
 	}
 }
 
@@ -626,5 +632,22 @@ func checkRejectedConstructSource(t *testing.T, testCase rejectedConstructCase, 
 	}
 	if !before.ModTime().Equal(after.ModTime()) {
 		t.Fatal("failed construct advanced the source revision")
+	}
+}
+
+func assertMCPMethodNotFound(t *testing.T, raw json.RawMessage, wantMessage string) {
+	t.Helper()
+	var response struct {
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		Result json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Error == nil || response.Error.Code != -32601 || !strings.Contains(response.Error.Message, wantMessage) || len(response.Result) != 0 {
+		t.Fatalf("call was not reported as JSON-RPC method-not-found: %s", raw)
 	}
 }

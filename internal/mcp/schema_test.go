@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -265,93 +266,24 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	}
 }
 
-func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
+func TestMCPFullCatalogDescriptionsAndContinuations(t *testing.T) {
 	t.Parallel()
-	var tool map[string]any
-	for _, candidate := range listTools(t, "full") {
-		if candidate["name"] == "semantic_insert_function" {
-			tool = candidate
-			break
-		}
-	}
-	if tool == nil {
-		t.Fatal("tools/list omitted semantic_insert_function")
-	}
-	properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
-	description := properties["file"].(map[string]any)["description"].(string)
-	if len(description) > 500 {
-		t.Fatalf("file parameter description is %d bytes, exceeds 500-byte budget: %s", len(description), description)
-	}
-	if !strings.Contains(description, "Copy file from a resolved preceding result") {
-		t.Errorf("file description %q omitted the continuation handoff guidance", description)
-	}
-	if strings.Contains(description, "semantic_") {
-		t.Errorf("file description %q enumerates continuation routing", description)
-	}
-	t.Logf("semantic_insert_function.file continuation description: %d bytes", len(description))
-	for _, candidate := range listTools(t, "full") {
-		if candidate["name"] != "semantic_replace_body" {
-			continue
-		}
-		props := candidate["inputSchema"].(map[string]any)["properties"].(map[string]any)
-		symbolDescription := props["symbol"].(map[string]any)["description"].(string)
-		if !strings.Contains(symbolDescription, "Copy symbol from a resolved preceding result") || strings.Contains(symbolDescription, "semantic_insert_function") {
-			t.Fatalf("replace_body.symbol description is not concise continuation guidance: %s", symbolDescription)
-		}
-		return
-	}
-	t.Fatal("tools/list omitted semantic_replace_body")
-}
-
-func TestMCPToolDescriptionsCondenseFaultContracts(t *testing.T) {
-	t.Parallel()
-	var sawMixedFaultRule, sawConditionalRule bool
-	for _, tool := range listTools(t, "full") {
-		description := tool["description"].(string)
-		if strings.Contains(description, "masks:") || strings.Contains(description, "exact cases:") {
-			t.Errorf("%s description exposes a fault matrix encoding: %s", tool["name"], description)
-		}
-		if strings.Contains(description, "mixed faults follow the declared fault matrix") {
-			sawMixedFaultRule = true
-		}
-		if strings.Contains(description, "conditional when") {
-			sawConditionalRule = true
-		}
-	}
-	if !sawMixedFaultRule {
-		t.Fatal("tool descriptions omitted the mixed-fault classification caveat")
-	}
-	if !sawConditionalRule {
-		t.Fatal("tool descriptions omitted conditional tolerance details")
-	}
-}
-
-func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
-	t.Parallel()
-	var tool map[string]any
-	for _, candidate := range listTools(t, "full") {
-		if candidate["name"] == "semantic_inline_variable" {
-			tool = candidate
-			break
-		}
-	}
-	if tool == nil {
-		t.Fatal("tools/list omitted semantic_inline_variable")
-	}
-	input := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
-	for key, role := range map[string]string{"symbol": "Target:", "file": "Target:", "in_function": "Selector:"} {
-		field, ok := input[key].(map[string]any)
-		if !ok {
-			t.Fatalf("semantic_inline_variable input omitted %s", key)
-		}
-		if !strings.Contains(field["description"].(string), role) {
-			t.Errorf("semantic_inline_variable.%s description omitted role %q", key, role)
-		}
-	}
-	assertSemanticEditReceiptOutputSchema(t, "semantic_inline_variable", tool["outputSchema"])
-	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-	if _, ok := output["in_function"]; ok {
-		t.Error("semantic_inline_variable output advertises an in_function alias absent from its receipt")
+	tools := listTools(t, "full")
+	for _, check := range []struct {
+		name   string
+		assert func(*testing.T, []map[string]any)
+	}{
+		{name: "continuation descriptions", assert: assertMCPContinuationDescriptionBudget},
+		{name: "tool descriptions", assert: assertMCPFaultContractDescriptions},
+		{name: "inline variable schema and continuations", assert: assertMCPInlineVariableCatalog},
+		{name: "construct schemas", assert: assertConstructReplacementSchemasAreExposedAndBatchable},
+		{name: "input properties", assert: assertGeneratedSemanticInputSchemasRejectUnknownProperties},
+		{name: "scaffold purpose header", assert: assertScaffoldPurposeHeaderSchemaIsOptional},
+		{name: "construct sources", assert: assertMCPContinuationDescriptionsCoverConstructSources},
+		{name: "move receipts", assert: assertMoveConstructIsAdvertisedInBatchWithDestinationReceipt},
+		{name: "stale continuations", assert: assertMCPStaleContinuationsAreNotAdvertised},
+	} {
+		t.Run(check.name, func(t *testing.T) { check.assert(t, tools) })
 	}
 }
 
@@ -1406,9 +1338,9 @@ func expectedBatchSchemaEntries(profile string) batchSchemaExpectations {
 	return expected
 }
 
-func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
-	t.Parallel()
-	tools := listTools(t, "full")
+func assertConstructReplacementSchemasAreExposedAndBatchable(t *testing.T, catalog []map[string]any) {
+	t.Helper()
+	tools := (catalog)
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
 		byName[tool["name"].(string)] = tool
@@ -1730,9 +1662,9 @@ func assertNavigationToolDescriptions(assertContains func(string, string, ...str
 	}
 }
 
-func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
-	t.Parallel()
-	tools := listTools(t, "full")
+func assertGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T, catalog []map[string]any) {
+	t.Helper()
+	tools := (catalog)
 	var verifySchema, batchSchema, insertFunctionSchema map[string]any
 	for _, tool := range tools {
 		switch tool["name"] {
@@ -1771,9 +1703,9 @@ func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
 	}
 }
 
-func TestScaffoldPurposeHeaderSchemaIsOptional(t *testing.T) {
-	t.Parallel()
-	tools := listTools(t, "full")
+func assertScaffoldPurposeHeaderSchemaIsOptional(t *testing.T, catalog []map[string]any) {
+	t.Helper()
+	tools := (catalog)
 	for _, tool := range tools {
 		if tool["name"] != "semantic_scaffold_file" {
 			continue
@@ -1847,10 +1779,10 @@ func assertInspectOutputSchema(t *testing.T, outputSchema any) {
 	}
 }
 
-func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
-	t.Parallel()
+func assertMCPContinuationDescriptionsCoverConstructSources(t *testing.T, catalog []map[string]any) {
+	t.Helper()
 	tools := make(map[string]map[string]any)
-	for _, tool := range listTools(t, "full") {
+	for _, tool := range catalog {
 		tools[tool["name"].(string)] = tool
 	}
 	assertGuidance := func(toolName, parameter string) {
@@ -1894,13 +1826,13 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	}
 }
 
-func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
-	t.Parallel()
+func assertMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T, catalog []map[string]any) {
+	t.Helper()
 	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_move_construct")
 	if !ok || !entry.Batchable {
 		t.Fatalf("semantic_move_construct registry entry = %+v, present=%v; want batchable", entry, ok)
 	}
-	tools := listTools(t, "full")
+	tools := (catalog)
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
 		byName[tool["name"].(string)] = tool
@@ -1971,10 +1903,10 @@ func assertMoveBatchSchema(t *testing.T, batch map[string]any) {
 	t.Fatal("batch output schema omitted semantic_move_construct result branch")
 }
 
-func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
-	t.Parallel()
+func assertMCPStaleContinuationsAreNotAdvertised(t *testing.T, catalog []map[string]any) {
+	t.Helper()
 	tools := make(map[string]map[string]any)
-	for _, tool := range listTools(t, "full") {
+	for _, tool := range catalog {
 		tools[tool["name"].(string)] = tool
 	}
 	for _, check := range []struct {
@@ -2718,12 +2650,7 @@ func assertReplacementReceiptProjection(t *testing.T, response map[string]any) {
 
 func TestMCPIntegerNotationAndRangeValidation(t *testing.T) {
 	t.Parallel()
-	root := schemaWorkspace(t)
-	registry := operation.DefaultRegistry()
-	for _, item := range []struct {
-		label, start, end string
-		invalid           bool
-	}{
+	cases := []mcpIntegerCase{
 		{label: "decimal integral", start: "1.0", end: "1e0"},
 		{label: "large adjacent integers", start: "9007199254740992", end: "9007199254740993"},
 		{label: "fractional", start: "1.5", end: "2", invalid: true},
@@ -2731,24 +2658,13 @@ func TestMCPIntegerNotationAndRangeValidation(t *testing.T) {
 		{label: "huge positive exponent", start: "1", end: "1e1000000000", invalid: true},
 		{label: "huge negative exponent", start: "1", end: "1e-1000000000", invalid: true},
 		{label: "zero huge exponent", start: "0e1000000000", end: "0e-1000000000"},
-	} {
-		for _, batch := range []bool{false, true} {
-			t.Run(item.label+map[bool]string{false: "/direct", true: "/batch"}[batch], func(t *testing.T) {
-				edit := `{"tool":"semantic_extract_function","params":{"file":"main.go","symbol":"Helper","in_function":"Example","kind":"function","start_line":` + item.start + `,"end_line":` + item.end + `}}`
-				request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_function","arguments":{"file":"main.go","symbol":"Helper","in_function":"Example","kind":"function","start_line":` + item.start + `,"end_line":` + item.end + `}}}`
-				if batch {
-					request = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[` + edit + `]}}}`
-				}
-				var output bytes.Buffer
-				if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
-					t.Fatalf("serve numeric request: %v", err)
-				}
-				gotIntegerError := strings.Contains(output.String(), "must be an integer")
-				if item.invalid != gotIntegerError {
-					t.Fatalf("integer validation mismatch for %s: %s", item.label, output.String())
-				}
-			})
+	}
+	for _, batch := range []bool{false, true} {
+		name := "direct"
+		if batch {
+			name = "batch"
 		}
+		t.Run(name, func(t *testing.T) { assertMCPIntegerSession(t, cases, batch) })
 	}
 }
 
@@ -3122,4 +3038,198 @@ func assertDirectSymbolTargeting(t *testing.T, byName map[string]map[string]any)
 	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Direct short names are resolved in-place", "calling semantic_lookup first is not required")
 	assertContains("semantic_replace_body.symbol", paramDescription("semantic_replace_body", "symbol"), "short function name or Receiver.Method", "resolved directly in the given file")
 	assertContains("semantic_replace_construct.symbol", paramDescription("semantic_replace_construct", "symbol"), "short declaration name or Receiver.Method", "resolved directly in the given file")
+}
+
+func decodeMCPResponses(t *testing.T, output io.Reader, expectedIDs []string) map[string]json.RawMessage {
+	t.Helper()
+	expected := make(map[string]bool, len(expectedIDs))
+	for _, id := range expectedIDs {
+		if expected[id] {
+			t.Fatalf("duplicate expected response ID %q", id)
+		}
+		expected[id] = true
+	}
+	responses := make(map[string]json.RawMessage, len(expectedIDs))
+	decoder := json.NewDecoder(output)
+	for {
+		var raw json.RawMessage
+		if err := decoder.Decode(&raw); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			t.Fatalf("decode MCP response: %v", err)
+		}
+		var envelope struct {
+			ID *string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if envelope.ID == nil || !expected[*envelope.ID] {
+			t.Fatalf("unexpected response ID: %s", raw)
+		}
+		id := *envelope.ID
+		if _, exists := responses[id]; exists {
+			t.Fatalf("duplicate response ID %q", id)
+		}
+		responses[id] = raw
+	}
+	if len(responses) != len(expectedIDs) {
+		t.Fatalf("got %d MCP responses, want %d", len(responses), len(expectedIDs))
+	}
+	return responses
+}
+
+func assertMCPContinuationDescriptionBudget(t *testing.T, tools []map[string]any) {
+	t.Helper()
+	byName := namedMCPTools(tools)
+	insertFunction := byName["semantic_insert_function"]
+	if insertFunction == nil {
+		t.Fatal("tools/list omitted semantic_insert_function")
+	}
+	properties := insertFunction["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	description := properties["file"].(map[string]any)["description"].(string)
+	if len(description) > 500 {
+		t.Fatalf("file parameter description is %d bytes, exceeds 500-byte budget: %s", len(description), description)
+	}
+	if !strings.Contains(description, "Copy file from a resolved preceding result") {
+		t.Errorf("file description %q omitted the continuation handoff guidance", description)
+	}
+	if strings.Contains(description, "semantic_") {
+		t.Errorf("file description %q enumerates continuation routing", description)
+	}
+	t.Logf("semantic_insert_function.file continuation description: %d bytes", len(description))
+	replaceBody := byName["semantic_replace_body"]
+	if replaceBody == nil {
+		t.Fatal("tools/list omitted semantic_replace_body")
+	}
+	properties = replaceBody["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	symbolDescription := properties["symbol"].(map[string]any)["description"].(string)
+	if !strings.Contains(symbolDescription, "Copy symbol from a resolved preceding result") || strings.Contains(symbolDescription, "semantic_insert_function") {
+		t.Fatalf("replace_body.symbol description is not concise continuation guidance: %s", symbolDescription)
+	}
+}
+
+func assertMCPFaultContractDescriptions(t *testing.T, tools []map[string]any) {
+	t.Helper()
+	var sawMixedFaultRule, sawConditionalRule bool
+	for _, tool := range tools {
+		description := tool["description"].(string)
+		if strings.Contains(description, "masks:") || strings.Contains(description, "exact cases:") {
+			t.Errorf("%s description exposes a fault matrix encoding: %s", tool["name"], description)
+		}
+		if strings.Contains(description, "mixed faults follow the declared fault matrix") {
+			sawMixedFaultRule = true
+		}
+		if strings.Contains(description, "conditional when") {
+			sawConditionalRule = true
+		}
+	}
+	if !sawMixedFaultRule {
+		t.Fatal("tool descriptions omitted the mixed-fault classification caveat")
+	}
+	if !sawConditionalRule {
+		t.Fatal("tool descriptions omitted conditional tolerance details")
+	}
+}
+
+func assertMCPInlineVariableCatalog(t *testing.T, tools []map[string]any) {
+	t.Helper()
+	tool := namedMCPTools(tools)["semantic_inline_variable"]
+	if tool == nil {
+		t.Fatal("tools/list omitted semantic_inline_variable")
+	}
+	input := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	for key, role := range map[string]string{"symbol": "Target:", "file": "Target:", "in_function": "Selector:"} {
+		field, ok := input[key].(map[string]any)
+		if !ok {
+			t.Fatalf("semantic_inline_variable input omitted %s", key)
+		}
+		if !strings.Contains(field["description"].(string), role) {
+			t.Errorf("semantic_inline_variable.%s description omitted role %q", key, role)
+		}
+	}
+	assertSemanticEditReceiptOutputSchema(t, "semantic_inline_variable", tool["outputSchema"])
+	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := output["in_function"]; ok {
+		t.Error("semantic_inline_variable output advertises an in_function alias absent from its receipt")
+	}
+}
+
+type mcpIntegerCase struct {
+	label, start, end string
+	invalid           bool
+}
+
+func mcpIntegerRequests(t *testing.T, cases []mcpIntegerCase, batch bool) *bytes.Buffer {
+	t.Helper()
+	var input bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	for _, item := range cases {
+		arguments := map[string]any{
+			"file": "main.go", "symbol": "Helper", "in_function": "Example", "kind": "function",
+			"start_line": json.Number(item.start), "end_line": json.Number(item.end),
+		}
+		tool := "semantic_extract_function"
+		if batch {
+			arguments = map[string]any{"edits": []map[string]any{{"tool": tool, "params": arguments}}}
+			tool = "semantic_batch"
+		}
+		if err := encoder.Encode(map[string]any{
+			"jsonrpc": "2.0", "id": item.label, "method": "tools/call",
+			"params": map[string]any{"name": tool, "arguments": arguments},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &input
+}
+
+func assertMCPIntegerSession(t *testing.T, cases []mcpIntegerCase, batch bool) {
+	t.Helper()
+	root := schemaWorkspace(t)
+	path := filepath.Join(root, "main.go")
+	before, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	var output bytes.Buffer
+	if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(operation.DefaultRegistry())).Serve(t.Context(), mcpIntegerRequests(t, cases, batch)); err != nil {
+		t.Fatalf("serve numeric requests: %v", err)
+	}
+	ids := make([]string, 0, len(cases))
+	for _, item := range cases {
+		ids = append(ids, item.label)
+	}
+	responses := decodeMCPResponses(t, &output, ids)
+	for _, item := range cases {
+		t.Run(item.label, func(t *testing.T) { assertMCPIntegerResponse(t, responses[item.label], item.invalid) })
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("numeric validation changed the source fixture")
+	}
+}
+
+func assertMCPIntegerResponse(t *testing.T, raw json.RawMessage, invalid bool) {
+	t.Helper()
+	gotIntegerError := strings.Contains(string(raw), "must be an integer")
+	if invalid != gotIntegerError {
+		t.Fatalf("integer validation mismatch: %s", raw)
+	}
+	var response struct {
+		Error  json.RawMessage `json:"error"`
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Error) == 0 && !response.Result.IsError {
+		t.Fatalf("missing extraction target unexpectedly succeeded: %s", raw)
+	}
 }

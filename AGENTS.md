@@ -40,6 +40,7 @@ To conserve context budget and maintain architectural integrity, adhere strictly
 ## 3. Tooling & Workspace Invariants
 
 * **Verification Standard**: Always run `make check` prior to executing specific test or verification tools, ensuring automated formatters, fixers, and dependency tidying apply upfront. Verify all changes via `make check` before concluding work.
+* **Shared Test Setup**: Share setup and execution across related assertions wherever possible, grouping assertions against the same setup or result into individually named subtests. Keep separate setups when shared mutable state, lifecycle behavior, or failure isolation requires them.
 * **Complete Migration & Zero-Cruft Invariant**: This is an agent-maintained codebase. Whenever introducing a new internal mechanism (such as buffer staging, output schemas, or dispatch contracts) or consolidating public operations, execute a complete migration across all affected tools and callers in the same effort. Eradicate transitional legacy wrappers, parallel code paths, and compatibility aliases rather than leaving technical debt to accumulate.
 * **Workspace Manifest Safety (ADR-0005)**: Never write `go.work` or mutate repository workspace manifests on disk without explicit user approval.
 * **Atomic Disk Updates (ADR-0010)**: All file mutations must follow atomic write semantics (temporary file $\to$ `fsync` $\to$ `os.Rename`) with advancing `mtime`.

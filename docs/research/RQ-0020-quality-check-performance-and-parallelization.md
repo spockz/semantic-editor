@@ -1,3 +1,5 @@
+<!-- Records quality-check resource measurements and the limits of each comparison. -->
+
 # RQ-0020: End-to-End Quality Check Performance and Parallelization
 
 * **Status**: Open
@@ -48,6 +50,75 @@ Hyperfine 1.20.0 ran all seven commands in one invocation with three warmups and
 | `make -j16 check` | 27.192 | 1.507 | 28.336 ± 2.246 |
 
 Eight jobs had the lowest mean, 34.8% below the serial mean. Sixteen jobs were effectively tied with eight and had more variation. These command labels reflect the Makefile at measurement time. The later `MAKE_JOBS ?= 8` setting makes bare `make check` use eight jobs; on GNU Make 3.81, select another count with `make MAKE_JOBS=N check`, including `MAKE_JOBS=1` for serial execution. Hyperfine reported statistical outliers. The commands ran in the listed order in an active, uncommitted worktree; this is a local warmed-workspace result, not a clean or quiet-system comparison. The historical baseline above used a different project state and cannot be directly compared with this measurement.
+
+### 2026-10-16 MCP Test Setup
+
+An uncached MCP package run passed in 142.214 seconds while `make check` ran
+concurrently. Its Go CPU profile sampled 288.41 CPU-seconds in the test process.
+`mcptest.compileSchema` accounted for 98.56 seconds cumulatively (34.17%) and
+catalog discovery accounted for 95.66 seconds (33.17%). These stacks overlap;
+the percentages must not be added. The profile excludes compiler and language
+server child-process CPU and is not a quiet-system performance baseline.
+
+Each schema-validating server eagerly probed the advertised and full catalogs,
+compiling every output schema. A real `tools/list` response compiled those
+schemas again. This repeated work also allocated heavily and increased garbage
+collection pressure. Identical catalog checks and numeric-validation cases
+created additional independent wrappers without needing independent server state.
+
+The optimization keeps catalog selection local to each server and reuses compiled
+schemas by exact content, with one concurrent compilation per distinct byte
+sequence. Live catalog responses still validate their schemas, and hidden but
+callable tools retain full-catalog fallback validation. Success, failure,
+request-ID correlation, and integer-precision checks remain mandatory.
+
+Independent review rejected deferred catalog discovery as unsafe. A first call
+can replace a Go source file with Rust source before validation; a fresh probe
+then omits the responding Go tool even though the actual server retains its
+original language snapshot. A wire regression failed for both full and base
+catalogs under that implementation. Capture both catalogs before mutation and
+preserve the full fallback across live list responses; successful initialization
+refreshes both snapshots, including when the selected root is unchanged.
+
+The constructor's `profile` argument and the `WithToolProfile` option control
+different filters. Reuse must not infer catalog equality from the constructor
+argument alone. Shared compilation must not share mutable catalog maps across
+roots, registries, enabled languages, or initialization and reload lifecycles.
+
+Catalog-only checks share a captured response through named subtests. Numeric
+validation retains separate direct and batch sessions and checks each response
+by ID; mutation and process-lifecycle tests keep independent state. No global
+test concurrency limit is introduced: limiting concurrency trades elapsed time
+for lower peak demand and requires separate resource measurements.
+
+Five interleaved before/after pairs measured the numeric-validation test using
+fresh test-binary processes, warmed project-local Go caches, default concurrency,
+and `-test.count=1`. The unchanged baseline binary and optimized binary ran from
+`internal/mcp`; each before run immediately preceded its corresponding after run.
+Every run passed. CPU values are `/usr/bin/time -p` accounting for the process
+and waited-for children; they do not directly measure `kernel_task`.
+
+| Numeric-validation measurement | Before median (IQR), seconds | After median (IQR), seconds |
+| :--- | ---: | ---: |
+| Wall time | 9.04 (0.57) | 2.51 (0.41) |
+| User CPU | 3.90 (0.20) | 0.64 (0.07) |
+| System CPU | 1.17 (0.14) | 0.64 (0.28) |
+| User + system CPU per run | 5.05 (0.32) | 1.28 (0.38) |
+
+This selected test reduced median elapsed time by about 72% and median combined
+CPU by about 75%. These are local measurements of the combined optimizations,
+not isolated attribution to each change or a whole-suite speedup estimate.
+Other checkouts ran CPU-heavy tests on the same host, so the machine was not
+otherwise idle. Raw paired results remain in `.scratch/mcp-paired-*.time` and
+their matching `.log` files.
+
+One exploratory full-suite pair used the same fresh-process command without
+profiling. Both runs passed: before was 84.21 seconds wall, 70.48 user, and
+353.83 system; after was 88.52 seconds wall, 26.99 user, and 140.60 system.
+Combined CPU fell from 424.31 to 167.59 seconds, about 60%, while elapsed time
+did not improve. These single samples were separated in time on the busy host;
+they are evidence of reduced accounted CPU, not a stable latency comparison.
+The raw files are `.scratch/mcp-before-full.*` and `.scratch/mcp-after-full.*`.
 
 ## 4. Parallelization Avenues
 

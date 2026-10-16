@@ -23,9 +23,6 @@ type Server struct {
 	*mcp.Server
 
 	validator *responseValidator
-	profile   string
-	root      string
-	options   []mcp.Option
 }
 
 // Initialize delegates initialization and refreshes schemas for the resolved workspace root.
@@ -35,17 +32,15 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		return result, err
 	}
 	if root, ok := result["workspaceRoot"].(string); ok {
-		s.root = root
-		s.validator.discover(s.profile, root, s.options)
+		s.validator.resetCatalog(root)
+		s.validator.captureCatalogs()
 	}
 	return result, nil
 }
 
 // Serve preserves the underlying server's wire behavior while validating emitted tool results.
 func (s *Server) Serve(ctx context.Context, input io.Reader) error {
-	if s.root != "" {
-		s.validator.discover(s.profile, s.root, s.options)
-	}
+	s.validator.captureCatalogs()
 	err := s.Server.Serve(ctx, &requestReader{reader: input, validator: s.validator})
 	s.validator.flush()
 	return err
@@ -55,22 +50,14 @@ func (s *Server) Serve(ctx context.Context, input io.Reader) error {
 func NewServer(t testing.TB, profile, root string, output io.Writer, options ...mcp.Option) *Server {
 	t.Helper()
 	validator := &responseValidator{
-		testName:   t.Name(),
-		report:     func(message string) { t.Errorf("%s", message) },
-		dst:        output,
-		profile:    profile,
-		root:       root,
-		options:    slices.Clone(options),
-		requests:   make(map[string]requestInfo),
-		advertised: make(map[string]*jsonschema.Schema),
-		full:       make(map[string]*jsonschema.Schema),
+		testName: t.Name(), report: func(message string) { t.Errorf("%s", message) },
+		dst: output, profile: profile, options: slices.Clone(options),
+		requests:    make(map[string]requestInfo),
+		advertised:  make(map[string]*jsonschema.Schema),
+		full:        make(map[string]*jsonschema.Schema),
+		catalogRoot: root,
 	}
-	server := &Server{
-		validator: validator,
-		profile:   profile,
-		root:      root,
-		options:   slices.Clone(options),
-	}
+	server := &Server{validator: validator}
 	server.Server = mcp.NewServer(profile, root, validator, options...)
 	return server
 }
@@ -81,21 +68,21 @@ type requestInfo struct {
 }
 
 type responseValidator struct {
-	testName       string
-	report         func(string)
-	dst            io.Writer
-	profile        string
-	root           string
-	options        []mcp.Option
-	mu             sync.Mutex
-	pending        []byte
-	requests       map[string]requestInfo
-	advertised     map[string]*jsonschema.Schema
-	full           map[string]*jsonschema.Schema
-	catalogErr     error
-	catalogReady   bool
-	catalogRoot    string
-	catalogProfile string
+	testName        string
+	report          func(string)
+	dst             io.Writer
+	profile         string
+	options         []mcp.Option
+	mu              sync.Mutex
+	pending         []byte
+	requests        map[string]requestInfo
+	advertised      map[string]*jsonschema.Schema
+	full            map[string]*jsonschema.Schema
+	advertisedErr   error
+	advertisedReady bool
+	fullErr         error
+	fullReady       bool
+	catalogRoot     string
 }
 
 type requestReader struct {
@@ -132,27 +119,25 @@ func (r *requestReader) Close() error {
 	return nil
 }
 
-func (v *responseValidator) discover(profile, root string, options []mcp.Option) {
+func (v *responseValidator) resetCatalog(root string) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.catalogReady && v.catalogRoot == root && v.catalogProfile == profile {
-		return
-	}
-	advertised, err := probeSchemas(profile, root, options)
-	v.catalogErr = nil
-	if err != nil {
-		v.catalogErr = fmt.Errorf("advertised catalog: %w", err)
-	}
-	fullOptions := append(slices.Clone(options), mcp.WithToolProfile("full"))
-	full, fullErr := probeSchemas("full", root, fullOptions)
-	if fullErr != nil && v.catalogErr == nil {
-		v.catalogErr = fmt.Errorf("full catalog fallback: %w", fullErr)
-	}
-	v.advertised = advertised
-	v.full = full
 	v.catalogRoot = root
-	v.catalogProfile = profile
-	v.catalogReady = true
+	v.advertised = make(map[string]*jsonschema.Schema)
+	v.full = make(map[string]*jsonschema.Schema)
+	v.advertisedErr = nil
+	v.advertisedReady = false
+	v.fullErr = nil
+	v.fullReady = false
+}
+
+func (v *responseValidator) setAdvertised(schemas map[string]*jsonschema.Schema) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.advertised = schemas
+	v.advertisedErr = nil
+	v.advertisedReady = true
+	// The full fallback belongs to this session's frozen languages until initialization.
 }
 
 func probeSchemas(profile, root string, options []mcp.Option) (map[string]*jsonschema.Schema, error) {
@@ -164,12 +149,7 @@ func probeSchemas(profile, root string, options []mcp.Option) (map[string]*jsons
 	}
 	var response struct {
 		Error  json.RawMessage `json:"error"`
-		Result struct {
-			Tools []struct {
-				Name         string          `json:"name"`
-				OutputSchema json.RawMessage `json:"outputSchema"`
-			} `json:"tools"`
-		} `json:"result"`
+		Result json.RawMessage `json:"result"`
 	}
 	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
 		return nil, fmt.Errorf("decode tools/list response: %w", err)
@@ -177,21 +157,7 @@ func probeSchemas(profile, root string, options []mcp.Option) (map[string]*jsons
 	if len(response.Error) != 0 {
 		return nil, fmt.Errorf("tools/list returned JSON-RPC error: %s", response.Error)
 	}
-	if response.Result.Tools == nil {
-		return nil, fmt.Errorf("tools/list response omitted result.tools")
-	}
-	schemas := make(map[string]*jsonschema.Schema, len(response.Result.Tools))
-	for _, tool := range response.Result.Tools {
-		if tool.Name == "" || len(tool.OutputSchema) == 0 {
-			return nil, fmt.Errorf("tools/list returned a tool without name or outputSchema")
-		}
-		schema, err := compileSchema(tool.OutputSchema)
-		if err != nil {
-			return nil, fmt.Errorf("compile %s outputSchema: %w", tool.Name, err)
-		}
-		schemas[tool.Name] = schema
-	}
-	return schemas, nil
+	return schemasFromResult(response.Result)
 }
 
 // CompileOutputSchema compiles one advertised MCP output schema for independent validation.
@@ -200,6 +166,26 @@ func CompileOutputSchema(raw json.RawMessage) (*jsonschema.Schema, error) {
 }
 
 func compileSchema(raw json.RawMessage) (*jsonschema.Schema, error) {
+	content := string(raw)
+	if entry, exists := compiledSchemaCache.Load(content); exists {
+		return entry.(schemaCacheEntry).compile()
+	}
+	entry, _ := compiledSchemaCache.LoadOrStore(content, schemaCacheEntry{
+		compile: sync.OnceValues(func() (*jsonschema.Schema, error) {
+			return compileSchemaUncached(json.RawMessage(content))
+		}),
+	})
+	return entry.(schemaCacheEntry).compile()
+}
+
+type schemaCacheEntry struct {
+	compile func() (*jsonschema.Schema, error)
+}
+
+// Compiled schemas are shared read-only for the lifetime of the test process.
+var compiledSchemaCache sync.Map
+
+func compileSchemaUncached(raw json.RawMessage) (*jsonschema.Schema, error) {
 	compiler := jsonschema.NewCompiler()
 	document, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
 	if err != nil {
@@ -293,9 +279,7 @@ func (v *responseValidator) recordResponse(line []byte) {
 		if schemas, err := schemasFromResult(response.Result); err != nil {
 			v.report(fmt.Sprintf("%s: decode live tools/list output schemas: %v", v.testName, err))
 		} else {
-			v.mu.Lock()
-			v.advertised = schemas
-			v.mu.Unlock()
+			v.setAdvertised(schemas)
 		}
 		return
 	}
@@ -304,15 +288,14 @@ func (v *responseValidator) recordResponse(line []byte) {
 			WorkspaceRoot string `json:"workspaceRoot"`
 		}
 		if json.Unmarshal(response.Result, &initialized) == nil && initialized.WorkspaceRoot != "" {
-			v.root = initialized.WorkspaceRoot
-			v.discover(v.profile, v.root, v.options)
+			v.resetCatalog(initialized.WorkspaceRoot)
+			v.captureCatalogs()
 		}
 		return
 	}
-	if request.method != "tools/call" {
-		return
+	if request.method == "tools/call" {
+		v.validateToolResult(request.tool, response.Result)
 	}
-	v.validateToolResult(request.tool, response.Result)
 }
 
 func schemasFromResult(raw json.RawMessage) (map[string]*jsonschema.Schema, error) {
@@ -357,15 +340,22 @@ func (v *responseValidator) validateToolResult(tool string, raw json.RawMessage)
 	}
 	v.mu.Lock()
 	schema := v.advertised[tool]
+	catalogErr := v.advertisedErr
 	fallback := false
 	if schema == nil {
 		schema = v.full[tool]
 		fallback = schema != nil
+		if catalogErr == nil {
+			catalogErr = v.fullErr
+		}
 	}
-	catalogErr := v.catalogErr
 	v.mu.Unlock()
-	if schema == nil {
+	if catalogErr != nil {
 		v.report(fmt.Sprintf("%s: %s response has no advertised outputSchema (catalog error: %v)", v.testName, tool, catalogErr))
+		return
+	}
+	if schema == nil {
+		v.report(fmt.Sprintf("%s: %s response has no advertised outputSchema", v.testName, tool))
 		return
 	}
 	var content any
@@ -445,4 +435,18 @@ func (v *responseValidator) validateStatusConsistency(tool string, isError bool,
 			}
 		}
 	}
+}
+
+// captureCatalogs freezes both schema views before calls can change detected languages.
+func (v *responseValidator) captureCatalogs() {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.catalogRoot == "" || v.advertisedReady && v.fullReady {
+		return
+	}
+	v.advertised, v.advertisedErr = probeSchemas(v.profile, v.catalogRoot, v.options)
+	v.advertisedReady = true
+	fullOptions := append(slices.Clone(v.options), mcp.WithToolProfile("full"))
+	v.full, v.fullErr = probeSchemas(v.profile, v.catalogRoot, fullOptions)
+	v.fullReady = true
 }

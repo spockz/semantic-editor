@@ -1254,22 +1254,45 @@ func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
 
 func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+	if err := pipeline.WriteAtomic(filepath.Join(root, "pom.xml"), []byte("<project/>")); err != nil {
 		t.Fatal(err)
 	}
 	mavenBin := filepath.Join(root, "mvn-fail")
 	if err := os.WriteFile(mavenBin, []byte("#!/bin/sh\necho failure-log >&2\nexit 7\n"), 0o700); err != nil { // #nosec G306 -- test-controlled executable fixture.
 		t.Fatal(err)
 	}
-	for _, test := range []struct {
-		tool string
-		goal string
-	}{
+	cases := []struct{ tool, goal string }{
 		{tool: "semantic_maven_compile", goal: "test-compile"},
 		{tool: "semantic_maven_test", goal: "test"},
-	} {
+	}
+	var input bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	ids := make([]string, 0, len(cases))
+	for _, test := range cases {
+		ids = append(ids, test.tool)
+		if err := encoder.Encode(map[string]any{
+			"jsonrpc": "2.0", "id": test.tool, "method": "tools/call",
+			"params": map[string]any{"name": test.tool, "arguments": map[string]any{
+				"language": "java", "root": root, "trust_workspace": true,
+				"maven_tool": "system", "maven_bin": mavenBin,
+			}},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	server := mcptest.NewServer(t, "full", root, &output, mcp.WithEnabledLanguages("go,java"))
+	if err := server.Serve(t.Context(), &input); err != nil {
+		t.Fatal(err)
+	}
+	responses := decodeMCPResponses(t, &output, ids)
+	for _, test := range cases {
 		t.Run(test.tool, func(t *testing.T) {
-			assertMCPMavenToolFailure(t, root, mavenBin, test.tool, test.goal)
+			var envelope map[string]any
+			if err := json.Unmarshal(responses[test.tool], &envelope); err != nil {
+				t.Fatal(err)
+			}
+			assertMCPMavenToolFailure(t, envelope, test.goal)
 		})
 	}
 }
@@ -2372,31 +2395,8 @@ func assertMCPRefactoringResults(t *testing.T, root string) {
 	}
 }
 
-func assertMCPMavenToolFailure(t *testing.T, root, mavenBin, tool, goal string) {
+func assertMCPMavenToolFailure(t *testing.T, envelope map[string]any, goal string) {
 	t.Helper()
-	arguments, err := json.Marshal(map[string]any{
-		"language": "java", "root": root, "trust_workspace": true,
-		"maven_tool": "system", "maven_bin": mavenBin,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": tool, "arguments": json.RawMessage(arguments)},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var output bytes.Buffer
-	server := mcptest.NewServer(t, "full", root, &output, mcp.WithEnabledLanguages("go,java"))
-	if err := server.Serve(context.Background(), bytes.NewBuffer(append(request, '\n'))); err != nil {
-		t.Fatal(err)
-	}
-	var envelope map[string]any
-	if err := json.Unmarshal(output.Bytes(), &envelope); err != nil {
-		t.Fatal(err)
-	}
 	outer, ok := envelope["result"].(map[string]any)
 	if !ok || outer["isError"] != true {
 		t.Fatalf("MCP Maven failure did not set isError: %#v", envelope)
@@ -2409,7 +2409,8 @@ func assertMCPMavenToolFailure(t *testing.T, root, mavenBin, tool, goal string) 
 	if !ok {
 		t.Fatalf("MCP Maven failure omitted structuredContent.result: %#v", structured)
 	}
-	if result["goal"] != goal || result["error"] == "" {
+	message, hasError := result["error"].(string)
+	if result["goal"] != goal || !hasError || message == "" {
 		t.Fatalf("MCP Maven failure result = %#v, want goal %q and a native error", result, goal)
 	}
 	metrics, _ := structured["metrics"].(map[string]any)

@@ -10,6 +10,13 @@ The objective is to categorize the underlying intent of each manual edit, identi
 
 ## Log of Manual Edits
 
+### 2026-10-16: MCP test CPU optimization
+
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ME-0067** | `internal/mcptest/validate.go`, `validate_test.go` | Worker added exact-schema compilation reuse, catalog lifecycle changes, and regression tests using targeted patches after unavailable semantic operations; later semantic edits removed unsafe lazy discovery and restored pre-mutation capture | Shared test infrastructure and lifecycle refactoring | Callable inventory omitted `semantic_workspace_outline` and `semantic_replace_body`; incidents and the complete recovered call inventory are in the dated MCP optimization assessment | Reliably expose workspace discovery and function-body editing; keep independent lifecycle proofs |
+| **ME-0068** | `internal/mcp/schema_test.go` | Resolved the replay conflict by retaining main's navigation-description helper and this session's shared-catalog assertion helper | Source-control conflict resolution | Git conflict markers require a targeted atomic patch before source can be parsed; no semantic operation failure is implied | Existing conflict-resolution fallback |
+
 ### 2026-10-16: actionable symbol suggestions
 
 | ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |

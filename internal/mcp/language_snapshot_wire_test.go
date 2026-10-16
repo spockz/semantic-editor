@@ -7,15 +7,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/mcp"
 	"github.com/spockz/semantic-editor/internal/mcptest"
 	"github.com/spockz/semantic-editor/internal/operation"
 	"github.com/spockz/semantic-editor/internal/pipeline"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
 )
 
 func TestLanguageSnapshotGuardsDirectAndBatchWireCalls(t *testing.T) {
@@ -161,4 +162,59 @@ func languageWireRequest(t *testing.T, tool string, arguments map[string]any) []
 		t.Fatal(err)
 	}
 	return append(request, byte(10))
+}
+
+func TestSchemaValidationCapturesLanguagesBeforeFirstMutation(t *testing.T) {
+	for _, profile := range []string{"full", "base"} {
+		t.Run(profile, func(t *testing.T) { assertFirstMutationSchemaSnapshot(t, profile) })
+	}
+}
+
+func assertFirstMutationSchemaSnapshot(t *testing.T, profile string) {
+	t.Helper()
+	root := t.TempDir()
+	writeWireLanguageSource(t, root, "main.go")
+	registry := operation.NewRegistry()
+	definition := operation.Def[languageWireProbeInput, string]{
+		Key: "mutating-language-probe", MCPName: "semantic_mutating_language_probe",
+		Params: []operation.ParameterContract{{Name: "language", JSONName: "language", Type: operation.ParamString, LanguageSelector: true, Required: true, Enums: []string{"go"}}},
+		Parse: func(map[string]any) (languageWireProbeInput, error) {
+			return languageWireProbeInput{Language: backend.LanguageGo}, nil
+		},
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, languageWireProbeInput) (string, error){
+			backend.LanguageGo: func(context.Context, operation.CallContext, languageWireProbeInput) (string, error) {
+				if err := os.Remove(filepath.Join(root, "main.go")); err != nil {
+					return "", fmt.Errorf("remove Go fixture: %w", err)
+				}
+				if err := pipeline.WriteAtomic(filepath.Join(root, "main.rs"), nil); err != nil {
+					return "", fmt.Errorf("write Rust fixture: %w", err)
+				}
+				return "changed languages", nil
+			},
+		},
+	}
+	if err := operation.Register(registry, definition); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	server := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry), mcp.WithToolProfile(profile))
+	request := languageWireRequest(t, "semantic_mutating_language_probe", map[string]any{"language": "go"})
+	if err := server.Serve(t.Context(), bytes.NewReader(request)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError           bool           `json:"isError"`
+			StructuredContent map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.IsError || response.Result.StructuredContent["result"] != "changed languages" {
+		t.Fatalf("language-changing call = %s", output.Bytes())
+	}
+	if _, err := os.Stat(filepath.Join(root, "main.rs")); err != nil {
+		t.Fatalf("handler did not change languages: %v", err)
+	}
 }
