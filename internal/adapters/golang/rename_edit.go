@@ -12,6 +12,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -33,6 +34,8 @@ type renameOutput struct {
 	document godiagnostics.Document
 	content  []byte
 }
+
+type renameFileWriter func(context.Context, string, []byte, func() error) error
 
 type renamePosition struct {
 	Line      *int `json:"line"`
@@ -164,6 +167,9 @@ func planRenameEdits(session *godiagnostics.Session, raw json.RawMessage, select
 	for _, change := range edit.DocumentChanges {
 		plan, err := planRenameDocument(request, change, seen)
 		if err != nil {
+			if errors.Is(err, godiagnostics.ErrSourceChanged) {
+				return nil, renameSourceConflict(err, len(edit.DocumentChanges))
+			}
 			return nil, err
 		}
 		selectedEdited = selectedEdited || plan.selectedEdited
@@ -333,6 +339,11 @@ func validateRenameTokens(source []byte, spans []renameSpan, oldName string) err
 }
 
 func renameInSessionFiles(ctx context.Context, session *godiagnostics.Session, file string, line, column int, newName string, record func([]string)) error {
+	return renameInSessionFilesWithWriter(ctx, session, file, line, column, newName, record, sourcebuf.WriteFileChecked)
+}
+
+func renameInSessionFilesWithWriter(ctx context.Context, session *godiagnostics.Session, file string, line, column int, newName string, record func([]string), writer renameFileWriter) error {
+	defer telemetry.StartPhase(ctx, "go.rename.apply")()
 	document, err := session.Snapshot(file)
 	if err != nil {
 		return err
@@ -357,10 +368,7 @@ func renameInSessionFiles(ctx context.Context, session *godiagnostics.Session, f
 	if err != nil {
 		return err
 	}
-	if err := session.AssertCurrent(); err != nil {
-		return err
-	}
-	return publishRenameOutputs(ctx, session, outputs, record)
+	return publishRenameOutputsWithWriter(ctx, session, outputs, record, writer)
 }
 
 func selectedRenameOffset(source []byte, line, column int, newName string) (int, error) {
@@ -391,6 +399,7 @@ func selectedRenameOffset(source []byte, line, column int, newName string) (int,
 }
 
 func prepareSelectedRename(ctx context.Context, session *godiagnostics.Session, document godiagnostics.Document, offset int) (preparedRename, error) {
+	defer telemetry.StartPhase(ctx, "go.rename.prepare")()
 	params := map[string]any{"textDocument": map[string]any{"uri": document.URI}, "position": backend.PositionFromByteOffset(document.Content, offset)}
 	raw, err := session.Request(ctx, "textDocument/prepareRename", params)
 	if err != nil {
@@ -416,11 +425,12 @@ func prepareSelectedRename(ctx context.Context, session *godiagnostics.Session, 
 	return preparedRename{params: params, start: begin, end: finish, oldName: prepared.Placeholder}, nil
 }
 
-func publishRenameOutputs(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string)) error {
+func publishRenameOutputsWithWriter(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string), writer renameFileWriter) error {
+	defer telemetry.StartPhase(ctx, "go.rename.publish")()
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
 		return publishBufferedRename(ctx, buffer, outputs, record)
 	}
-	return publishDiskRename(ctx, session, outputs, record)
+	return publishDiskRename(ctx, session, outputs, record, writer)
 }
 
 func publishBufferedRename(ctx context.Context, buffer *sourcebuf.Buffer, outputs []renameOutput, record func([]string)) error {
@@ -437,50 +447,81 @@ func publishBufferedRename(ctx context.Context, buffer *sourcebuf.Buffer, output
 	return nil
 }
 
-func publishDiskRename(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string)) error {
-	published := make(map[string][]byte, len(outputs))
-	for index, output := range outputs {
-		if err := writeRenameOutput(ctx, session, published, output); err != nil {
-			return fmt.Errorf("rename published %d of %d files: %w", index, len(outputs), err)
+func publishDiskRename(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string), writer renameFileWriter) error {
+	if err := preflightRenameOutputs(ctx, session, outputs); err != nil {
+		return &RenamePublicationError{TotalFiles: len(outputs), Cause: err}
+	}
+	published := make([]string, 0, len(outputs))
+	for _, output := range outputs {
+		if err := writeRenameOutput(ctx, session, output, writer); err != nil {
+			if len(published) > 0 && record != nil {
+				record(slices.Clone(published))
+			}
+			return &RenamePublicationError{PublishedPaths: slices.Clone(published), TotalFiles: len(outputs), Cause: err}
 		}
-		published[output.document.Path] = output.content
+		if !bytes.Equal(output.document.Content, output.content) {
+			published = append(published, output.document.Path)
+		}
 	}
 	if record != nil {
-		record(renameOutputFiles(outputs))
+		record(slices.Clone(published))
 	}
 	return nil
 }
 
-func writeRenameOutput(ctx context.Context, session *godiagnostics.Session, published map[string][]byte, output renameOutput) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := session.AssertRevision(published); err != nil {
-		return err
-	}
-	current, err := session.Snapshot(output.document.Path)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(current.Content, output.document.Content) {
-		return errors.New("source changed")
-	}
-	return sourcebuf.WriteFileChecked(ctx, output.document.Path, output.content, func() error {
+func preflightRenameOutputs(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput) error {
+	for _, output := range outputs {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := session.AssertRevision(published); err != nil {
+		if err := validateRenameOutput(ctx, session, output); err != nil {
 			return err
 		}
-		staged, err := session.Snapshot(output.document.Path)
-		if err != nil {
+	}
+	return nil
+}
+
+func writeRenameOutput(ctx context.Context, session *godiagnostics.Session, output renameOutput, writer renameFileWriter) error {
+	defer telemetry.StartPhase(ctx, "go.rename.publish_file")()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return writer(ctx, output.document.Path, output.content, func() error {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if staged.Path != output.document.Path || !os.SameFile(staged.Info, output.document.Info) || !bytes.Equal(staged.Content, output.document.Content) {
-			return errors.New("rename source changed during staging")
-		}
-		return nil
+		return validateRenameOutput(ctx, session, output)
 	})
+}
+
+func validateRenameOutput(ctx context.Context, session *godiagnostics.Session, output renameOutput) error {
+	conflict := func(cause error) error {
+		return errors.Join(ErrRenamePublicationConflict, godiagnostics.ErrSourceChanged, cause)
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	canonical, err := session.CanonicalSourcePath(output.document.Path)
+	if err != nil || canonical != output.document.Path || !pathutil.PathWithin(session.Root, canonical) || filepath.Ext(canonical) != ".go" {
+		return conflict(fmt.Errorf("rename target path changed: %q", output.document.Path))
+	}
+	before, err := os.Lstat(canonical)
+	if err != nil {
+		return conflict(fmt.Errorf("inspect rename target %q: %w", canonical, err))
+	}
+	if !before.Mode().IsRegular() || output.document.Info == nil || !os.SameFile(before, output.document.Info) {
+		return conflict(fmt.Errorf("rename target identity changed: %q", canonical))
+	}
+	// #nosec G304 -- canonical path is restricted to the validated project source.
+	content, err := os.ReadFile(canonical)
+	if err != nil {
+		return conflict(fmt.Errorf("read rename target %q: %w", canonical, err))
+	}
+	after, err := os.Lstat(canonical)
+	if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) || !bytes.Equal(content, output.document.Content) {
+		return conflict(fmt.Errorf("rename target content or identity changed: %q", canonical))
+	}
+	return nil
 }
 
 func renameOutputFiles(outputs []renameOutput) []string {

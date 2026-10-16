@@ -6,15 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/backend/readlsp"
 	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
-	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 var (
@@ -22,7 +21,30 @@ var (
 	ErrGoplsNotFound = errors.New("gopls executable not found")
 	// ErrRenameFailed indicates gopls rename failed to execute.
 	ErrRenameFailed = errors.New("gopls rename failed")
+	// ErrRenamePublicationConflict indicates a rename output changed before atomic publication.
+	ErrRenamePublicationConflict = errors.New("rename publication conflict")
 )
+
+// RenamePublicationError reports outputs that were actually published before a rename failed.
+type RenamePublicationError struct {
+	PublishedPaths []string
+	TotalFiles     int
+	Cause          error
+}
+
+func (err *RenamePublicationError) Error() string {
+	if len(err.PublishedPaths) > 0 {
+		return fmt.Sprintf("rename published %d of %d files (%s); inspect the disk diff before continuing; remaining stale edits were not replayed: %v", len(err.PublishedPaths), err.TotalFiles, strings.Join(err.PublishedPaths, ", "), err.Cause)
+	}
+	return fmt.Sprintf("rename published 0 of %d files: %v", err.TotalFiles, err.Cause)
+}
+
+func (err *RenamePublicationError) Unwrap() error { return err.Cause }
+
+// Retryable marks conflicts that happened before any output was published.
+func (err *RenamePublicationError) Retryable() bool {
+	return len(err.PublishedPaths) == 0 && errors.Is(err.Cause, ErrRenamePublicationConflict)
+}
 
 // FindGopls locates the gopls binary across system PATH and Go environment directories.
 func FindGopls() (string, error) {
@@ -79,7 +101,7 @@ func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.N
 	paths := make([]string, 0)
 	err := renameSelected(ctx, workDir, selected, expected, newName, func(changed []string) { paths = changed })
 	if err != nil {
-		return nil, err
+		return paths, err
 	}
 	return paths, nil
 }
@@ -106,11 +128,11 @@ func withSelectedRenameSession(ctx context.Context, workDir string, selected bac
 	if err := godiagnostics.UseWithContext(ctx, workDir, executable, environment, func(ctx context.Context, session *godiagnostics.Session) error {
 		document, err := session.Snapshot(file)
 		if err != nil {
-			return err
+			return renameSourceConflict(err, 1)
 		}
-		coordinate, err := validateRenameLookupSnapshot(ctx, file, document.Content, selected, expected)
+		coordinate, err := validateRenameLookupSnapshot(file, document.Content, selected, expected)
 		if err != nil {
-			return err
+			return renameSourceConflict(err, 1)
 		}
 		return action(ctx, session, document, coordinate)
 	}); err != nil {
@@ -135,10 +157,7 @@ type renameCoordinate struct {
 	column int
 }
 
-func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.NamedTarget, expected map[string][]byte) (renameCoordinate, error) {
-	if err := validateRenameExpectedFiles(ctx, expected); err != nil {
-		return renameCoordinate{}, err
-	}
+func validateRenameLookupSnapshot(file string, current []byte, selected backend.NamedTarget, expected map[string][]byte) (renameCoordinate, error) {
 	selectedPath, err := filepath.Abs(file)
 	if err != nil {
 		return renameCoordinate{}, fmt.Errorf("resolve rename lookup file: %w", err)
@@ -148,7 +167,7 @@ func validateRenameLookupSnapshot(ctx context.Context, file string, current []by
 		return renameCoordinate{}, errors.New("rename lookup lacks its selected source")
 	}
 	if !bytes.Equal(current, source) {
-		return renameCoordinate{}, errors.New("rename source changed since symbol lookup")
+		return renameCoordinate{}, fmt.Errorf("%w: rename source changed since symbol lookup", godiagnostics.ErrSourceChanged)
 	}
 	offset, err := readlsp.ByteOffset(source, selected.Location.Range.Start)
 	if err != nil {
@@ -163,27 +182,12 @@ func validateRenameLookupSnapshot(ctx context.Context, file string, current []by
 	return renameCoordinate{line: line, column: column}, nil
 }
 
-func validateRenameExpectedFiles(ctx context.Context, expected map[string][]byte) error {
-	for path, source := range expected {
-		canonical, err := sourcebuf.CanonicalPath(ctx, path)
-		if err != nil {
-			return fmt.Errorf("resolve rename lookup input: %w", err)
-		}
-		info, err := os.Stat(canonical)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("stat rename lookup input: %w", err)
-		}
-		if err == nil && !info.Mode().IsRegular() {
-			return errors.New("rename lookup input is not a regular file")
-		}
-		// #nosec G304 -- inputs come from the backend's exact resolver snapshot.
-		input, err := sourcebuf.ReadFile(ctx, canonical)
-		if err != nil {
-			return fmt.Errorf("read rename lookup input: %w", err)
-		}
-		if !bytes.Equal(input, source) {
-			return errors.New("rename analysis input changed since symbol lookup")
-		}
+func renameSourceConflict(err error, totalFiles int) error {
+	if !errors.Is(err, godiagnostics.ErrSourceChanged) {
+		return err
 	}
-	return nil
+	return &RenamePublicationError{
+		TotalFiles: totalFiles,
+		Cause:      errors.Join(ErrRenamePublicationConflict, godiagnostics.ErrSourceChanged, err),
+	}
 }

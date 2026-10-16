@@ -4,6 +4,7 @@ package telemetry
 import (
 	"context"
 	"maps"
+	"runtime/trace"
 	"slices"
 	"sync"
 	"time"
@@ -49,12 +50,17 @@ type Snapshot struct {
 // Metrics accumulates phases for one request and is safe for operation implementations to share.
 type Metrics struct {
 	mu     sync.Mutex
-	phases map[Phase]PhaseMetric
+	phases map[Phase]aggregate
+}
+
+type aggregate struct {
+	count    int
+	duration time.Duration
 }
 
 // NewMetrics creates an empty request recorder.
 func NewMetrics() *Metrics {
-	return &Metrics{phases: make(map[Phase]PhaseMetric)}
+	return &Metrics{phases: make(map[Phase]aggregate)}
 }
 
 // Record adds one completed phase.
@@ -65,8 +71,8 @@ func (m *Metrics) Record(phase Phase, elapsed time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	metric := m.phases[phase]
-	metric.Count++
-	metric.DurationMS += elapsed.Milliseconds()
+	metric.count++
+	metric.duration += elapsed
 	m.phases[phase] = metric
 }
 
@@ -84,7 +90,8 @@ func (m *Metrics) Snapshot(total time.Duration) Snapshot {
 	keys := slices.Sorted(maps.Keys(m.phases))
 	snapshot.Phases = make(map[string]PhaseMetric, len(keys))
 	for _, key := range keys {
-		snapshot.Phases[string(key)] = m.phases[key]
+		metric := m.phases[key]
+		snapshot.Phases[string(key)] = PhaseMetric{Count: metric.count, DurationMS: metric.duration.Milliseconds()}
 	}
 	return snapshot
 }
@@ -104,11 +111,45 @@ func WithPhase(ctx context.Context, phase Phase) context.Context {
 
 // Start records elapsed time under the scoped phase, or fallback when no scoped phase exists.
 func Start(ctx context.Context, fallback Phase) func() {
-	metrics, _ := ctx.Value(metricsContextKey{}).(*Metrics)
-	phase := fallback
-	if scoped, ok := ctx.Value(phaseContextKey{}).(Phase); ok && scoped != "" {
-		phase = scoped
+	return start(ctx, fallback, true)
+}
+
+// StartPhase records elapsed time under phase exactly, ignoring any scoped phase.
+func StartPhase(ctx context.Context, phase Phase) func() {
+	return start(ctx, phase, false)
+}
+
+func start(ctx context.Context, phase Phase, scoped bool) func() {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	started := time.Now()
-	return func() { metrics.Record(phase, time.Since(started)) }
+	metrics, _ := ctx.Value(metricsContextKey{}).(*Metrics)
+	if scoped {
+		if selected, ok := ctx.Value(phaseContextKey{}).(Phase); ok && selected != "" {
+			phase = selected
+		}
+	}
+	if phase == "" {
+		return func() {}
+	}
+	tracing := trace.IsEnabled()
+	if metrics == nil && !tracing {
+		return func() {}
+	}
+	var started time.Time
+	if metrics != nil {
+		started = time.Now()
+	}
+	var region *trace.Region
+	if tracing {
+		region = trace.StartRegion(ctx, string(phase))
+	}
+	return func() {
+		if region != nil {
+			region.End()
+		}
+		if metrics != nil {
+			metrics.Record(phase, time.Since(started))
+		}
+	}
 }

@@ -6,8 +6,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"go/token"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,10 +19,288 @@ import (
 	"strings"
 	"testing"
 
+	renameadapter "github.com/spockz/semantic-editor/internal/adapters/golang"
 	backend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
+	"github.com/spockz/semantic-editor/internal/lsp"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"github.com/spockz/semantic-editor/internal/symbol"
 )
+
+func TestGoBackendRenameFramedPeerHelper(t *testing.T) {
+	if os.Getenv("SEMEDIT_RENAME_PEER_HELPER") != "1" {
+		return
+	}
+	peer := renameProtocolPeer{tracePath: os.Getenv("SEMEDIT_RENAME_PEER_TRACE"), versions: make(map[string]int)}
+	reader, writer := lsp.NewFrameReader(os.Stdin, 0), lsp.NewFrameWriter(os.Stdout, 0)
+	for {
+		message, err := reader.ReadMessage()
+		if err != nil {
+			os.Exit(2)
+		}
+		var request renamePeerRequest
+		if decodeErr := json.Unmarshal(message, &request); decodeErr != nil {
+			os.Exit(2)
+		}
+		result, handleErr := peer.handle(request)
+		if handleErr != nil {
+			os.Exit(2)
+		}
+		if request.Method == "exit" {
+			os.Exit(0)
+		}
+		if len(request.ID) > 0 {
+			response, marshalErr := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+			if marshalErr != nil || writer.WriteMessage(response) != nil {
+				os.Exit(2)
+			}
+		}
+	}
+}
+
+func TestGoBackendRenameRetriesFromFreshFramedSnapshot(t *testing.T) {
+	root := writeReferenceFixture(t, map[string]string{
+		"go.mod":    "module example.com/renamereplan\ngo 1.23\n",
+		"sample.go": "package sample\n\nfunc Value() int { return 1 }\n",
+	})
+	binDir := filepath.Join(root, ".scratch", "bin")
+	if mkdirErr := os.MkdirAll(binDir, 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(binDir, "gopls")
+	if writeErr := os.WriteFile(wrapper, []byte("#!/bin/sh\nexec \"$SEMEDIT_RENAME_PEER_TEST_BIN\" -test.run=^TestGoBackendRenameFramedPeerHelper$\n"), 0o700); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	tracePath := filepath.Join(root, ".scratch", "rename-peer.jsonl")
+	if mkdirErr := os.MkdirAll(filepath.Dir(tracePath), 0o700); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_RENAME_PEER_HELPER", "1")
+	t.Setenv("SEMEDIT_RENAME_PEER_TEST_BIN", binary)
+	t.Setenv("SEMEDIT_RENAME_PEER_TRACE", tracePath)
+	result, err := (GoBackend{}).Rename(context.Background(), backend.RenameRequest{
+		Project: backend.ProjectContext{RootDir: root, File: "sample.go", Language: backend.LanguageGo},
+		Symbol:  "Value", To: "Renamed", DeferVerification: true, DeferFormatting: true,
+	})
+	if err != nil {
+		t.Fatalf("Rename() error = %v", err)
+	}
+	if result == nil || result.Lookup == nil || result.Lookup.Definition == nil {
+		t.Fatalf("Rename() result = %#v, want the freshly resolved renamed declaration", result)
+	}
+	assertFramedRetrySource(t, root)
+	assertFramedRetryTrace(t, tracePath)
+}
+
+func assertFramedRetrySource(t *testing.T, root string) {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join(root, "sample.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(source, []byte("// External edit survives retry.")) || !bytes.Contains(source, []byte("func Renamed()")) {
+		t.Fatalf("retry lost the external insertion or rename: %s", source)
+	}
+}
+
+func assertFramedRetryTrace(t *testing.T, tracePath string) {
+	t.Helper()
+	traceData, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	events := decodeRenamePeerEvents(t, traceData)
+	var starts, changes, renames int
+	var prepareLines []int
+	for _, entry := range events {
+		switch entry.Kind {
+		case "initialize":
+			starts++
+		case "didChange":
+			changes++
+		case "prepare":
+			prepareLines = append(prepareLines, entry.First)
+		case "rename":
+			renames++
+		}
+	}
+	if starts != 1 || changes == 0 || renames != 2 || len(prepareLines) != 2 || prepareLines[1] <= prepareLines[0] {
+		t.Fatalf("peer trace starts=%d changes=%d renames=%d prepare lines=%v, want one session and two fresh-coordinate attempts", starts, changes, renames, prepareLines)
+	}
+}
+
+type renamePeerEvent struct {
+	Kind   string `json:"kind"`
+	First  int    `json:"first"`
+	Second int    `json:"second"`
+}
+
+func decodeRenamePeerEvents(t *testing.T, data []byte) []renamePeerEvent {
+	t.Helper()
+	var events []renamePeerEvent
+	for line := range bytes.SplitSeq(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var entry renamePeerEvent
+		if err := json.Unmarshal(line, &entry); err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, entry)
+	}
+	return events
+}
+
+func TestGoBackendRetriesOnlyZeroWritePublicationConflicts(t *testing.T) {
+	cause := errors.Join(renameadapter.ErrRenamePublicationConflict, godiagnostics.ErrSourceChanged)
+	if !isRetryableRenameConflict(&renameadapter.RenamePublicationError{TotalFiles: 2, Cause: cause}) {
+		t.Fatal("zero-write source conflict should be retried once")
+	}
+	partial := &renameadapter.RenamePublicationError{PublishedPaths: []string{"first.go"}, TotalFiles: 2, Cause: cause}
+	if isRetryableRenameConflict(partial) {
+		t.Fatal("partial publication must not be retried")
+	}
+}
+
+type renamePeerRequest struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params struct {
+		TextDocument struct {
+			URI     string `json:"uri"`
+			Version int    `json:"version"`
+		} `json:"textDocument"`
+		Position struct {
+			Line      int `json:"line"`
+			Character int `json:"character"`
+		} `json:"position"`
+	} `json:"params"`
+}
+
+type renameProtocolPeer struct {
+	tracePath string
+	versions  map[string]int
+	renames   int
+}
+
+func (peer *renameProtocolPeer) handle(request renamePeerRequest) (json.RawMessage, error) {
+	result := json.RawMessage("null")
+	switch request.Method {
+	case "initialize":
+		if err := writeRenamePeerEvent(peer.tracePath, "initialize", 0, 0); err != nil {
+			return nil, err
+		}
+		result = json.RawMessage(`{"capabilities":{"diagnosticProvider":{},"renameProvider":{"prepareProvider":true},"positionEncoding":"utf-16"}}`)
+	case "textDocument/didOpen", "textDocument/didChange":
+		peer.versions[request.Params.TextDocument.URI] = request.Params.TextDocument.Version
+		if request.Method == "textDocument/didChange" {
+			return result, writeRenamePeerEvent(peer.tracePath, "didChange", request.Params.TextDocument.Version, 0)
+		}
+	case "textDocument/prepareRename":
+		return peer.prepare(request)
+	case "textDocument/rename":
+		return peer.rename(request)
+	case "shutdown", "exit":
+	}
+	return result, nil
+}
+
+func (peer *renameProtocolPeer) prepare(request renamePeerRequest) (json.RawMessage, error) {
+	path, err := renamePeerPath(request.Params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	span, err := renamePeerSpan(source)
+	if err != nil {
+		return nil, err
+	}
+	if err := writeRenamePeerEvent(peer.tracePath, "prepare", request.Params.Position.Line, request.Params.Position.Character); err != nil {
+		return nil, err
+	}
+	begin := span.Start
+	if request.Params.Position.Line != begin.Line || request.Params.Position.Character != begin.Character {
+		return json.RawMessage("null"), nil
+	}
+	return json.Marshal(map[string]any{"range": span, "placeholder": "Value"})
+}
+
+func (peer *renameProtocolPeer) rename(request renamePeerRequest) (json.RawMessage, error) {
+	path, err := renamePeerPath(request.Params.TextDocument.URI)
+	if err != nil {
+		return nil, err
+	}
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	span, err := renamePeerSpan(source)
+	if err != nil {
+		return nil, err
+	}
+	begin := span.Start
+	if request.Params.Position.Line != begin.Line || request.Params.Position.Character != begin.Character {
+		return nil, fmt.Errorf("rename used stale coordinates: got %d:%d want %d:%d", request.Params.Position.Line, request.Params.Position.Character, begin.Line, begin.Character)
+	}
+	version := peer.versions[request.Params.TextDocument.URI]
+	if version == 0 {
+		version = 1
+	}
+	peer.renames++
+	if err := writeRenamePeerEvent(peer.tracePath, "rename", peer.renames, version); err != nil {
+		return nil, err
+	}
+	if peer.renames == 1 {
+		updated := bytes.Replace(source, []byte("func Value"), []byte("// External edit survives retry.\nfunc Value"), 1)
+		if bytes.Equal(updated, source) {
+			return nil, errors.New("cannot insert test edit before declaration")
+		}
+		if err := os.WriteFile(path, updated, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(map[string]any{"documentChanges": []any{map[string]any{
+		"textDocument": map[string]any{"uri": request.Params.TextDocument.URI, "version": version},
+		"edits":        []any{map[string]any{"range": span, "newText": "Renamed"}},
+	}}})
+}
+
+func renamePeerSpan(source []byte) (backend.Range, error) {
+	start := bytes.Index(source, []byte("Value"))
+	if start < 0 {
+		return backend.Range{}, errors.New("rename target missing from test source")
+	}
+	return backend.Range{
+		Start: backend.PositionFromByteOffset(source, start),
+		End:   backend.PositionFromByteOffset(source, start+len("Value")),
+	}, nil
+}
+
+func renamePeerPath(uri string) (string, error) {
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Scheme != "file" || parsed.Host != "" || !filepath.IsAbs(parsed.Path) {
+		return "", errors.New("invalid test peer document URI")
+	}
+	return parsed.Path, nil
+}
+
+func writeRenamePeerEvent(path, kind string, first, second int) error {
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	err = json.NewEncoder(file).Encode(map[string]any{"kind": kind, "first": first, "second": second})
+	closeErr := file.Close()
+	return errors.Join(err, closeErr)
+}
 
 func TestFindReferencesSearchesModuleFromSelectedFile(t *testing.T) {
 	root := writeReferenceFixture(t, map[string]string{
@@ -107,6 +388,81 @@ func TestRenameAmbiguityLabelsBufferedSourceView(t *testing.T) {
 	if !errors.Is(err, backend.ErrAmbiguous) || !strings.Contains(err.Error(), "in working source matches") {
 		t.Fatalf("Rename() buffered ambiguity error = %v", err)
 	}
+}
+
+func TestRenameReplanKeepsIdentityAcrossDisjointInsertion(t *testing.T) {
+	root := writeReferenceFixture(t, map[string]string{
+		"go.mod":    "module example.com/renameidentity\ngo 1.23\n",
+		"sample.go": "package sample\n\nfunc Value() int { return 1 }\n",
+	})
+	request := backend.RenameRequest{
+		Project: backend.ProjectContext{RootDir: root, File: "sample.go", Language: backend.LanguageGo},
+		Symbol:  "Value", To: "Renamed", DeferVerification: true, DeferFormatting: true,
+	}
+	before, err := resolveRename(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "sample.go")
+	if writeErr := os.WriteFile(path, []byte("package sample\n\n// Keep this declaration stable.\nfunc Value() int { return 1 }\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	after, err := resolveRename(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.identity != after.identity {
+		t.Fatalf("declaration identity changed after disjoint insertion: before=%#v after=%#v", before.identity, after.identity)
+	}
+	if before.lookup.Definition.Location.Range.Start.Line == after.lookup.Definition.Location.Range.Start.Line {
+		t.Fatal("fresh lookup reused the old declaration line after insertion")
+	}
+}
+
+func TestRenameReplanRejectsMovedOrAmbiguousSelection(t *testing.T) {
+	t.Run("moved file", func(t *testing.T) {
+		root := writeReferenceFixture(t, map[string]string{
+			"go.mod": "module example.com/renamemove\ngo 1.23\n",
+			"a.go":   "package sample\nfunc Value() int { return 1 }\n",
+			"b.go":   "package sample\n",
+		})
+		request := backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: "a.go", Language: backend.LanguageGo}, Symbol: "Value", To: "Renamed", DeferVerification: true, DeferFormatting: true}
+		before, err := resolveRename(context.Background(), request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if writeErr := os.WriteFile(filepath.Join(root, "a.go"), []byte("package sample\n"), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		if writeErr := os.WriteFile(filepath.Join(root, "b.go"), []byte("package sample\nfunc Value() int { return 1 }\n"), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+		if _, err := resolveRename(context.Background(), request); err == nil || !errors.Is(err, symbol.ErrNotFound) {
+			t.Fatalf("fresh selection after moving declaration = %v, want not found", err)
+		}
+		if before.identity.path != filepath.Join(root, "a.go") {
+			t.Fatalf("original declaration identity path = %q", before.identity.path)
+		}
+	})
+	t.Run("ambiguous declaration", func(t *testing.T) {
+		root := writeReferenceFixture(t, map[string]string{
+			"go.mod":         "module example.com/renameambiguous\ngo 1.23\n",
+			"first/value.go": "package first\nfunc Value() int { return 1 }\n",
+		})
+		request := backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo}, Symbol: "Value", To: "Renamed", DeferVerification: true, DeferFormatting: true}
+		if _, err := resolveRename(context.Background(), request); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "second"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "second", "value.go"), []byte("package second\nfunc Value() int { return 2 }\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := resolveRename(context.Background(), request); err == nil || !errors.Is(err, backend.ErrAmbiguous) {
+			t.Fatalf("fresh ambiguous selection error = %v", err)
+		}
+	})
 }
 
 func TestFindReferencesNormalizesGenericOriginsAcrossTestVariants(t *testing.T) {

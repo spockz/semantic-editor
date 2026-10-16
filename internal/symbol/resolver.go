@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 	"go/ast"
 	"go/parser"
 	"go/scanner"
@@ -293,6 +295,7 @@ func extractPosition(fset *token.FileSet, err error) token.Position {
 }
 
 func resolveTargetFiles(ctx context.Context, rootDir, filePath string) ([]string, error) {
+	defer telemetry.StartPhase(ctx, "go.symbol.discover_files")()
 	if filePath != "" {
 		return resolveSelectedTargetFiles(ctx, rootDir, filePath)
 	}
@@ -338,7 +341,7 @@ func resolveWorkspaceTargetFiles(ctx context.Context, rootDir string) ([]string,
 			return walkErr
 		}
 		if entry.IsDir() {
-			if filepath.Clean(path) != rootPath && ignoredSourceDirectory(entry.Name()) {
+			if filepath.Clean(path) != rootPath && (ignoredSourceDirectory(entry.Name()) || sourcefiles.IsBenchmarkDataDirectory(path)) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -416,6 +419,7 @@ func ResolveSnapshot(rootDir string, filePath string, query string) (*Resolution
 
 // ResolveSnapshotWithContext resolves symbols against the current batch source revision.
 func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath string, query string) (*ResolutionSnapshot, error) {
+	defer telemetry.StartPhase(ctx, "go.symbol.resolve")()
 	pkg, recv, name, err := parseIdentifier(query)
 	if err != nil {
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
@@ -437,6 +441,7 @@ func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath st
 }
 
 func scanResolutionCandidates(rootDir string, targetFiles []string, pkg, recv, name string, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) ([]*Symbol, []*Symbol, error) {
+	defer telemetry.StartPhase(reader.ctx, "go.symbol.scan")()
 	var declarations, usages []*Symbol
 	scan := func(targetPackage, targetRecv string) error {
 		for _, file := range targetFiles {
@@ -472,6 +477,7 @@ func scanResolutionCandidates(rootDir string, targetFiles []string, pkg, recv, n
 }
 
 func resolveCandidates(filePath, query string, declarations, usages []*Symbol, reader *sourceSnapshotReader) (*ResolutionSnapshot, error) {
+	defer telemetry.StartPhase(reader.ctx, "go.symbol.select")()
 	result := &LookupResult{Usages: usages}
 	if len(declarations) > 0 {
 		if len(declarations) > 1 {
@@ -579,7 +585,7 @@ func canonicalTargetDirectory(ctx context.Context, directory string) (string, er
 	if !errors.Is(err, fs.ErrNotExist) {
 		return "", err
 	}
-	for path := range sourcebuf.Overlay(ctx) {
+	for path := range sourcebuf.Overlay(ctx, ".go") {
 		canonicalPath, canonicalErr := sourcebuf.CanonicalPath(ctx, path)
 		if canonicalErr != nil {
 			return "", fmt.Errorf("canonicalize buffered package source %q: %w", path, canonicalErr)
@@ -602,7 +608,7 @@ func addOverlayTargetFiles(ctx context.Context, boundary, directory string, dire
 	if err != nil {
 		return fmt.Errorf("canonicalize symbol target directory %q: %w", directory, err)
 	}
-	for path := range sourcebuf.Overlay(ctx) {
+	for path := range sourcebuf.Overlay(ctx, ".go") {
 		canonical, err := sourcebuf.CanonicalPath(ctx, path)
 		if err != nil {
 			return fmt.Errorf("canonicalize buffered symbol source %q: %w", path, err)

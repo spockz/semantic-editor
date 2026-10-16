@@ -112,7 +112,7 @@ func (capture *structuralPackageCapture) parse(fset *token.FileSet, filename str
 }
 
 func structuralPackageOverlay(ctx context.Context, extra map[string][]byte) map[string][]byte {
-	overlay := sourcebuf.Overlay(ctx)
+	overlay := sourcebuf.Overlay(ctx, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}

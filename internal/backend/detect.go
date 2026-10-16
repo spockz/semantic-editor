@@ -12,8 +12,6 @@ import (
 
 var sourceExtensions = sourcefiles.ExtensionMap[LanguageID]()
 
-var ignoredSourceDirectories = sourcefiles.IgnoredDirectories()
-
 // DetectLanguages returns source languages present under root, ordered by language ID.
 // It skips generated, dependency, and worktree directories so repository tooling does
 // not make a source-less project appear polyglot.
@@ -26,7 +24,7 @@ func DetectLanguages(root string) ([]LanguageID, error) {
 		if walkErr != nil {
 			return fmt.Errorf("scan source languages at %s: %w", path, walkErr)
 		}
-		if entry.IsDir() && path != root && ignoredSourceDirectories[entry.Name()] {
+		if entry.IsDir() && path != root && sourcefiles.IsIgnoredDirectoryPath(path) {
 			return filepath.SkipDir
 		}
 		if entry.IsDir() {

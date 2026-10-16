@@ -1,0 +1,32 @@
+# Archive-only modules and malformed foreign-language files must not enter source discovery.
+exec semedit workspace-outline
+stdout 'api'
+! stdout 'archived'
+! stdout 'benchmark-data'
+
+# Whole-workspace snapshots must not copy captured benchmark workspaces.
+exec semedit snapshot --label source-only
+stdout 'api/value.go'
+! stdout 'data/benchmarks'
+
+-- go.mod --
+module example.com/artifactexclusions
+
+go 1.24
+
+-- api/value.go --
+package api
+
+func Value() int { return 1 }
+
+-- data/benchmarks/go.mod --
+module example.com/benchmark-data
+
+-- data/benchmarks/archive/archived/go.mod --
+invalid manifest
+
+-- data/benchmarks/archive/archived/Service.java --
+not a Java compilation unit
+
+-- data/benchmarks/archive/archived/value.go --
+not a Go compilation unit

@@ -3,6 +3,10 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+This record defines the original lookup slice. ADR-0051 adds outline under the
+same read-only server and trust boundaries; the initial lookup-only wording is
+not a restriction on that implemented read capability.
+
 ## Context
 
 Scala symbol lookup needs Metals' hierarchical document symbols, but a lookup request must not become an implicit sbt, Maven, Gradle, Mill, or Scala CLI execution surface. This slice is deliberately limited to a selected `.scala` file and one managed Metals LSP session.

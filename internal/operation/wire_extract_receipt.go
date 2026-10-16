@@ -56,7 +56,7 @@ func beginExtractionReceipt(ctx context.Context, root, file, operationName strin
 	}
 	selected := filepath.Join(root, filepath.FromSlash(file))
 	dir := filepath.Dir(selected)
-	if observeErr := sourcebuf.ObserveTree(ctx, dir); observeErr != nil {
+	if observeErr := sourcebuf.ObserveTree(ctx, dir, ".go"); observeErr != nil {
 		return EditReceiptDraft{}, fmt.Errorf("capture extraction package read set: %w", observeErr)
 	}
 	entries, err := os.ReadDir(dir)

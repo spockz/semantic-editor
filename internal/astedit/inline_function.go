@@ -387,7 +387,7 @@ func cloneRefactorSources(original map[string][]byte) map[string][]byte {
 }
 
 func applyRefactorOverlay(ctx context.Context, root string, readSet map[string][]byte) {
-	for path, content := range sourcebuf.Overlay(ctx) {
+	for path, content := range sourcebuf.Overlay(ctx, ".go") {
 		if moveWithin(root, path) {
 			readSet[filepath.Clean(path)] = bytes.Clone(content)
 		}

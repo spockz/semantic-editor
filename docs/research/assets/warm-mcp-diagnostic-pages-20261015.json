@@ -1,0 +1,62 @@
+{
+  "schema_version": "semedit.warm-diagnostic-pages/v1",
+  "measured_at": "2026-10-15T00:05:12.70647+02:00",
+  "git_base": "1ff9655e5719c2d078c4e274e4a4817f006cced9",
+  "branch": "codex/warm-mcp-operation-costs",
+  "uncommitted_source": true,
+  "go_version": "go version go1.27.2 darwin/arm64",
+  "setup": "Production MCP NewServer and newline JSON-RPC over io.Pipe, actual gopls; capture at least 50 real diagnostics and warm one 50-item page before timing.",
+  "timed_boundary": "Full semantic_diagnostics MCP request/response; analysis, fixture creation, initialization and warm-up excluded.",
+  "budget_enforced": true,
+  "read_p99_budget_ms": 10,
+  "source_sha256": {
+    "internal/mcp/diagnostic_page_bench_test.go": "7861bb9a63352ce3747d507c5dee166ae6bb8ed36297607e3e394cf63954535c",
+    "internal/mcp/warm_cost_bench_test.go": "ac3477f3bed69077acdc5e2b41ace5094f051d3ec3456bc8ee991b3af70dcbc9",
+    "internal/mcp/diagnostic_reports.go": "b871713f7119683687eb0524b50f99799213826ed4fcdffe442c5db92c0dc8e2",
+    "internal/mcp/diagnostic_capture.go": "ace61c2e90964f5caeb76e098fc53902d0afe1a992aa2bbfa66449c853615ba9",
+    "internal/mcp/presentation/presentation.go": "2f7184b09498368ad08188b7db01b66ff06f9171587cb542a672c06a5a9932da",
+    "internal/mcp/server.go": "0fe95ebfe2765da7743c7c755653c95306c273023dae45c88f477ac53b52a252",
+    "internal/mcp/batch.go": "82adb437cf2d25930fdcd90d8f38ccc6b5cf407c4f19481db4ae79e7d1901f35",
+    "internal/operation/wire_engine.go": "6316556a0d697b71ba4cdfee49b8c1624558d7630cdd4435ba8c8ae7853c326b"
+  },
+  "cases": [
+    {
+      "fixture_packages": 1,
+      "iterations": 1000,
+      "metrics": {
+        "ns/op": 973696,
+        "budget_ms": 10,
+        "captured_diagnostics": 50,
+        "diagnostics_per_page": 50,
+        "gopls_starts": 1,
+        "p99/budget": 0.3977,
+        "p99/ceiling": 0.003977,
+        "p99_ms": 3.977,
+        "samples": 1000
+      }
+    },
+    {
+      "fixture_packages": 20,
+      "iterations": 1000,
+      "metrics": {
+        "ns/op": 793222,
+        "budget_ms": 10,
+        "captured_diagnostics": 50,
+        "diagnostics_per_page": 50,
+        "gopls_starts": 1,
+        "p99/budget": 0.165,
+        "p99/ceiling": 0.001649,
+        "p99_ms": 1.649,
+        "samples": 1000
+      }
+    }
+  ],
+  "earlier_run": {
+    "raw": "warm-mcp-diagnostic-pages-pre-optimization-20261014.jsonl",
+    "status": "budget_miss",
+    "packages_1_p99_ms": 8.044,
+    "packages_20_p99_ms": 16.061834,
+    "context": "Before presenter ordering lookup optimization, concurrent with repository checks. Retained as evidence, not a controlled A/B comparison."
+  },
+  "raw": "warm-mcp-diagnostic-pages-20261015.jsonl"
+}

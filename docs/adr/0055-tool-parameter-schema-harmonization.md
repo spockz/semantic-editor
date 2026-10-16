@@ -182,9 +182,11 @@ separate response form and do not acquire a tool-result schema.
   selectors, and `expected_revision`. Label navigation-only fields as such,
   separately from copyable arguments. Do not rename a legacy `revision` field
   to manufacture a guard.
-* For result-oriented utilities, the requested result defined by the tool
-  contract, such as measurements from `semantic_metrics`, rather than only a
-  count or acknowledgement. Ordinary calls retain ADR-0052's timing policy.
+* For result-oriented utilities, an actionable description of the returned
+  result fields, availability, and supported follow-up or page cursor. Bulk
+  measurements from `semantic_metrics` and diagnostic pages remain once in
+  structured content under ADR-0042 and ADR-0073; text does not duplicate those
+  arrays. Ordinary calls retain ADR-0052's timing policy.
 
 Text and structured essentials must come from the same validated result
 projection. Never reconstruct a new symbol from the requested name, invent a

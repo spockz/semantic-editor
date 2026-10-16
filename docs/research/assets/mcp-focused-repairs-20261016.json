@@ -1,0 +1,109 @@
+{
+  "date": "2026-10-16",
+  "corpus": {
+    "packages": 20,
+    "go_source_files": 20
+  },
+  "environment": {
+    "os": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5 Pro",
+    "go": "go1.27.2"
+  },
+  "measurement_boundary": "In-process MCP; initialization and fixture preparation excluded except named prepared workflow. Shared disk caches retained. No full matrix or repository corpus rerun.",
+  "contention": {
+    "reported_by": "user",
+    "report": "Another chat is running heavy tests using eight cores.",
+    "per_sample_host_load_recorded": false,
+    "interpretation": "These observations do not establish uncontended improvement or regression. No further timing run started under competing load."
+  },
+  "repaired_binary_sha256": "93898cb5ae8c9fd5af247f2907de4823cfdcb7b9d757ff105ba4e30ed8f9701e",
+  "baseline_binary_sha256": "035303e7dd26df0e136db5b9ae53abcd4a554430ab1f1edb666c935a09a59257",
+  "production_source_sha256": {
+    "internal/mcp/staging.go": "cf5776c4c434cae52bccf96330eeaccc300288cb921c5f89d46a281fa60c66ba",
+    "internal/godiagnostics/manager.go": "3b0a34d9d0803351609935875410bbfd2030273e93f93d2a6081ddabc2b550a1",
+    "internal/godiagnostics/diagnostics.go": "17c8d82ef417a9c30b4e6a0fffa3129c474281aad8cb8165d1fe495123a03784",
+    "internal/gocache/cache.go": "3705399da254ac74ec84d214ac672fb92f03f520ffb59fe34749f61eb44253e4",
+    "internal/sourcebuf/buffer.go": "44bc990acf6dc92c3b6af900affcd6fd7d3c54fbeab376976c85ae3bb58a5113",
+    "internal/astedit/outline.go": "6ba0eb178db4c4a270a5a3fe16de5b5d0bba23fa20bb27c1688551a26004bf7f",
+    "internal/backend/golang/backend.go": "013016aaa696923e67705a49e58cb515267f851c60c1045d7ed60150de12a5d5",
+    "internal/astedit/extraction_analysis.go": "512ee51f541083b2149cfee5a6bb2e090cb3f8007551f120a96b83d179fda8b2",
+    "internal/astedit/extract.go": "225481c1b544391f188c15f584789a4b68c428a59268ff79510670d781c1d143",
+    "internal/astedit/extract_constant.go": "9089cd03a04b02567699190ad3429b5e9c8d0e88289c8c2e868a8f17466b53ba",
+    "internal/astedit/extract_variable.go": "8c32eb7cc0ec6df6f89fdce35f72532620f7fd183d0a96113ba7d3bbe85c1258"
+  },
+  "correctness_evidence": [
+    "Integrated make check passed before qualification.",
+    "Repeated diagnostic-cycle/import race tests passed five times.",
+    "Focused source exclusions, environment resolution, stage abort/publication, and extraction compiler race checks passed.",
+    "Warm abort retained the same gopls process across 1000 calls.",
+    "Final make check passed after the original-compilation CLI regression was added; git diff --check passed."
+  ],
+  "results": [
+    {
+      "case": "outline_baseline",
+      "tool": "semantic_outline",
+      "cold_p99_ms": 9.427,
+      "prepared_workflow_p99_ms": null,
+      "warm_p99_ms": 13.777,
+      "samples": {
+        "cold": 100,
+        "prepared_workflow": 0,
+        "warm": 1000
+      },
+      "raw_log": "mcp-focused-repairs-20261016-outline_baseline.log"
+    },
+    {
+      "case": "outline_repaired",
+      "tool": "semantic_outline",
+      "cold_p99_ms": 2.385,
+      "prepared_workflow_p99_ms": null,
+      "warm_p99_ms": 3.267,
+      "samples": {
+        "cold": 100,
+        "prepared_workflow": 0,
+        "warm": 1000
+      },
+      "raw_log": "mcp-focused-repairs-20261016-outline_repaired.log"
+    },
+    {
+      "case": "abort_repaired",
+      "tool": "semantic_stage_abort",
+      "cold_p99_ms": null,
+      "prepared_workflow_p99_ms": 944.507,
+      "warm_p99_ms": 4.998,
+      "samples": {
+        "cold": 0,
+        "prepared_workflow": 100,
+        "warm": 1000
+      },
+      "raw_log": "mcp-focused-repairs-20261016-abort_repaired.log"
+    },
+    {
+      "case": "references_repaired",
+      "tool": "semantic_find_references",
+      "cold_p99_ms": 160.053,
+      "prepared_workflow_p99_ms": null,
+      "warm_p99_ms": 88.799,
+      "samples": {
+        "cold": 100,
+        "prepared_workflow": 0,
+        "warm": 1000
+      },
+      "raw_log": "mcp-focused-repairs-20261016-references_repaired.log"
+    },
+    {
+      "case": "extraction_repaired",
+      "tool": "semantic_extract_function",
+      "cold_p99_ms": 8993.936,
+      "prepared_workflow_p99_ms": null,
+      "warm_p99_ms": 5709.031999999999,
+      "samples": {
+        "cold": 100,
+        "prepared_workflow": 0,
+        "warm": 1000
+      },
+      "raw_log": "mcp-focused-repairs-20261016-extraction_repaired.log"
+    }
+  ]
+}

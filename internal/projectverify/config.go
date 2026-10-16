@@ -143,7 +143,7 @@ func discoverSources(root string) ([]Source, error) {
 			return fmt.Errorf("make source path relative: %w", err)
 		}
 		if entry.IsDir() {
-			if path != root && skippedDiscoveryDir(entry.Name()) {
+			if path != root && sourcefiles.IsIgnoredDirectoryPath(path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -162,10 +162,6 @@ func discoverSources(root string) ([]Source, error) {
 	}
 	slices.SortFunc(sources, func(a, b Source) int { return strings.Compare(a.Path, b.Path) })
 	return sources, nil
-}
-
-func skippedDiscoveryDir(name string) bool {
-	return sourcefiles.IsIgnoredDirectory(name)
 }
 
 func sourceLanguage(name string) string {

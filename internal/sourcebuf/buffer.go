@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 
 	"github.com/spockz/semantic-editor/internal/atomicfile"
 )
@@ -36,7 +37,7 @@ type Buffer struct {
 	exclusions               []string
 	writeRoots               map[string]bool
 	files                    map[string]*fileState
-	trees                    map[string]map[string]bool
+	trees                    map[treeScope]map[string]bool
 	aliases                  map[string]string
 	symbolAliases            []SymbolAlias
 	invalidatedSymbolAliases []SymbolAlias
@@ -59,6 +60,12 @@ type SymbolAlias struct {
 type SymbolHistory struct {
 	Renames     []SymbolAlias
 	Invalidated []SymbolAlias
+}
+
+type treeScope struct {
+	root, extensions string
+	exclusions       string
+	recursive        bool
 }
 
 // ChangedPaths reports outputs whose working bytes differ from their disk preimages.
@@ -94,7 +101,7 @@ func (b *Buffer) forkLocked(original bool) *Buffer {
 		exclusions: slices.Clone(b.exclusions),
 		writeRoots: maps.Clone(b.writeRoots),
 		files:      make(map[string]*fileState, len(b.files)),
-		trees:      make(map[string]map[string]bool, len(b.trees)),
+		trees:      make(map[treeScope]map[string]bool, len(b.trees)),
 		aliases:    maps.Clone(b.aliases),
 	}
 	if !original {
@@ -296,7 +303,7 @@ func (b *Buffer) MergeReadSetFrom(candidate *Buffer) error {
 	}
 	for root, files := range snapshot.trees {
 		if prior, ok := b.trees[root]; ok && !maps.Equal(prior, files) {
-			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root)
+			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root.root)
 		}
 	}
 	for path, state := range snapshot.files {
@@ -335,8 +342,8 @@ func (b *Buffer) Flush(ctx context.Context) error {
 		clear(b.files)
 		clear(b.trees)
 		clear(b.aliases)
-		clear(b.symbolAliases)
-		clear(b.invalidatedSymbolAliases)
+		b.symbolAliases = nil
+		b.invalidatedSymbolAliases = nil
 	}()
 	planned := b.changedPathsLocked()
 	published, err := b.publishLocked(ctx)
@@ -476,7 +483,11 @@ func regularOutputDirectory(directory string) error {
 }
 
 func (b *Buffer) publishStaged(ctx context.Context, publication stagedPublication) (int, error) {
-	if diskErr := b.assertDisk(); diskErr != nil {
+	temporary := make([]string, 0, len(publication.files))
+	for _, file := range publication.files {
+		temporary = append(temporary, file.TemporaryPath())
+	}
+	if diskErr := b.assertDisk(temporary...); diskErr != nil {
 		return 0, diskErr
 	}
 	for index, file := range publication.files {
@@ -486,7 +497,7 @@ func (b *Buffer) publishStaged(ctx context.Context, publication stagedPublicatio
 		if parentErr := b.assertNewFileParents(); parentErr != nil {
 			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), parentErr)
 		}
-		if diskErr := b.assertDisk(); diskErr != nil {
+		if diskErr := b.assertFile(publication.paths[index], b.files[publication.paths[index]]); diskErr != nil {
 			return index, fmt.Errorf("retained buffer published %d of %d files: %w", index, len(publication.files), diskErr)
 		}
 		if publishErr := file.Publish(); publishErr != nil {
@@ -508,8 +519,9 @@ func (b *Buffer) recordPublishedFile(path string) error {
 	}
 	state.info = info
 	for root, files := range b.trees {
-		rel, relErr := filepath.Rel(root, path)
-		if relErr == nil && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, relErr := filepath.Rel(root.root, path)
+		if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) &&
+			(root.recursive || filepath.Dir(path) == root.root) && root.includes(path) {
 			files[path] = true
 		}
 	}
@@ -536,7 +548,7 @@ func removeUnpublishedDirectories(directories []string) error {
 	return cleanupErr
 }
 
-// AuthorizeWrites binds the main module before semantic analysis and permits its outputs.
+// AuthorizeWrites permits outputs beneath a root without reading unrelated files.
 func (b *Buffer) AuthorizeWrites(ctx context.Context, root string) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("authorize buffered module: %w", err)
@@ -549,8 +561,12 @@ func (b *Buffer) AuthorizeWrites(ctx context.Context, root string) error {
 	if err != nil {
 		return fmt.Errorf("canonicalize writable module: %w", err)
 	}
-	if err := ObserveTree(WithBuffer(ctx, b), canonical); err != nil {
-		return err
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return fmt.Errorf("inspect writable root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("writable root %s is not a directory", canonical)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -579,7 +595,7 @@ func (b *Buffer) Apply(ctx context.Context, changes []Change) error {
 		if err != nil {
 			return err
 		}
-		if canonical != absolute || !b.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") {
+		if canonical != absolute || !b.writable(canonical) {
 			return fmt.Errorf("invalid buffered output %q", change.Path)
 		}
 		if _, exists := pending[canonical]; exists {
@@ -687,8 +703,11 @@ func (b *Buffer) Rollback(checkpoint Checkpoint) {
 // ErrConflict identifies stale disk inputs to a buffered transformation.
 var ErrConflict = errors.New("buffered source changed on disk")
 
-// New binds the workspace source set before a batch segment begins.
+// New binds a root without scanning source files; reads and explicit observations capture preimages.
 func New(ctx context.Context, root string) (*Buffer, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("create source buffer: %w", err)
+	}
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve buffer root: %w", err)
@@ -697,21 +716,14 @@ func New(ctx context.Context, root string) (*Buffer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("canonicalize buffer root: %w", err)
 	}
-	exclusions, err := sourceExclusions(ctx, canonical)
+	info, err := os.Stat(canonical)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("inspect buffer root: %w", err)
 	}
-	sources, err := sourceSet(canonical, exclusions)
-	if err != nil {
-		return nil, err
+	if !info.IsDir() {
+		return nil, fmt.Errorf("buffer root %s is not a directory", canonical)
 	}
-	buffer := &Buffer{root: canonical, exclusions: exclusions, files: make(map[string]*fileState), trees: map[string]map[string]bool{canonical: sources}, aliases: make(map[string]string)}
-	for _, path := range slices.Sorted(maps.Keys(sources)) {
-		if _, _, err := buffer.load(path); err != nil {
-			return nil, err
-		}
-	}
-	return buffer, nil
+	return &Buffer{root: canonical, files: make(map[string]*fileState), trees: make(map[treeScope]map[string]bool), aliases: make(map[string]string)}, nil
 }
 
 // WithBuffer attaches the source view shared by AST and LSP operations.
@@ -752,7 +764,7 @@ func ReadFile(ctx context.Context, path string) ([]byte, error) {
 	return bytes.Clone(state.content), nil
 }
 
-// CanonicalPath resolves an existing source path or an accepted buffered new Go or Java source without creating parent directories.
+// CanonicalPath resolves an existing or accepted buffered path without creating parent directories.
 func CanonicalPath(ctx context.Context, path string) (string, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -784,7 +796,7 @@ func CanonicalPath(ctx context.Context, path string) (string, error) {
 	return "", fmt.Errorf("canonicalize buffered source path %q: %w", path, canonicalErr)
 }
 
-// WriteFile buffers supported Go or Java sources during a batch and publishes directly otherwise.
+// WriteFile buffers files during a batch and publishes directly otherwise.
 func WriteFile(ctx context.Context, path string, data []byte) error {
 	return WriteFileChecked(ctx, path, data, nil)
 }
@@ -813,8 +825,8 @@ func WriteFileChecked(ctx context.Context, path string, data []byte, check func(
 	if err != nil {
 		return err
 	}
-	if !buffer.writable(canonical) || (filepath.Ext(canonical) != ".go" && filepath.Ext(canonical) != ".java") || canonical != originalPath {
-		return fmt.Errorf("buffered output %q must be supported source beneath the workspace without symlink aliases", path)
+	if !buffer.writable(canonical) || canonical != originalPath {
+		return fmt.Errorf("buffered output %q must be beneath an authorized root without symlink aliases", path)
 	}
 	if state.info == nil && state.content == nil {
 		parents, err := buffer.captureNewFileParents(canonical)
@@ -828,7 +840,7 @@ func WriteFileChecked(ctx context.Context, path string, data []byte, check func(
 }
 
 // Overlay returns independent copies of source bytes for package loading.
-func Overlay(ctx context.Context) map[string][]byte {
+func Overlay(ctx context.Context, extensions ...string) map[string][]byte {
 	buffer := FromContext(ctx)
 	if buffer == nil {
 		return nil
@@ -837,7 +849,7 @@ func Overlay(ctx context.Context) map[string][]byte {
 	defer buffer.mu.Unlock()
 	overlay := make(map[string][]byte)
 	for path, state := range buffer.files {
-		if (state.info != nil || state.content != nil) && filepath.Ext(path) == ".go" {
+		if (state.info != nil || state.content != nil) && (len(extensions) == 0 || slices.Contains(extensions, filepath.Ext(path))) {
 			overlay[path] = bytes.Clone(state.content)
 		}
 	}
@@ -856,8 +868,17 @@ func Dirty(ctx context.Context, path string) bool {
 	return ok && !bytes.Equal(state.original, state.content)
 }
 
-// ObserveTree binds source membership in local replacement modules.
-func ObserveTree(ctx context.Context, root string) error {
+// ObserveTree captures files and membership explicitly selected by a backend.
+func ObserveTree(ctx context.Context, root string, extensions ...string) error {
+	return observeTree(ctx, root, true, extensions)
+}
+
+// ObserveDirectory captures one package directory without selecting nested packages.
+func ObserveDirectory(ctx context.Context, root string, extensions ...string) error {
+	return observeTree(ctx, root, false, extensions)
+}
+
+func observeTree(ctx context.Context, root string, recursive bool, extensions []string) error {
 	buffer := FromContext(ctx)
 	if buffer == nil {
 		return nil
@@ -868,10 +889,29 @@ func ObserveTree(ctx context.Context, root string) error {
 	}
 	buffer.mu.Lock()
 	defer buffer.mu.Unlock()
-	if _, ok := buffer.trees[root]; ok {
+	extensions = slices.Sorted(slices.Values(extensions))
+	for _, extension := range extensions {
+		if extension == "" || !strings.HasPrefix(extension, ".") || strings.ContainsAny(extension, ",/\\") {
+			return fmt.Errorf("invalid observed file extension %q", extension)
+		}
+	}
+	filter, err := normalizeSourceExclusions(buffer.root, append([]string{os.TempDir()}, environmentSourceRoots(os.Environ())...))
+	if err != nil {
+		return err
+	}
+	if slices.Contains(extensions, ".go") {
+		filter, err = sourceExclusions(ctx, buffer.root)
+		if err != nil {
+			return err
+		}
+	}
+	slices.Sort(filter)
+	filter = slices.Compact(filter)
+	scope := treeScope{root: root, extensions: strings.Join(slices.Compact(extensions), ","), recursive: recursive, exclusions: strings.Join(filter, "\x00")}
+	if _, ok := buffer.trees[scope]; ok {
 		return nil
 	}
-	files, err := sourceSet(root, buffer.exclusions)
+	files, err := sourceSet(scope, nil)
 	if err != nil {
 		return err
 	}
@@ -880,7 +920,7 @@ func ObserveTree(ctx context.Context, root string) error {
 			return err
 		}
 	}
-	buffer.trees[root] = files
+	buffer.trees[scope] = files
 	return nil
 }
 
@@ -1047,7 +1087,7 @@ func (b *Buffer) captureNewFileParents(path string) (map[string]os.FileInfo, err
 }
 
 func (b *Buffer) assertNewFileParents() error {
-	for path, state := range b.files {
+	for _, state := range b.files {
 		if state.info != nil || state.content == nil || state.parents == nil {
 			continue
 		}
@@ -1068,9 +1108,6 @@ func (b *Buffer) assertNewFileParents() error {
 			if !actual.IsDir() || actual.Mode()&os.ModeSymlink != 0 || !os.SameFile(expected, actual) || actual.Mode() != expected.Mode() {
 				return fmt.Errorf("%w: new output parent %s changed", ErrConflict, directory)
 			}
-		}
-		if filepath.Ext(path) != ".go" && filepath.Ext(path) != ".java" {
-			return fmt.Errorf("new buffered output %s is not supported source", path)
 		}
 	}
 	return nil
@@ -1094,7 +1131,7 @@ func (b *Buffer) recordOwnedNewFileParent(directory string) error {
 	return nil
 }
 
-func (b *Buffer) assertDisk() error {
+func (b *Buffer) assertDisk(ignored ...string) error {
 	for path, expected := range b.aliases {
 		canonical, err := filepath.EvalSymlinks(path)
 		if err != nil || canonical != expected {
@@ -1103,37 +1140,47 @@ func (b *Buffer) assertDisk() error {
 	}
 
 	for root, expected := range b.trees {
-		actual, err := sourceSet(root, b.exclusions)
+		actual, err := sourceSet(root, ignored)
 		if err != nil {
 			return err
 		}
 		if !maps.Equal(actual, expected) {
-			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root)
+			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root.root)
 		}
 	}
 	for _, path := range slices.Sorted(maps.Keys(b.files)) {
-		state := b.files[path]
-		info, err := os.Lstat(path)
-		if state.info == nil {
-			if errors.Is(err, os.ErrNotExist) {
-				continue
-			}
-			return fmt.Errorf("%w: missing input %s appeared", ErrConflict, path)
+		if err := b.assertFile(path, b.files[path]); err != nil {
+			return err
 		}
-		if err != nil {
-			return fmt.Errorf("%w: stat %s: %w", ErrConflict, path, err)
+	}
+	return nil
+}
+
+func (b *Buffer) assertFile(path string, state *fileState) error {
+	canonical, err := canonicalMissingPath(path)
+	if err != nil || canonical != path {
+		return fmt.Errorf("%w: canonical input %s changed", ErrConflict, path)
+	}
+	info, err := os.Lstat(path)
+	if state.info == nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
 		}
-		if !info.Mode().IsRegular() || !os.SameFile(state.info, info) || info.Mode() != state.info.Mode() {
-			return fmt.Errorf("%w: identity or permissions of %s changed", ErrConflict, path)
-		}
-		// #nosec G304 -- path is a canonical regular input retained in the buffer read set.
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return fmt.Errorf("%w: read %s: %w", ErrConflict, path, err)
-		}
-		if !bytes.Equal(data, state.original) {
-			return fmt.Errorf("%w: %s", ErrConflict, path)
-		}
+		return fmt.Errorf("%w: missing input %s appeared", ErrConflict, path)
+	}
+	if err != nil {
+		return fmt.Errorf("%w: stat %s: %w", ErrConflict, path, err)
+	}
+	if !info.Mode().IsRegular() || !os.SameFile(state.info, info) || info.Mode() != state.info.Mode() {
+		return fmt.Errorf("%w: identity or permissions of %s changed", ErrConflict, path)
+	}
+	// #nosec G304 -- path is a canonical regular input retained in the buffer read set.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("%w: read %s: %w", ErrConflict, path, err)
+	}
+	if !bytes.Equal(data, state.original) {
+		return fmt.Errorf("%w: %s", ErrConflict, path)
 	}
 	return nil
 }
@@ -1157,19 +1204,25 @@ type fileState struct {
 	parents           map[string]os.FileInfo
 }
 
-func sourceSet(root string, exclusions []string) (map[string]bool, error) {
+func (scope treeScope) includes(path string) bool {
+	return scope.extensions == "" || slices.Contains(strings.Split(scope.extensions, ","), filepath.Ext(path))
+}
+
+func sourceSet(scope treeScope, ignored []string) (map[string]bool, error) {
+	root := scope.root
+	exclusions := strings.Split(scope.exclusions, "\x00")
 	files := make(map[string]bool)
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("scan buffered source set: %w", err)
 		}
 		if entry.IsDir() {
-			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) {
+			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) || (!scope.recursive && path != root) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if filepath.Ext(path) == ".go" || filepath.Ext(path) == ".java" {
+		if scope.includes(path) && !slices.Contains(ignored, path) {
 			files[path] = true
 		}
 		return nil
@@ -1195,6 +1248,13 @@ func DirectoryFilterFor(ctx context.Context, root string) (SourceDirectoryFilter
 	if buffer := FromContext(ctx); buffer != nil {
 		buffer.mu.Lock()
 		defer buffer.mu.Unlock()
+		if buffer.exclusions == nil {
+			exclusions, err := sourceExclusions(ctx, buffer.root)
+			if err != nil {
+				return SourceDirectoryFilter{}, err
+			}
+			buffer.exclusions = exclusions
+		}
 		return SourceDirectoryFilter{exclusions: slices.Clone(buffer.exclusions)}, nil
 	}
 	exclusions, err := sourceExclusions(ctx, root)
@@ -1209,7 +1269,7 @@ func (filter SourceDirectoryFilter) Skip(root, path string) bool {
 	if path == root {
 		return false
 	}
-	if slices.Contains(filter.exclusions, path) {
+	if slices.Contains(filter.exclusions, path) || sourcefiles.IsBenchmarkDataDirectory(path) {
 		return true
 	}
 	switch filepath.Base(path) {
@@ -1226,11 +1286,7 @@ func sourceExclusions(ctx context.Context, root string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	hasGo, err := containsGoSources(root, exclusions)
-	if err != nil {
-		return nil, err
-	}
-	if !hasGo && !gocache.HasBaseDir(ctx) {
+	if gocache.CanUseProcessRuntimeDirectories(ctx) {
 		return exclusions, nil
 	}
 	effective, err := gocache.Environment(ctx, root)
@@ -1289,30 +1345,6 @@ func normalizeSourceExclusions(root string, paths []string) ([]string, error) {
 		}
 	}
 	return exclusions, nil
-}
-
-func containsGoSources(root string, exclusions []string) (bool, error) {
-	found := false
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("probe buffered Go sources: %w", err)
-		}
-		if entry.IsDir() {
-			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.Name() == "go.mod" || entry.Name() == "go.work" || filepath.Ext(path) == ".go" {
-			found = true
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		return false, err
-	}
-	return found, nil
 }
 
 // Checkpoint captures buffer state so a failed child edit can restore its parent revision.

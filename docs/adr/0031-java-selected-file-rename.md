@@ -3,6 +3,14 @@
 Status: Accepted  
 Date: 2026-09-17
 
+This record preserves the initial selected-file rename slice. ADR-0068
+supersedes its single-file edit restriction, rejection of all resource edits,
+omitted normalization/diagnostics, and close-after-commit lifecycle. Current
+Java rename retains a warm JDT LS session, validates workspace-scoped edits,
+and permits the bounded standalone `RenameFile` case. Trust, UTF-16 validation,
+preimage checks, atomic publication, and honest post-publication outcomes remain
+required. The decisions and invariants below describe the original slice.
+
 ## Context
 
 Java rename uses an external JDT LS process and must remain bounded by the

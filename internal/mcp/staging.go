@@ -58,14 +58,15 @@ type stageState struct {
 	terminal          string
 }
 type stageManager struct {
-	server *Server
-	limits stageLimits
-	mu     sync.Mutex
-	stages map[stageKey]*stageState
+	server      *Server
+	limits      stageLimits
+	mu          sync.Mutex
+	stages      map[stageKey]*stageState
+	reconciling map[stageKey]struct{}
 }
 
 func newStageManager(s *Server) *stageManager {
-	return &stageManager{server: s, limits: s.stageLimits, stages: make(map[stageKey]*stageState)}
+	return &stageManager{server: s, limits: s.stageLimits, stages: make(map[stageKey]*stageState), reconciling: make(map[stageKey]struct{})}
 }
 
 func stageModule(root string) (string, error) {
@@ -128,22 +129,74 @@ func (m *stageManager) expired(state *stageState) bool {
 	return m.limits.maxAge > 0 && time.Since(state.started) > m.limits.maxAge
 }
 
-func (m *stageManager) expireLocked(ctx context.Context) error {
-	expired := false
+func (m *stageManager) takeExpiredLocked() []stageKey {
+	var expired []stageKey
 	for key, state := range m.stages {
 		if !m.expired(state) {
 			continue
 		}
 		delete(m.stages, key)
-		expired = true
+		m.reconciling[key] = struct{}{}
+		expired = append(expired, key)
 	}
-	if !expired {
+	return expired
+}
+
+func (m *stageManager) releaseReconciliation(keys []stageKey) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, key := range keys {
+		delete(m.reconciling, key)
+	}
+}
+
+func (m *stageManager) reconcileDiscardedStages(ctx context.Context, keys []stageKey) error {
+	if len(keys) == 0 {
 		return nil
 	}
-	if err := godiagnostics.InvalidateWithContext(ctx); err != nil {
-		return fmt.Errorf("invalidate diagnostics after expired staging session: %w", err)
+	defer m.releaseReconciliation(keys)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	diskCtx := sourcebuf.WithoutBuffer(ctx)
+	var resultErr error
+	for _, key := range keys {
+		// Go diagnostics are the retained staged view owned by this manager; other backends retain their own lifecycle state.
+		if err := godiagnostics.SynchronizeScopeWithContext(diskCtx, key.root); err != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("synchronize Go diagnostics after discarding staging session for %s: %w", key.root, err))
+		}
+	}
+	return resultErr
+}
+
+func (m *stageManager) expire(ctx context.Context) error {
+	m.mu.Lock()
+	expired := m.takeExpiredLocked()
+	m.mu.Unlock()
+	if err := m.reconcileDiscardedStages(ctx, expired); err != nil {
+		return fmt.Errorf("synchronize diagnostics after expired staging session: %w", err)
 	}
 	return nil
+}
+
+func (m *stageManager) reconciliationInProgressLocked(root string) (string, bool, error) {
+	canonical, err := stageCanonicalRoot(root)
+	if err != nil {
+		return "", false, err
+	}
+	module, moduleErr := stageModule(canonical)
+	for key := range m.reconciling {
+		if overlap(key.root, canonical) || overlap(canonical, key.root) {
+			return key.root, true, nil
+		}
+		if moduleErr != nil {
+			return "", false, fmt.Errorf("resolve request module while staging cleanup is active: %w", moduleErr)
+		}
+		if key.module == module {
+			return key.root, true, nil
+		}
+	}
+	return "", false, nil
 }
 
 func stageLimitError(resource string, current, limit int64) error {
@@ -161,10 +214,15 @@ func (m *stageManager) Start(ctx context.Context, root string) (operation.StageR
 	if err != nil {
 		return operation.StageReceipt{}, err
 	}
+	if expiryErr := m.expire(ctx); expiryErr != nil {
+		return operation.StageReceipt{}, expiryErr
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if expiryErr := m.expireLocked(ctx); expiryErr != nil {
-		return operation.StageReceipt{}, expiryErr
+	if owner, active, cleanupErr := m.reconciliationInProgressLocked(key.root); cleanupErr != nil {
+		return operation.StageReceipt{}, cleanupErr
+	} else if active {
+		return operation.StageReceipt{}, fmt.Errorf("staging cleanup is in progress for %s", owner)
 	}
 	for _, other := range m.stages {
 		currentModule, moduleErr := stageModule(other.key.root)
@@ -199,7 +257,7 @@ func (m *stageManager) Start(ctx context.Context, root string) (operation.StageR
 	m.stages[key] = state
 	return m.receipt(state, "staged", ""), nil
 }
-func (m *stageManager) state(ctx context.Context, root string) (stageKey, *stageState, error) {
+func (m *stageManager) state(root string) (stageKey, *stageState, error) {
 	canonical, err := stageCanonicalRoot(root)
 	if err != nil {
 		return stageKey{}, nil, err
@@ -214,11 +272,6 @@ func (m *stageManager) state(ctx context.Context, root string) (stageKey, *stage
 	}
 	if state == nil {
 		return stageKey{root: canonical}, nil, fmt.Errorf("no staging session is active for %s", canonical)
-	}
-	if m.expired(state) {
-		delete(m.stages, state.key)
-		expiredErr := fmt.Errorf("staging session expired after %s (max_age=%s); no staged bytes were published", time.Since(state.started).Round(time.Millisecond), m.limits.maxAge)
-		return key, nil, errors.Join(expiredErr, godiagnostics.InvalidateWithContext(ctx))
 	}
 	if module, moduleErr := stageModule(state.key.root); moduleErr != nil || module != state.key.module {
 		return key, nil, fmt.Errorf("staging module ownership changed for %s", state.key.root)
@@ -260,10 +313,15 @@ func (m *stageManager) ownerLocked(root string) (*stageState, bool, error) {
 }
 
 func (m *stageManager) BlockBatch(ctx context.Context, root string) error {
+	if err := m.expire(ctx); err != nil {
+		return err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if err := m.expireLocked(ctx); err != nil {
-		return err
+	if owner, active, cleanupErr := m.reconciliationInProgressLocked(root); cleanupErr != nil {
+		return cleanupErr
+	} else if active {
+		return fmt.Errorf("semantic_batch is unavailable while staging cleanup is in progress for %s", owner)
 	}
 	owner, found, err := m.ownerLocked(root)
 	if err != nil {
@@ -275,10 +333,16 @@ func (m *stageManager) BlockBatch(ctx context.Context, root string) error {
 	return nil
 }
 func (m *stageManager) Abort(ctx context.Context, root string) (operation.StageReceipt, error) {
-	m.mu.Lock()
-	if err := m.expireLocked(ctx); err != nil {
-		m.mu.Unlock()
+	if err := m.expire(ctx); err != nil {
 		return operation.StageReceipt{}, err
+	}
+	m.mu.Lock()
+	if owner, active, cleanupErr := m.reconciliationInProgressLocked(root); cleanupErr != nil {
+		m.mu.Unlock()
+		return operation.StageReceipt{}, cleanupErr
+	} else if active {
+		m.mu.Unlock()
+		return operation.StageReceipt{}, fmt.Errorf("staging cleanup is in progress for %s", owner)
 	}
 	canonical, err := stageCanonicalRoot(root)
 	if err != nil {
@@ -299,8 +363,9 @@ func (m *stageManager) Abort(ctx context.Context, root string) (operation.StageR
 	}
 	result := m.receipt(state, "aborted", "")
 	delete(m.stages, key)
+	m.reconciling[key] = struct{}{}
 	m.mu.Unlock()
-	if err := godiagnostics.InvalidateWithContext(ctx); err != nil {
+	if err := m.reconcileDiscardedStages(ctx, []stageKey{key}); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -311,9 +376,12 @@ func invalidateStagedView(ctx context.Context, cause error) error {
 }
 
 func (m *stageManager) Drop(ctx context.Context, root, stepID string) (operation.StageReceipt, error) {
+	if err := m.expire(ctx); err != nil {
+		return operation.StageReceipt{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	_, state, err := m.state(ctx, root)
+	_, state, err := m.state(root)
 	if err != nil {
 		return operation.StageReceipt{}, err
 	}
@@ -370,9 +438,12 @@ func (m *stageManager) Drop(ctx context.Context, root, stepID string) (operation
 	return m.receipt(state, "dropped", ""), nil
 }
 func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHooks bool) (operation.StageCommitResult, error) {
+	if err := m.expire(ctx); err != nil {
+		return operation.StageCommitResult{}, err
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	key, state, err := m.state(ctx, root)
+	key, state, err := m.state(root)
 	if err != nil {
 		return operation.StageCommitResult{}, err
 	}
@@ -394,13 +465,14 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 	if candidateErr != nil {
 		return operation.StageCommitResult{}, invalidateStagedView(ctx, candidateErr)
 	}
+	publishedPaths := candidate.ChangedPaths()
 	published, publishErr := candidate.PublishRetained(ctx)
 	if publishErr != nil {
 		return stagePublicationFailure(ctx, key, state, before, published, publishErr)
 	}
 	delete(m.stages, key)
 	response := &BatchResponse{Status: "ok", WorkspaceRoot: key.root, Results: stageBatchRows(state.steps)}
-	if requestServer.goEnabled() {
+	if requestServer.goEnabled() && hasGoRelevantPublication(publishedPaths) {
 		if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(ctx)); err != nil {
 			response.Status = batchStatusAppliedWithDiagnostics
 			response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("synchronize diagnostics after staged publication: %v", err)})
@@ -481,13 +553,18 @@ func (m *stageManager) commitCandidate(ctx context.Context, key stageKey, state 
 	return requestServer, candidate, paths, nil
 }
 func (m *stageManager) Execute(ctx context.Context, root string, entry operation.Entry, raw map[string]any, call operation.CallContext) (any, bool, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	if entry.Key == "stage_abort" {
 		return nil, false, nil
 	}
-	if err := m.expireLocked(ctx); err != nil {
+	if err := m.expire(ctx); err != nil {
 		return nil, true, err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if owner, active, cleanupErr := m.reconciliationInProgressLocked(root); cleanupErr != nil {
+		return nil, true, cleanupErr
+	} else if active {
+		return nil, true, fmt.Errorf("staging cleanup is in progress for %s", owner)
 	}
 	state, found, ownerErr := m.ownerLocked(root)
 	if ownerErr != nil {

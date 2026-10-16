@@ -19,11 +19,37 @@ However, real-world refactoring is frequently a multi-step process that inherent
    Rather than blocking or reverting, `semedit` returns that structured
    diagnostic feedback ($\Delta \text{errors}$) directly to the LLM. A cached
    baseline is not valid unless it is bound to a workspace revision and
-   invalidated by every external writer, so direct standalone operations do not
-   reuse one.
+   validated against current source contents, membership, configuration, and
+   auxiliary inputs. A retained Go session may reuse an exact baseline and
+   refresh changed packages and their transitive reverse dependencies, merging
+   unaffected cached findings. Unknown coverage or structural invalidation
+   requires a full capture. Explicit verification requests remain full scans.
+   A successful default full Go verification may seed the next incremental
+   baseline when it exactly covers the retained scope and current package
+   findings. Explicit-pattern and buffered captures do not seed a disk baseline.
+   The contract requires a valid pre-edit baseline and updated post-edit
+   findings for affected packages and their transitive reverse dependencies;
+   it does not require two full workspace sweeps. Duplicate background gopls
+   diagnosis is also independent of delta semantics. Retained Go sessions use
+   `diagnosticsTrigger: "Save"` to suppress background diagnosis on ordinary
+   `didChange`, reuse revision-validated findings, and explicitly pull the
+   affected package closure (ADR-0060).
+   Import-list changes may refresh package discovery without discarding valid
+   findings for unrelated packages. Cache retention requires an unchanged
+   non-import analysis boundary and identical source/module membership; current
+   content digests still select every changed package and reverse importer.
+   Metadata-error transitions require complete coverage; Go may also reload its
+   retained workspace view to clear stale server-side findings without replacing
+   the process (ADR-0060).
 3. **On-Demand Snapshots / Undo**: `semedit` maintains lightweight pre-edit snapshots so the user or agent can explicitly revert if desired, but **never enforces automatic rollback**.
 
 ## Invariants
+
+* Diagnostic deltas and freshness are backend-neutral contracts. The Go
+  implementation of baseline reuse and reverse-dependency refresh in ADR-0060
+  is not a shared LSP cache or a requirement to use pull diagnostics. Other
+  backends must establish their own coverage and completion receipts before
+  reusing findings; receiving a successful edit response alone is insufficient.
 
 * The engine must never automatically revert code without explicit instruction from the agent or user.
 * Every edit must return actionable compiler/linter diagnostics with their
@@ -40,4 +66,8 @@ However, real-world refactoring is frequently a multi-step process that inherent
 ## Consequences
 
 * **Positive**: Supports natural multi-step refactoring workflows while providing immediate feedback on whether compiler errors are increasing or decreasing.
-* **Negative**: Codebase can remain in a broken state if an agent abandons a multi-step refactoring midway. Standalone edits also pay for two package-level diagnostic captures; `semantic_batch` amortizes those captures across a coordinated edit set.
+* **Negative**: Codebase can remain in a broken state if an agent abandons a multi-step refactoring midway. A missing or invalid baseline still requires analysis before mutation. Revision validation and conservative fallback are required to keep incremental deltas equivalent to full captures.
+* **Cost boundary**: Two full sweeps and concurrent push/pull analysis are
+  implementation costs, not diagnostic-delta requirements. Reuse and scoped
+  refresh must preserve coverage and severity; suppressing ordinary background
+  diagnosis must not suppress required publication or invalidation events.

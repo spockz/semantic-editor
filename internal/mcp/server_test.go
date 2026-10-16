@@ -84,18 +84,14 @@ func (*mcpVerifySession) Close() error { return nil }
 
 var _ javabackend.JavaSession = (*mcpVerifySession)(nil)
 
-func newManagedMCPFixture(t *testing.T) managedMCPFixture {
+func newManagedMCPFixture(t testing.TB) managedMCPFixture {
 	t.Helper()
-
 	gopls, err := godiagnostics.FindGopls()
 	if err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
-	for name, source := range map[string]string{
-		"go.mod":   "module example.com/mcpreuse\n\ngo 1.24\n",
-		"value.go": "package sample\n\nfunc Value() int { return 1 }\n",
-	} {
+	for name, source := range map[string]string{"go.mod": "module example.com/mcpreuse\n\ngo 1.24\n", "value.go": "package sample\n\nfunc Value() int { return 1 }\n"} {
 		if err := pipeline.WriteAtomic(filepath.Join(root, name), []byte(source)); err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +101,7 @@ func newManagedMCPFixture(t *testing.T) managedMCPFixture {
 		t.Fatal(err)
 	}
 	wrapper := filepath.Join(bin, "gopls")
-	if err := pipeline.WriteAtomic(wrapper, []byte("#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nprintf '%s\\n' \"$$\" >> \"$SEMEDIT_GOPLS_PIDS\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n")); err != nil {
+	if err := pipeline.WriteAtomic(wrapper, []byte("#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nprintf '%s\\n' \"$$\" >> \"$SEMEDIT_GOPLS_PIDS\"\nprintf '%s\\000' \"$PWD\" >> \"${SEMEDIT_GOPLS_COUNT}.roots\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Chmod(wrapper, 0o700); err != nil {
@@ -930,14 +926,17 @@ func assertMetricsPresentationMatchesStructuredResult(t *testing.T, response fir
 	}
 	const prefixLabel = "Critical result (JSON): "
 	text := response.content[0]
-	prefix, _, found := strings.Cut(text, "\n\n")
-	if !found || !strings.HasPrefix(prefix, prefixLabel) {
+	if !strings.HasPrefix(text, prefixLabel) {
 		t.Fatalf("metrics text omitted the critical JSON prefix: %q", text)
 	}
-	presented := decodeUseNumberJSON(t, strings.TrimPrefix(prefix, prefixLabel))
+	presented := decodeUseNumberJSON(t, strings.TrimPrefix(text, prefixLabel))
 	structured := decodeUseNumberJSON(t, string(response.structured))
-	if !reflect.DeepEqual(presented["result"], structured) {
-		t.Fatalf("metrics text records differ from structured result: text=%#v structured=%#v", presented["result"], structured)
+	result := presented["result"].(map[string]any)
+	if result["records_count"] != json.Number(strconv.Itoa(len(structured["records"].([]any)))) {
+		t.Fatalf("metrics text record count differs from structured result: text=%#v structured=%#v", result, structured)
+	}
+	if strings.Contains(text, "semantic_verify") || strings.Contains(text, "duration_ms") || !strings.Contains(text, "structuredContent.result") {
+		t.Fatalf("metrics content includes full records or omits structured details pointer: %q", text)
 	}
 }
 
@@ -1845,8 +1844,12 @@ func TestReportFeedbackReturnsStructuredLocalDraft(t *testing.T) {
 			t.Errorf("feedback draft is missing %q", phrase)
 		}
 	}
-	if response.Result.StructuredContent.Metrics != nil || len(response.Result.Content) != 1 || response.Result.Content[0].Text != result.Markdown {
+	if response.Result.StructuredContent.Metrics != nil || len(response.Result.Content) != 1 {
 		t.Fatalf("feedback response is missing its standard MCP envelope: %s", out.String())
+	}
+	content := response.Result.Content[0].Text
+	if strings.Contains(content, result.Markdown) || strings.Contains(content, "Rename a public function") || !strings.Contains(content, "draft_only") || !strings.Contains(content, "markdown_bytes") || !strings.Contains(content, "structuredContent.result") {
+		t.Fatalf("feedback content contains the draft or lacks its compact summary: %s", content)
 	}
 	gotLog, err := os.ReadFile(logPath)
 	if err != nil {
@@ -2091,7 +2094,7 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 		t.Fatalf("safe delete application_state = %q, want not_applied", response.Result.Structured.ApplicationState)
 	}
 	text := response.Result.Content[0].Text
-	if !strings.HasPrefix(text, "Critical result (JSON): ") || !strings.Contains(text, response.Result.Structured.Result.Refusal) {
+	if !strings.HasPrefix(text, "Critical result (JSON): ") || !criticalTextContainsRefusal(t, text, response.Result.Structured.Result.Refusal) {
 		t.Fatalf("safe delete text omitted refusal details: %q", text)
 	}
 	if !slices.Contains(response.Result.Structured.Result.Checks, "module_reference_scan_complete") {
@@ -2231,6 +2234,76 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 	assertMCPMoveReceipt(t, responses, requests.moveID)
 	assertMCPGoSessionReused(t, fixture.counter)
 	assertMCPRefactoringResults(t, fixture.root)
+}
+
+func TestMCPActionableOutputHasNoSecondFormatterReport(t *testing.T) {
+	root := t.TempDir()
+	writeMCPFixtureModule(t, root)
+	writeMCPFixtureFile(t, filepath.Join(root, "main.go"), "package sample\n\nfunc Value() int { return 1 }\n")
+	calls := []struct {
+		tool string
+		args map[string]any
+		want string
+	}{
+		{"semantic_lookup", map[string]any{"file": "main.go", "symbol": "Value"}, "Value"},
+		{"semantic_inspect_symbol", map[string]any{"file": "main.go", "symbol": "Value"}, "inspection_bytes"},
+		{"semantic_find_references", map[string]any{"file": "main.go", "symbol": "Value"}, "Critical result"},
+		{"semantic_rename", map[string]any{"file": "main.go", "symbol": "Value", "to": "Renamed"}, "active_count"},
+		{"semantic_verify", map[string]any{"path": ".", "language": "go"}, "coverage"},
+	}
+	for _, call := range calls {
+		t.Run(call.tool, func(t *testing.T) {
+			assertMCPActionableResponse(t, runMCPToolCall(t, root, call.tool, call.args), call.tool, call.want)
+		})
+	}
+	source, err := os.ReadFile(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "func Renamed()") {
+		t.Fatalf("rename did not persist: %s", source)
+	}
+}
+
+func TestMCPDiagnosticPagesReuseCapturedAnalysis(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	writeMCPFixtureFile(t, filepath.Join(fixture.root, "value.go"), "package sample\nfunc Value() int { return missingOne }\nfunc Other() int { return missingTwo }\n")
+	call := startDiagnosticPagingMCP(t, fixture.root)
+	verified := call("semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true, "skip_hooks": true})
+	_ = diagnosticPagingResult(t, verified)
+	report := verified["structuredContent"].(map[string]any)["diagnostic_report"].(map[string]any)
+	if report["remaining_count"] != float64(2) || report["tool"] != "semantic_diagnostics" {
+		t.Fatalf("incorrect scoped diagnostic summary: %#v", report)
+	}
+	id := report["report_id"].(string)
+	firstResponse := call("semantic_diagnostics", map[string]any{"report_id": id, "limit": 1})
+	first := diagnosticPagingResult(t, firstResponse)
+	if first["total"] != float64(2) || first["next_offset"] != float64(1) || len(first["items"].([]any)) != 1 {
+		t.Fatalf("invalid first page: %#v", first)
+	}
+	pageText := firstResponse["content"].([]any)[0].(map[string]any)["text"].(string)
+	if !strings.Contains(pageText, id) || !strings.Contains(pageText, `"total":2`) || !strings.Contains(pageText, `"next_offset":1`) || !strings.Contains(pageText, `"items_count":1`) || strings.Contains(pageText, "missingOne") || strings.Contains(pageText, "missingTwo") {
+		t.Fatalf("diagnostic page content lost its selector/count or included the full page: %s", pageText)
+	}
+	edited := call("semantic_replace_body", map[string]any{"file": "value.go", "symbol": "Value", "body": "return missingOne + 1"})
+	_ = diagnosticPagingResult(t, edited)
+	editReport := edited["structuredContent"].(map[string]any)["diagnostic_report"].(map[string]any)
+	if editReport["remaining_count"] != float64(2) || editReport["report_id"] == id {
+		t.Fatalf("mutation did not capture a new report: %#v", editReport)
+	}
+	writeMCPFixtureFile(t, filepath.Join(fixture.root, "value.go"), "package sample\nfunc Value() int { return 1 }\n")
+	last := diagnosticPagingResult(t, call("semantic_diagnostics", map[string]any{"report_id": id, "offset": 1, "limit": 1}))
+	if last["total"] != float64(2) || last["next_offset"] != nil || len(last["items"].([]any)) != 1 {
+		t.Fatalf("captured report shifted after later edits: %#v", last)
+	}
+	if reflect.DeepEqual(first["items"], last["items"]) {
+		t.Fatal("pagination repeated the first diagnostic")
+	}
+	filtered := diagnosticPagingResult(t, call("semantic_diagnostics", map[string]any{"report_id": id, "contains": "missingOne", "limit": 100}))
+	if filtered["total"] != float64(1) || filtered["contains"] != "missingOne" {
+		t.Fatalf("filter or its continuation companion was lost: %#v", filtered)
+	}
+	assertMCPGoSessionReused(t, fixture.counter)
 }
 
 type mcpRefactoringCall struct {
@@ -2442,4 +2515,106 @@ func readMCPCancellationResponse(decoder *json.Decoder, expectedID int) error {
 		}
 		return nil
 	}
+}
+
+func assertMCPActionableResponse(t *testing.T, raw []byte, tool, want string) {
+	t.Helper()
+	var response struct {
+		Result struct {
+			Content    []struct{ Text string }
+			Structured map[string]any `json:"structuredContent"`
+			IsError    bool
+		}
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.IsError || len(response.Result.Content) != 1 {
+		t.Fatalf("tool failed: %s", raw)
+	}
+	text := response.Result.Content[0].Text
+	if !strings.Contains(text, want) {
+		t.Fatalf("requested answer missing: %s", text)
+	}
+	if tool != "semantic_rename" && strings.Contains(text, "\n\n") {
+		t.Fatalf("second formatter report retained: %s", text)
+	}
+	if tool == "semantic_inspect_symbol" {
+		inspection, ok := response.Result.Structured["result"].(map[string]any)["inspection"].(string)
+		if !ok || !strings.Contains(inspection, "return 1") || strings.Contains(text, "return 1") {
+			t.Fatalf("inspection content or canonical structured result is incorrect: content=%q structured=%#v", text, inspection)
+		}
+	}
+	if tool != "semantic_rename" {
+		return
+	}
+	result := response.Result.Structured["result"].(map[string]any)
+	if result["active_count"] != float64(0) || result["symbol"] != "Renamed" || result["expected_revision"] == nil {
+		t.Fatalf("rename outcome incomplete: %#v", result)
+	}
+	if _, exists := result["active"]; exists {
+		t.Fatal("full active diagnostic inventory returned")
+	}
+}
+
+func criticalTextContainsRefusal(t *testing.T, text, refusal string) bool {
+	t.Helper()
+	var projection struct{ Result struct{ Refusal string } }
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(text, "Critical result (JSON): ")), &projection); err != nil {
+		t.Fatalf("decode refusal text: %v", err)
+	}
+	return projection.Result.Refusal == refusal
+}
+
+func startDiagnosticPagingMCP(t *testing.T, root string) func(string, map[string]any) map[string]any {
+	t.Helper()
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	stop := context.AfterFunc(ctx, func() { _ = inputWriter.Close(); _ = outputReader.Close() })
+	done := make(chan error, 1)
+	go func() {
+		done <- mcptest.NewServer(t, "full", root, outputWriter).Serve(ctx, inputReader)
+		_ = outputWriter.Close()
+	}()
+	t.Cleanup(func() {
+		cancel()
+		stop()
+		_ = inputWriter.Close()
+		_ = outputReader.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("diagnostic MCP server did not stop")
+		}
+	})
+	encoder := json.NewEncoder(inputWriter)
+	decoder := json.NewDecoder(outputReader)
+	sequence := 0
+	return func(tool string, args map[string]any) map[string]any {
+		t.Helper()
+		sequence++
+		if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": sequence, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}}); err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Result map[string]any
+			Error  any
+		}
+		if err := decoder.Decode(&response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error != nil {
+			t.Fatalf("MCP request failed: %v", response.Error)
+		}
+		return response.Result
+	}
+}
+
+func diagnosticPagingResult(t *testing.T, response map[string]any) map[string]any {
+	t.Helper()
+	if response["isError"] != false {
+		t.Fatalf("diagnostic operation failed: %#v", response)
+	}
+	return response["structuredContent"].(map[string]any)["result"].(map[string]any)
 }

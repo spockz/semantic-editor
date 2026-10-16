@@ -40,9 +40,16 @@ We extend cross-language parity for these read capabilities:
 
 ## Invariants
 
-- Read operations preserve workspace immutability: disk state, git worktrees, and file modification timestamps remain untouched.
+- Read operations preserve workspace source and manifest bytes, their modification timestamps, and git-tracked state. Backend-owned scratch/runtime caches follow their own lifecycle; read-only semantic behavior does not promise that a language server performs zero disk I/O.
 - Ambiguous symbol queries return complete candidate sets with distinct locations rather than aborting or arbitrarily selecting a single match.
-- Hierarchical outlines omit executable statement bodies while retaining available signatures and parent-child declaration relationships. Full documentation remains available through source inspection and native records.
+- Hierarchical outlines omit executable statement bodies while retaining canonical signatures, doc comments, and parent-child declaration relationships.
+- Go outlines propagate the request context through source selection and parsing,
+  honor cancellation, and read the active buffered source view. Source discovery
+  shares the request's Go environment cache rather than starting an independent
+  background-context environment lookup.
+  Complete explicit runtime paths permit shared source filtering without a Go
+  subprocess; configuration-derived paths still require effective resolution
+  (ADR-0032).
 - Language backends declare read capabilities explicitly in the backend registry; unsupported combinations reject execution with structured errors.
 - Every public language-operation combination maintains executable CLI txtar contract test coverage.
 

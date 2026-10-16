@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 func TestFramesRoundTripAndRejectMalformedOrOversizedPayload(t *testing.T) {
@@ -38,6 +39,195 @@ func TestFramesRoundTripAndRejectMalformedOrOversizedPayload(t *testing.T) {
 			t.Fatalf("error = %v, want payload limit", err)
 		}
 	}
+}
+
+func TestClientRecordsRequestAndNotifyTimingByMethod(t *testing.T) {
+	clientToPeerR, clientToPeerW := io.Pipe()
+	peerToClientR, peerToClientW := io.Pipe()
+	cleanupTimingTestPipes(t, clientToPeerR, clientToPeerW, peerToClientR, peerToClientW)
+	client := lsp.NewClient(peerToClientR, clientToPeerW, lsp.WithTelemetryPrefix("gopls"))
+	defer func() { _ = client.Close() }()
+	peerReader := lsp.NewFrameReader(clientToPeerR, 1<<20)
+	peerWriter := lsp.NewFrameWriter(peerToClientW, 1<<20)
+
+	requestMetrics := telemetry.NewMetrics()
+	requestCtx := telemetry.WithPhase(telemetry.WithMetrics(context.Background(), requestMetrics), telemetry.PhaseVerificationBefore)
+	requestDone := make(chan error, 1)
+	go func() {
+		result, err := client.Request(requestCtx, "textDocument/diagnostic", nil)
+		if err == nil && string(result) != `{"items":[]}` {
+			err = errors.New("unexpected diagnostic result: " + string(result))
+		}
+		requestDone <- err
+	}()
+	request := readTimingTestMessage(t, peerReader)
+	if request.Method != "textDocument/diagnostic" || len(request.ID) == 0 {
+		t.Fatalf("request frame = %#v", request)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if err := peerWriter.WriteMessage([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":{"items":[]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-requestDone; err != nil {
+		t.Fatal(err)
+	}
+
+	notifyMetrics := telemetry.NewMetrics()
+	sendTimingTestNotification(telemetry.WithMetrics(context.Background(), notifyMetrics), t, client, "initialized", peerReader)
+
+	remoteDone := make(chan error, 1)
+	go func() { _, err := client.Request(requestCtx, "workspace/symbol", nil); remoteDone <- err }()
+	remote := readTimingTestMessage(t, peerReader)
+	if remote.Method != "workspace/symbol" {
+		t.Fatalf("remote-error request = %#v", remote)
+	}
+	if err := peerWriter.WriteMessage([]byte(`{"jsonrpc":"2.0","id":` + string(remote.ID) + `,"error":{"code":-32000,"message":"unavailable"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-remoteDone; !errors.Is(err, lsp.ErrRemoteResponse) {
+		t.Fatalf("remote error = %v, want ErrRemoteResponse", err)
+	}
+
+	exerciseCanceledTimingRequest(requestCtx, t, client, peerReader)
+
+	assertGoplsTimingMetrics(t, requestMetrics, notifyMetrics)
+}
+
+func exerciseCanceledTimingRequest(ctx context.Context, t *testing.T, client *lsp.Client, peerReader *lsp.FrameReader) {
+	t.Helper()
+	cancelCtx, cancel := context.WithCancel(ctx)
+	cancelDone := make(chan error, 1)
+	go func() { _, err := client.Request(cancelCtx, "slow", nil); cancelDone <- err }()
+	if request := readTimingTestMessage(t, peerReader); request.Method != "slow" {
+		t.Fatalf("cancellable request = %#v", request)
+	}
+	cancel()
+	if err := <-cancelDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled request = %v, want context.Canceled", err)
+	}
+	if cancellation := readTimingTestMessage(t, peerReader); cancellation.Method != "$/cancelRequest" {
+		t.Fatalf("cancellation frame = %#v", cancellation)
+	}
+}
+
+func readTimingTestMessage(t *testing.T, reader *lsp.FrameReader) struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+} {
+	t.Helper()
+	payload, err := reader.ReadMessage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
+	}
+	if err := json.Unmarshal(payload, &message); err != nil {
+		t.Fatal(err)
+	}
+	return message
+}
+
+func sendTimingTestNotification(ctx context.Context, t *testing.T, client *lsp.Client, method string, peerReader *lsp.FrameReader) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- client.Notify(ctx, method, nil) }()
+	notification := readTimingTestMessage(t, peerReader)
+	if notification.Method != method || len(notification.ID) != 0 {
+		t.Fatalf("notification frame = %#v, want notification %q", notification, method)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertGoplsTimingMetrics(t *testing.T, requestMetrics, notifyMetrics *telemetry.Metrics) {
+	t.Helper()
+	requestSnapshot := requestMetrics.Snapshot(0)
+	for method, wantCount := range map[string]int{"textDocument/diagnostic": 1, "workspace/symbol": 1, "slow": 1} {
+		for _, operation := range []string{"request", "send"} {
+			if got := requestSnapshot.Phases["gopls."+operation+"."+method]; got.Count != wantCount {
+				t.Errorf("%s timing for %s = %#v, want count %d", operation, method, got, wantCount)
+			}
+		}
+	}
+	for _, method := range []string{"textDocument/diagnostic", "workspace/symbol"} {
+		if got := requestSnapshot.Phases["gopls.wait."+method]; got.Count != 1 {
+			t.Errorf("response wait for %s = %#v, want one", method, got)
+		}
+	}
+	canceledWaits := requestSnapshot.Phases["gopls.wait.slow"].Count
+	if canceledWaits < 0 || canceledWaits > 1 {
+		t.Errorf("canceled request response waits = %d, want zero or one depending on send completion", canceledWaits)
+	}
+	if got := requestSnapshot.Phases["gopls.wait.textDocument/diagnostic"]; got.DurationMS < 5 {
+		t.Errorf("diagnostic response wait = %dms, want at least 5ms including peer delay", got.DurationMS)
+	}
+	if _, ok := requestSnapshot.Phases[string(telemetry.PhaseVerificationBefore)]; ok {
+		t.Error("gopls request timing was attributed to the scoped verification phase")
+	}
+	notifySnapshot := notifyMetrics.Snapshot(0)
+	if got := notifySnapshot.Phases["gopls.notify.initialized"]; got.Count != 1 {
+		t.Errorf("notification timing = %#v, want one notification", got)
+	}
+	if len(notifySnapshot.Phases) != 1 || len(requestSnapshot.Phases) != 8+canceledWaits {
+		t.Errorf("timing context attribution: request=%#v notify=%#v", requestSnapshot.Phases, notifySnapshot.Phases)
+	}
+}
+
+func cleanupTimingTestPipes(t *testing.T, pipes ...io.Closer) {
+	t.Helper()
+	t.Cleanup(func() {
+		for _, pipe := range pipes {
+			_ = pipe.Close()
+		}
+	})
+}
+
+func TestClientTimingIsOptInAndRecorderIsOptional(t *testing.T) {
+	clientToPeerR, clientToPeerW := io.Pipe()
+	peerToClientR, peerToClientW := io.Pipe()
+	cleanupTimingTestPipes(t, clientToPeerR, clientToPeerW, peerToClientR, peerToClientW)
+	client := lsp.NewClient(peerToClientR, clientToPeerW)
+	defer func() { _ = client.Close() }()
+	peerReader := lsp.NewFrameReader(clientToPeerR, 1<<20)
+	peerWriter := lsp.NewFrameWriter(peerToClientW, 1<<20)
+	metrics := telemetry.NewMetrics()
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.Request(telemetry.WithMetrics(context.Background(), metrics), "plain/request", nil)
+		done <- err
+	}()
+	request := readTimingTestMessage(t, peerReader)
+	if err := peerWriter.WriteMessage([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	sendTimingTestNotification(telemetry.WithMetrics(context.Background(), metrics), t, client, "plain/notify", peerReader)
+	if got := metrics.Snapshot(0).Phases; len(got) != 0 {
+		t.Fatalf("timing without an enabled prefix = %#v, want no phases", got)
+	}
+
+	clientToPeerR2, clientToPeerW2 := io.Pipe()
+	peerToClientR2, peerToClientW2 := io.Pipe()
+	cleanupTimingTestPipes(t, clientToPeerR2, clientToPeerW2, peerToClientR2, peerToClientW2)
+	client2 := lsp.NewClient(peerToClientR2, clientToPeerW2, lsp.WithTelemetryPrefix("gopls"))
+	defer func() { _ = client2.Close() }()
+	peerReader2 := lsp.NewFrameReader(clientToPeerR2, 1<<20)
+	peerWriter2 := lsp.NewFrameWriter(peerToClientW2, 1<<20)
+	done = make(chan error, 1)
+	go func() { _, err := client2.Request(context.Background(), "no/recorder", nil); done <- err }()
+	request = readTimingTestMessage(t, peerReader2)
+	if err := peerWriter2.WriteMessage([]byte(`{"jsonrpc":"2.0","id":` + string(request.ID) + `,"result":null}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	sendTimingTestNotification(context.Background(), t, client2, "no/recorder/notify", peerReader2)
 }
 
 func TestProcessClientCapturesStderrWithoutOverwritingCallerWriter(t *testing.T) {

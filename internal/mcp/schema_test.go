@@ -676,6 +676,9 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	case "semantic_inspect_symbol":
 		assertStandardOutputSchema(t, output, "object")
 		assertInspectOutputSchema(t, output)
+
+	case "semantic_diagnostics":
+		assertDiagnosticPageOutputSchema(t, output)
 	default:
 		assertStandardOutputSchema(t, output, "string")
 	}
@@ -2338,9 +2341,7 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	result := inspected["result"].(map[string]any)
 	structured := result["structuredContent"].(map[string]any)["result"].(map[string]any)
 	inspection := structured["inspection"].(string)
-	if got := result["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(got, "Critical result (JSON): ") || !strings.HasSuffix(got, inspection) {
-		t.Fatalf("inspection text must prefix critical result and retain formatter body: %#v", got)
-	}
+	assertInspectionTextMatchesStructured(t, result["content"].([]any)[0].(map[string]any)["text"].(string), inspection)
 	record := assertInspectionContinuation(t, structured)
 	arguments := guardedReplaceArguments(record)
 	guardedOutput := executeGuardedReplace(t, root, arguments, 2)
@@ -3231,5 +3232,40 @@ func assertMCPIntegerResponse(t *testing.T, raw json.RawMessage, invalid bool) {
 	}
 	if len(response.Error) == 0 && !response.Result.IsError {
 		t.Fatalf("missing extraction target unexpectedly succeeded: %s", raw)
+	}
+}
+
+func assertInspectionTextMatchesStructured(t *testing.T, text, inspection string) {
+	t.Helper()
+	var projection struct {
+		Result struct {
+			InspectionBytes int `json:"inspection_bytes"`
+		} `json:"result"`
+		Details string `json:"details"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(text, "Critical result (JSON): ")), &projection); err != nil {
+		t.Fatalf("decode inspection text: %v", err)
+	}
+	if projection.Result.InspectionBytes != len(inspection) {
+		t.Fatalf("inspection byte summary = %d, want %d", projection.Result.InspectionBytes, len(inspection))
+	}
+	if !strings.Contains(projection.Details, "structuredContent.result") || strings.Contains(text, inspection) || strings.Contains(text, "return 1") {
+		t.Fatalf("inspection content included the read payload or omitted the structured pointer: %q", text)
+	}
+}
+
+func assertDiagnosticPageOutputSchema(t *testing.T, output any) {
+	t.Helper()
+	assertStandardOutputSchema(t, output, "object")
+	result := output.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	for _, field := range []string{"report_id", "workspace_root", "status", "category", "total", "offset", "limit", "items", "next_offset"} {
+		if properties[field] == nil {
+			t.Errorf("diagnostic page schema omitted %s", field)
+		}
+	}
+	limit := properties["limit"].(map[string]any)
+	if limit["maximum"] != float64(100) {
+		t.Fatalf("diagnostic page maximum = %#v", limit)
 	}
 }

@@ -1,0 +1,35 @@
+# A generated helper must not conceal a pre-existing unresolved call in another file.
+! exec semedit extract-function --file emit.go --symbol writeMessage --in-function Emit --kind function --start-line 4 --end-line 4
+stderr 'resolve extracted result types'
+stderr 'undefined: writeMessage'
+cmp emit.go .scratch/want/emit.go
+cmp broken.go .scratch/want/broken.go
+
+-- go.mod --
+module example.com/extractoriginalcompilation
+
+go 1.23
+-- emit.go --
+package sample
+
+func Emit() {
+	println("message")
+}
+-- broken.go --
+package sample
+
+func Broken() {
+	writeMessage()
+}
+-- .scratch/want/emit.go --
+package sample
+
+func Emit() {
+	println("message")
+}
+-- .scratch/want/broken.go --
+package sample
+
+func Broken() {
+	writeMessage()
+}

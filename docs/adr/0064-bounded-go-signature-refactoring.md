@@ -12,6 +12,9 @@ workspace rewriting would promise more than the current proof can establish.
 
 ## Decision
 
+The bounds below apply to Go. Java signature and parameter refactorings use
+JDT LS under ADR-0068 and retain their backend-specific accepted edit shapes.
+
 Provide `semantic_change_signature`, `semantic_introduce_parameter`, and
 `semantic_introduce_parameter_object` for private, non-generic, non-variadic
 Go free functions. Each analyzes the complete active call set and test

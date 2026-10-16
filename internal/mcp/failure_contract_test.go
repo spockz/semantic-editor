@@ -332,6 +332,7 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_batch":                      "child operation failure",
 		"semantic_diagnostics":                "unknown or expired report id",
 		"semantic_metrics":                    "out-of-range limit",
+		"semantic_diagnostics":                "unknown or expired captured report",
 		"report_feedback":                     "invalid interface value",
 	}
 }
@@ -521,6 +522,9 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 		args["observed_result"] = "Tool returned an error"
 		args["unexpected_reason"] = "Expected invalid feedback interface to be rejected"
 		args["manual_touchups"] = ""
+
+	case "semantic_diagnostics":
+		args["report_id"] = "expired-report"
 	}
 }
 

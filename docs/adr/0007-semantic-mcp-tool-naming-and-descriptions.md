@@ -16,14 +16,14 @@ If tools are named generically (e.g. `edit_code`, `run_command`, `ast_tool`) or 
 
 1. **Semantic Intent Naming**: All mutating tools exposed via the Model Context Protocol (MCP) must use clear, intent-level semantic verbs:
    * `semantic_rename` (replaces raw symbol text search/replace across packages).
-   * `extract_function` / `extract_variable` (extracts scoped statements into a new function/variable with compiler-inferred parameters and returns).
-   * `inline_symbol` (inlines variable or method calls deterministically).
-   * `implement_interface_members` / `generate_trait_stub` (generates required method stubs).
-   * `organize_imports` (adds missing and removes unused imports).
-   * `apply_ast_rewrite` (executes structural CST patterns for uncompilable or bulk edits).
+   * `semantic_extract_function` / `semantic_extract_variable` (extracts within the selected backend's supported proof boundary).
+   * `semantic_inline_variable` / `semantic_inline_function` (only for implemented backend combinations; a generic name does not establish Go call-inlining support).
+   * `semantic_implement_contract` (generates supported contract members).
+   * `semantic_organize_imports` (organizes imports in its selected scope).
+   * `semantic_insert_construct`, `semantic_replace_construct`, and `semantic_remove_construct` (operate on supported structural kinds). There is no blanket CST-repair or `apply_ast_rewrite` capability; ADR-0002 defines operation-specific recovery.
 2. **Explicit Routing Prompts in Tool Descriptions**: Every tool description must explicitly instruct the planner to prioritize it over text-replacement tools:
    * Example: *"Use this tool instead of `replace_file_content` whenever renaming an identifier, type, or function across one or more files. Executes deterministically via the host compiler/LSP without coordinate hunting."*
-3. **Bundled Verification**: Mutating tools automatically format the code and return structured compiler diagnostics in their response, removing the need for a separate `getDiagnostics` turn.
+3. **Bundled Verification**: Mutations follow their backend's normalization and diagnostic-feedback contract. Validated diagnostic reuse under ADR-0060 preserves feedback without mandating fresh full sweeps. Staged children report working application and deferred verification; final publication reports actual coverage. MCP text gives actionable status/counts and a captured-report query, while bulk evidence stays structured under ADR-0042 and ADR-0073. Explicit `semantic_verify` remains available for a fresh full selected-scope capture.
 
 ## Invariants
 

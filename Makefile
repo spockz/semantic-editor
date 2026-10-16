@@ -102,7 +102,7 @@ fmt: fix ## Format Go source code and optimize imports
 fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 	@echo "==> Formatting code..."
 	@if command -v gofumpt >/dev/null 2>&1; then \
-		find . -type d \( -name .scratch -o -name .git -o -name vendor -o -name node_modules -o -name testdata \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofumpt -w; \
+		find . -type d \( -path ./data/benchmarks -o -name .scratch -o -name .git -o -name vendor -o -name node_modules -o -name testdata \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofumpt -w; \
 	else \
 		go fmt ./...; \
 	fi
@@ -115,7 +115,7 @@ fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 			echo "Go module lookup returned an empty module path." >&2; \
 			exit 1; \
 		fi; \
-		find . -type d \( -name .scratch -o -name .git -o -name vendor -o -name node_modules \) -prune -o -type f -name '*.go' -execdir goimports -w -local "$$module_path" {} +; \
+		find . -type d \( -path ./data/benchmarks -o -name .scratch -o -name .git -o -name vendor -o -name node_modules \) -prune -o -type f -name '*.go' -execdir goimports -w -local "$$module_path" {} +; \
 	fi
 
 .PHONY: tidy
@@ -276,6 +276,27 @@ test-harness: go-env ## Run benchmark harness tests
 test-all: go-env ## Run all unit and race tests including benchmark-harness
 	@echo "==> Running full test suite with race detector..."
 	go test -race -shuffle=on -cover -v ./...
+
+.PHONY: bench-mcp-tools
+COLD_SAMPLES ?= 100
+HOT_SAMPLES ?= 1000
+TOOL_FILTER ?=
+ENFORCE_BUDGETS ?= false
+TOOL_SMOKE ?= false
+CORPUS ?= 20
+bench-mcp-tools: go-env ## Report cold first-call and retained-session p99 by semantic MCP tool
+	@case "$(ENFORCE_BUDGETS)" in true|false) ;; *) echo "ENFORCE_BUDGETS must be true or false" >&2; exit 2;; esac
+	@case "$(TOOL_SMOKE)" in true|false) ;; *) echo "TOOL_SMOKE must be true or false" >&2; exit 2;; esac
+	@case "$(CORPUS)" in 20|repository) ;; *) echo "CORPUS must be 20 or repository" >&2; exit 2;; esac
+	@echo "==> Cold/hot MCP samples: cold=$(COLD_SAMPLES), hot=$(HOT_SAMPLES), filter=$(TOOL_FILTER)"
+	SEMEDIT_MCP_TOOL_COSTS=1 SEMEDIT_MCP_COST_CORPUS="$(CORPUS)" SEMEDIT_MCP_COLD_SAMPLES="$(COLD_SAMPLES)" SEMEDIT_MCP_HOT_SAMPLES="$(HOT_SAMPLES)" SEMEDIT_MCP_TOOL_FILTER="$(TOOL_FILTER)" SEMEDIT_MCP_COST_ENFORCE_BUDGETS="$(if $(filter true,$(ENFORCE_BUDGETS)),1,0)" SEMEDIT_MCP_TOOL_SMOKE="$(if $(filter true,$(TOOL_SMOKE)),1,0)" go test -v ./internal/mcp -run '^$$' -bench '^BenchmarkMCPColdHot(ToolCosts|FileEdits)$$' -benchtime=1x -count=1 -timeout=0
+
+.PHONY: bench-mcp-gopls
+GOPLS_CALL_SAMPLES ?= 10
+GOPLS_TRACE ?=
+GOPLS_CPU_PROFILE ?=
+bench-mcp-gopls: go-env ## Attribute warm edits on the synthetic and repository corpora
+	go test -v ./internal/mcp -run '^$$' -bench '^BenchmarkMCPGoplsCallAttribution$$' -benchtime="$(GOPLS_CALL_SAMPLES)x" -count=1 -timeout=10m $(if $(strip $(GOPLS_TRACE)),-trace="$(GOPLS_TRACE)") $(if $(strip $(GOPLS_CPU_PROFILE)),-cpuprofile="$(GOPLS_CPU_PROFILE)" -o .scratch/mcp-gopls-profile.test)
 
 .PHONY: test-short
 test-short: go-env ## Run short test suite without long-running tests

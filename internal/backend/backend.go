@@ -905,7 +905,7 @@ func ignoredScopeBoundary(root, scope string) string {
 			continue
 		}
 		next := filepath.Join(dir, part)
-		if sourcefiles.IsIgnoredDirectory(part) {
+		if sourcefiles.IsIgnoredDirectoryPath(next) {
 			return next
 		}
 		dir = next

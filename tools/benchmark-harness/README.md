@@ -44,6 +44,172 @@ Rather than using an opaque scalar difficulty score, each benchmark fixture has 
 
 ## Where to change what
 
+Tool latency measurements are separate from agent task comparisons. The production
+MCP server and real-gopls warm-operation benchmarks live in
+[`internal/mcp/warm_cost_bench_test.go`](../../internal/mcp/warm_cost_bench_test.go).
+Expanded cohorts and their component collector live in
+[`internal/mcp/warm_actual_bench_test.go`](../../internal/mcp/warm_actual_bench_test.go).
+They distinguish unchanged-revision reads from actual edits and
+completed edit/read or staging workflows. Latency series use distinct component
+names so reporting a read cannot overwrite its preceding edit measurement.
+Wire-size reporting includes text and structured result data; it does not infer
+client model context. These tool benchmarks remain separate from the agent task
+comparisons implemented by this harness.
+Actual filesystem rename and first-MCP-reaction cases live in
+[`internal/mcp/file_rename_bench_test.go`](../../internal/mcp/file_rename_bench_test.go).
+Populated diagnostic-page reads live in
+[`internal/mcp/diagnostic_page_bench_test.go`](../../internal/mcp/diagnostic_page_bench_test.go):
+one- and twenty-package fixtures capture at least 50 real diagnostics, then time
+50-item MCP pages while requiring exactly one gopls process. Analysis is outside
+the timer, and the page-read p99 target is 10 ms.
+The target inventory, measurement boundaries, session-continuity requirement, and
+remaining cases live in [RQ-0070](../../docs/research/RQ-0070-warm-mcp-operation-costs.md).
+
+### Cold/hot tool cost table
+
+Run `make bench-mcp-tools` for Go MCP tool costs. The baseline read/lifecycle
+matrix has exactly twenty active Go source files across twenty packages.
+Its helper declarations occupy existing files; snapshot journals under
+`.scratch` are outside the source corpus.
+This is a small synthetic corpus, not a large-project performance test.
+
+The target reports cold and hot p99, observation counts, and lifecycle/budget
+status directly. Cold samples use a new MCP server and close it before the next
+sample. The first semantic call includes any required lazy gopls startup;
+initialization is outside the timer. Go/compiler/disk caches remain intact, and
+this does not include launching a separate semedit executable. Hot samples use
+one retained gopls, with actual mutations and final synchronization checked.
+Commit, abort, populated metrics, and diagnostic paging require prior calls, so
+their isolated cold per-tool time is unavailable; fresh-session workflow costs
+are reported separately. A failed continuity probe cannot publish a hot p99.
+
+Defaults are 100 cold observations and 1,000 hot observations per tool. These
+runs can be long when a tool exceeds its latency budget. Focused runs support:
+
+```sh
+make bench-mcp-tools TOOL_FILTER=semantic_lookup COLD_SAMPLES=100 HOT_SAMPLES=100
+make bench-mcp-tools TOOL_FILTER=semantic_rename ENFORCE_BUDGETS=true
+```
+
+`TOOL_FILTER` selects a matching tool name. `ENFORCE_BUDGETS=true` additionally
+fails unmet hot p99 budgets; native-result and session-continuity failures always
+fail. A short contract run is available with `TOOL_SMOKE=true COLD_SAMPLES=2
+HOT_SAMPLES=2`; it labels its output as smoke and does not publish a p99 claim.
+The Make target fixes Go's outer benchmark invocation at one iteration; the
+explicit cold/hot counts drive the real measurements, independently of Go's
+calibration. The benchmark-only RPC watchdog bounds each request at thirty
+seconds, while the target permits a long overall measurement run.
+
+Implementation and the scenario registry live in
+[`internal/mcp/cold_hot_tool_cost_test.go`](../../internal/mcp/cold_hot_tool_cost_test.go).
+The target reuses the existing MCP transport and native-result checks. It does
+not run the functional agent benchmark harness.
+
+The source-edit registry covers insertion, replacement, removal, movement,
+extraction, inlining, signature and type transformations, comments, contracts,
+file scaffolding, and undo. `CORPUS=20` keeps exactly twenty source files before
+each source-edit sample; creation operations may increase that count. Consumer
+packages make room for scenario probe files. The original read/lifecycle matrix
+retains its twenty-package corpus.
+
+```sh
+make bench-mcp-tools CORPUS=repository
+make bench-mcp-tools CORPUS=repository TOOL_FILTER=semantic_move_construct
+```
+
+For method-level attribution, run the focused in-process benchmark through
+Make to retain the same Go cache environment. It includes dirty unused-import
+removal in a fanout root and a leaf, root variants using unused `unsafe` and
+`errors` imports, an exported rename and body-only edit on
+the twenty-package fixture, plus an unused-import probe in an archived copy of
+the repository's `internal/telemetry` package. Each sample logs end-to-end
+latency, verification-before and verification-after counts and time, gopls
+request count, and the full phase snapshot. Correctness checks and metrics
+retrieval happen outside the operation timer; the benchmark requires one
+retained gopls process per fixture module.
+Import scenarios also require resolved diagnostics for the dirty input and
+exact restoration of the original source after cleanup.
+The repository fixture disables its external lint hook and preserves existing
+findings by comparing full verification results after each edit outside the
+timer. It does not require the archived codebase to have zero warnings. These
+verification calls also warm gopls; the next dirty input is injected afterward.
+
+```sh
+make bench-mcp-gopls GOPLS_CALL_SAMPLES=10
+```
+
+To retain an ordered Go execution trace of the same in-process work:
+
+```sh
+make bench-mcp-gopls GOPLS_CALL_SAMPLES=10 GOPLS_TRACE=.scratch/mcp-go-orchestration.trace
+go tool trace .scratch/mcp-go-orchestration.trace
+```
+
+Add `GOPLS_CPU_PROFILE=.scratch/mcp-go.cpu` to collect this process's CPU
+profile and retain the test binary in `.scratch/mcp-gopls-profile.test`.
+Inspect it with `go tool pprof -top .scratch/mcp-go.cpu`. This profile includes
+fixture setup and verification; use trace regions to isolate operation waits.
+
+Tracing is enabled only when a trace file is requested. Named regions cover
+the existing timing phases plus Go environment resolution, session lock waits,
+scope/package discovery, document synchronization, source snapshots, revision
+validation, symbol discovery/resolution, and rename publication. Request
+children separate `gopls.send.<method>` from `gopls.wait.<method>`.
+Native `disk.*` regions separate creation, writing, fsync, close, final
+validation, and rename without recording paths or content. The viewer
+shows goroutine scheduling and blocking stacks within these regions. Traces
+cover setup, calibration, and final verification as well as measured calls;
+filter the operation goroutine and nested regions when attributing latency.
+Child-process CPU is not captured. Traced timings are diagnostic evidence;
+use untraced runs for performance acceptance.
+
+It exercises root/leaf import removal, exported rename, and body edits on
+twenty packages, plus an import edit in an archived repository fixture, and emits
+`GOPLS_COST_SAMPLE` JSON records for each measured call. Fetching the latest
+`semantic_metrics` record and writing benchmark logs happen outside the timer.
+The records include all existing phases plus per-method `gopls.request.*`,
+`gopls.send.*`, `gopls.wait.*`, and `gopls.notify.*` counts and cumulative
+elapsed milliseconds. Method timings
+include client transport and waiting; they overlap enclosing phases and are
+not CPU samples. Small attribution runs do not establish a qualified p99.
+The implementation and public MCP integration check live in
+[`gopls_call_metrics_test.go`](../../internal/mcp/gopls_call_metrics_test.go).
+
+Repository mode exports committed `HEAD` once using `git archive`, records the
+revision, and creates isolated fixtures from that immutable export. Uncommitted
+files and `.git` are excluded. On macOS each fixture requests copy-on-write
+cloning with `/bin/cp -cR`; native cp falls back to copying when the filesystem
+cannot clone. Command failures are errors. Other platforms copy files.
+Export, cloning, probe creation, baseline reset, and correctness checks are
+outside the operation timer. Each cold observation uses a fresh clone and MCP
+session; hot observations retain one clone and MCP session, with one gopls
+process per Go module. Starts are attributed to their module root: a second
+start for an existing root is a restart, while an additional root is a new
+session. Both withhold a hot percentile; missing/truncated session logs fail.
+
+The repository corpus adds disclosed probe declarations to the existing
+`internal/telemetry` package, preserving the real module and package graph.
+These are controlled refactoring targets. The small-corpus read/lifecycle matrix
+does not run in repository mode. Undo reports cold workflow time including its
+snapshot and mutation prerequisites; hot time measures only undo. Build
+dependency additions and manifest/network operations are out of scope.
+Fixture-local verification configuration disables the detected external
+golangci-lint hook. Go analysis uses the inherited Make compiler and module
+caches. Verification requires completed Go coverage and no error diagnostics;
+informational findings about unused private probes are retained and allowed.
+The registry supplies explicit Go selection when the advertised schema permits
+it. Ordinary removal and the additional `[safe]` deletion case remain distinct;
+native refusals are failed rows with no latency claim.
+
+Source-edit scenarios and schema coverage live in
+[`cold_hot_file_edit_cases_test.go`](../../internal/mcp/cold_hot_file_edit_cases_test.go);
+timing, baseline restoration, and mutation assertions live in
+[`cold_hot_file_edit_runner_test.go`](../../internal/mcp/cold_hot_file_edit_runner_test.go).
+Git export and fixture cloning live in
+[`repository_cost_fixture_test.go`](../../internal/mcp/repository_cost_fixture_test.go).
+Per-module session accounting and its semantic tests live in
+[`file_edit_session_cost_test.go`](../../internal/mcp/file_edit_session_cost_test.go).
+
 Paths in this table are relative to this directory unless they start with `../../`.
 
 | Change | Start here | Responsibility and nearby checks |
@@ -358,7 +524,9 @@ For a new experiment dimension, trace it from `PlanOptions` and `Job` through re
 
 Documentation generation continues through independent input and output failures. Valid benchmark reports still produce pages and browser data; rejected reports appear in neither. After attempting all independent sections, the command reports collected errors and exits nonzero. Repository discovery and output-directory preparation remain prerequisites. `cmd/docgen/error_collection_test.go` protects partial generation, multiple diagnostics, empty datasets, and independent output failures.
 
-Report discovery excludes the reserved `jobs/` and `evidence/` directories, resume `manifest.json` files, and auxiliary `smoke-summary.json` files. Checkpoints contain nested reports for resuming jobs; publishing them alongside rebuilt reports would duplicate results. All other JSON candidates remain subject to strict report validation. The mixed-directory regression in `cmd/docgen/error_collection_test.go` verifies that operational artifacts change neither published rows nor malformed-report diagnostics.
+Report discovery reads only `data/benchmarks/results`, with JSON reports at the results root, `run/`, or `run/task/` level. It prunes deeper captured workspaces, archived and fixture-validation trees, hidden directories, jobs, evidence, workspace directories, and dependency trees before descent. Resume `manifest.json` and auxiliary `smoke-summary.json` files are not reports. Checkpoints contain nested reports for resuming jobs; publishing them alongside rebuilt reports would duplicate results. Remaining JSON candidates retain strict validation and collected error reporting. `cmd/docgen/benchmark_discovery_test.go` verifies pruning with unreadable archives and malformed artifact JSON; `error_collection_test.go` verifies independent report failures.
+
+The user-approved `data/benchmarks/go.mod` boundary prevents native Go package discovery, tests, fixers, and module tidying from entering benchmark artifacts. Formatting explicitly prunes that path as well; `.ignore` excludes it from default ripgrep/fd source searches without changing which benchmark files Git tracks. Shared source discovery, buffered tree observation, verification staging, snapshots, and benchmark workspace copies skip `data/benchmarks` before descending. Ordinary source directories named `benchmarks` elsewhere remain eligible. Repository-corpus benchmarks select Git archive paths before exporting and omit `data/benchmarks`, including when the measured commit predates this boundary. Cleanup still visits owned temporary workspaces when necessary to remove them.
 
 ## Go environment isolation
 

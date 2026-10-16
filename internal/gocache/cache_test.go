@@ -5,7 +5,6 @@ package gocache_test
 import (
 	"bytes"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/gocache"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/gocache"
 )
 
 func TestGoSubprocessTemporaryFiles(t *testing.T) {
@@ -71,6 +72,33 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("inherited temporary directory polluted: %v", entries)
+	}
+}
+
+func TestEnvironmentCacheReusesEffectiveGoSettingsWithinRequest(t *testing.T) {
+	bin := t.TempDir()
+	workDir := t.TempDir()
+	callLog := filepath.Join(t.TempDir(), "go-env-calls")
+	goCommand := filepath.Join(bin, "go")
+	script := "#!/bin/sh\nprintf 'call\\n' >> \"$GO_ENV_CALLS\"\nprintf '{\\\"GOFLAGS\\\":\\\"\\\",\\\"GOCACHE\\\":\\\"cache\\\",\\\"GOMODCACHE\\\":\\\"modules\\\",\\\"GOPATH\\\":\\\"path\\\",\\\"GOTMPDIR\\\":\\\"tmp\\\"}\\n'\n"
+	if err := os.WriteFile(goCommand, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GO_ENV_CALLS", callLog)
+	ctx := gocache.WithEnvironmentCache(t.Context())
+	if _, err := gocache.Environment(ctx, workDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gocache.Environment(gocache.WithEnvironmentCache(ctx), workDir); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(calls), "call\n"); got != 1 {
+		t.Fatalf("effective Go settings subprocess calls = %d, want 1", got)
 	}
 }
 
@@ -351,4 +379,33 @@ func readEnvValue(environment []string, key string) string {
 		}
 	}
 	return ""
+}
+
+func TestEnvironmentIdentityTracksGoEnvChangesWithinRequestCache(t *testing.T) {
+	workspace := t.TempDir()
+	goEnv := filepath.Join(t.TempDir(), "go.env")
+	t.Setenv("GOENV", goEnv)
+	ctx := gocache.WithEnvironmentCache(t.Context())
+	readIdentity := func() string {
+		t.Helper()
+		environment, err := gocache.Environment(ctx, workspace)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return readEnvValue(environment, "SEMEDIT_GOENV_CONFIG_ID")
+	}
+	if err := os.WriteFile(goEnv, []byte("GOOS=linux\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linuxIdentity := readIdentity()
+	if linuxIdentity == "" {
+		t.Fatal("first environment has no GOENV identity")
+	}
+	if err := os.WriteFile(goEnv, []byte("GOOS=windows\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	windowsIdentity := readIdentity()
+	if windowsIdentity == "" || windowsIdentity == linuxIdentity {
+		t.Fatalf("changed GOENV identity = %q, previous identity %q", windowsIdentity, linuxIdentity)
+	}
 }

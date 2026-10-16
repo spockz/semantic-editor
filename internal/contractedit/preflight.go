@@ -42,7 +42,7 @@ func newPreflightState(snapshot *Snapshot, destination string, candidate []byte)
 	if err != nil {
 		return nil, fmt.Errorf("resolve contract destination directory: %w", err)
 	}
-	overlay := sourcebuf.Overlay(snapshot.Context)
+	overlay := sourcebuf.Overlay(snapshot.Context, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}

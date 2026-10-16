@@ -22,7 +22,7 @@ var (
 	kindValueRegex  = regexp.MustCompile(`kind:\s*"([^"]+)"`)
 	placeValueRegex = regexp.MustCompile(`placement:\s*"([^"]+)"`)
 
-	mcpProtocolTools = map[string]bool{"semantic_batch": true, "semantic_reload": true, "report_feedback": true, "semantic_diagnostics": true}
+	mcpProtocolTools = map[string]bool{"semantic_batch": true, "semantic_reload": true, "semantic_diagnostics": true, "semantic_metrics": true, "report_feedback": true}
 )
 
 func TestSkillSchemaSynchronisation_AllMCPToolsDocumented(t *testing.T) {

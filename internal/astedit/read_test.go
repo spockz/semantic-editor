@@ -2,6 +2,7 @@
 package astedit
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,7 +16,7 @@ func TestOutlineGoPreservesCRLFCommentsAndTags(t *testing.T) {
 	if err := os.WriteFile(path, source, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := OutlineGo(root, path, nil, true, false)
+	result, err := OutlineGo(context.Background(), root, path, nil, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

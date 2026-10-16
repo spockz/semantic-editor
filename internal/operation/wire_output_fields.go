@@ -6,3 +6,5 @@ const (
 	outputSnapshotIDField    = "snapshot_id"
 	outputQualifiedNameField = "qualified_name"
 )
+
+const outputActiveCountField = "active_count"

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -113,33 +114,33 @@ func CheckDetailedForPatterns(ctx context.Context, root, executable string, envi
 	if executable == "" {
 		return nil, errors.New("gopls executable is required")
 	}
-	files, packageFindings, err := loadGoFiles(sessionCtx, root, environment, patterns...)
+	files, packageFindings, err := loadGoFiles(sessionCtx, root, environment, nil, patterns...)
 	if err != nil {
 		return nil, err
 	}
 	diagnostics = append(diagnostics, packageFindings...)
 
-	client, err := startDiagnosticsClient(sessionCtx, root, executable, environment)
+	diagnosticsClient, err := startDiagnosticsClient(sessionCtx, root, executable, environment)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		if closeErr := client.Close(); closeErr != nil {
+		if closeErr := diagnosticsClient.client.Close(); closeErr != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf("close gopls diagnostics session: %w", closeErr))
 		}
 	}()
 
 	for _, path := range files {
-		found, err := pullDiagnostics(sessionCtx, client, root, path)
+		found, err := pullDiagnostics(sessionCtx, diagnosticsClient.client, root, path)
 		if err != nil {
 			return nil, err
 		}
 		diagnostics = append(diagnostics, found...)
 	}
-	if _, err := client.Request(sessionCtx, "shutdown", map[string]any{}); err != nil && !errors.Is(err, lsp.ErrClosed) {
+	if _, err := diagnosticsClient.client.Request(sessionCtx, "shutdown", map[string]any{}); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		return nil, fmt.Errorf("shutdown gopls diagnostics session: %w", err)
 	}
-	if err := client.Notify(sessionCtx, "exit", nil); err != nil && !errors.Is(err, lsp.ErrClosed) {
+	if err := diagnosticsClient.client.Notify(sessionCtx, "exit", nil); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		return nil, fmt.Errorf("exit gopls diagnostics session: %w", err)
 	}
 	if err := sessionCtx.Err(); err != nil {
@@ -151,14 +152,27 @@ func CheckDetailedForPatterns(ctx context.Context, root, executable string, envi
 
 const textDocumentKey = "textDocument"
 
-func startDiagnosticsClient(ctx context.Context, root, executable string, environment []string) (resultClient *lsp.Client, resultErr error) {
-	// The client closes the process on request failure or at its owning scope's end.
+type diagnosticsClient struct {
+	client                 *lsp.Client
+	workspaceFolderChanges bool
+}
+
+func workspaceFolderChangeNotificationsEnabled(raw json.RawMessage) bool {
+	var enabled bool
+	if json.Unmarshal(raw, &enabled) == nil {
+		return enabled
+	}
+	var identifier string
+	return json.Unmarshal(raw, &identifier) == nil && identifier != ""
+}
+
+func startDiagnosticsClient(ctx context.Context, root, executable string, environment []string) (result diagnosticsClient, resultErr error) {
 	cmd := exec.CommandContext(context.Background(), executable, "serve")
 	cmd.Dir = root
 	cmd.Env = environment
-	client, err := lsp.NewProcessClient(cmd)
+	client, err := lsp.NewProcessClient(cmd, lsp.WithTelemetryPrefix("gopls"))
 	if err != nil {
-		return nil, fmt.Errorf("start gopls diagnostics session: %w", err)
+		return diagnosticsClient{}, fmt.Errorf("start gopls diagnostics session: %w", err)
 	}
 	defer func() {
 		if resultErr != nil {
@@ -167,56 +181,70 @@ func startDiagnosticsClient(ctx context.Context, root, executable string, enviro
 			}
 		}
 	}()
-
 	rootURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(root)}).String()
 	initResult, err := client.Request(ctx, "initialize", map[string]any{
 		"processId":        nil,
 		"rootUri":          rootURI,
 		"workspaceFolders": []map[string]any{{"uri": rootURI, "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
-			"general":       map[string]any{"positionEncodings": []string{"utf-16"}},
-			"workspace":     map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}},
-			textDocumentKey: map[string]any{"diagnostic": map[string]any{"dynamicRegistration": false}, "rename": map[string]any{"prepareSupport": true}},
+			"general": map[string]any{"positionEncodings": []string{"utf-16"}},
+			"workspace": map[string]any{
+				"workspaceEdit":    map[string]any{"documentChanges": true},
+				"workspaceFolders": true,
+			},
+			textDocumentKey: map[string]any{
+				"diagnostic":      map[string]any{"dynamicRegistration": false},
+				"rename":          map[string]any{"prepareSupport": true},
+				"synchronization": map[string]any{"didSave": true},
+			},
 		},
-		"initializationOptions": map[string]any{"pullDiagnostics": true},
+		"initializationOptions": map[string]any{"pullDiagnostics": true, "diagnosticsTrigger": "Save"},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("initialize gopls diagnostics session: %w", err)
+		return diagnosticsClient{}, fmt.Errorf("initialize gopls diagnostics session: %w", err)
 	}
 	var initialized struct {
 		Capabilities struct {
 			DiagnosticProvider json.RawMessage `json:"diagnosticProvider"`
 			PositionEncoding   string          `json:"positionEncoding"`
+			Workspace          struct {
+				WorkspaceFolders struct {
+					Supported           bool            `json:"supported"`
+					ChangeNotifications json.RawMessage `json:"changeNotifications"`
+				} `json:"workspaceFolders"`
+			} `json:"workspace"`
 		} `json:"capabilities"`
 	}
 	if err := json.Unmarshal(initResult, &initialized); err != nil {
-		return nil, fmt.Errorf("decode gopls initialization result: %w", err)
+		return diagnosticsClient{}, fmt.Errorf("decode gopls initialization result: %w", err)
 	}
 	if encoding := initialized.Capabilities.PositionEncoding; encoding != "" && encoding != "utf-16" {
-		return nil, fmt.Errorf("unsupported gopls position encoding %q", encoding)
+		return diagnosticsClient{}, fmt.Errorf("unsupported gopls position encoding %q", encoding)
 	}
 	provider := initialized.Capabilities.DiagnosticProvider
 	if len(provider) == 0 || string(provider) == "null" || string(provider) == "false" {
-		return nil, errors.New("gopls does not advertise a diagnostic provider")
+		return diagnosticsClient{}, errors.New("gopls does not advertise a diagnostic provider")
 	}
 	if err := client.Notify(ctx, "initialized", map[string]any{}); err != nil {
-		return nil, fmt.Errorf("complete gopls initialization: %w", err)
+		return diagnosticsClient{}, fmt.Errorf("complete gopls initialization: %w", err)
 	}
-	return client, nil
+	workspaceFolders := initialized.Capabilities.Workspace.WorkspaceFolders
+	return diagnosticsClient{
+		client:                 client,
+		workspaceFolderChanges: workspaceFolders.Supported && workspaceFolderChangeNotificationsEnabled(workspaceFolders.ChangeNotifications),
+	}, nil
 }
 
-func loadGoFiles(ctx context.Context, root string, environment []string, patterns ...string) ([]string, []Diagnostic, error) {
+func loadGoFiles(ctx context.Context, root string, environment []string, overlay map[string][]byte, patterns ...string) ([]string, []Diagnostic, error) {
+	defer telemetry.StartPhase(ctx, "go.packages.load_diagnostics")()
 	explicitPatterns := len(patterns) > 0
 	if len(patterns) == 0 {
 		patterns = []string{"./..."}
 	}
 	loaded, err := packages.Load(&packages.Config{
-		Context:    ctx,
-		Dir:        root,
-		Env:        environment,
-		Mode:       packages.NeedName | packages.NeedFiles,
-		Tests:      true,
-		BuildFlags: []string{"-mod=readonly"},
+		Context: ctx, Dir: root, Env: environment,
+		Mode:  packages.NeedName | packages.NeedFiles,
+		Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay,
 	}, patterns...)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return nil, nil, fmt.Errorf("load Go packages for diagnostics: %w", ctxErr)

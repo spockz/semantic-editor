@@ -104,6 +104,10 @@ LSP-produced edits and direct AST edits share the same publication boundary:
 validate and atomically commit client-applied edits, then synchronize every
 relevant active LSP document or workspace view with that committed revision.
 An LSP producing an edit does not itself guarantee its publication to disk.
+This common publication boundary does not forbid pre-publication LSP queries:
+Java must synchronize working edits for delegated formatting and push
+diagnostics, whereas Go AST-only edits can wait until publication (ADR-0060,
+ADR-0068). Completion evidence remains backend-specific.
 
 At an explicit verification or outer batch boundary:
 
@@ -171,8 +175,12 @@ the verification integration.
 
 Project policy becomes explicit and reusable from CLI, MCP, and batch workflows.
 Default verification follows the configured language servers and synchronized
-source revision instead of a Go-specific filesystem subprocess. Go diagnostics use fresh gopls pull requests for each selected module scan root,
-retaining diagnostic severity and explicit server failures. Receipts identify
+source revision instead of a Go-specific filesystem subprocess. Explicit Go
+verification uses full diagnostic coverage for each selected module scan root;
+automatic mutation feedback may reuse validated findings and refresh affected
+reverse dependencies under ADR-0060. Neither path treats a save notification as
+proof of completed analysis. Both retain
+diagnostic severity and explicit server failures. Receipts identify
 the `./...` package pattern and build exclusions; a selected subproject is not
 silently expanded to its parent module.
 Teams can use existing shell targets or server-native actions without teaching

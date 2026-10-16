@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
 func boundedDiagnostic(data []byte, limit int) string {
@@ -624,7 +626,7 @@ func snapshotWorkspaceFiles(root string) (workspaceSnapshot, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == ".scratch" {
+			if entry.Name() == ".git" || entry.Name() == ".scratch" || sourcefiles.IsBenchmarkDataDirectory(path) {
 				return filepath.SkipDir
 			}
 			return nil

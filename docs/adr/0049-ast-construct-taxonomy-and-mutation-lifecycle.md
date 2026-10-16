@@ -9,6 +9,15 @@ Declaration relocation preserves existing source and comments without asking a c
 
 ## Decision
 
+This record defines the Go movement contract. Java's JDT LS-backed movement is
+governed separately by ADR-0068. Gopls package rename relocates an entire package;
+it is not a general file move or a merge into another existing package. Newer
+upstream `MoveDeclaration` work is experimental and disabled by default; its
+existence does not expand semedit's accepted Go subset or replace the validated
+implementation described here. Delegating further moves requires capability
+and refusal-contract validation, including callers, private dependencies, and
+cycles, before advertisement.
+
 Provide `semantic_move_construct` as a Go operation with `file` selecting the source declaration and optional `destination_file` selecting its destination. The operation returns `file`, `destination_file`, and the primary target `symbol` as copyable continuations. It preserves declaration comments and grouped declaration integrity, validates every affected file and type relationship before publication, and uses atomic writes for each file.
 
 Same-file and same-package moves retain their existing declaration scope. In `semantic_batch`, cross-file and cross-package moves consume the current unpublished source revision. The bounded cross-package subset moves an exported free function between existing files in distinct packages of one Go module. It resolves references through typed package information, updates callers and imports throughout the module, and typechecks an in-memory overlay before writing. It refuses receiver methods, unexported symbols, source-package dependencies, import cycles, unresolved package references, symlink ambiguity, generated or build-constrained selected files, and generated or build-constrained files that might reference the moved symbol. Unrelated generated or build-constrained files do not block the operation. Per-file atomic publication does not promise a transaction across multiple files; if a later publication step fails, the operation reports which earlier files were written.

@@ -5,15 +5,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/operation"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
-	"path/filepath"
-	"slices"
-	"strings"
-	"time"
 )
 
 type batchJournalKey struct{}
@@ -85,6 +86,7 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 	}
 	publicationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	changedPaths := buffer.ChangedPaths()
 	if err := buffer.Flush(publicationCtx); err != nil {
 		response.Status = "error"
 		clearBatchSuggestions(response)
@@ -94,7 +96,7 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 		}
 		return false
 	}
-	if s.goEnabled() {
+	if s.goEnabled() && hasGoRelevantPublication(changedPaths) {
 		if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(publicationCtx)); err != nil {
 			response.Status = "error"
 			clearBatchSuggestions(response)
@@ -108,6 +110,23 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 func clearBatchSuggestions(response *BatchResponse) {
 	for i := range response.Results {
 		response.Results[i].Suggestions = nil
+	}
+}
+
+func hasGoRelevantPublication(paths []string) bool {
+	return slices.ContainsFunc(paths, isGoCompilerInputPath)
+}
+
+func isGoCompilerInputPath(path string) bool {
+	switch filepath.Ext(path) {
+	case ".go", ".c", ".h", ".s", ".S", ".syso", ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx", ".m", ".mm", ".swig", ".swigcxx", ".f", ".F", ".for", ".f90":
+		return true
+	}
+	switch filepath.Base(path) {
+	case "go.mod", "go.sum", "go.work", "go.work.sum":
+		return true
+	default:
+		return false
 	}
 }
 

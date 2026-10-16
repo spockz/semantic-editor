@@ -1,14 +1,18 @@
 // Package mcp tests scoped Go batch verification.
-// WHY: Scope selection must include reverse importers before suppressing baseline diagnostics.
+// WHY: Batch scope selection must use cached package closures or conservatively cover each edited module.
 package mcp
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/godiagnostics"
 )
 
 func TestSelectBatchGoPatternsIncludesTransitiveAndTestOnlyImporters(t *testing.T) {
@@ -28,15 +32,41 @@ func TestSelectBatchGoPatternsIncludesTransitiveAndTestOnlyImporters(t *testing.
 	write("consumer/consumer.go", "package consumer\n\nimport \"example.test/scope/lib\"\n\nfunc Value() int { return lib.Value() }\n")
 	write("testconsumer/anchor.go", "package testconsumer\n")
 	write("testconsumer/anchor_test.go", "package testconsumer_test\n\nimport (\n \"testing\"\n \"example.test/scope/lib\"\n)\n\nfunc TestValue(t *testing.T) { if lib.Value() != 1 { t.Fatal(\"value\") } }\n")
-	write("unrelated/unrelated.go", "package unrelated\n\nfunc Value() int { return 2 }\n")
+	write("unrelated/unrelated.go", "package unrelated\n\nimport _ \"example.test/scope/missing\"\n")
 
-	patterns, reason := selectBatchGoPatterns(context.Background(), root, []BatchEntry{{Params: []byte(`{"file":"lib/lib.go"}`)}}, []string{root})
+	ctx := coldBatchGoScope(t)
+	patterns, reason := selectBatchGoPatterns(ctx, root, []BatchEntry{{Params: []byte(`{"file":"lib/lib.go"}`)}}, []string{root})
 	if !strings.Contains(reason, "edited module roots") {
 		t.Fatalf("selectBatchGoPatterns reason = %q, want scoped module detail", reason)
 	}
 	want := []string{"./consumer", "./lib", "./testconsumer"}
 	if !slices.Equal(patterns[root], want) {
 		t.Fatalf("patterns = %v, want %v", patterns[root], want)
+	}
+}
+
+func coldBatchGoScope(t *testing.T) context.Context {
+	t.Helper()
+	manager := godiagnostics.NewSessionManager()
+	t.Cleanup(func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	})
+	return godiagnostics.WithSessionManager(t.Context(), manager)
+}
+
+func TestSelectBatchGoPatternsFallsBackWithoutCachedGraph(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/scope\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package scope\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	patterns, reason := selectBatchGoPatterns(context.Background(), root, []BatchEntry{{Params: []byte(`{"file":"main.go"}`)}}, []string{root})
+	if !strings.Contains(reason, "cached Go package scope was unavailable") || !slices.Equal(patterns[root], []string{"./..."}) {
+		t.Fatalf("patterns = %v, reason = %q, want conservative full-module fallback", patterns, reason)
 	}
 }
 
@@ -58,7 +88,8 @@ func TestSelectBatchGoPatternsOmitsUneditedNestedModule(t *testing.T) {
 	write("tools/goctl/go.mod", "module example.test/goctl\n\ngo 1.23\n\nrequire example.invalid/missing v0.0.1\n")
 	write("tools/goctl/main.go", "package goctl\n\nimport _ \"example.invalid/missing\"\n")
 	nested := filepath.Join(root, "tools", "goctl")
-	patterns, reason := selectBatchGoPatterns(context.Background(), root, []BatchEntry{{Params: []byte(`{"file":"app/app.go"}`)}}, []string{root, nested})
+	ctx := cacheBatchGoScope(t, root)
+	patterns, reason := selectBatchGoPatterns(ctx, root, []BatchEntry{{Params: []byte(`{"file":"app/app.go"}`)}}, []string{root, nested})
 	if reason == "" || !strings.Contains(reason, ".") {
 		t.Fatalf("selectBatchGoPatterns reason = %q, want selected module detail", reason)
 	}
@@ -88,7 +119,8 @@ func TestSelectBatchGoPatternsSelectsEditedNestedModuleReverseImporters(t *testi
 	write("tools/goctl/lib/lib.go", "package lib\n\nfunc Value() int { return 1 }\n")
 	write("tools/goctl/consumer/consumer.go", "package consumer\n\nimport \"example.test/goctl/lib\"\n\nfunc Value() int { return lib.Value() }\n")
 	nested := filepath.Join(root, "tools", "goctl")
-	patterns, reason := selectBatchGoPatterns(context.Background(), root, []BatchEntry{{Params: []byte(`{"file":"tools/goctl/lib/lib.go"}`)}}, []string{root, nested})
+	ctx := cacheBatchGoScope(t, nested)
+	patterns, reason := selectBatchGoPatterns(ctx, root, []BatchEntry{{Params: []byte(`{"file":"tools/goctl/lib/lib.go"}`)}}, []string{root, nested})
 	if reason == "" {
 		t.Fatal("selectBatchGoPatterns did not record selected nested module scope")
 	}
@@ -98,6 +130,32 @@ func TestSelectBatchGoPatternsSelectsEditedNestedModuleReverseImporters(t *testi
 	if _, selected := patterns[root]; selected {
 		t.Fatalf("unrelated parent module was selected: %v", patterns)
 	}
+}
+
+func cacheBatchGoScope(t *testing.T, root string) context.Context {
+	t.Helper()
+	executable, err := godiagnostics.FindGopls()
+	if errors.Is(err, godiagnostics.ErrGoplsNotFound) {
+		t.Skip("gopls not installed")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := godiagnostics.NewSessionManager()
+	t.Cleanup(func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	})
+	ctx := godiagnostics.WithSessionManager(t.Context(), manager)
+	environment, err := gocache.Environment(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.CheckDetailed(ctx, root, executable, environment); err != nil {
+		t.Fatal(err)
+	}
+	return ctx
 }
 
 func TestReconcilePublishedGoScopeFallsBackWhenPackageInputsChange(t *testing.T) {

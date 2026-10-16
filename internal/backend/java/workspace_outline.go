@@ -48,7 +48,7 @@ func LooksLikeJavaWorkspace(root, path string) (bool, error) {
 		if walkErr != nil {
 			return walkErr
 		}
-		if entry.IsDir() && path != scanRoot && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+		if entry.IsDir() && path != scanRoot && sourcefiles.IsIgnoredDirectoryPath(path) {
 			return filepath.SkipDir
 		}
 		if entry.IsDir() {
@@ -198,7 +198,7 @@ func javaSourceFiles(target, root string) ([]string, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+			if path != target && sourcefiles.IsIgnoredDirectoryPath(path) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -247,7 +247,7 @@ func discoverJavaModules(root, target string) ([]backend.WorkspaceModule, error)
 		if walkErr != nil {
 			return fmt.Errorf("scan Maven modules at %q: %w", current, walkErr)
 		}
-		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectoryPath(current) {
 			return filepath.SkipDir
 		}
 		if !entry.IsDir() && entry.Name() == "pom.xml" {
@@ -366,7 +366,7 @@ func (d *javaPackageDiscovery) visit(path string, entry fs.DirEntry, walkErr err
 		return walkErr
 	}
 	if entry.IsDir() {
-		return d.visitDirectory(path, entry)
+		return d.visitDirectory(path)
 	}
 	if !strings.EqualFold(filepath.Ext(entry.Name()), ".java") {
 		return nil
@@ -386,8 +386,8 @@ func (d *javaPackageDiscovery) visit(path string, entry fs.DirEntry, walkErr err
 	return nil
 }
 
-func (d *javaPackageDiscovery) visitDirectory(path string, entry fs.DirEntry) error {
-	if path != d.target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+func (d *javaPackageDiscovery) visitDirectory(path string) error {
+	if path != d.target && sourcefiles.IsIgnoredDirectoryPath(path) {
 		return filepath.SkipDir
 	}
 	return nil

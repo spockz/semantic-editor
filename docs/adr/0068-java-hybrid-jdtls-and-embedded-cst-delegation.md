@@ -22,7 +22,7 @@ Bringing Java to parity with Go requires resolving four structural tensions whil
 `semedit` adopts a **hybrid delegation-first architecture** for Java parity:
 
 1. **Persistent MCP-Owned JDT LS Session with Default Trusted Maven Reactor Import**:
-   * Each MCP server instance maintains one persistent JDT LS session per canonical trusted Java workspace root (mirroring [ADR-0060](0060-mcp-owned-go-diagnostic-sessions.md) for `gopls`).
+   * Each MCP server instance maintains one persistent JDT LS session per canonical trusted Java workspace root. Ownership mirrors [ADR-0060](0060-mcp-owned-go-diagnostic-sessions.md); notification and diagnostic policies remain backend-specific.
    * Mutations keep the JDT LS session warm across commits and batch steps, synchronising uncommitted `sourcebuf` overlays via `textDocument/didOpen` and `textDocument/didChange` and publishing disk commits via `textDocument/didSave`.
    * When a trusted workspace root contains a `pom.xml`, Maven reactor import activates by default (`import_maven: true`), storing all JDT LS workspace and M2E state strictly under `.scratch/`.
 2. **Pure-Go Embedded Tree-sitter CST Locator for Sub-Method Ranges**:
@@ -46,12 +46,59 @@ Bringing Java to parity with Go requires resolving four structural tensions whil
 
 ## Invariants
 
+### Buffered normalization and publication
+
+`javacst` locates constructs and enables byte-range splicing; it does not format,
+organize imports, or perform Java type checking. Synchronize resulting working
+bytes with JDT LS through versioned `didOpen`/`didChange` before
+`textDocument/formatting`, `source.organizeImports`, or chained rename requests.
+Feed resulting edits back into the same buffer before the next dependent query.
+`waitJavaVerifyDiagnostics` consumes version-matched push diagnostics; disabling
+change-triggered publication can cause `ErrJavaDiagnosticsTimeout` rather than
+reduce duplicate analysis. Kotlin and Bash adapters also use push diagnostics;
+gopls's pull-specific `diagnosticsTrigger: "Save"` policy must not propagate here.
+
+After atomic disk publication, retain `textDocument/didSave`.
+`saveCommittedJavaDocumentsLocked` checks that disk content matches the pending
+document digest before sending the save and clearing its pending state. JDT LS
+uses Eclipse `ICompilationUnit` working copies rather than gopls's disk-inferred
+`overlay.saved`. In the inspected upstream
+[document lifecycle handler](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/main/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/BaseDocumentLifeCycleHandler.java),
+change updates the working buffer and triggers validation; save refreshes the
+resource and discards/recreates its working copy. This is an explicit save
+lifecycle, not a `commitWorkingCopy` call or a guarantee that all incremental
+build work has completed when notification returns.
+
+Share ADR-0032's lazy per-file source preimages across languages. A single-file
+CST pipeline needs a target-file buffer through normalization and verification,
+not an eager workspace-wide `.go`/`.java` scan. Multi-file parameter-object
+caller rewrites and extract-then-rename chains keep their entire plan buffered
+until postprocessing and validation succeed. `sourcebuf.New` and write
+authorization now bind roots without scanning source files, including callers
+in Java rename preparation, `stageJavaCodeAction`, and
+`stageAndVerifyJavaInterface`. Lazy capture retains actual reads/writes and
+explicitly selected membership constraints. Java/generic tree observation does
+not resolve Go environment settings; each observed tree retains its own filter.
+
+JDT LS's working-copy analysis does not use gopls's `Snapshot.buildOverlays`
+Go-command temporary `-overlay` mechanism. This does not imply zero filesystem
+work: project import, caches, resource refresh, and builds have separate costs.
+
+Go's import-only discovery/diagnostic boundary split and reverse-package cache
+in ADR-0060 do not apply to Java. Java shares lazy preimages, checked publication,
+and diagnostic-delta reporting, but continues to use JDT LS normalization and
+push-diagnostic receipts. Reusing Java findings across edits would require a
+separate coverage/invalidation design and fresh-result equivalence tests; this
+decision does not introduce such a cache.
+
 * The `semedit` binary builds and passes `make check` with `CGO_ENABLED=0` and zero custom Java OSGi plugin compilation steps.
 * JDT LS never mutates workspace source files directly on disk; every edit passes through `sourcebuf.Buffer` validation and `pipeline.WriteAtomic`.
 * Multi-file edits and `RenameFile` targets must reside canonically within the trusted workspace root.
+* Buffered Java requests retain change-triggered, version-matched push diagnostics
+  and explicit saves after publication, independent of Go notification policy.
 * Every newly advertised Java operation includes both deterministic CLI `.txtar` contract coverage (with `cmd/docgen` rendering `.java` examples) and real-JDT LS integration test coverage against multi-package and multi-module Maven fixtures.
 
 ## Consequences
 
-* **Positive**: Achieves full functional parity with Go while delegating type-checked refactorings, formatting, imports, and diagnostics to JDT LS; reuses the embedded pure-Go Tree-sitter CST locator pattern across future language backends (Rust, Kotlin, Scala, Bash).
+* **Positive**: Expands Java semantic operations by delegating supported refactorings, formatting, imports, and diagnostics to JDT LS. Parity is operation-specific, not a claim that every Go capability, refusal contract, or optimization exists in Java. The embedded pure-Go CST locator provides a pattern for future backends without enabling their mutations automatically.
 * **Negative**: Chaining in-buffer renames after JDT LS extraction code actions adds one extra round-trip over the warm JDT LS stdio session.

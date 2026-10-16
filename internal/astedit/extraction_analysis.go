@@ -11,9 +11,15 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 
 	"golang.org/x/tools/go/packages"
 )
+
+type extractionLoadOptions struct {
+	tests    bool
+	typeInfo bool
+}
 
 func prepareExtractionBuffer(ctx context.Context, file string) (context.Context, *sourcebuf.Buffer, bool, error) {
 	root, err := sourceBufferRoot(file)
@@ -30,17 +36,17 @@ func prepareExtractionBuffer(ctx context.Context, file string) (context.Context,
 	return preparedCtx, buffer, true, nil
 }
 
-func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte, tests bool) ([]*packages.Package, error) {
+func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte, options extractionLoadOptions) ([]*packages.Package, error) {
 	buffer := sourcebuf.FromContext(ctx)
 	if buffer == nil {
 		return nil, fmt.Errorf("extraction compiler analysis requires a captured source buffer")
 	}
 	bound := map[string]bool{"dir:" + dir: true}
 	for {
-		if err := sourcebuf.ObserveTree(ctx, dir); err != nil {
+		if err := sourcebuf.ObserveTree(ctx, dir, ".go"); err != nil {
 			return nil, fmt.Errorf("capture extraction package membership: %w", err)
 		}
-		current := sourcebuf.Overlay(ctx)
+		current := sourcebuf.Overlay(ctx, ".go")
 		if current == nil {
 			current = make(map[string][]byte)
 		}
@@ -56,13 +62,19 @@ func loadExtractionPackages(ctx context.Context, dir string, overlay map[string]
 			buildFlags = nil
 			environment = append(environment, "GO111MODULE=off")
 		}
-		config := &packages.Config{
-			Context: ctx, Dir: dir, Env: environment, BuildFlags: buildFlags, Tests: tests, Overlay: current,
-			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax |
-				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps |
-				packages.NeedModule | packages.NeedEmbedFiles,
+		mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedTypes | packages.NeedImports | packages.NeedDeps |
+			packages.NeedModule | packages.NeedEmbedFiles
+		if options.typeInfo {
+			mode |= packages.NeedSyntax | packages.NeedTypesInfo
 		}
+		config := &packages.Config{
+			Context: ctx, Dir: dir, Env: environment, BuildFlags: buildFlags, Tests: options.tests, Overlay: current,
+			Mode: mode,
+		}
+		stopLoad := telemetry.StartPhase(ctx, "go.extract.packages_load")
 		loaded, err := packages.Load(config, ".")
+		stopLoad()
 		if err != nil {
 			return nil, fmt.Errorf("load Go package for extraction: %w", err)
 		}

@@ -1434,7 +1434,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	requestTrust := RequestTrustedRoot(requestRoot, configuration.workspaceTrust, raw)
 	projectTrust := CanonicalTrust(requestRoot, requestTrust)
 	requestServer := requestViewFromConfiguration(configuration, requestRoot, requestTrust)
-	observer := requestMutationObserver(requestServer)
+	observer := requestMutationObserver(requestServer, raw)
 	ctx = operation.WithMutationObserver(ctx, observer)
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(requestRoot))
 	ctx = gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, requestRoot)), configuration.goModuleCacheSeed)
@@ -1469,6 +1469,11 @@ func (s *Server) dispatchStagedToolCall(ctx context.Context, root string, entry 
 	}
 	if isStageControl(entry.Key) {
 		call.Project.Language = backend.LanguageGo
+		switch entry.Key {
+		case "stage_start", "stage_drop", "stage_abort", "stage_commit":
+			// Private controls own replay, invalidation, or commit publication observation.
+			call.Ctx = operation.WithMutationObserver(call.Ctx, func(context.Context) error { return nil })
+		}
 	}
 	return requestServer.registry.Dispatch(call, entry.Key, raw)
 }
@@ -1482,11 +1487,73 @@ func isStageControl(key string) bool {
 	}
 }
 
-func requestMutationObserver(requestServer *Server) func(context.Context) error {
-	if requestServer.goEnabled() {
-		return godiagnostics.SynchronizeWithContext
+func requestMutationObserver(requestServer *Server, raw map[string]any) func(context.Context) error {
+	if !requestServer.goEnabled() || !hasGoRelevantInputPath(requestServer.workDir, raw) {
+		return func(context.Context) error { return nil }
 	}
-	return func(context.Context) error { return nil }
+	return godiagnostics.SynchronizeWithContext
+}
+
+func hasGoRelevantInputPath(root string, raw map[string]any) bool {
+	paths := make([]string, 0)
+	unknown := false
+	var collect func(any)
+	collect = func(value any) {
+		switch value := value.(type) {
+		case map[string]any:
+			for key, nested := range value {
+				switch strings.ToLower(key) {
+				case "file", "files", "path", "paths", "destination_file", "source_file", "directory":
+					collectInputPathValues(nested, &paths, &unknown)
+				default:
+					collect(nested)
+				}
+			}
+		case []any:
+			for _, nested := range value {
+				collect(nested)
+			}
+		}
+	}
+	collect(raw)
+	if unknown || len(paths) == 0 {
+		return true
+	}
+	for _, target := range paths {
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(root, target)
+		}
+		if hasGoRelevantPublication([]string{target}) || !knownNonGoTarget(target) {
+			return true
+		}
+	}
+	return false
+}
+
+func collectInputPathValues(value any, paths *[]string, unknown *bool) {
+	switch value := value.(type) {
+	case string:
+		*paths = append(*paths, value)
+	case []any:
+		for _, nested := range value {
+			collectInputPathValues(nested, paths, unknown)
+		}
+	default:
+		*unknown = true
+	}
+}
+
+func knownNonGoTarget(target string) bool {
+	switch filepath.Ext(target) {
+	case ".java", ".kt", ".kts", ".rs", ".scala", ".hs", ".sh", ".bash", ".mk", ".xml", ".json", ".yaml", ".yml", ".md", ".txt", ".html", ".css", ".js", ".ts", ".tsx", ".jsx", ".toml", ".ini", ".properties", ".gradle", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		return true
+	}
+	switch filepath.Base(target) {
+	case "pom.xml", "build.gradle", "build.gradle.kts", "package.json":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessage, timing *toolRequestTiming, entry operation.Entry, result any, requestRoot string) {
@@ -1665,11 +1732,7 @@ func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text s
 func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {
 	s.recordToolMetrics(timing)
 	structured := timing.structuredContentWithResult(result)
-	s.sendResult(id, map[string]any{
-		"content":            []map[string]any{{"type": "text", "text": text}},
-		"isError":            false,
-		structuredContentKey: structured,
-	})
+	s.sendToolSuccessWithStructuredContent(id, text, structured)
 }
 
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
@@ -1784,6 +1847,9 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 	if report := s.diagnosticReportForError(operationErr); report != nil {
 		structured["diagnostic_report"] = report
 	}
+	if report := s.diagnosticReportForError(operationErr); report != nil {
+		structured["diagnostic_report"] = report
+	}
 	if _, refusal := errors.AsType[*operation.SafeDeleteRefusalError](operationErr); refusal {
 		structured[applicationStateField] = "not_applied"
 	} else if result, ok := projected.(map[string]any); ok {
@@ -1822,7 +1888,7 @@ func newToolRequestTiming(_ context.Context, session *StartupMetrics) *toolReque
 }
 
 func (t *toolRequestTiming) Context(ctx context.Context) context.Context {
-	return telemetry.WithMetrics(ctx, t.metrics)
+	return gocache.WithEnvironmentCache(telemetry.WithMetrics(ctx, t.metrics))
 }
 
 func (t *toolRequestTiming) Snapshot() telemetry.Snapshot {
@@ -2010,7 +2076,7 @@ func (s *Server) handleFeedbackReport(ctx context.Context, id json.RawMessage, a
 		"report":   report,
 		"markdown": draft.String(),
 	}
-	s.sendToolSuccessWithTimingAndResult(id, draft.String(), result, timing)
+	s.sendToolSuccessWithTimingAndResult(id, "Feedback draft prepared in structuredContent.result.markdown. Review for accuracy and sensitive content before manually posting; it has not been saved or posted.", result, timing)
 }
 
 func feedbackToolSchema() map[string]any {

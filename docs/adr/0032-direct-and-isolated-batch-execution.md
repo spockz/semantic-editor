@@ -51,23 +51,57 @@ plans and state-journaled staging transactions.
 
 ### 1. Direct Batch Mode (`semantic_batch`)
 
-Standalone AST mutations use the same source-buffer mechanism. The operation
-owns a buffer only when the caller supplies none, authorizes its write scope,
-and prepares edits, import organization, and formatting against that working
-revision before flushing once. An operation using a caller-owned batch buffer
-does not flush it. Preparation failure discards the failed operation's changes
-while preserving successful earlier batch edits. New-file scaffolding may use
-a single atomic publication at its existing batch barrier.
+Choose buffering according to the required preparation and publication boundary:
+
+| Operation context | Publication policy |
+| --- | --- |
+| Interactive `semantic_stage` through commit, drop, or abort | Strictly buffered; steps remain reversible in memory until commit. |
+| Multi-file AST/CST or delegated refactoring plans requiring preflight or chained edits, including Go moves/signature changes and Java parameter-object caller rewrites or extract-then-rename | Strictly buffered; validate and normalize the complete plan before publishing any output. |
+| Overlapping or coupled steps in a `semantic_batch` segment | Shared buffer; coalesce formatting, imports, and publication per changed file. |
+| Standalone single-file Go AST mutation, such as body replacement, function insertion, or construct replacement | Prepare and format in process using lazy target/read-set preimages, then publish through the checked atomic publisher; no implicit workspace-wide source capture. |
+| Standalone single-file Java CST mutation | Use a target-file buffer for JDT LS normalization and version-matched push diagnostics before publication, then send `didSave`; no full-workspace source scan. |
+| Standalone Go `semantic_rename` | Obtain the complete gopls `WorkspaceEdit`, stage all outputs, and publish directly with checked target preimages. |
+
+`sourcebuf.Prepare` may create an owned lazy buffer when the caller supplies
+none. Construction and write authorization resolve roots without enumerating
+or reading source trees. Reads and writes capture their selected preimages;
+explicit analysis observations may capture a wider selected package/module tree.
+This lifecycle is shared by Go and Java without fixed source extensions.
+Caller-owned buffers remain authoritative and are never flushed by a child.
+Preparation failure discards the failed operation's changes while preserving
+successful earlier batch edits. New-file scaffolding may use a single atomic
+publication at its existing batch barrier.
+
+Buffering preserves imports needed by later steps rather than allowing early
+`goimports` to strip them. Repeated edits to one file incur one final `fsync`
+per segment, rather than one per child. The measured twenty-file rename spent
+82.10 ms in `fsync` (about 4.1 ms/file; RQ-0070). Coalescing avoids repeated
+writes to the same file; twenty distinct changed files still require twenty
+durable replacements. Direct writes retain temporary-file, `fsync`, rename,
+advancing-mtime, and final preimage checks.
 
 Keep `semantic_batch` as the direct mode for single-turn batched plans. The
 mutating request is its own authorization. Eligible Go operations share a
 request-scoped source buffer with the retained gopls session. AST reads, sibling
 collision checks, symbol resolution, package loading, rename edits, and result
-inspection use the same working revision. Intermediate edits send unsaved LSP
-changes without publishing source files. Built-in formatting and imports operate
+inspection use the same working revision. Synchronize unpublished bytes with
+gopls only immediately before a dependent LSP query. AST-only children send no
+pre-flush changes; standalone Go edits and Go AST-only batches notify gopls after
+publication. A query that opened an unsaved overlay still requires the
+same-content post-flush update described in ADR-0060. Built-in formatting and imports operate
 on the final buffers before publication. A later compiler, test, lint, or formatter
 diagnostic returns `applied_with_diagnostics`; it does not roll back successful
 edits.
+
+This timing is specific to the Go in-process AST and formatter pipeline.
+Java's embedded CST splices source ranges but delegates formatting,
+`source.organizeImports`, chained refactorings, and diagnostic verification to
+JDT LS (ADR-0068). Java must send current buffered bytes via `didChange` before
+those requests, wait for matching push diagnostics, publish the final bytes,
+and send `didSave`. A target-file buffer suffices for a single-file pipeline;
+multi-file postprocessing and chained caller rewrites retain all affected
+buffers until validated. Shared buffering policy does not imply shared LSP
+notification or diagnostic-trigger settings.
 
 The operation registry explicitly marks buffer-safe operations; new operations
 default to direct disk execution. Go rename, replacement, insertion, extraction,
@@ -88,11 +122,27 @@ environment; a different worktree module gets its own Go state and does not
 reuse the configured-root gopls session. These scopes do not change direct
 batches' existing fail-fast, partial-application behavior.
 
-Bind all existing Go source bytes, file identities, permissions, source membership,
-and symlink targets in each segment's workspace and local replacement modules.
-Also bind manifest and auxiliary analysis inputs. Stage and sync every changed
-output before replacing any source. Recheck the complete preimage before and
-between sorted per-file replacements, accounting for already published outputs.
+Bind preimages lazily for the actual read/write set: exact bytes, file identities,
+permissions, missing-file expectations, and symlink targets. Explicitly observed
+package trees, including local replacements used by overlay `go/packages`
+validation, also bind membership, manifests, and auxiliary analysis inputs.
+This applies to both `.go` and `.java` inputs and every source-buffer caller,
+including Java rename, staged code actions, and interface verification.
+Lazy binding must not omit package siblings or inputs on which semantic
+validation depends. `sourcebuf.New` must not eagerly read every workspace
+`.go` and `.java` file, and per-output checks must not rescan unrelated trees.
+Stage and sync every changed output before replacing any source. Validate the
+complete observed read set and tree membership before publication, then check
+each target's preimage immediately before its sorted replacement, accounting
+for already published outputs. Full observed inputs and membership are checked
+before staging and again before the first replacement; only each output's
+canonical path, identity, mode, and exact bytes are rechecked between replacements.
+Tree selections retain their extensions, recursion scope, and exclusion policy
+through fork/replay and publication. Ignore only the publisher's owned temporary
+files when rechecking membership after staging. Go package loaders explicitly
+select Go trees; symbol collision checks observe their package directory without
+implicitly selecting nested packages. Generic/Java observations do not query
+the Go environment, while Go observations retain effective cache exclusions.
 Each file replacement is atomic with an advancing modification time. Ordinary
 filesystem operations cannot make multiple file replacements globally atomic.
 A conflict before publication changes no source files; a late failure reports
@@ -106,6 +156,14 @@ fails. Final diagnostics and disk hooks never inspect an unpublished revision.
 
 A multi-file rename validates every working preimage, output scope, and disk input
 before changing any buffer bytes. Failure leaves that child's outputs untouched.
+Direct disk rename validates all planned output preimages before the first write,
+then checks only the corresponding target's canonical path, regular-file identity,
+and exact contents after staging and immediately before its atomic replacement.
+It does not rescan every module input between outputs. A zero-write conflict may
+retry once using fresh symbol resolution and fresh LSP edit coordinates for the
+same declaration identity. A partial publication is reported with published paths
+and is never replayed or automatically rolled back. The per-target check and
+replacement are separate filesystem operations; they are not a compare-and-swap.
 Cross-file and cross-package moves use the same all-output application boundary.
 Cross-package compiler preflight loads the current source overlay and merges the complete
 move plan over it for the final typecheck. Same-package moves retain structural
@@ -145,14 +203,17 @@ we establish state-journaled staging as a peer batching mechanism:
    Invalid AST mutations are never staged.
 2. **Deterministic Step Attribution & Stable Step IDs**:
    Successful staged calls append to an in-memory modification journal and return
-   a lightweight stage receipt containing a stable, content-addressed step identifier
+   a lightweight native `stage_receipt` containing a stable, content-addressed step identifier
    (`step_id: "step_7a3f81"`, matching the ephemeral handle pattern of ADR-0003),
-   an optional ordinal index for display, the targeted symbol, and an AST diff hunk.
-   Surrounding disk writes and full compiler diagnostics remain deferred.
+   an optional ordinal index for display, historical target information, and a
+   working-view diff hunk. This is not a live ordinary-result continuation or
+   persisted disk diff. Disk writes and final diagnostic feedback remain deferred;
+   a backend may still run the in-buffer checks needed by a dependent query.
 3. **Attributed Commit & Diagnostic Deltas**:
-   `semantic_commit` applies all staged mutations atomically to disk via
-   `pipeline.WriteAtomic` (ADR-0010), executes coalesced formatting and
-   `goimports` once, and collects the compiler diagnostic delta. Any newly
+   `semantic_commit` normalizes the buffered Go revision with coalesced formatting
+   and imports, then publishes through checked per-file atomic writes (ADR-0010)
+   and collects the compiler diagnostic delta. It does not promise an atomic
+   transaction across files; partial publication is reported explicitly. Any newly
    introduced diagnostics include candidate step IDs based on changed paths.
    These links identify relevant edits rather than proving a single originating
    step; diagnostics in dependent files can have no candidates.
@@ -181,19 +242,39 @@ operating-system sandbox.
 
 ## Invariants
 
+- Lazy source preimages and checked publication are language-neutral. Diagnostic
+  cache coverage is backend-owned: Go's import-aware reverse-package refresh
+  (ADR-0060) does not change Java's normalization, push-diagnostic, or save
+  lifecycle (ADR-0068), and does not establish equivalent caches for other LSPs.
+
 - No second approval, authenticated receipt, or client-supplied patch exists.
 - Direct mode reports applied operations and the resulting diff; it does not
   promise rollback or crash recovery.
 - Buffered Go edits share one working revision with gopls; save and watcher
-  notifications follow actual disk publication. Intermediate source revisions
-  remain private to the batch.
+  notifications follow actual disk publication. Unpublished bytes synchronize
+  only before dependent LSP queries; AST-only steps defer synchronization.
+- LSP synchronization follows backend semantics. Java retains pre-publication
+  changes for normalization and push verification, followed by post-publication
+  saves. Push-diagnostic backends must not inherit gopls's suppression policy.
+- Staging, coupled batch segments, and multi-file AST/CST preflight retain buffers.
+  Standalone single-file pipelines use target-scoped preparation and checked
+  atomic publication; Java retains its normalization buffer. Neither buffer
+  construction nor write authorization captures a full workspace implicitly.
+- Lazy preimages cover every semantic read and write and explicitly observed
+  package tree. Membership changes and exact-content conflicts remain failures;
+  reducing unrelated scans cannot weaken pre-publication validation.
 - A successful batch or committed stage has exactly one pre-edit and one
-  post-processing diagnostic capture; individual operations defer their own
-  verification, formatting, and import organization while staged.
+  final post-processing diagnostic capture for its reported delta. Eligible Go
+  captures may reuse revision- and coverage-validated findings under ADR-0060;
+  two logical captures do not mandate two fresh full-workspace analyses. Go
+  children defer formatting, imports, and diagnostic captures. Backend-required
+  in-buffer checks and normalization, such as Java's JDT LS pipeline, may run
+  before publication; they do not replace the final reported diagnostic state.
 - Syntactic and structural AST validation errors fail fast immediately at the
   individual tool invocation site; they are never deferred to commit.
-- `semantic_commit` must attribute introduced compiler diagnostics to the specific
-  staging step and tool that touched the affected file or construct.
+- `semantic_commit` supplies candidate step IDs for relevant changed paths when
+  available. These links do not prove causality; dependent-file diagnostics may
+  have no candidate step.
 - The successful batch response carries the final diagnostic delta. A failed
   batch does not claim a final diagnostic state it did not capture.
 - A higher-level controller may provide a private working copy, but
@@ -274,11 +355,29 @@ independent of, and must not be used to justify, an embedded workspace view.
 
 ## Restoration integration: 2026-10-12
 
-Retained staging uses the same source buffer as standalone operations and batches.
+Retained staging uses the source buffer shared with coupled batch segments.
+Standalone AST operations reuse its lazy preimage and checked publication
+mechanism; they do not implicitly capture all workspace source files.
 The server binds each journal to its canonical request root and current Go module
 owner, rejects overlapping roots and competing stages in one module, and rechecks
-ownership before publication. Reinitialization, reload, disconnect, expiry, and
-abort discard volatile state and invalidate retained diagnostics.
+ownership before publication. Reinitialization, reload, and disconnect discard
+volatile state and invalidate retained diagnostics. Ordinary abort and expiry
+discard the journal without writing disk, then reconcile overlapping retained Go
+sessions to the current disk view. Existing documents receive current disk bytes;
+staged-only documents close. Concurrent external edits remain authoritative.
+An overlapping staging reservation remains active until reconciliation finishes,
+with language-server work outside the staging lock. Failed reconciliation reports
+an error and discards affected Go sessions rather than serving abandoned overlays.
+This retained-process recovery is Go-specific; other backends retain their own
+document and save lifecycles. Failed replay and uncertain publication retain the
+conservative invalidation policy.
+
+Runtime-directory filtering is shared across language backends. When complete
+absolute Go runtime paths are explicit in the process environment and no managed
+base or module-cache seed needs resolution, those paths determine the exclusions
+without a `go env` subprocess. Missing, relative, or malformed paths and managed
+state retain effective configuration resolution. Each filter observes current
+process paths; this optimization introduces no process-wide environment cache.
 
 Step IDs remain unique across drop and replay. Rejected edits and failed replay
 preserve the accepted revision. Publication distinguishes zero writes, partial

@@ -26,7 +26,7 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 2. **Native Binaries for External Tooling**:
    * Any external tools utilized by the build, linting, formatting, or documentation pipelines must be distributed and executed as **standalone native compiled binaries** (e.g. `gofmt`, `golangci-lint`, `hugo`, `vale`).
 
-   * Qualification for limited read-only lookup: a user-installed, version-recorded Java 21 or newer runtime and a user-installed direct, pinned Metals or Eclipse JDT Language Server distribution may be invoked as external tooling. A user-installed GHC and matching, version-recorded Haskell Language Server wrapper may likewise support explicitly standalone read-only symbol lookup. Distribution paths must be explicitly configured where applicable; semedit never bootstraps any of these tools through GHCup, Coursier, Cabal, Stack, or another package manager. This does not add Java, Scala, or Haskell to semedit's implementation language set; semedit remains entirely Go.
+   * Qualified language-server exceptions use preinstalled, explicitly configured tools. Java 21+ with direct pinned JDT LS supports the trusted Java operations in ADR-0068; Metals and HLS retain their separately bounded contracts. The preinstalled Kotlin, Bash, and Make server exceptions are defined in ADR-0047 and ADR-0048. These external runtimes do not become host implementation languages. Semedit never bootstraps these tools through GHCup, Coursier, Cabal, Stack, or another package manager.
    * Java Maven verification is a narrowly bounded exception: only explicit request-scoped trust may launch a pre-existing wrapper or system Maven binary for the fixed `test-compile` and `test` goals. It uses direct process execution, scratch-local state, and offline mode by default; it is not part of the JDT LS runtime.
 
 3. **Strict Prohibition & Exception Policy for Node.js and Python**:
@@ -41,7 +41,7 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 ## Invariants
 
 * No `package.json`, `pyproject.toml`, virtual environments (`.venv`), or Python/Node scripts may be added to the repository without documented, explicit user approval.
-* Java runtime versions and direct Metals/JDT LS paths must be explicitly configured for external lookup; semedit never downloads, installs, embeds, bootstraps with Coursier, or launches a Python JDT LS launcher such as `jdtls.py`.
+* Java runtime versions and direct Metals/JDT LS paths follow their backend configuration contracts; semedit never downloads, installs, embeds, bootstraps with Coursier, or launches a Python JDT LS launcher such as `jdtls.py`. JDT LS delegation is not restricted to the original lookup slice.
 * Continuous Integration (`make check`) must execute with a pure Go toolchain alongside pre-installed native binary executables.
 * All evaluation, benchmarking, and AST verification harnesses (e.g. `tools/benchmark-harness`) must compile and execute as native Go programs.
 

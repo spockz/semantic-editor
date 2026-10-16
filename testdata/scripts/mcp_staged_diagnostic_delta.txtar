@@ -1,0 +1,33 @@
+# A staged, parseable Go edit that introduces a type error persists and returns a pageable diagnostic report.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"applied_with_diagnostics"'
+stdout '"application_state":"persisted"'
+stdout '"introduced_count":1'
+stdout '"tool":"semantic_diagnostics"'
+stdout '"arguments":\{"category":"active","limit":50,"offset":0,"report_id":"[A-Za-z0-9_-]+"\}'
+cmp value.go .scratch/want/value.go
+
+-- go.mod --
+module example.com/stageddiagnosticdelta
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":"value.go","source":"func Helper() int { return Value() }"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return missing"}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+-- value.go --
+package stageddiagnosticdelta
+
+func Value() int { return 1 }
+-- .scratch/want/value.go --
+package stageddiagnosticdelta
+
+func Value() int {
+	return missing
+}
+
+func Helper() int { return Value() }

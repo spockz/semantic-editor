@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-16",
+  "revision": "1ff9655e5719c2d078c4e274e4a4817f006cced9",
+  "working_tree_dirty": true,
+  "scope": "Native in-process MCP with real retained gopls; one independent warm cohort of 20 measured operations per scenario and policy, after calibration. Setup, metrics retrieval and final verification excluded from timing.",
+  "command": "go test -v ./internal/mcp -run '^$' -bench '^BenchmarkMCPWarmOperationActualWork/packages_20/(two_file_batch|stage_edit_commit)$' -benchtime=20x -count=1 -timeout=8m",
+  "fixtures": {
+    "two_file_batch": {
+      "go_files": 21,
+      "packages": 20
+    },
+    "stage_edit_commit": {
+      "go_files": 20,
+      "packages": 20
+    }
+  },
+  "policy": {
+    "before": "Buffered AST mutation observers eagerly synchronize retained sessions.",
+    "after": "Buffered observers defer to the retained-session query boundary or publication. Private stage start/drop/abort skip the outer disk observer; commit retains publication synchronization. Same-content dirty-to-published notifications and preserved-metadata save fallback remain."
+  },
+  "cohorts": {
+    "before": {
+      "cases": {
+        "two_file_batch": {
+          "components": {
+            "batch": {
+              "samples": 20,
+              "p50_ms": 90.347667,
+              "p99_ms": 109.393625,
+              "max_ms": 109.393625,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 9747.85,
+              "wire_bytes_max": 9748
+            }
+          },
+          "gopls_starts": 1
+        },
+        "stage_edit_commit": {
+          "components": {
+            "commit": {
+              "samples": 20,
+              "p50_ms": 54.562125,
+              "p99_ms": 70.459209,
+              "max_ms": 70.459209,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 6426.95,
+              "wire_bytes_max": 6427
+            },
+            "edit": {
+              "samples": 20,
+              "p50_ms": 3.462167,
+              "p99_ms": 4.676333,
+              "max_ms": 4.676333,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 2356.95,
+              "wire_bytes_max": 2357
+            },
+            "stage": {
+              "samples": 20,
+              "p50_ms": 34.443042,
+              "p99_ms": 39.880375,
+              "max_ms": 39.880375,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 1267.95,
+              "wire_bytes_max": 1268
+            },
+            "tool_calls_total": {
+              "samples": 20,
+              "p50_ms": 91.808624,
+              "p99_ms": 111.872292,
+              "max_ms": 111.872292,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 10051.85,
+              "wire_bytes_max": 10052
+            }
+          },
+          "gopls_starts": 1
+        }
+      },
+      "log_sha256": "6f9ccb9074cc2291c517d4744521f68c0aac07f60cf4629cd91c8337c7ba9b7b"
+    },
+    "after": {
+      "cases": {
+        "two_file_batch": {
+          "components": {
+            "batch": {
+              "samples": 20,
+              "p50_ms": 83.647208,
+              "p99_ms": 111.176041,
+              "max_ms": 111.176041,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 9747.85,
+              "wire_bytes_max": 9748
+            }
+          },
+          "gopls_starts": 1
+        },
+        "stage_edit_commit": {
+          "components": {
+            "commit": {
+              "samples": 20,
+              "p50_ms": 53.484917,
+              "p99_ms": 60.903917,
+              "max_ms": 60.903917,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 6416.95,
+              "wire_bytes_max": 6417
+            },
+            "edit": {
+              "samples": 20,
+              "p50_ms": 1.075875,
+              "p99_ms": 1.793708,
+              "max_ms": 1.793708,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 2354.95,
+              "wire_bytes_max": 2355
+            },
+            "stage": {
+              "samples": 20,
+              "p50_ms": 32.83975,
+              "p99_ms": 39.969208,
+              "max_ms": 39.969208,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 1265.95,
+              "wire_bytes_max": 1266
+            },
+            "tool_calls_total": {
+              "samples": 20,
+              "p50_ms": 88.162083,
+              "p99_ms": 101.935874,
+              "max_ms": 101.935874,
+              "budget_ms": 1000,
+              "wire_bytes_mean": 10037.85,
+              "wire_bytes_max": 10038
+            }
+          },
+          "gopls_starts": 1
+        }
+      },
+      "log_sha256": "25ac8b18c561e7a7671eda3120e96bc8350cd8d074db786dcc9c0656a8e9ddb8"
+    }
+  },
+  "validation": {
+    "benchmark_oracles": "Existing benchmark validates actual source edits, final clean diagnostics and a single gopls process per cohort.",
+    "behavior_tests": [
+      "TestMCPASTOnlyBatchSynchronizesAfterFlush",
+      "TestMCPStagedRenameRepairsLazyAndDroppedViews",
+      "TestMCPGoPublicationNotificationPolicy"
+    ],
+    "cli_contract": "testdata/scripts/mcp_lazy_stage_query.txtar",
+    "race_command": "go test -race ./internal/mcp ./internal/adapters/golang ./internal/operation -run '^(TestMCPASTOnlyBatchSynchronizesAfterFlush|TestMCPStagedRenameRepairsLazyAndDroppedViews|TestMCPGoPublicationNotificationPolicy|TestMCPBatchSharesUnsavedGoBuffers|TestBatchBufferDiskBarrierOrdering|TestBufferedRenamePublicationNotifications|TestDispatchFailureRestoresOnlyCurrentSharedBufferEdit|TestStage.*)$' -count=1 -timeout=8m",
+    "race_result": "ok  \tgithub.com/spockz/semantic-editor/internal/mcp\t15.391s\nok  \tgithub.com/spockz/semantic-editor/internal/adapters/golang\t2.360s\nok  \tgithub.com/spockz/semantic-editor/internal/operation\t1.957s"
+  },
+  "before_source_sha256": {
+    "internal/godiagnostics/manager.go": "e94da2da8788640ba0b3b9ed0e612b068ca9c171f2df5cae437453a06d190f2d",
+    "internal/operation/operation.go": "7c7df08adccef439d5b5b47c374a9ffa5fe5e5b7bc3219c456b243d0d9a07607",
+    "internal/operation/dispatch.go": "5f97bddb3b53f471d371bee107a3b3210b50c10ec8e13c171d16da332eb9430b",
+    "internal/mcp/batch.go": "e958c1361d1760e07de99841a9aa63f388f1767b87186b295292963618c887e1",
+    "internal/mcp/buffers.go": "b3b1d2a36d93a26162ac166736b9b9da9b9386f46ad41e53f7991985859088a8",
+    "internal/mcp/staging.go": "e46eb2a947183b278cc295f292f663e6d576334a41254de5cbafaa4d3f05b87e",
+    "internal/mcp/server.go": "108c8a7f1fe882f904695ccccdd47844585181f1c99e731c28ad790c623feee2",
+    "internal/mcp/warm_actual_bench_test.go": "5b46472b576f0f435a2e3820ea505abef5c8682e59e5a951557acadc78da7ae8",
+    "internal/mcp/gopls_call_metrics_test.go": "a0f3bb5d0242ec70c3961a000cd5432f29c8d1903d8218a3bb542586b63bd381",
+    "go.mod": "dcea0c9c5f675a3ade9b53d9d1bca00a80c727e15edba01af346977967156651",
+    "go.sum": "d2a65875e6fa59ecb231288814bf62a8497d73bc8ff52f9fe6661208ebf58d88"
+  },
+  "after_source_sha256": {
+    "internal/godiagnostics/manager.go": "2a5c5b734056de3c988c49b0f792fd332260bf39ab631c47e64c2a774ec03cf5",
+    "internal/operation/operation.go": "7c7df08adccef439d5b5b47c374a9ffa5fe5e5b7bc3219c456b243d0d9a07607",
+    "internal/operation/dispatch.go": "5f97bddb3b53f471d371bee107a3b3210b50c10ec8e13c171d16da332eb9430b",
+    "internal/mcp/batch.go": "e958c1361d1760e07de99841a9aa63f388f1767b87186b295292963618c887e1",
+    "internal/mcp/buffers.go": "b3b1d2a36d93a26162ac166736b9b9da9b9386f46ad41e53f7991985859088a8",
+    "internal/mcp/staging.go": "e46eb2a947183b278cc295f292f663e6d576334a41254de5cbafaa4d3f05b87e",
+    "internal/mcp/server.go": "702065c224094707d42238b5e00264333e086e75942311c37eb4564465108d15",
+    "internal/mcp/warm_actual_bench_test.go": "5b46472b576f0f435a2e3820ea505abef5c8682e59e5a951557acadc78da7ae8",
+    "internal/mcp/gopls_call_metrics_test.go": "8652755ddaa370a6468be2bbba19d91b2a9d3d62ff3238d7953eb86e9c2768b9",
+    "go.mod": "dcea0c9c5f675a3ade9b53d9d1bca00a80c727e15edba01af346977967156651",
+    "go.sum": "d2a65875e6fa59ecb231288814bf62a8497d73bc8ff52f9fe6661208ebf58d88"
+  },
+  "logs": {
+    "before": "goos: darwin\ngoarch: arm64\npkg: github.com/spockz/semantic-editor/internal/mcp\ncpu: Apple M5 Pro\nBenchmarkMCPWarmOperationActualWork\nBenchmarkMCPWarmOperationActualWork/packages_20\nBenchmarkMCPWarmOperationActualWork/packages_20/two_file_batch\n    warm_actual_bench_test.go:454: WARM_COST_RESULT {\"components\":{\"batch\":{\"samples\":1,\"p50_ms\":100.272916,\"p99_ms\":100.272916,\"max_ms\":100.272916,\"budget_ms\":1000,\"wire_bytes_mean\":9747,\"wire_bytes_max\":9747}},\"gopls_starts\":1}\n    warm_actual_bench_test.go:454: WARM_COST_RESULT {\"components\":{\"batch\":{\"samples\":20,\"p50_ms\":90.347667,\"p99_ms\":109.393625,\"max_ms\":109.393625,\"budget_ms\":1000,\"wire_bytes_mean\":9747.85,\"wire_bytes_max\":9748}},\"gopls_starts\":1}\nBenchmarkMCPWarmOperationActualWork/packages_20/two_file_batch-18         \t      20\t  94927998 ns/op\t      1000 batch_budget_ms\t       109.4 batch_max_ms\t        90.35 batch_p50_ms\t       109.4 batch_p99_ms\t      9748 batch_wire_bytes_max\t      9748 batch_wire_bytes_mean\t         1.000 gopls_starts\nBenchmarkMCPWarmOperationActualWork/packages_20/stage_edit_commit\n    warm_actual_bench_test.go:499: WARM_COST_RESULT {\"components\":{\"commit\":{\"samples\":1,\"p50_ms\":61.059459,\"p99_ms\":61.059459,\"max_ms\":61.059459,\"budget_ms\":1000,\"wire_bytes_mean\":6416,\"wire_bytes_max\":6416},\"edit\":{\"samples\":1,\"p50_ms\":4.404708,\"p99_ms\":4.404708,\"max_ms\":4.404708,\"budget_ms\":1000,\"wire_bytes_mean\":2354,\"wire_bytes_max\":2354},\"stage\":{\"samples\":1,\"p50_ms\":37.2955,\"p99_ms\":37.2955,\"max_ms\":37.2955,\"budget_ms\":1000,\"wire_bytes_mean\":1265,\"wire_bytes_max\":1265},\"tool_calls_total\":{\"samples\":1,\"p50_ms\":102.759667,\"p99_ms\":102.759667,\"max_ms\":102.759667,\"budget_ms\":1000,\"wire_bytes_mean\":10035,\"wire_bytes_max\":10035}},\"gopls_starts\":1}\n    warm_actual_bench_test.go:499: WARM_COST_RESULT {\"components\":{\"commit\":{\"samples\":20,\"p50_ms\":54.562125,\"p99_ms\":70.459209,\"max_ms\":70.459209,\"budget_ms\":1000,\"wire_bytes_mean\":6426.95,\"wire_bytes_max\":6427},\"edit\":{\"samples\":20,\"p50_ms\":3.462167,\"p99_ms\":4.676333,\"max_ms\":4.676333,\"budget_ms\":1000,\"wire_bytes_mean\":2356.95,\"wire_bytes_max\":2357},\"stage\":{\"samples\":20,\"p50_ms\":34.443042,\"p99_ms\":39.880375,\"max_ms\":39.880375,\"budget_ms\":1000,\"wire_bytes_mean\":1267.95,\"wire_bytes_max\":1268},\"tool_calls_total\":{\"samples\":20,\"p50_ms\":91.808624,\"p99_ms\":111.872292,\"max_ms\":111.872292,\"budget_ms\":1000,\"wire_bytes_mean\":10051.85,\"wire_bytes_max\":10052}},\"gopls_starts\":1}\nBenchmarkMCPWarmOperationActualWork/packages_20/stage_edit_commit-18      \t      20\t  94237519 ns/op\t      1000 commit_budget_ms\t        70.46 commit_max_ms\t        54.56 commit_p50_ms\t        70.46 commit_p99_ms\t      6427 commit_wire_bytes_max\t      6427 commit_wire_bytes_mean\t      1000 edit_budget_ms\t         4.676 edit_max_ms\t         3.462 edit_p50_ms\t         4.676 edit_p99_ms\t      2357 edit_wire_bytes_max\t      2357 edit_wire_bytes_mean\t         1.000 gopls_starts\t      1000 stage_budget_ms\t        39.88 stage_max_ms\t        34.44 stage_p50_ms\t        39.88 stage_p99_ms\t      1268 stage_wire_bytes_max\t      1268 stage_wire_bytes_mean\t      1000 tool_calls_total_budget_ms\t       111.9 tool_calls_total_max_ms\t        91.81 tool_calls_total_p50_ms\t       111.9 tool_calls_total_p99_ms\t     10052 tool_calls_total_wire_bytes_max\t     10052 tool_calls_total_wire_bytes_mean\nPASS\nok  \tgithub.com/spockz/semantic-editor/internal/mcp\t8.804s\n",
+    "after": "goos: darwin\ngoarch: arm64\npkg: github.com/spockz/semantic-editor/internal/mcp\ncpu: Apple M5 Pro\nBenchmarkMCPWarmOperationActualWork\nBenchmarkMCPWarmOperationActualWork/packages_20\nBenchmarkMCPWarmOperationActualWork/packages_20/two_file_batch\n    warm_actual_bench_test.go:454: WARM_COST_RESULT {\"components\":{\"batch\":{\"samples\":1,\"p50_ms\":102.129541,\"p99_ms\":102.129541,\"max_ms\":102.129541,\"budget_ms\":1000,\"wire_bytes_mean\":9747,\"wire_bytes_max\":9747}},\"gopls_starts\":1}\n    warm_actual_bench_test.go:454: WARM_COST_RESULT {\"components\":{\"batch\":{\"samples\":20,\"p50_ms\":83.647208,\"p99_ms\":111.176041,\"max_ms\":111.176041,\"budget_ms\":1000,\"wire_bytes_mean\":9747.85,\"wire_bytes_max\":9748}},\"gopls_starts\":1}\nBenchmarkMCPWarmOperationActualWork/packages_20/two_file_batch-18         \t      20\t  87716188 ns/op\t      1000 batch_budget_ms\t       111.2 batch_max_ms\t        83.65 batch_p50_ms\t       111.2 batch_p99_ms\t      9748 batch_wire_bytes_max\t      9748 batch_wire_bytes_mean\t         1.000 gopls_starts\nBenchmarkMCPWarmOperationActualWork/packages_20/stage_edit_commit\n    warm_actual_bench_test.go:499: WARM_COST_RESULT {\"components\":{\"commit\":{\"samples\":1,\"p50_ms\":48.982416,\"p99_ms\":48.982416,\"max_ms\":48.982416,\"budget_ms\":1000,\"wire_bytes_mean\":6426,\"wire_bytes_max\":6426},\"edit\":{\"samples\":1,\"p50_ms\":1.111167,\"p99_ms\":1.111167,\"max_ms\":1.111167,\"budget_ms\":1000,\"wire_bytes_mean\":2356,\"wire_bytes_max\":2356},\"stage\":{\"samples\":1,\"p50_ms\":31.810834,\"p99_ms\":31.810834,\"max_ms\":31.810834,\"budget_ms\":1000,\"wire_bytes_mean\":1267,\"wire_bytes_max\":1267},\"tool_calls_total\":{\"samples\":1,\"p50_ms\":81.904417,\"p99_ms\":81.904417,\"max_ms\":81.904417,\"budget_ms\":1000,\"wire_bytes_mean\":10049,\"wire_bytes_max\":10049}},\"gopls_starts\":1}\n    warm_actual_bench_test.go:499: WARM_COST_RESULT {\"components\":{\"commit\":{\"samples\":20,\"p50_ms\":53.484917,\"p99_ms\":60.903917,\"max_ms\":60.903917,\"budget_ms\":1000,\"wire_bytes_mean\":6416.95,\"wire_bytes_max\":6417},\"edit\":{\"samples\":20,\"p50_ms\":1.075875,\"p99_ms\":1.793708,\"max_ms\":1.793708,\"budget_ms\":1000,\"wire_bytes_mean\":2354.95,\"wire_bytes_max\":2355},\"stage\":{\"samples\":20,\"p50_ms\":32.83975,\"p99_ms\":39.969208,\"max_ms\":39.969208,\"budget_ms\":1000,\"wire_bytes_mean\":1265.95,\"wire_bytes_max\":1266},\"tool_calls_total\":{\"samples\":20,\"p50_ms\":88.162083,\"p99_ms\":101.935874,\"max_ms\":101.935874,\"budget_ms\":1000,\"wire_bytes_mean\":10037.85,\"wire_bytes_max\":10038}},\"gopls_starts\":1}\nBenchmarkMCPWarmOperationActualWork/packages_20/stage_edit_commit-18      \t      20\t  89287517 ns/op\t      1000 commit_budget_ms\t        60.90 commit_max_ms\t        53.48 commit_p50_ms\t        60.90 commit_p99_ms\t      6417 commit_wire_bytes_max\t      6417 commit_wire_bytes_mean\t      1000 edit_budget_ms\t         1.794 edit_max_ms\t         1.076 edit_p50_ms\t         1.794 edit_p99_ms\t      2355 edit_wire_bytes_max\t      2355 edit_wire_bytes_mean\t         1.000 gopls_starts\t      1000 stage_budget_ms\t        39.97 stage_max_ms\t        32.84 stage_p50_ms\t        39.97 stage_p99_ms\t      1266 stage_wire_bytes_max\t      1266 stage_wire_bytes_mean\t      1000 tool_calls_total_budget_ms\t       101.9 tool_calls_total_max_ms\t        88.16 tool_calls_total_p50_ms\t       101.9 tool_calls_total_p99_ms\t     10038 tool_calls_total_wire_bytes_max\t     10038 tool_calls_total_wire_bytes_mean\nPASS\nok  \tgithub.com/spockz/semantic-editor/internal/mcp\t8.063s\n"
+  }
+}

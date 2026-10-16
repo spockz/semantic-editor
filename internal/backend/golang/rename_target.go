@@ -51,7 +51,7 @@ func resolveRenameTarget(ctx context.Context, project backend.ProjectContext, se
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve rename lookup preimage: %w", err)
 	}
-	if _, ok := snapshot.Files[filepath.Clean(sourcePath)]; !ok {
+	if !hasRenameSourcePreimage(snapshot.Files, sourcePath) {
 		return nil, nil, errors.New("rename lookup lacks the source preimage")
 	}
 	return snapshot, lookup, nil

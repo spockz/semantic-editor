@@ -2,13 +2,15 @@
 package astedit
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/backend"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func TestInspectGoPreservesGroupFunctionImportsRevisionAndUTF16(t *testing.T) {
@@ -148,14 +150,14 @@ func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T)
 		t.Fatal(err)
 	}
 
-	outline, err := OutlineGo(root, root, []string{"field", "function"}, false, false)
+	outline, err := OutlineGo(context.Background(), root, root, []string{"field", "function"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertOutlinePreservesEmptyFile(t, outline)
 	assertOutlineContainsStructuralBox(t, outline)
 
-	methodOutline, err := OutlineGo(root, root, []string{"method"}, true, false)
+	methodOutline, err := OutlineGo(context.Background(), root, root, []string{"method"}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +167,7 @@ func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T)
 	if writeErr := os.WriteFile(testPath, []byte("package demo\nfunc TestOnly() {}\n"), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	selected, err := OutlineGo(root, testPath, nil, true, false)
+	selected, err := OutlineGo(context.Background(), root, testPath, nil, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +263,7 @@ func TestOutlineGoRetainsExportedFreeFunctionWhenFilteringUnexported(t *testing.
 	if err := os.WriteFile(path, []byte("package demo\nfunc Visible() {}\nfunc hidden() {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err := OutlineGo(root, path, []string{"function"}, false, false)
+	result, err := OutlineGo(context.Background(), root, path, []string{"function"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

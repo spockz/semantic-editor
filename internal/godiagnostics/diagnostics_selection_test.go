@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 	"golang.org/x/tools/go/packages"
 )
 
@@ -68,5 +70,99 @@ func TestSelectPackageFilesKeepsFindingsForUsableFiles(t *testing.T) {
 	}
 	if len(findings) != 1 || findings[0].Severity != 1 || findings[0].Source != "package" || !strings.Contains(findings[0].String(), "[package] missing import") {
 		t.Fatalf("findings = %+v, want deduplicated package severity 1", findings)
+	}
+}
+
+func TestAffectedPackagePatternsInvalidatesRetargetedGoSymlink(t *testing.T) {
+	fixture := newRetargetedSymlinkGraph(t)
+	metrics := telemetry.NewMetrics()
+	metricsCtx := telemetry.WithMetrics(fixture.ctx, metrics)
+
+	assertAffectedPackageCoverage(metricsCtx, t, fixture.root)
+	assertScopeLoads(t, metrics, 0)
+	retargetGoSymlink(t, fixture.alias, fixture.secondTarget)
+	assertAffectedPackageCoverage(metricsCtx, t, fixture.root)
+	assertScopeLoads(t, metrics, 1)
+	assertAffectedPackageCoverage(metricsCtx, t, fixture.root)
+	assertScopeLoads(t, metrics, 1)
+}
+
+type retargetedSymlinkGraph struct {
+	root         string
+	ctx          context.Context
+	alias        string
+	secondTarget string
+}
+
+func newRetargetedSymlinkGraph(t *testing.T) retargetedSymlinkGraph {
+	t.Helper()
+	root := t.TempDir()
+	external := t.TempDir()
+	module := "module example.com/symlink\n\ngo 1.24\n"
+	if writeErr := os.WriteFile(filepath.Join(root, "go.mod"), []byte(module), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if writeErr := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sample\n\nfunc Main() {}\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	firstTarget := filepath.Join(external, "v1.go")
+	secondTarget := filepath.Join(external, "v2.go")
+	for _, target := range []string{firstTarget, secondTarget} {
+		if writeErr := os.WriteFile(target, []byte("package sample\n\nfunc Linked() int { return 1 }\n"), 0o600); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	alias := filepath.Join(root, "alias.go")
+	if linkErr := os.Symlink(firstTarget, alias); linkErr != nil {
+		t.Fatal(linkErr)
+	}
+	executable, findErr := FindGopls()
+	if findErr != nil {
+		t.Fatal(findErr)
+	}
+	environment, envErr := gocache.Environment(t.Context(), root)
+	if envErr != nil {
+		t.Fatal(envErr)
+	}
+	manager := NewSessionManager()
+	t.Cleanup(func() {
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Error(closeErr)
+		}
+	})
+	ctx := WithSessionManager(t.Context(), manager)
+	if useErr := UseWithContext(ctx, root, executable, environment, func(context.Context, *Session) error { return nil }); useErr != nil {
+		t.Fatal(useErr)
+	}
+	return retargetedSymlinkGraph{
+		root: root, ctx: ctx, alias: alias, secondTarget: secondTarget,
+	}
+}
+
+func retargetGoSymlink(t *testing.T, alias, target string) {
+	t.Helper()
+	if removeErr := os.Remove(alias); removeErr != nil {
+		t.Fatal(removeErr)
+	}
+	if linkErr := os.Symlink(target, alias); linkErr != nil {
+		t.Fatal(linkErr)
+	}
+}
+
+func assertAffectedPackageCoverage(ctx context.Context, t *testing.T, root string) {
+	t.Helper()
+	patterns, err := AffectedPackagePatternsWithContext(ctx, root, []string{"main.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(patterns, ","); got != "./." && got != "./..." {
+		t.Fatalf("affected patterns = %v, want root-package coverage", patterns)
+	}
+}
+
+func assertScopeLoads(t *testing.T, metrics *telemetry.Metrics, want int) {
+	t.Helper()
+	if got := metrics.Snapshot(0).Phases["go.packages.load_scope"].Count; got != want {
+		t.Fatalf("graph lookup loaded package scope %d times, want %d", got, want)
 	}
 }

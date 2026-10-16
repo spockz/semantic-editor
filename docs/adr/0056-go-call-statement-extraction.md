@@ -15,6 +15,10 @@ transformation without broad type inference or changing execution scope.
 
 ## Decision
 
+This record defines the Go extraction implementation and proof limits. Java
+extraction delegates to JDT LS under ADR-0068; its separate contract does not
+broaden these Go guarantees.
+
 Expose `semantic_extract_function` and the `extract-function` CLI command for Go.
 The primary target is the new helper name in `symbol`. The existing owner is the
 `in_function` selector. `file` identifies the workspace-relative Go source file.
@@ -86,10 +90,20 @@ rules.
   explicit type-expression classes above, and the generated package is
   type-checked before application.
 * Unsupported or ambiguous selections fail before mutation.
-* `semantic_extract_function` is advertised only for Go and has CLI txtar
-  coverage for its observable success and refusal behavior.
+* Original-source result binding and transformed-candidate compilation remain
+  distinct validations. Function extraction requests package types, imports,
+  dependency metadata, and compiler input paths without retaining per-expression
+  type information or syntax trees it does not consume. Constant and variable
+  extraction still request those richer results. Both function checks retain
+  compiler-error handling and captured-input revalidation; one program's loaded
+  types cannot prove that the other program compiles. The original check also
+  applies when there are no live results: introducing a helper could otherwise
+  conceal a pre-existing unresolved call to that name in another source file.
+* The Go `semantic_extract_function` implementation has CLI txtar coverage for
+  its observable success and refusal behavior. Java coverage is governed by
+  ADR-0068 and the cross-language coverage invariant in ADR-0028.
 * Broader statement extraction, general return-value inference, expression
-  extraction, other languages, and gopls-driven extraction remain unadvertised
+  extraction, and gopls-driven extraction are not added to this Go contract
   until their own safety guarantees are established.
 
 ## Consequences

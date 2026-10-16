@@ -19,11 +19,11 @@ CLI and MCP previously called Go symbol resolution, gopls rename, and diagnostic
 
 * New backend and service contracts do not expose `go/token.Position`.
 * Capabilities are the single source for service-level operation rejection.
-* The registry contains only implemented backends; Java, Rust, Scala, and Haskell are registered for their explicitly documented lookup-only capabilities, while Python and TypeScript remain unavailable.
+* The registry contains only implemented backends and advertises their current operation-specific capabilities. The original lookup-only slices are extended by ADR-0030, ADR-0051, and ADR-0068; they are not permanent language-wide limits. Python and TypeScript remain unavailable.
 * Existing Go CLI and MCP behavior remains unchanged for common operations unless an explicit language selection is supplied.
 
 ## Consequences
 
 * CLI and MCP share selection, capability rejection, location conversion, and common operation orchestration.
 * A second backend can be added without making ingress packages depend on language-specific coordinates.
-* Existing Go AST edits are intentionally outside this boundary until a later, separately reviewed slice.
+* The original slice left Go AST edits outside this boundary. Later operation registry integration is governed by ADR-0034; backend ownership and typed capability gates remain in force.

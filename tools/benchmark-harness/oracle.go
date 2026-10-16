@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 
 	"gopkg.in/yaml.v3"
 )
@@ -796,7 +797,7 @@ func copyOracleWorkspaceFiles(sourceRoot string, sourceFS, targetFS *os.Root) er
 			return fmt.Errorf("relativize %s: %w", path, relErr)
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == ".scratch" {
+			if entry.Name() == ".git" || entry.Name() == ".scratch" || sourcefiles.IsBenchmarkDataDirectory(path) {
 				return filepath.SkipDir
 			}
 			return targetFS.MkdirAll(rel, 0o750)
@@ -851,6 +852,9 @@ func installHiddenTests(workDir, sourceDir string) error {
 	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
+		}
+		if entry.IsDir() && path != sourceRoot && sourcefiles.IsBenchmarkDataDirectory(path) {
+			return filepath.SkipDir
 		}
 		if entry.IsDir() || !entry.Type().IsRegular() {
 			return nil

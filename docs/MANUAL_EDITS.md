@@ -31,6 +31,16 @@ incomplete; these grouped entries describe the observed final diff rather than
 claiming a complete per-edit event inventory. Documentation and wrap-up log
 patches are ordinary documentation edits, not invented semantic failures.
 
+### 2026-10-16: warm MCP artifact-boundary migration
+
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ME-WARM-20261016** | `internal/sourcefiles/` callers, `internal/sourcebuf/`, `internal/godiagnostics/`, `internal/snapshot/`, `internal/projectverify/`, `cmd/docgen/`, repository-corpus and harness helpers | Applied shared pre-descent artifact exclusions, bounded documentation report discovery, selected archive paths before exporting, and added behavioral regressions | Callback expression migration, coordinated lifecycle/configuration changes, and fixture editing | Semantic insertion added both shared helpers. Replacement could not locate the nested `WalkDir` callback expression; targeted patches handled the call-site migration, test files, configuration, and user-approved data-module boundary. The exported-helper removal rejected by approval review was not bypassed | Nested callback expression selection and coordinated call-site migration |
+
+Related assessment: `SUBOPTIMAL_TOOLS.md`, session wrap-up for chat
+`01a13c05-667b-7512-9144-22f9a2d08b53`. Earlier compacted performance work retains
+its existing incident records; this row covers the recoverable final phase.
+
 | ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **ME-0001** | `main.go` | Added `os`, `strings`, `semedit/internal/mcp` to imports | Import addition | Import management | `organize_imports` / `add_import` |

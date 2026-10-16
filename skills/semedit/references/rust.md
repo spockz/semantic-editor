@@ -6,6 +6,18 @@ validate each selector; Rust qualification is preserved. Suggestions require the
 normal trusted workspace and installed server, never edit source, and can be
 disabled with `SEMEDIT_SUGGESTIONS=off`. See [configuration and limits](../../../docs/symbol-suggestions.md).
 
+MCP results follow the [shared output policy](../SKILL.md#copy-typed-results-and-respect-publication).
+Use typed continuations with their exact revisions, and retain failure and
+publication state when choosing follow-up calls. Structured results can be
+model-visible; text keeps exact next-step guards and names structured fields
+without repeating source, inventories, diagnostic pages, diffs, or logs.
+For diagnostic details, copy the response's `diagnostic_report.arguments` into
+`semantic_diagnostics`, choose a category/filter and page size, then follow
+`next_offset`. Pages reuse the captured report; a deferred/unavailable count
+does not indicate a clean workspace. Use verification only for a fresh report.
+Rename returns `active_count` and diagnostic changes rather than every existing
+workspace warning; request `semantic_verify` for a full diagnostic inventory.
+
 This reference provides workflows for executing Rust refactorings with `semedit` primitives. Read this document only when refactoring or inspecting Rust source files.
 
 ---

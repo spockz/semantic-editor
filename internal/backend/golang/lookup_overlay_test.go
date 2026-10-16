@@ -2,10 +2,13 @@
 package gobackend
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"errors"
 
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
@@ -70,5 +73,65 @@ func TestLookupUsesOverlayBytesAndUTF16Location(t *testing.T) {
 	}
 	if string(contents) != diskSource {
 		t.Fatalf("Lookup changed disk source to %q", contents)
+	}
+}
+
+func TestGoBackendOutlineHonorsCanceledContext(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/outlinecontext\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sample\nfunc Value() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := (GoBackend{}).Outline(ctx, backend.OutlineRequest{
+		Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo},
+		Path:    root, IncludeUnexported: true,
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Outline() error = %v, want context cancellation", err)
+	}
+}
+
+func TestGoBackendOutlineUsesBufferedSource(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/outlineoverlay\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "main.go")
+	disk := []byte("package sample\nfunc OldName() {}\n")
+	if err := os.WriteFile(file, disk, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorizeErr := buffer.AuthorizeWrites(context.Background(), root); authorizeErr != nil {
+		t.Fatal(authorizeErr)
+	}
+	working := []byte("package sample\nfunc NewName() {}\n")
+	if applyErr := buffer.Apply(context.Background(), []sourcebuf.Change{{Path: file, Before: disk, After: working}}); applyErr != nil {
+		t.Fatal(applyErr)
+	}
+	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	outline, err := (GoBackend{}).Outline(ctx, backend.OutlineRequest{
+		Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo},
+		Path:    "main.go", IncludeUnexported: true,
+	})
+	if err != nil {
+		t.Fatalf("Outline() on buffered source: %v", err)
+	}
+	if len(outline.Files) != 1 || len(outline.Files[0].Symbols) != 1 || outline.Files[0].Symbols[0].Name != "NewName" {
+		t.Fatalf("buffered outline = %#v, want NewName", outline)
+	}
+	diskAfter, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(diskAfter, disk) {
+		t.Fatalf("Outline() changed disk source to %q", diskAfter)
 	}
 }

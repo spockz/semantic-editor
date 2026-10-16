@@ -13,14 +13,14 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
 
 ## Decision
 
-1. **Primary Identity as Mutating Engine**: `semedit`'s core toolset focuses on transactional mutations (`semantic_rename`, `organize_imports`, `extract_function`, `verify_diagnostics`).
+1. **Primary Identity as Semantic Engine**: The core toolset exposes checked mutations and verification, including `semantic_rename`, `semantic_organize_imports`, `semantic_extract_function`, and `semantic_verify`. Atomic publication is per file; the catalog does not imply a multi-file transaction.
 2. **Distinct Intent-Based Naming**: Navigation tools in `semedit` use explicit intent names that never collide with raw LSP methods:
-   * Use `resolve_symbol_location` (takes qualified identifier string) instead of `goToDefinition`.
-   * Use `query_symbol_references` instead of `findReferences`.
+   * Use `semantic_lookup` (takes a qualified identifier string) instead of `goToDefinition`.
+   * Use `semantic_find_references` instead of `findReferences`.
 3. **Separate Execution and Catalog Profiles**: `--profile=mutations-only` remains an orthogonal execution filter for read-only tools. `--tool-profile=base` is the default MCP catalog and exposes generic construct insertion, replacement, removal, and movement; rename; lookup, inspect, outline, references; verify; batch; snapshot; and undo. `--tool-profile=full` exposes every registered operation and support utility. Live reload remains opt-in.
    Specialized operations stay registered, executable through the CLI, and eligible for batch dispatch regardless of catalog discovery. The repeatable `--expose-tool-variant verb:kind` flag selectively adds specialized variants to the base catalog. Values accept comma-separated patterns and `*` wildcards, such as `insert:*`, `*:function`, or `insert:function,insert:type`. Invalid patterns and patterns matching no registered variant fail before the server starts. Variant metadata is explicit on each operation and discovery filters only the top-level catalog; it does not change backend capabilities or batch schemas.
 4. **Dynamic Language Scoping at Initialization**:
-   During the `initialize` handshake, the server extracts workspace context (`rootUri`, `workspaceFolders`, or client `initializationOptions`) and identifies the active language backend. The tool schemas returned to the client (in `tools/list` and capability responses) are dynamically scoped:
+   During the `initialize` handshake, the server extracts workspace context (`rootUri`, `workspaceFolders`, or client `initializationOptions`) and identifies the enabled language backends. The tool schemas returned to the client (in `tools/list` and capability responses) are dynamically scoped:
    * **Language-Specific Tool Availability**: Tools with handlers only for a specific language (e.g. build dependency management, framework-specific actions) are omitted when that language is absent.
    * **Dynamic Parameter Enums**: Operation parameter schemas with dynamic constraints (such as `kind` in `semantic_replace_construct` or `access_modifier` in insertion tools) emit `enum` definitions restricted strictly to the valid constructs/modifiers supported by the active language backend, enabling LLM token decoders to enforce valid tokens via logit masking.
    * **Dynamic Change Propagation**: When workspace focus shifts or an explicit language context changes, the server emits `notifications/tools/list_changed` so the client re-requests the adapted schema definitions.

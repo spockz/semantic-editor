@@ -1,0 +1,32 @@
+# Cached diagnostic reads are advertised in both profiles and reject invalid or expired requests without mutating source.
+stdin requests.json
+exec semedit mcp --tool-profile base
+stdout '"name":"semantic_diagnostics"'
+stdout 'diagnostic report is unknown or expired'
+stdout 'limit must be an integer between 1 and 100'
+stdout '"isError":true'
+cmp value.go .scratch/want/value.go
+
+stdin requests.json
+exec semedit mcp --tool-profile full
+stdout '"name":"semantic_diagnostics"'
+stdout 'diagnostic report is unknown or expired'
+stdout 'limit must be an integer between 1 and 100'
+cmp value.go .scratch/want/value.go
+
+-- go.mod --
+module example.com/diagnosticpaging
+
+go 1.24
+-- requests.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_diagnostics","arguments":{"report_id":"expired-report"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_diagnostics","arguments":{"report_id":"expired-report","limit":101}}}
+-- value.go --
+package sample
+
+func Value() int { return 1 }
+-- .scratch/want/value.go --
+package sample
+
+func Value() int { return 1 }

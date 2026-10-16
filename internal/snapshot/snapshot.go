@@ -20,6 +20,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
 // Manifest stores metadata and content-addressed file records for a pre-edit snapshot.
@@ -553,7 +554,7 @@ func scanDirectory(absWorkDir string, rootDir string) ([]string, error) {
 
 		if info.IsDir() {
 			name := info.Name()
-			if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" || name == "dist" || name == "bin" {
+			if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" || name == "dist" || name == "bin" || sourcefiles.IsBenchmarkDataDirectory(path) {
 				return filepath.SkipDir
 			}
 			return nil

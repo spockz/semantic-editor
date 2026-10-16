@@ -618,7 +618,7 @@ func copyWorkspaceContext(ctx context.Context, source, destination string) error
 		if rel == "." {
 			return nil
 		}
-		if entry.IsDir() && stagedExcludedDirectory(entry.Name()) {
+		if entry.IsDir() && (stagedExcludedDirectory(entry.Name()) || sourcefiles.IsBenchmarkDataDirectory(path)) {
 			return filepath.SkipDir
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {
@@ -683,7 +683,7 @@ func snapshotWorkspaceContext(ctx context.Context, root string) (map[string]file
 		if rel == "." {
 			return nil
 		}
-		if entry.IsDir() && stagedExcludedDirectory(entry.Name()) {
+		if entry.IsDir() && (stagedExcludedDirectory(entry.Name()) || sourcefiles.IsBenchmarkDataDirectory(path)) {
 			return filepath.SkipDir
 		}
 		if entry.Type()&fs.ModeSymlink != 0 {

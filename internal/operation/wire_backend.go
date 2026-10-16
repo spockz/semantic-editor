@@ -695,23 +695,18 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 
 func renameOutputContract() *OperationOutputContract {
 	text := nonEmptyStringSchema()
-	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file": text, "symbol": text,
-	}, Required: []string{"file", "symbol"}}
+	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text, "symbol": text}, Required: []string{"file", "symbol"}}
 	properties := map[string]ValueSchema{
-		"status":                   {Kind: SchemaString, Enum: []any{"renamed"}},
-		wireApplicationState:       {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
-		"origin":                   identitySchema,
-		"target":                   {Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text}, Required: []string{"file"}},
-		"file":                     text,
-		"symbol":                   text,
-		wireExpectedRevision:       text,
-		wireDiagnostics:            diagnosticDeltaSchema(),
-		"active":                   {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+		"status":             {Kind: SchemaString, Enum: []any{"renamed"}},
+		wireApplicationState: {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
+		"origin":             identitySchema,
+		"target":             {Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text}, Required: []string{"file"}},
+		"file":               text, "symbol": text, wireExpectedRevision: text,
+		wireDiagnostics: diagnosticDeltaSchema(), outputActiveCountField: {Kind: SchemaInteger},
 		"continuation_unavailable": {Kind: SchemaString},
 	}
 	return &OperationOutputContract{
-		ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"status", wireApplicationState, wireDiagnostics, "active"}},
+		ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"status", wireApplicationState, wireDiagnostics, outputActiveCountField}},
 		Continuations: []OutputContinuation{
 			{Field: "file", Schema: text, Role: RoleTarget, Consumers: renameFileConsumers, Optional: true},
 			{Field: "symbol", Schema: text, Role: RoleTarget, Consumers: renameSymbolConsumers, Optional: true},
@@ -726,10 +721,8 @@ func renameErrorOutputSchema() *ValueSchema {
 	return &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"status":             {Kind: SchemaString, Enum: []any{"applied_with_diagnostics"}},
 		wireApplicationState: {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
-		"origin":             identitySchema,
-		wireDiagnostics:      diagnosticDeltaSchema(),
-		"active":             {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
-	}, Required: []string{"status", wireApplicationState, "origin", wireDiagnostics, "active"}}
+		"origin":             identitySchema, wireDiagnostics: diagnosticDeltaSchema(), outputActiveCountField: {Kind: SchemaInteger},
+	}, Required: []string{"status", wireApplicationState, "origin", wireDiagnostics, outputActiveCountField}}
 }
 
 func projectRenameOutput(result *backend.RenameResult) (any, error) {
@@ -739,13 +732,9 @@ func projectRenameOutput(result *backend.RenameResult) (any, error) {
 	if result.ApplicationState == "" {
 		return nil, fmt.Errorf("rename application state is unknown")
 	}
-	active := result.Active
-	if active == nil {
-		active = []string{}
-	}
 	projection := map[string]any{
 		"status": "renamed", wireApplicationState: result.ApplicationState,
-		wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+		wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), outputActiveCountField: len(result.Active),
 	}
 	origin, found, err := projectRenameIdentity(result.ProjectRoot, result.Source)
 	if err != nil {
@@ -784,10 +773,6 @@ func projectRenameErrorOutput(err error) (any, bool, error) {
 		return nil, false, nil
 	}
 	result := diagnosticsError.Result
-	active := result.Active
-	if active == nil {
-		active = []string{}
-	}
 	if result.ApplicationState != string(EditPersisted) && result.ApplicationState != string(EditAppliedWorking) {
 		return nil, false, nil
 	}
@@ -800,7 +785,7 @@ func projectRenameErrorOutput(err error) (any, bool, error) {
 	}
 	return map[string]any{
 		"status": "applied_with_diagnostics", wireApplicationState: result.ApplicationState,
-		"origin": origin.wireValue(), wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+		"origin": origin.wireValue(), wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), outputActiveCountField: len(result.Active),
 	}, true, nil
 }
 

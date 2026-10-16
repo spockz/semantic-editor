@@ -179,7 +179,7 @@ func walkGoModuleDirs(start string, visit func(string) error) error {
 			return fmt.Errorf("scan Go modules at %q: %w", current, walkErr)
 		}
 		if entry.IsDir() {
-			if current != start && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+			if current != start && sourcefiles.IsIgnoredDirectoryPath(current) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -296,7 +296,7 @@ func discoverGoPackages(root, targetDir string, includeTests bool) ([]backend.Wo
 		if !d.IsDir() {
 			return nil
 		}
-		if current != targetDir && sourcefiles.IsIgnoredDirectory(d.Name()) {
+		if current != targetDir && sourcefiles.IsIgnoredDirectoryPath(current) {
 			return filepath.SkipDir
 		}
 
@@ -566,7 +566,7 @@ func directoryHasGoSource(target string) (bool, error) {
 		if walkErr != nil {
 			return fmt.Errorf("scan Go source at %q: %w", current, walkErr)
 		}
-		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+		if entry.IsDir() && current != target && sourcefiles.IsIgnoredDirectoryPath(current) {
 			return filepath.SkipDir
 		}
 		if !entry.IsDir() && (filepath.Ext(entry.Name()) == ".go" || entry.Name() == "go.mod") {

@@ -1,0 +1,45 @@
+# Import organization resolves an unused import and retains an unrelated package diagnostic.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"resolved":\[.*fmt.*imported and not used'
+stdout '"id":2,.*"remaining_count":1.*"resolved_count":2'
+stdout '"id":3,.*undefined: unrelatedMissing'
+cmp target.go .scratch/want/target.go
+
+-- go.mod --
+module example.com/importscopeddelta
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"target.go","add":["strconv"],"remove":["fmt"]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":"unrelated","check_only":true}}}
+-- target.go --
+package sample
+
+import (
+	"strings"
+	"fmt"
+)
+
+func Value(value string) string {
+	_ = strconv.Itoa(len(strings.TrimSpace(value)))
+	return strings.TrimSpace(value)
+}
+-- unrelated/unrelated.go --
+package unrelated
+
+var Value = unrelatedMissing
+-- .scratch/want/target.go --
+package sample
+
+import (
+	"strconv"
+	"strings"
+)
+
+func Value(value string) string {
+	_ = strconv.Itoa(len(strings.TrimSpace(value)))
+	return strings.TrimSpace(value)
+}

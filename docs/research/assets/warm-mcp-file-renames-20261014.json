@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "schema_version": 1,
+    "created_at": "2026-10-14T20:56:57.563Z",
+    "base_commit": "1ff9655e5719c2d078c4e274e4a4817f006cced9",
+    "go_version": "go version go1.27.2 darwin/arm64",
+    "requested_samples_per_case": 1000,
+    "expected_filesystem_cases": 2,
+    "expected_mcp_cases": 4,
+    "source_sha256": {
+      "internal/mcp/file_rename_bench_test.go": "a982790fae45f3c17be65788bf616b9c76e29b8f951bce5a585224a5a68d7f52",
+      "internal/mcp/warm_cost_bench_test.go": "ac3477f3bed69077acdc5e2b41ace5094f051d3ec3456bc8ee991b3af70dcbc9",
+      "internal/mcp/server_test.go": "310eff83c5f9104e443bac3860da3972d0cd25ce065121ab48798e6c2e466163"
+    },
+    "gopls_binary_sha256": "5690ea7b1c8b5935bd218621561a4830edf57ca874d2f673a1f6097ecaa1c8b2",
+    "operation": "Actual same-directory os.Rename(value.go, renamed.go) and reverse; source bytes and Go package unchanged.",
+    "transport": "Filesystem-only lower bound, plus production MCP server over in-process JSON-RPC pipes with real external gopls.",
+    "continuity_policy": "Warm MCP cases abort on the first unexpected restart; no warm p99 is emitted for a failed continuity case.",
+    "budget_enforcement": "Latency budgets report-only; session continuity and correct observable state are mandatory.",
+    "arguments": [
+      "go",
+      "test",
+      "./internal/mcp",
+      "-run",
+      "^$",
+      "-bench",
+      "^(BenchmarkFileRenameFilesystemCost|BenchmarkMCPFileRenameCost)$",
+      "-benchtime=1000x",
+      "-count=1",
+      "-timeout=30m",
+      "-json"
+    ]
+  },
+  "started_at": "2026-10-14T22:56:59.146671+02:00",
+  "completed_at": "2026-10-14T22:57:09.847991+02:00",
+  "elapsed_seconds": 10.701,
+  "command_exit_code": 1,
+  "normal_repository_checks": "make check passed before measurement",
+  "outcome": "Filesystem lower bounds measured; all four warm MCP cases rejected on the first gopls restart.",
+  "filesystem": [
+    {
+      "packages": 1,
+      "samples": 1000,
+      "mean_ms": 0.035872,
+      "p99_ms": 0.05179,
+      "gopls_starts": 0,
+      "scope": "os.Rename only; no MCP server"
+    },
+    {
+      "packages": 20,
+      "samples": 1000,
+      "mean_ms": 0.036169,
+      "p99_ms": 0.04792,
+      "gopls_starts": 0,
+      "scope": "os.Rename only; no MCP server"
+    }
+  ],
+  "mcp": [
+    {
+      "case": "BenchmarkMCPFileRenameCost/packages_1/semantic_lookup",
+      "packages": 1,
+      "reaction": "semantic_lookup",
+      "status": "failed_session_continuity",
+      "requested_samples": 1000,
+      "completed_rename_reaction_observations": 1,
+      "valid_warm_samples": 0,
+      "warm_p99_ms": null,
+      "rename_observation_ms": 0.0679,
+      "reaction_observation_ms": 0.3833,
+      "untimed_synchronization_observation_ms": 1103.146,
+      "gopls_starts": 2,
+      "meaning": "Single observed rename/reaction before the continuity guard aborted the case; not a percentile."
+    },
+    {
+      "case": "BenchmarkMCPFileRenameCost/packages_1/semantic_verify",
+      "packages": 1,
+      "reaction": "semantic_verify",
+      "status": "failed_session_continuity",
+      "requested_samples": 1000,
+      "completed_rename_reaction_observations": 1,
+      "valid_warm_samples": 0,
+      "warm_p99_ms": null,
+      "rename_observation_ms": 0.0753,
+      "reaction_observation_ms": 1047.0659,
+      "untimed_synchronization_observation_ms": 0,
+      "gopls_starts": 2,
+      "meaning": "Single observed rename/reaction before the continuity guard aborted the case; not a percentile."
+    },
+    {
+      "case": "BenchmarkMCPFileRenameCost/packages_20/semantic_lookup",
+      "packages": 20,
+      "reaction": "semantic_lookup",
+      "status": "failed_session_continuity",
+      "requested_samples": 1000,
+      "completed_rename_reaction_observations": 1,
+      "valid_warm_samples": 0,
+      "warm_p99_ms": null,
+      "rename_observation_ms": 0.0755,
+      "reaction_observation_ms": 0.3535,
+      "untimed_synchronization_observation_ms": 1112.358,
+      "gopls_starts": 2,
+      "meaning": "Single observed rename/reaction before the continuity guard aborted the case; not a percentile."
+    },
+    {
+      "case": "BenchmarkMCPFileRenameCost/packages_20/semantic_verify",
+      "packages": 20,
+      "reaction": "semantic_verify",
+      "status": "failed_session_continuity",
+      "requested_samples": 1000,
+      "completed_rename_reaction_observations": 1,
+      "valid_warm_samples": 0,
+      "warm_p99_ms": null,
+      "rename_observation_ms": 0.083,
+      "reaction_observation_ms": 1032.7126,
+      "untimed_synchronization_observation_ms": 0,
+      "gopls_starts": 2,
+      "meaning": "Single observed rename/reaction before the continuity guard aborted the case; not a percentile."
+    }
+  ],
+  "raw_results_sha256": "9c0fbe413dab92e8f511ef117ca82f90a7a3904d0ef8774e9c5416b1479cd5d5",
+  "limitations": [
+    "There is no dedicated Go file-rename MCP operation; the benchmark uses an external os.Rename followed by a production MCP reaction.",
+    "Only ordinary same-directory Go filenames are covered; package changes and build-selection-changing names are excluded.",
+    "The filesystem p99 values use 1,000 samples per fixture; failed MCP cases provide one observation each and no warm percentile.",
+    "Lookup synchronization occurs outside the primary timed sample and is checked to expose deferred process invalidation.",
+    "Synthetic one-package and twenty-package fixtures, production MCP over in-process pipes, and the configured real gopls build.",
+    "No runtime restart policy changes are included in this benchmark addition."
+  ]
+}

@@ -4,6 +4,7 @@ package gobackend
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -17,6 +18,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/astedit"
 	backend "github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
@@ -247,21 +249,113 @@ func (GoBackend) Lookup(ctx context.Context, project backend.ProjectContext, que
 	return result, nil
 }
 
+type renameIdentity struct {
+	path          string
+	qualifiedName string
+	kind          string
+}
+
+type resolvedRename struct {
+	snapshot *symbol.ResolutionSnapshot
+	lookup   *backend.LookupResult
+	identity renameIdentity
+}
+
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
-func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*backend.RenameResult, error) {
-	snapshot, lookup, err := resolveRenameTarget(ctx, request.Project, request.Symbol)
+func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (result *backend.RenameResult, resultErr error) {
+	ctx = gocache.WithEnvironmentCache(ctx)
+	ctx, release := godiagnostics.EnsureSessionManager(ctx)
+	defer func() { resultErr = errors.Join(resultErr, release()) }()
+
+	resolved, err := resolveRename(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	result, err = executeRename(ctx, request, resolved)
+	if !isRetryableRenameConflict(err) {
+		return result, err
+	}
+
+	fresh, err := resolveRename(ctx, request)
+	if err != nil {
+		return nil, fmt.Errorf("re-resolve Go rename after source change: %w", err)
+	}
+	if fresh.identity != resolved.identity {
+		return nil, fmt.Errorf("selected Go declaration changed before rename retry: was %s in %s, now %s in %s", resolved.identity.qualifiedName, resolved.identity.path, fresh.identity.qualifiedName, fresh.identity.path)
+	}
+	result, err = executeRename(ctx, request, fresh)
+	if isRetryableRenameConflict(err) {
+		return nil, fmt.Errorf("rename refused after its fresh retry also found changed source; no files were published: %w", err)
+	}
+	return result, err
+}
+
+func resolveRename(ctx context.Context, request backend.RenameRequest) (resolvedRename, error) {
+	snapshot, lookup, err := resolveRenameTarget(ctx, request.Project, request.Symbol)
+	if err != nil {
+		return resolvedRename{}, err
+	}
+	sourcePath, err := pathutil.FilePathFromURI(lookup.Definition.Location.URI)
+	if err != nil {
+		return resolvedRename{}, fmt.Errorf("resolve rename lookup location: %w", err)
+	}
+	if !filepath.IsAbs(sourcePath) {
+		sourcePath = filepath.Join(request.Project.RootDir, sourcePath)
+	}
+	canonicalPath, err := sourcebuf.CanonicalPath(ctx, sourcePath)
+	if err != nil {
+		return resolvedRename{}, fmt.Errorf("canonicalize Go rename declaration path: %w", err)
+	}
+	qualifiedName := lookup.Definition.QualifiedName
+	if qualifiedName == "" {
+		qualifiedName = lookup.Definition.Name
+	}
+	if qualifiedName == "" || lookup.Definition.Kind == "" {
+		return resolvedRename{}, errors.New("rename lookup lacks a stable declaration identity")
+	}
+	return resolvedRename{
+		snapshot: snapshot,
+		lookup:   lookup,
+		identity: renameIdentity{path: filepath.Clean(canonicalPath), qualifiedName: qualifiedName, kind: lookup.Definition.Kind},
+	}, nil
+}
+
+func hasRenameSourcePreimage(files map[string][]byte, selectedPath string) bool {
+	absoluteSelected, err := filepath.Abs(selectedPath)
+	if err != nil {
+		return false
+	}
+	if _, ok := files[filepath.Clean(absoluteSelected)]; ok {
+		return true
+	}
+	canonicalSelected, err := filepath.EvalSymlinks(selectedPath)
+	if err != nil {
+		return false
+	}
+	for path := range files {
+		canonicalPath, err := filepath.EvalSymlinks(path)
+		if err == nil && filepath.Clean(canonicalPath) == filepath.Clean(canonicalSelected) {
+			return true
+		}
+	}
+	return false
+}
+
+func executeRename(ctx context.Context, request backend.RenameRequest, resolved resolvedRename) (*backend.RenameResult, error) {
 	var before []godiagnostics.Diagnostic
 	if !request.DeferVerification {
+		var err error
 		before, err = pipeline.CheckDiagnosticDetails(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
 		if err != nil {
 			return nil, err
 		}
 	}
-	changedPaths, err := golang.RenameSelectedFiles(ctx, request.Project.RootDir, *lookup.Definition, snapshot.Files, request.To)
+	changedPaths, err := golang.RenameSelectedFiles(ctx, request.Project.RootDir, *resolved.lookup.Definition, resolved.snapshot.Files, request.To)
 	if err != nil {
+		var publicationErr *golang.RenamePublicationError
+		if errors.As(err, &publicationErr) && len(publicationErr.PublishedPaths) > 0 {
+			return &backend.RenameResult{Lookup: resolved.lookup}, err
+		}
 		return nil, err
 	}
 	if !request.DeferFormatting && len(changedPaths) > 0 {
@@ -286,7 +380,7 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 	afterMessages := godiagnostics.Messages(after)
 	delta := pipeline.ComputeDelta(beforeMessages, afterMessages)
 	introducedErrors := introducedDiagnosticErrors(before, after)
-	result := &backend.RenameResult{Lookup: lookup, Diagnostics: backend.DiagnosticDelta{
+	result := &backend.RenameResult{Lookup: resolved.lookup, Diagnostics: backend.DiagnosticDelta{
 		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
 		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
 	}, Active: afterMessages}
@@ -294,6 +388,11 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 		return result, &backend.RenameDiagnosticsError{Result: result, IntroducedErrors: introducedErrors}
 	}
 	return result, nil
+}
+
+func isRetryableRenameConflict(err error) bool {
+	var publicationErr *golang.RenamePublicationError
+	return errors.As(err, &publicationErr) && publicationErr.Retryable()
 }
 
 // Verify delegates formatting and diagnostics to the existing Go pipeline.
@@ -365,8 +464,8 @@ func (GoBackend) Inspect(ctx context.Context, request backend.InspectRequest) (*
 }
 
 // Outline returns a file-centric declaration projection for a Go source selection.
-func (GoBackend) Outline(_ context.Context, request backend.OutlineRequest) (*backend.OutlineResult, error) {
-	return astedit.OutlineGo(request.Project.RootDir, request.Path, request.Kinds, request.IncludeUnexported, request.IncludeTests)
+func (GoBackend) Outline(ctx context.Context, request backend.OutlineRequest) (*backend.OutlineResult, error) {
+	return astedit.OutlineGo(ctx, request.Project.RootDir, request.Path, request.Kinds, request.IncludeUnexported, request.IncludeTests)
 }
 
 type goLookupMetadata struct {

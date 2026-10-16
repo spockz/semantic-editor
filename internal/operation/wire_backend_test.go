@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"encoding/json"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	gobackend "github.com/spockz/semantic-editor/internal/backend/golang"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
@@ -725,5 +727,49 @@ func TestVerifyPolicyKeepsNilUnrestrictedAndEmptyFailClosed(t *testing.T) {
 	}
 	if languageBackend.calls != 1 {
 		t.Fatalf("Go backend calls = %d, want one call for nil policy and none for empty policy", languageBackend.calls)
+	}
+}
+
+func TestRenameProjectionDoesNotRepeatExistingWorkspaceDiagnostics(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	if !ok {
+		t.Fatal("rename operation missing")
+	}
+	root := t.TempDir()
+	active := make([]string, 500)
+	for i := range active {
+		active[i] = "unchanged workspace warning with a long message"
+	}
+	result := &backend.RenameResult{
+		ApplicationState: "persisted", ProjectRoot: root, Active: active,
+		Source:      &backend.LookupResult{Definition: &backend.NamedTarget{Name: "Value", QualifiedName: "Value", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "main.go"))}}},
+		Diagnostics: backend.DiagnosticDelta{NetDelta: 0, Introduced: []string{"introduced diagnostic"}, Resolved: []string{"resolved diagnostic"}},
+	}
+	success, err := entry.ProjectOutput(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failure, known, err := entry.ProjectErrorOutput(&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"introduced diagnostic"}})
+	if err != nil || !known {
+		t.Fatalf("known error: %v, %v", known, err)
+	}
+	for _, projected := range []any{success, failure} {
+		output := projected.(map[string]any)
+		if output["active_count"] != json.Number("500") {
+			t.Fatalf("active count lost: %#v", output)
+		}
+		if _, exists := output["active"]; exists {
+			t.Fatal("unchanged workspace diagnostics returned")
+		}
+		data, err := json.Marshal(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(data) > 2048 || strings.Contains(string(data), "unchanged workspace warning") {
+			t.Fatalf("bulk diagnostics retained: %s", data)
+		}
+		if !strings.Contains(string(data), "introduced diagnostic") || !strings.Contains(string(data), "resolved diagnostic") {
+			t.Fatalf("diagnostic changes lost: %s", data)
+		}
 	}
 }

@@ -24,10 +24,10 @@ const (
 // CriticalText renders outcome fields before potentially large formatter output.
 func CriticalText(structured map[string]any, body string) (string, error) {
 	if result, ok := structured["result"]; ok {
-		if summary, isOutline, err := outlineSummary(result); err != nil {
-			return "", fmt.Errorf("summarize outline result: %w", err)
-		} else if isOutline {
-			body = summary
+		var err error
+		body, err = presentationBody(result, body)
+		if err != nil {
+			return "", err
 		}
 	}
 	presentation := make(map[string]any, len(structured))
@@ -44,9 +44,23 @@ func CriticalText(structured map[string]any, body string) (string, error) {
 				return "", fmt.Errorf("project critical text result: %w", err)
 			}
 			presentation[key] = essential
+			if hasCompactedSource(essential) {
+				body = ""
+			}
 			continue
 		}
 		presentation[key] = value
+	}
+	essential, err := essentialPresentationValue(presentation)
+	if err != nil {
+		return "", fmt.Errorf("compact content details: %w", err)
+	}
+	presentation = essential.(map[string]any)
+	if _, typed := presentation["result"].(map[string]any); typed {
+		presentation["details"] = "Full details are in structuredContent.result."
+		if report, ok := presentation["diagnostic_report"].(map[string]any); ok && report["tool"] == "semantic_diagnostics" {
+			presentation["details"] = "Full details are in structuredContent.result; use diagnostic_report.tool and arguments to page captured diagnostics."
+		}
 	}
 	ordered := orderedPresentationValue(presentation, "")
 	encoded, err := json.Marshal(ordered)
@@ -57,7 +71,7 @@ func CriticalText(structured map[string]any, body string) (string, error) {
 		return body, nil
 	}
 	text := "Critical result (JSON): " + string(encoded)
-	if body != "" {
+	if body != "" && body != structured["error"] {
 		text += "\n\n" + body
 	}
 	return text, nil
@@ -81,6 +95,7 @@ func essentialPresentationValue(value any) (any, error) {
 	if err := sanitizeBatchPresentation(result); err != nil {
 		return nil, err
 	}
+	compactPresentationDetails(result)
 	sanitizePresentationMap(result)
 	return result, nil
 }
@@ -152,12 +167,13 @@ func sanitizePresentationMap(result map[string]any) {
 	if _, bulkDiff := result["diff"].(string); bulkDiff {
 		delete(result, "diff")
 	}
-	if _, completeInspection := result["inspection"].(string); completeInspection {
-		delete(result, "inspection")
-	}
-	for _, key := range []string{"source", "body", "log", "logs"} {
-		if value, ok := result[key].(string); ok && isLargeTextPayload(value) {
-			delete(result, key)
+	_, hasState := result[applicationStateField]
+	_, hasReceipt := result["edit_receipt"]
+	if hasState || hasReceipt {
+		for _, key := range []string{"inspection", "source", "body", "log", "logs"} {
+			if value, ok := result[key].(string); ok && isLargeTextPayload(value) {
+				delete(result, key)
+			}
 		}
 	}
 	delete(result, "read_set")
@@ -172,6 +188,11 @@ func sanitizePresentationMap(result map[string]any) {
 }
 
 func outlineSummary(value any) (string, bool, error) {
+	if result, ok := value.(map[string]any); ok {
+		if _, hasScope := result["scope"]; !hasScope {
+			return "", false, nil
+		}
+	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		return "", false, fmt.Errorf("encode outline result: %w", err)
@@ -287,43 +308,7 @@ func orderedPresentationValue(value any, path string) any {
 }
 
 func presentationFieldPriority(key string) (int, bool) {
-	priority := map[string]int{
-		"status":                      0,
-		applicationStateField:         1,
-		"error":                       2,
-		"error_projection_failure":    3,
-		"presentation_error":          4,
-		"native_metadata_unavailable": 5,
-		"safe_delete":                 6,
-		"refusal":                     7,
-		"limitation":                  8,
-		"continuation_unavailable":    9,
-		diagnosticStatusField:         10,
-		"failure":                     11,
-		"formatted":                   12,
-		"scope":                       13,
-		"function_target":             14,
-		"result":                      14,
-		"receipt":                     15,
-		"edit_receipt":                16,
-		"continuations":               17,
-		"file":                        18,
-		"symbol":                      19,
-		"in_function":                 20,
-		"verification":                21,
-		"Completed":                   22,
-		"Partial":                     23,
-		"Failure":                     24,
-		"Results":                     25,
-		"Status":                      26,
-		"Error":                       27,
-		"results":                     28,
-		"checks_run":                  29,
-		"changes":                     30,
-		"changed_files":               31,
-		diagnosticDeltaField:          32,
-	}
-	value, ok := priority[key]
+	value, ok := presentationFieldPriorities[key]
 	return value, ok
 }
 
@@ -339,6 +324,9 @@ func deleteBatchWorkingContinuations(result map[string]any) {
 
 // CriticalTextFallback preserves operation errors when structured projection fails.
 func CriticalTextFallback(structured map[string]any, body string, cause error) string {
+	if isLargeTextPayload(body) || json.Valid([]byte(body)) {
+		body = ""
+	}
 	fallback := map[string]any{
 		applicationStateField: "unknown",
 		"presentation_error":  cause.Error(),
@@ -380,6 +368,9 @@ func (fields orderedJSONObject) MarshalJSON() ([]byte, error) {
 
 // CriticalNativeFields returns schema-validated diagnostic metadata from native results.
 func CriticalNativeFields(value any) (map[string]any, error) {
+	if edit, ok := operation.DiagnosticFileEditResult(value); ok {
+		value = edit
+	}
 	switch result := value.(type) {
 	case operation.FileEditRes:
 		fields := map[string]any{}
@@ -437,4 +428,95 @@ func nativeDiagnosticFieldsSchema() operation.ValueSchema {
 			diagnosticDeltaField:  delta,
 		},
 	}
+}
+
+var presentationFieldPriorities = map[string]int{
+	"status": 0, applicationStateField: 1, "error": 2, "error_projection_failure": 3, "presentation_error": 4, "native_metadata_unavailable": 5,
+	"safe_delete": 6, "refusal": 7, "limitation": 8, "continuation_unavailable": 9, "diagnostic_report": 9, diagnosticStatusField: 10,
+	"failure": 11, "formatted": 12, "scope": 13, "report_id": 13, "category": 13, "total": 13, "offset": 13, "limit": 13, "next_offset": 13, "contains": 13,
+	"function_target": 14, "result": 14, "receipt": 15, "edit_receipt": 16, "continuations": 17, "file": 18, "symbol": 19, "in_function": 20,
+	"verification": 21, "Completed": 22, "Partial": 23, "Failure": 24, "Results": 25, "Status": 26, "Error": 27, "results": 28, "checks_run": 29,
+	"changes": 30, "changed_files": 31, diagnosticDeltaField: 32,
+}
+
+func compactPresentationDetails(result map[string]any) {
+	_, hasMarkdown := result["markdown"]
+	switch result[diagnosticStatusField] {
+	case "unavailable", "deferred", "failed", "unknown":
+		delete(result, diagnosticDeltaField)
+	}
+	for key, value := range result {
+		switch key {
+		case "continuations", "function_target", "type_target", "candidates", "refusal", "safe_delete":
+			continue
+		}
+		if compactPresentationField(result, key, value, hasMarkdown) {
+			continue
+		}
+		switch nested := value.(type) {
+		case map[string]any:
+			if key == diagnosticDeltaField {
+				if candidates, ok := nested["candidates"].([]any); ok {
+					nested["candidates_count"] = len(candidates)
+					delete(nested, "candidates")
+				}
+			}
+			compactPresentationDetails(nested)
+		case []any:
+			for _, item := range nested {
+				if record, ok := item.(map[string]any); ok {
+					compactPresentationDetails(record)
+				}
+			}
+		}
+	}
+}
+
+func compactPresentationField(result map[string]any, key string, value any, hasMarkdown bool) bool {
+	bulk := false
+	switch key {
+	case "inspection", "body", "log", "logs", "markdown", "diff", "final_diff", "read_set", "Stdout", "Stderr", "stdout", "stderr", "log_tail":
+		bulk = true
+	case "source":
+		_, bulk = value.(string)
+	case "references", "usages", "locations", "records", "items", "active", "introduced", "resolved", "suggestions", "changes", "changed_files", "files", "symbols", "modules", "packages", "Diagnostics", "diagnostics", "captured_files", "restored_files", "paths", "Paths", "ScopePaths", "Changed":
+		_, bulk = value.([]any)
+	case "report":
+		bulk = hasMarkdown
+	}
+	if !bulk {
+		return false
+	}
+	switch details := value.(type) {
+	case []any:
+		if _, known := result[key+"_count"]; !known {
+			result[key+"_count"] = len(details)
+		}
+	case string:
+		result[key+"_bytes"] = len(details)
+	}
+	delete(result, key)
+	return true
+}
+
+func presentationBody(result any, body string) (string, error) {
+	if summary, isOutline, err := outlineSummary(result); err != nil {
+		return "", fmt.Errorf("summarize outline result: %w", err)
+	} else if isOutline {
+		return summary, nil
+	}
+	if _, legacy := result.(string); !legacy && (isLargeTextPayload(body) || json.Valid([]byte(body))) {
+		return "", nil
+	}
+	return body, nil
+}
+
+func hasCompactedSource(value any) bool {
+	result, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	_, inspection := result["inspection_bytes"]
+	_, source := result["source_bytes"]
+	return inspection || source
 }

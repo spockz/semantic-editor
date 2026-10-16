@@ -5,6 +5,8 @@ stdout '"isError":true'
 stdout '"status":\s*"applied_with_diagnostics"'
 stdout '"severity":1'
 stdout '"introduced":\[.*undefined: missing'
+stdout '"diagnostic_report":\{.*"introduced_count":1.*"tool":"semantic_diagnostics"'
+stdout '"arguments":\{"category":"active","limit":50,"offset":0,"report_id":"[A-Za-z0-9_-]+"\}'
 cmp value.go .scratch/want/value.go
 
 -- go.mod --
@@ -12,7 +14,7 @@ module example.com/batchintroducederror
 
 go 1.24
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return missing"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_function","params":{"file":"value.go","source":"func Helper() int { return Value() }"}},{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Value","body":"return missing"}}]}}}
 -- value.go --
 package batchintroducederror
 
@@ -23,3 +25,5 @@ package batchintroducederror
 func Value() int {
 	return missing
 }
+
+func Helper() int { return Value() }

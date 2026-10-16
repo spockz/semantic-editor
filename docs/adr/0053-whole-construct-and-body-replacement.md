@@ -27,7 +27,7 @@ The generic operation remains discoverable in the default base catalog;
 its descriptions name map/dictionary entries and struct/object initializer
 properties while stating the implemented Go bounds.
 
-semantic_replace_body remains a specialized Go operation that changes a function or method body and preserves its signature. It is not renamed to replace_construct_body. It is tagged replace:function for optional catalog discovery.
+semantic_replace_body remains a specialized operation that changes a function or method body and preserves its signature. Go uses its native AST pipeline; Java uses the JDT LS/CST pipeline in ADR-0068. It is not renamed to replace_construct_body. It is tagged replace:function for optional catalog discovery.
 
 move_construct expresses relocation only. It accepts destination placement, has no replacement source or overwrite option, and performs same-file reordering atomically. It does not sort declarations automatically.
 

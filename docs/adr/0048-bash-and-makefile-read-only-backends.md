@@ -10,6 +10,10 @@ The source detector already recognizes `.sh`, `.bash`, Makefile variants, and `.
 
 ## Decision
 
+ADR-0051 extends the original lookup surface with selected-source outlines;
+the current registry also exposes Make symbol inspection. These are read
+capabilities, not authorization for script execution or construct mutations.
+
 Register trusted read-only Bash lookup and selected-file diagnostics for `.sh` and `.bash`. Register trusted read-only Makefile target and assignment-variable lookup for `Makefile`, `makefile`, `GNUmakefile`, and `.mk`. Conditional symbols are omitted because make-ls uses whole-block ranges and condition-expression names that cannot be mapped to a declaration in the selected source. Resolve executable paths and start the server only after request-scoped trust for the canonical original root is established. Run each request in a temporary source-only workspace beneath the original root's `.scratch`, use UTF-16 source positions, and bound the complete request and process lifetime.
 
 Diagnostics are clean only after an explicit `publishDiagnostics` message with the unique selected scratch URI and an array. An absent, malformed, stale-version, or wrong-URI report cannot imply success. Makefile verification, formatting, rename, imports, and all construct mutations remain unavailable. In a mixed workspace containing `go.mod`, Go remains the no-file auto lookup backend. make-ls resolves includes; absolute or traversing relative include paths outside the copied source are not confined by the scratch workspace and remain within the explicit-trust boundary.
@@ -20,7 +24,7 @@ Diagnostics are clean only after an explicit `publishDiagnostics` message with t
 * Only one selected source file is copied into each request workspace; a symlinked `.scratch` parent that escapes or redirects the original root is rejected, and original-file paths and ranges are returned to callers.
 * Timeouts, malformed responses, cleanup failures, and missing diagnostic receipts remain explicit errors.
 * Makefile recipes and shell scripts are never executed by the backend.
-* Capability matrices and operation schemas advertise only target and assignment-variable lookup for Make and lookup plus verification for Bash.
+* Capability matrices and operation schemas retain backend-specific read operations: lookup/outline plus symbol inspection for Make, and lookup/outline plus matching-receipt verification for Bash. Make verification remains unsupported.
 * No Bash or Make construct mutation is registered from document-symbol ranges or regular expressions.
 
 ## Consequences

@@ -378,12 +378,12 @@ func validateVariableCandidate(ctx context.Context, filePath, owner, name, discr
 }
 
 func loadVariableTypeContext(ctx context.Context, cleanPath, owner string, source []byte) (variableTypeContext, error) {
-	overlay := sourcebuf.Overlay(ctx)
+	overlay := sourcebuf.Overlay(ctx, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}
 	overlay[cleanPath] = bytes.Clone(source)
-	loaded, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, false)
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, extractionLoadOptions{typeInfo: true})
 	if err != nil {
 		return variableTypeContext{}, fmt.Errorf("type-check variable extraction candidate: %w", err)
 	}

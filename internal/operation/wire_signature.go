@@ -11,6 +11,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	symbolresolver "github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -397,7 +398,7 @@ func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol strin
 			return fmt.Errorf("scan signature package variant %q: %w", path, walkErr)
 		}
 		if entry.IsDir() {
-			if path != packageDir && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata" || entry.Name() == "vendor") {
+			if path != packageDir && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata" || entry.Name() == "vendor" || sourcefiles.IsBenchmarkDataDirectory(path)) {
 				return filepath.SkipDir
 			}
 			return nil

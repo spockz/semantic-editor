@@ -1,5 +1,32 @@
 # Go Semantic Refactoring Guide
 
+MCP results follow the [shared output policy](../SKILL.md#copy-typed-results-and-respect-publication).
+Use typed continuations with their exact revisions, and retain failure and
+publication state when choosing follow-up calls. Structured results can be
+model-visible; text keeps exact next-step guards and names structured fields
+without repeating source, inventories, diagnostic pages, diffs, or logs.
+For diagnostic details, copy the response's `diagnostic_report.arguments` into
+`semantic_diagnostics`, choose a category/filter and page size, then follow
+`next_offset`. Pages reuse the captured report; a deferred/unavailable count
+does not indicate a clean workspace. Use verification only for a fresh report.
+Rename returns `active_count` and diagnostic changes rather than every existing
+workspace warning; request `semantic_verify` for a full diagnostic inventory.
+
+Use `semantic_metrics` with `limit: 1` after a slow Go operation to inspect
+`records[].metrics.phases`: `gopls.request.textDocument/diagnostic`,
+`gopls.request.textDocument/prepareRename`, and `gopls.request.textDocument/rename`
+identify call types with counts and cumulative client elapsed milliseconds.
+`gopls.notify.*` measures outbound notification writes without a server reply.
+`gopls.send.<method>` measures serialization, queuing, and transport completion;
+`gopls.wait.<method>` measures response waiting after a successful send.
+Nested phase durations overlap, and a request's wait is not gopls CPU time.
+Exact `go.*` phases additionally separate environment/package loading, lock
+waits, source synchronization, symbol resolution, revision validation, and
+publication. A host-enabled Go execution trace shows these as ordered regions
+with goroutine blocking stacks; trace collection is off by default.
+Fingerprint children `go.scope.embed_patterns` and `go.scope.hash_inputs`
+separate embed-directive scanning from structural input hashing.
+
 This reference provides concrete patterns and workflows for executing Go refactorings with `semedit` primitives. Read this document only when refactoring or modifying Go source files.
 
 The default MCP base catalog includes `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment`; `--tool-profile full` exposes all registered tools. The execution profile `mutations-only` independently removes read-only tools, including workspace outline.
@@ -60,6 +87,14 @@ ordinary file reading for disk source or `semantic_inspect_symbol` for source an
 guarded revision continuations. Overlay labels identify unpublished contents.
 
 ## Publication and verification
+
+Automatic Go diagnostics reuse findings only after validating their input revision.
+Changed packages and their reverse dependencies are refreshed; unknown coverage
+falls back to a full scan. `semantic_verify` explicitly requests full analysis.
+Ordinary source creation and deletion synchronize the retained gopls process.
+Rename may re-resolve once after a conflict before any file is written. After
+partial publication, inspect the published paths and diff before continuing;
+the operation does not replay the remaining stale edit plan.
 
 Standalone AST mutations stage source edits, formatting, and import organization
 in one working buffer before atomic publication. In a batch, children share that

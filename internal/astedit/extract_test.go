@@ -363,6 +363,33 @@ func Emit(distance Distance) {
 	}
 }
 
+func TestExtractFunctionRejectsTypeErrorsWithoutWriting(t *testing.T) {
+	t.Parallel()
+	file := setupTestFile(t, `package testpkg
+
+func consume(value int) {}
+
+func Emit() {
+	consume("invalid")
+}
+`)
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read source before extraction: %v", err)
+	}
+	_, extractErr := astedit.ExtractFunction(context.Background(), file, "Emit", "writeResult", astedit.ExtractOptions{Kind: astedit.ExtractKindFunction, StartLine: 6, EndLine: 6})
+	if extractErr == nil || !strings.Contains(extractErr.Error(), "resolve extracted result types") || !strings.Contains(extractErr.Error(), "cannot use") {
+		t.Fatalf("ExtractFunction() error = %v, want original package compiler rejection", extractErr)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read source after extraction: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("type-check failure changed source:\n%s", after)
+	}
+}
+
 func TestExtractFunctionRejectsEffectfulMultipleOutputWithoutWriting(t *testing.T) {
 	t.Parallel()
 	file := setupTestFile(t, `package testpkg

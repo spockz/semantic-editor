@@ -1,0 +1,31 @@
+# AST-only staged edits stay unsynchronized until a real rename query consumes their working declaration.
+stdin input.json
+exec semedit mcp --tool-profile full
+! stdout '"isError":true'
+! stdout 'go.session.use'
+! stdout 'go.session.sync_documents'
+stdout '"published_files":1'
+cmp value.go .scratch/want/value.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":"value.go","source":"func Added() int { return Value() + 3 }"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_metrics","arguments":{"limit":1}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"value.go","symbol":"Added","to":"Final"}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"check_only":true}}}
+-- go.mod --
+module example.com/lazystage
+
+go 1.24
+-- value.go --
+package sample
+
+func Value() int { return 1 }
+-- .scratch/want/value.go --
+package sample
+
+func Value() int { return 1 }
+
+func Final() int { return Value() + 3 }

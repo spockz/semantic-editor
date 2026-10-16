@@ -126,7 +126,7 @@ func loadContractPackages(ctx context.Context, root, moduleRoot string, environm
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
 	loaded, err := packages.Load(&packages.Config{
 		Context: ctx, Dir: moduleRoot, Env: environment, BuildFlags: []string{"-mod=readonly"}, Mode: mode,
-		Overlay: sourcebuf.Overlay(ctx),
+		Overlay: sourcebuf.Overlay(ctx, ".go"),
 		ParseFile: func(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
 			parsedMu.Lock()
 			defer parsedMu.Unlock()

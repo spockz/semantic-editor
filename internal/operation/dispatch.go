@@ -8,6 +8,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
@@ -31,6 +32,8 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = gocache.WithEnvironmentCache(ctx)
+	cc.Ctx = ctx
 	buffer := sourcebuf.FromContext(ctx)
 	var checkpoint sourcebuf.Checkpoint
 	if buffer != nil {

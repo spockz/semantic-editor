@@ -1,0 +1,43 @@
+# Published staged and batched Go files remain visible to gopls rename and later package discovery.
+stdin input.json
+exec semedit mcp --tool-profile full
+! stdout '"isError":true'
+stdout '"published_files":1'
+cmp value.go want/value.go
+cmp generated.go want/generated.go
+cmp reader.go want/reader.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 2"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_commit","arguments":{}}}
+{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"generated.go","package":"sample"}},{"tool":"semantic_insert_function","params":{"file":"generated.go","source":"func Generated() int { return Value() }"}}]}}}
+{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"value.go","symbol":"Value","to":"Renamed"}}}
+{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"check_only":true}}}
+-- go.mod --
+module example.com/publication
+
+go 1.24
+-- value.go --
+package sample
+
+func Value() int { return 1 }
+-- reader.go --
+package sample
+
+func Read() int { return Value() }
+-- want/value.go --
+package sample
+
+func Renamed() int {
+	return 2
+}
+-- want/reader.go --
+package sample
+
+func Read() int { return Renamed() }
+-- want/generated.go --
+package sample
+
+func Generated() int { return Renamed() }

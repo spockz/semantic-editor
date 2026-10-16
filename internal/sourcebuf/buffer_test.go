@@ -15,6 +15,116 @@ import (
 	"testing"
 )
 
+func TestGenericTreeObservationDoesNotRequireGo(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "Sample.java")
+	writeFiles(t, []string{target}, []byte("class Sample {}\n"))
+	t.Setenv("PATH", t.TempDir())
+	buffer, createErr := sourcebuf.New(t.Context(), root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := sourcebuf.ObserveTree(ctx, root, ".java"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.WriteFile(ctx, target, []byte("class Sample { int value; }\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestObservedLanguageTreesKeepTheirOwnExclusions(t *testing.T) {
+	root := t.TempDir()
+	cache := filepath.Join(root, "local-cache")
+	if err := os.MkdirAll(cache, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	java := filepath.Join(cache, "Sample.java")
+	writeFiles(t, []string{java}, []byte("class Sample {}\n"))
+	writeFiles(t, []string{filepath.Join(root, "value.go")}, []byte("package sample\n"))
+	goenv := filepath.Join(root, "goenv")
+	writeFiles(t, []string{goenv}, []byte("GOCACHE="+cache+"\n"))
+	t.Setenv("GOENV", goenv)
+	t.Setenv("GOCACHE", "")
+	buffer, createErr := sourcebuf.New(t.Context(), root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := sourcebuf.ObserveTree(ctx, root, ".java"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.ObserveTree(ctx, root, ".go"); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		t.Fatalf("Go filter changed Java observation: %v", err)
+	}
+	writeFiles(t, []string{java}, []byte("class Changed {}\n"))
+	if err := buffer.AssertDisk(); !errors.Is(err, sourcebuf.ErrConflict) {
+		t.Fatalf("observed Java mutation lost: %v", err)
+	}
+}
+
+func TestLazyBufferCapturesOnlyAccessedFiles(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "main.rs")
+	sibling := filepath.Join(root, "unrelated.go")
+	original := []byte("fn main() {}\n")
+	writeFiles(t, []string{target}, original)
+	writeFiles(t, []string{sibling}, []byte("package old\n"))
+	buffer, createErr := sourcebuf.New(t.Context(), root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	if err := buffer.AuthorizeWrites(t.Context(), root); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, []string{sibling}, []byte("package changed\n"))
+	writeFiles(t, []string{filepath.Join(root, "new.java")}, []byte("class New {}\n"))
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := sourcebuf.WriteFile(ctx, target, []byte("fn main() { println!(\"changed\"); }\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		t.Fatalf("unobserved files invalidated a target edit: %v", err)
+	}
+	data, readErr := os.ReadFile(target)
+	if readErr != nil || !bytes.Contains(data, []byte("changed")) {
+		t.Fatalf("target=%s err=%v", data, readErr)
+	}
+}
+func TestObservedTreeSelectionsRemainIndependent(t *testing.T) {
+	for _, extension := range []string{".go", ".java", ".rs", ".kt", ".sh", ""} {
+		t.Run(extension, func(t *testing.T) {
+			root := t.TempDir()
+			target := filepath.Join(root, "target"+extension)
+			original := []byte("original\n")
+			writeFiles(t, []string{target}, original)
+			buffer, err := sourcebuf.New(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+			extensions := []string(nil)
+			if extension != "" {
+				extensions = []string{extension}
+			}
+			if err := sourcebuf.ObserveTree(ctx, root, extensions...); err != nil {
+				t.Fatal(err)
+			}
+			if err := sourcebuf.WriteFile(ctx, target, []byte("updated\n")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := buffer.PublishRetained(ctx); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "a.go")
@@ -281,6 +391,9 @@ func TestBufferedSourceSetIgnoresEffectiveGoState(t *testing.T) {
 	for _, directory := range cacheRoots {
 		writeFiles(t, []string{filepath.Join(directory, "existing.go"), filepath.Join(directory, "new.go")}, []byte("package generated\nfunc Generated() {}\n"))
 	}
+	if err := sourcebuf.ObserveTree(sourcebuf.WithBuffer(t.Context(), buffer), root, ".go"); err != nil {
+		t.Fatal(err)
+	}
 	if err := buffer.AssertDisk(); err != nil {
 		t.Fatalf("Go state changed source read set: %v", err)
 	}
@@ -290,12 +403,155 @@ func TestBufferedSourceSetIgnoresEffectiveGoState(t *testing.T) {
 	}
 }
 
+func TestDirectoryFilterUsesExplicitGoRuntimeRootsWithoutGoEnv(t *testing.T) {
+	root := t.TempDir()
+	buildCache := filepath.Join(root, "runtime-build")
+	moduleCache := filepath.Join(root, "runtime-mod")
+	goTemp := filepath.Join(root, "runtime-tmp")
+	goPath := filepath.Join(root, "runtime-path")
+	fallbackCache := filepath.Join(root, "goenv-build")
+	goenv := filepath.Join(root, "goenv")
+	if err := atomicfile.WriteAtomic(goenv, []byte("GOCACHE="+fallbackCache+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	callLog := filepath.Join(t.TempDir(), "go-env-calls")
+	goCommand := filepath.Join(bin, "go")
+	script := "#!/bin/sh\nprintf 'called\\n' >> \"$GO_ENV_CALLS\"\nexit 23\n"
+	if err := os.WriteFile(goCommand, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GO_ENV_CALLS", callLog)
+	t.Setenv("GOENV", goenv)
+	t.Setenv("GOCACHE", buildCache)
+	t.Setenv("GOMODCACHE", moduleCache)
+	t.Setenv("GOTMPDIR", goTemp)
+	t.Setenv("GOPATH", goPath)
+	filter, err := sourcebuf.DirectoryFilterFor(t.Context(), root)
+	if err != nil {
+		t.Fatalf("DirectoryFilterFor() error = %v", err)
+	}
+	for _, path := range []string{buildCache, moduleCache, goTemp, filepath.Join(goPath, "pkg", "mod")} {
+		if !filter.Skip(root, path) {
+			t.Errorf("filter did not skip explicit runtime root %q", path)
+		}
+	}
+	newBuildCache := filepath.Join(root, "runtime-build-updated")
+	t.Setenv("GOCACHE", newBuildCache)
+	updated, err := sourcebuf.DirectoryFilterFor(t.Context(), root)
+	if err != nil {
+		t.Fatalf("DirectoryFilterFor() after root change: %v", err)
+	}
+	if !updated.Skip(root, newBuildCache) || updated.Skip(root, buildCache) || updated.Skip(root, fallbackCache) {
+		t.Fatalf("filter did not prefer changed explicit roots over GOENV: roots=%v", updated.GeneratedRoots())
+	}
+	if _, err := os.Stat(callLog); !os.IsNotExist(err) {
+		t.Fatalf("go env was called; marker stat error = %v", err)
+	}
+}
+
+func TestDirectoryFilterReadsUpdatedGoEnvRoots(t *testing.T) {
+	root := t.TempDir()
+	goenv := filepath.Join(root, "goenv")
+	buildCache := filepath.Join(root, "goenv-build-a")
+	updatedBuildCache := filepath.Join(root, "goenv-build-b")
+	moduleCache := filepath.Join(root, "goenv-mod")
+	goTemp := filepath.Join(root, "goenv-tmp")
+	goPath := filepath.Join(root, "goenv-path")
+	writeConfig := func(cache string) {
+		t.Helper()
+		content := fmt.Sprintf("GOCACHE=%s\nGOMODCACHE=%s\nGOPATH=%s\nGOTMPDIR=%s\n", cache, moduleCache, goPath, goTemp)
+		if err := atomicfile.WriteAtomic(goenv, []byte(content)); err != nil {
+			t.Fatalf("write GOENV configuration: %v", err)
+		}
+	}
+	writeConfig(buildCache)
+	t.Setenv("GOENV", goenv)
+	t.Setenv("GOWORK", "off")
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOPATH", "GOTMPDIR"} {
+		t.Setenv(key, "")
+	}
+	first, err := sourcebuf.DirectoryFilterFor(t.Context(), root)
+	if err != nil {
+		t.Fatalf("DirectoryFilterFor() with GOENV: %v", err)
+	}
+	if !first.Skip(root, buildCache) {
+		t.Fatalf("GOENV GOCACHE was not excluded: %v", first.GeneratedRoots())
+	}
+	writeConfig(updatedBuildCache)
+	second, err := sourcebuf.DirectoryFilterFor(t.Context(), root)
+	if err != nil {
+		t.Fatalf("DirectoryFilterFor() after GOENV update: %v", err)
+	}
+	if !second.Skip(root, updatedBuildCache) || second.Skip(root, buildCache) {
+		t.Fatalf("filter did not follow updated GOENV: roots=%v", second.GeneratedRoots())
+	}
+}
+
+func TestDirectoryFilterFallsBackForRelativeGoRoots(t *testing.T) {
+	root := t.TempDir()
+	bin := t.TempDir()
+	callLog := filepath.Join(t.TempDir(), "go-env-calls")
+	goCommand := filepath.Join(bin, "go")
+	payload := fmt.Sprintf(`{"GOFLAGS":"","GOCACHE":%q,"GOMODCACHE":%q,"GOPATH":%q,"GOTMPDIR":"relative-go-tmp"}`,
+		filepath.Join(root, "build-cache"), filepath.Join(root, "module-cache"), filepath.Join(root, "go-path"))
+	script := "#!/bin/sh\nprintf 'called\\n' >> \"$GO_ENV_CALLS\"\nprintf '%s\\n' '" + payload + "'\n"
+	if err := os.WriteFile(goCommand, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GO_ENV_CALLS", callLog)
+	t.Setenv("GOCACHE", filepath.Join(root, "build-cache"))
+	t.Setenv("GOMODCACHE", filepath.Join(root, "module-cache"))
+	t.Setenv("GOPATH", filepath.Join(root, "go-path"))
+	t.Setenv("GOTMPDIR", "relative-go-tmp")
+	filter, err := sourcebuf.DirectoryFilterFor(t.Context(), root)
+	if err != nil {
+		t.Fatalf("DirectoryFilterFor() with relative GOTMPDIR: %v", err)
+	}
+	if !filter.Skip(root, filepath.Join(root, "relative-go-tmp")) {
+		t.Fatalf("relative GOTMPDIR did not resolve beneath workspace: roots=%v", filter.GeneratedRoots())
+	}
+	if _, err := os.Stat(callLog); err != nil {
+		t.Fatalf("go env fallback was not called: %v", err)
+	}
+}
+
+func TestDirectoryFilterKeepsSeedWithoutBaseRefusal(t *testing.T) {
+	root := t.TempDir()
+	bin := t.TempDir()
+	callLog := filepath.Join(t.TempDir(), "go-env-calls")
+	goCommand := filepath.Join(bin, "go")
+	script := "#!/bin/sh\nprintf 'called\\n' >> \"$GO_ENV_CALLS\"\nexit 23\n"
+	if err := os.WriteFile(goCommand, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GO_ENV_CALLS", callLog)
+	t.Setenv("GOCACHE", filepath.Join(root, "build-cache"))
+	t.Setenv("GOMODCACHE", filepath.Join(root, "module-cache"))
+	t.Setenv("GOTMPDIR", filepath.Join(root, "go-tmp"))
+	t.Setenv("GOPATH", filepath.Join(root, "go-path"))
+	ctx := gocache.WithModuleCacheSeed(t.Context(), filepath.Join(root, "seed"))
+	_, err := sourcebuf.DirectoryFilterFor(ctx, root)
+	if err == nil || !strings.Contains(err.Error(), "explicit Go isolation base directory") {
+		t.Fatalf("DirectoryFilterFor() error = %v, want seed-without-base refusal", err)
+	}
+	if _, err := os.Stat(callLog); !os.IsNotExist(err) {
+		t.Fatalf("Go settings subprocess should not run after seed refusal; marker stat error = %v", err)
+	}
+}
+
 func TestBufferedSourceSetIgnoresExplicitGoBaseDir(t *testing.T) {
 	root := t.TempDir()
 	base := filepath.Join(root, "selected-go-state")
 	ctx := gocache.WithBaseDir(t.Context(), base)
 	buffer, err := sourcebuf.New(ctx, root)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.ObserveTree(sourcebuf.WithBuffer(ctx, buffer), root, ".go"); err != nil {
 		t.Fatal(err)
 	}
 	for _, directory := range []string{"build", "mod", "tmp", "gopls"} {
@@ -322,6 +578,9 @@ func testPublicationConflict(t *testing.T, scenario string) {
 		t.Fatal(createErr)
 	}
 	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := sourcebuf.ObserveTree(ctx, root, ".go"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := sourcebuf.ReadFile(ctx, sibling); err != nil {
 		t.Fatal(err)
 	}
@@ -453,6 +712,9 @@ func testBufferedApplyRejectsScenario(t *testing.T, scenario string) {
 		t.Fatal(createErr)
 	}
 	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if _, err := sourcebuf.ReadFile(ctx, second); err != nil {
+		t.Fatal(err)
+	}
 	prior := []byte("package sample\nfunc Prior(){}\n")
 	if err := sourcebuf.WriteFile(ctx, first, prior); err != nil {
 		t.Fatal(err)

@@ -225,6 +225,52 @@ func TestSymbolHistoryRestoresBothRenameAndInvalidationEvidence(t *testing.T) {
 	}
 }
 
+func TestFlushClearsSymbolHistoryAndAllowsBufferReuse(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "value.go")
+	writeFiles(t, []string{file}, []byte("package sample\n"))
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Value", NewSelector: "Renamed", Kind: "function"})
+	buffer.InvalidateSymbolAliases(file, "Removed")
+	history := buffer.SymbolHistory()
+	if len(history.Renames) != 1 || len(history.Invalidated) != 1 {
+		t.Fatalf("initial history = %#v", history)
+	}
+	if err := sourcebuf.WriteFile(ctx, file, []byte("package sample\nfunc Renamed() {}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := buffer.SymbolHistory(); len(got.Renames) != 0 || len(got.Invalidated) != 0 {
+		t.Fatalf("flushed history = %#v", got)
+	}
+	if err := buffer.RestoreSymbolHistory(history); err != nil {
+		t.Fatalf("restore history into flushed buffer: %v", err)
+	}
+	if got := buffer.SymbolHistory(); len(got.Renames) != 1 || len(got.Invalidated) != 1 || got.Renames[0] != history.Renames[0] || got.Invalidated[0] != history.Invalidated[0] {
+		t.Fatalf("restored history = %#v; want %#v", got, history)
+	}
+	final := "package sample\nfunc Renamed() int { return 2 }\n"
+	if err := sourcebuf.WriteFile(ctx, file, []byte(final)); err != nil {
+		t.Fatalf("reuse flushed buffer: %v", err)
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		t.Fatalf("publish reused buffer: %v", err)
+	}
+	disk, err := os.ReadFile(file)
+	if err != nil || string(disk) != final {
+		t.Fatalf("reused buffer disk = %q, err = %v; want %q", disk, err, final)
+	}
+	if got := buffer.SymbolHistory(); len(got.Renames) != 0 || len(got.Invalidated) != 0 {
+		t.Fatalf("reused buffer history = %#v", got)
+	}
+}
+
 func TestPublishRetainedReportsZeroPublicationWithoutClearing(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "value.go")

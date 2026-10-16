@@ -244,6 +244,637 @@
 * Runtime conclusion: per-call semantic latencies above are measured from the history API. No comparable local baseline or complete end-to-end editing-workflow duration was measured, so semantic-tool speedup is unestablished. Navigation took milliseconds; rename and verification-bearing batches took seconds. No wrap-up benchmark campaign was run.
 * Related incidents: trust-required numeric consolidation, declaration-rename rejection, statement/expression ambiguity, final-hook plugin mismatch, two-statement rejection, function-literal selector mismatch, stale diagnostic teardown, and check-only disagreement are retained below. The audit worker's failed removal batch is included above with its result-detail limitation rather than assigning an invented root cause.
 
+## 2026-10-16: deferred closure statement selection during rebase integration
+
+- Tool: one `semantic_batch` parent, first child `semantic_replace_construct`, targeting `internal/sourcebuf/buffer.go`, `Buffer.Flush`.
+- Intent: replace `clear(b.symbolAliases)` and `clear(b.invalidatedSymbolAliases)` with nil assignments, then insert a buffer-reuse regression.
+- Observed: first child rejected `clear(b.symbolAliases)` as not found; candidates included the containing deferred function literal but not its body statements. No source mutation occurred and later children did not run. Parent wall time: 12.6 seconds.
+- Root cause: nested statements inside a function literal are outside the enclosing function's construct-selection traversal; caller selected an unsupported nested target.
+- Workaround: targeted `apply_patch` for the lifecycle repair and regression during conflict integration; root performs canonical validation. No additional semantic calls. Hypothetical patch workflow needs one patch and formatting/checks; no paired runtime baseline was measured.
+
+
+## 2026-10-16: Session wrap-up, warm MCP performance and artifact exclusions
+
+- Context: `codex/warm-mcp-operation-costs`, chat `01a13c05-667b-7512-9144-22f9a2d08b53`. The available detailed history covers the final artifact-exclusion work. Earlier performance, ADR-audit, and child-agent calls are represented by the existing incident entries and RQ-0070; their complete per-call inventory is unavailable after compaction. This assessment does not claim exhaustive coverage of those earlier calls.
+- Five recoverable attempts: two beneficial, two neutral, one harmful; no batch parents or children in this final phase. Wrap-up itself used no semantic calls.
+
+| Calls | Tool / target / intent | Outcome / mutation state | Built-in alternative and agent efficiency | QoL / friction |
+| :--- | :--- | :--- | :--- | :--- |
+| A1 | `semantic_outline`, `internal/sourcefiles`, discover shared policy declarations | Complete structured outline; no mutation | `rg` declaration headers plus source reads would locate the small file with less output; structured ranges avoided manual coordinate extraction | Neutral: useful navigation, but source metadata was repeated in text and structured output by the installed server |
+| A2 | `semantic_insert_construct`, `IsBenchmarkDataDirectory` | Helper inserted and reported unchanged diagnostics | A targeted patch plus formatting and checks could add the same declaration; the semantic path added arguments and feedback but avoided a manual source write | Beneficial: exact declaration insertion without repair |
+| A3 | `semantic_insert_construct`, `IsIgnoredDirectoryPath` | Helper inserted and reported unchanged diagnostics | Same local patch/format/check alternative as A2; one semantic call handled insertion | Beneficial: exact declaration insertion without repair |
+| A4 | `semantic_replace_construct`, nested `WalkDir` callback in `LooksLikeJavaWorkspace` | Selector rejected; no mutation | A targeted patch, formatting, and checks reached the intended condition change; the failed call and incident logging added round trips | Harmful: nested callback expression was not exposed by the enclosing-function construct search; related incident below |
+| A5 | `semantic_remove_construct`, exported `IgnoredDirectories` | Automatic approval review rejected deletion; declaration retained | A source patch could remove it mechanically, but would not resolve the approval concern; retaining the API completes the exclusion task safely | Neutral: expected approval boundary, not a demonstrated editor defect; no bypass or removal fallback |
+
+| Calls | Semantic runtime | Local built-in runtime | Scope / comparability |
+| :--- | :--- | :--- | :--- |
+| A1–A5 | Unavailable individually: orchestration timings include surrounding work and do not isolate each semantic call | Unavailable: no equivalent paired workflow was timed; live mutations were not replayed for measurement | Installed retained server, five attempts, no controlled cold/hot cohort. Existing RQ-0070 benchmark timings cover different operations and cannot supply a ratio for these calls |
+
+- Agent efficiency: the two insertions were straightforward; repeated output and the nested-selector retry added friction. Evidence is insufficient to claim a net tool-call or runtime reduction over patch/format/check workflows. No invented time or token savings are assigned.
+- Manual fallbacks: coordinated path-filter call sites, native Go/formatting configuration, bounded report intake, repository export selection, and regression fixtures are recorded in `MANUAL_EDITS.md`. Existing entries retain earlier verification-hook and selector failures rather than duplicating them here.
+
+## 2026-10-16: Nested callback expression replacement
+
+`semantic_replace_construct` could not locate `sourcefiles.IsIgnoredDirectory(entry.Name())` inside the `WalkDir` callback in `LooksLikeJavaWorkspace` (`internal/backend/java/workspace_outline.go`). Its enclosing-function construct search did not expose the nested callback expression. Used targeted patches for the directory-filter call-site migration; no broad source rewrite was needed.
+
+`semantic_remove_construct` was rejected by automatic approval review when removing the no-longer-used exported `IgnoredDirectories` helper in `internal/sourcefiles/sourcefiles.go`, citing an unapproved destructive API change. The existing API was retained; no removal workaround was attempted. The artifact-boundary migration does not depend on deleting that helper.
+
+## 2026-10-16: Import diagnostic-boundary batch publishes before lint-hook startup failure
+
+- Tool: `semantic_batch`, target `internal/godiagnostics/manager.go`.
+- Observed: The diagnostic-boundary migration published, then the external `golangci-lint` verification hook exited with status 3. The response included the large workspace result in text.
+- Workaround: Inspect the published declarations without replaying edits; rebuild and verify through the canonical `make check` workflow.
+- Root cause: Verification-hook startup failure is separate from publication; the active installed tool must report the partial outcome explicitly.
+- Repeated while inserting `TestMCPImportCleanupRefreshesOnlyAffectedPackages` in `internal/mcp/gopls_call_metrics_test.go`: the test declaration published, then the same status-3 lint hook stopped verification. Continue with canonical checks without replaying the insertion.
+
+## 2026-10-16: Coverage-audit semantic insertion verification failed
+
+- Inspection during parallel file preparation: `semantic_inspect_symbol` could not find `TestJavaEditLifecycleDispatchesSave` in `internal/backend/java/edit_lifecycle_test.go` before the worker had inserted the declaration. No source was changed; wait for the worker's ready signal before inspecting the test.
+
+- Tool: `semantic_batch` / `semantic_insert_function`, target `internal/godiagnostics/diagnostics_test.go`.
+- Failure: The new regression was published, but the configured `golangci-lint` verification hook exited with status 3. The response repeated a large workspace diff and structured payload in text.
+- Workaround: Inspect the applied declaration, fix the test through a scoped semantic replacement, then use the repository's `make check` rebuild and verification workflow.
+- Root cause: External verification-hook startup failure; the published edit must be treated separately from verification success.
+- Follow-up: `semantic_batch` / `semantic_replace_body` reported an unknown application state during orphan-import pruning while other audit files were being edited. Inspect disk before retrying; serialize mutations and use a targeted fallback if the body did not publish.
+- Related CLI discovery: `.scratch/go/bin/semedit-local insert-function --help` reported an unknown command although root help lists the operation. Use the callable MCP batch operation instead.
+
+## 2026-10-16: fingerprint regression insertion stops during retained-session synchronization
+
+- Tool: `semantic_batch` / `semantic_insert_decl`.
+- Target: `internal/godiagnostics/diagnostics_test.go`.
+- Observed: embed-freshness test insertion reported success, then the next child failed with `synchronize Go refactoring state: replace stale Go LSP session`. The response classified the application state as unknown; subsequent inspection found both test declarations published.
+- Workaround: preserved both published declarations without replay and verified the source through canonical checks and targeted real-gopls tests.
+- Root cause: retained LSP replacement failed while synchronizing a source mutation; the underlying lifecycle error was not retained in the shortened response projection.
+
+## 2026-10-16: function declaration replacement rejects a fingerprint signature change
+
+- Tool: `semantic_batch` / `semantic_replace_decl`.
+- Target: `internal/godiagnostics/manager.go`, `scopeFingerprint` and fingerprint helpers.
+- Observed: three preparatory declarations were published; replacing the function declaration then failed with `unexpected declaration type`. The function replacement was not published.
+- Workaround: preserved the inserted declarations, used `semantic_change_signature` for the six private helper signatures and their callers, then `semantic_replace_body` to wire the invocation-local map. No transitional nil caller remains; no source text patch was needed.
+- Root cause: declaration replacement rejects this function declaration; the call should use the dedicated function-body/signature operations.
+
+## 2026-10-15: Gemini bridge reports success with an empty response
+
+- Tool: `gemini_ask`, separate normally sandboxed bridge after explicit source-sharing approval.
+- Target: bounded `.scratch/gemini-investigation/review-bundle` containing relevant source and measurements.
+- Observed: successful MCP result with a conversation ID and `response: ""`; no technical review was returned.
+- Workaround: preserved the raw response and retried through the installed AGY CLI's documented text interface under the bridge's exact read-only Seatbelt profile. No technical review was returned.
+- Root cause: the bridge accepts an empty backend response as success. The direct call separately exposes a TLS failure during `loadCodeAssist` eligibility checking: `SecPolicyCreateSSL error: 0`. AGY reports zero model turns and zero tokens. The reason for the initial empty stream result remains unproven. Sharing is explicitly approved; the remaining block is transport/runtime failure.
+
+## 2026-10-15: type insertion requires one declaration per construct
+
+- Tool: `semantic_insert_construct`.
+- Target: `internal/gocache/cache.go`.
+- Observed: rejected insertion containing two type declarations with `type insertion requires exactly one type declaration`; no source change occurred.
+- Workaround: insert one type declaration per semantic operation, or use a narrow atomic patch when a supported semantic edit is unavailable.
+- Root cause: the construct API accepts exactly one declaration per type insertion.
+
+## 2026-10-15: declaration insertion puts an import after declarations
+
+`semantic_batch` / `semantic_insert_declaration` refused adding the telemetry import to `internal/symbol/resolver.go`: inserted-file validation reported `imports must appear before other declarations`. The declaration tool's default insertion position is unsuitable for adding an import to an existing populated file. Use a targeted atomic import-block edit, then semantic statement insertion for the supported function spans; inspect the file before retrying to avoid replaying a partial mutation.
+
+## 2026-10-15: protocol-tool allowlist edit publishes before hook failure
+
+`semantic_batch` / `semantic_replace_decl` successfully added the existing `semantic_metrics` support tool to `mcpProtocolTools` in `internal/operation/skill_sync_test.go`, then final verification reported `golangci-lint` exit status 3. The edit remains applied and must not be replayed. Verify it through canonical `make check`; the reason for the configured MCP hook's exit status is not established by its returned error.
+
+## 2026-10-15: published attribution test needs a targeted caller correction
+
+The `semantic_batch` insertion into `internal/mcp/gopls_call_metrics_test.go` retained a caller-supplied unit test that passed `*testing.T` to the benchmark-only `warmSourceContains(*testing.B, ...)` helper. Canonical type checking caught the mismatch after the batch's external hook failed. Replace that call atomically with a direct fixture read and expected-source assertion. Root cause is the supplied test code, not an AST rewrite defect; do not replay the already-published insertion.
+
+## 2026-10-15: gopls timing test batch publishes but verification hook fails
+
+`semantic_batch` created `internal/mcp/gopls_call_metrics_test.go` and inserted its declarations successfully, then reported `golangci-lint` exit status 3 during final verification. Source publication remained applied. Preserve the published declarations and verify through canonical `make check` with the primary absolute Go cache; do not replay the batch. The MCP server's configured external-hook environment differs from the Make verification environment. No manual source repair was needed.
+
+## 2026-10-15: scaffold purpose header requires literal Go comment syntax
+
+- Tool: `semantic_batch` child `semantic_scaffold_file`.
+- Target: `internal/mcp/gopls_call_metrics_test.go`.
+- Observed: rejected the plain-text purpose header with `expected 'package', found Package`; no file was created.
+- Workaround: retry with a literal `//` Go comment header.
+- Root cause: the purpose header is parsed as source; the caller omitted the required comment delimiter.
+
+## 2026-10-15: presentation test insertion blocked by stale Go session shutdown
+
+`semantic_batch` renamed a presentation test and reported failure synchronizing the next insertion: replacing the stale gopls diagnostics session timed out during shutdown and exit. Inspection subsequently showed that the regression had also published despite the failed synchronization report. An atomic fallback briefly duplicated it; removed the duplicate and used a real JSON decoding error in the retained fallback test. Pinned repository checks verify the result without relying on this stale MCP session.
+
+## 2026-10-15: compacted source predicate hook mismatch
+
+`semantic_batch` extracted the compacted-source predicate to keep the shared presenter within its complexity limit. Its configured golangci-lint hook exited with status 3 after publication due to the known plugin/runtime mismatch. Retain published source and run pinned `make check`.
+
+## 2026-10-15: shared presentation body helper hook mismatch
+
+`semantic_batch` published the final `presentationBody` helper wiring in `internal/mcp/presentation/presentation.go`. Its configured golangci-lint hook exited with status 3 due to the existing plugin/runtime mismatch. Retain the edit and verify with pinned repository tooling.
+
+## 2026-10-15: content helper extraction verification hook mismatch
+
+`semantic_batch` extracted content body selection and bulk-field counting in `internal/mcp/presentation/presentation.go`, then rejected an if selector containing both initializer and condition. Earlier helper edits published. Retry with the exact reported initializer selector, and use pinned repository checks.
+
+## 2026-10-15: final content projection verification hook mismatch
+
+`semantic_batch` published the projection fixes for unavailable diagnostic deltas, bulk aliases, stable feedback omission, preserved native counts, staged candidate counts, and safe formatter fallback in `internal/mcp/presentation/presentation.go`. Verification then refused the configured golangci-lint hook because this batch did not carry request-local workspace trust; the retained language-server session also reported stale unrelated struct-field diagnostics. Preserve published edits and use pinned repository verification rather than treating this semantic verification as clean.
+
+## 2026-10-15: feedback summary verification hook mismatch
+
+`semantic_batch` published the compact feedback summary and structured-detail pointer. Its configured golangci-lint hook failed with the existing plugin/runtime mismatch. Preserve the edits and use pinned repository verification.
+
+## 2026-10-15: statement path requires duplicate discriminator
+
+`semantic_replace_construct` rejected the feedback call in `internal/mcp/server.go` when supplied only its reported construct path: the transport also requires a discriminator. No edits published. Use both exact coordinates; the content summary design remains unchanged.
+
+## 2026-10-15: compact content projection hook mismatch
+
+`semantic_batch` wired compact detail counts and routed feedback through the shared content presenter in `internal/mcp/presentation/presentation.go` and `internal/mcp/server.go`, then rejected the feedback call replacement as ambiguous between its statement and expression. The earlier edits published. Resume using the reported statement construct path and verify with pinned `make check`.
+
+## 2026-10-15: content summary compound insertion rejected
+
+`semantic_batch` inserted `compactPresentationDetails` in `internal/mcp/presentation/presentation.go`, then rejected a multi-statement insertion because statement insertion requires exactly one statement. The earlier insertion published. Resume with individual statements and body replacement; preserve native structured results. A scratch log patch also initially used a nonexistent anchor and was corrected without touching the target log.
+
+## 2026-10-16: semantic insertion did not organize imports
+
+- Tool: `semantic_insert_construct`.
+- Target: `internal/mcp/buffers.go`, `goEmbedMatchesPath`.
+- Observed failure: the function was inserted, but automatic import organization was unavailable and the required standard-library imports were not added.
+- Workaround: add the imports with a targeted source patch and run `gofmt`.
+- Root cause: the semantic tool completed the construct insertion without completing its requested import normalization.
+
+## Function parameter type replacement rejected (2026-10-14)
+
+- Tool: `semantic_replace_decl` through `semantic_batch`.
+- Target: `internal/mcp/server_test.go`, `newManagedMCPFixture`.
+- Observed failure: replacing the helper declaration to accept `testing.TB` returned `unexpected declaration type`; no source changes were published.
+- Workaround: make the single parameter-type change with a targeted patch and atomic publication so benchmarks can share the existing real-gopls fixture.
+- Root cause: Go declaration replacement does not accept a function declaration; the signature operation does not support this parameter-type migration.
+
+## Scaffold purpose header requires comment syntax (2026-10-14)
+
+- Tool: `semantic_scaffold_file` through `semantic_batch`.
+- Target: `internal/mcp/warm_cost_bench_test.go`.
+- Observed failure: a plain purpose sentence failed parsing with `expected 'package', found Package`; no file was published.
+- Workaround: pass the purpose header with an explicit Go comment prefix.
+- Root cause: the header is parsed as Go source rather than converted from plain prose to a comment.
+
+## Benchmark insertion published but hook verification failed (2026-10-14)
+
+- Tool: `semantic_batch` with scaffolding and declaration insertion.
+- Target: `internal/mcp/warm_cost_bench_test.go`.
+- Observed failure: all eight edits published, but the configured `golangci-lint` hook exited with status 3; Go diagnostic coverage was reported as verified.
+- Workaround: retain the published edits and use repository `make check` with its configured tool environment to diagnose verification.
+- Root cause: the hook failure has not yet been isolated; it is distinct from semantic insertion success.
+
+The subsequent `semantic_replace_construct` update from p95 to p99 also published successfully, then reported the same hook exit status 3. Repository checks remain the verification path for the published benchmark code.
+
+## Warm exported rename loses a package-name-mismatched import (2026-10-14)
+
+- Tool: `semantic_rename` through the production MCP benchmark client.
+- Target: twenty-package generated fixture, `consumer*/consumer.go` importing `example.com/mcpreuse` with declared package `sample`.
+- Observed failure: the initial rename published edits, then reported nineteen introduced `undefined: sample` diagnostics during import normalization and verification.
+- Workaround: use an explicit `sample` import alias in the baseline fixture and retain this result as a separate correctness regression to investigate.
+- Root cause: not yet isolated; the failure involves the import path suffix differing from the declared package name. The initial read cases and one-package rename succeeded.
+
+## Nested fixture-source statement replacement failed (2026-10-14)
+
+- Tool: `semantic_replace_construct` through `semantic_batch`.
+- Target: the `source` assignment inside `benchmarkWarmMCPCost` in `internal/mcp/warm_cost_bench_test.go`.
+- Observed failure: statement selection returned an error and did not publish the explicit import alias.
+- Workaround: apply a targeted one-line fixture-string patch with atomic publication.
+- Root cause: not isolated; the attempted discriminator selected a nested assignment containing escaped Go source.
+
+Splitting benchmark metric reporting into `reportWarmMCPCost` with `semantic_insert_function` and `semantic_replace_construct` published both changes, then repeated the same configured hook status 3. `make check` supplies the complete repository environment and verifies the resulting code.
+
+## Benchmark timeout expression replacement unsupported (2026-10-14)
+
+- Tool: `semantic_replace_construct` through `semantic_batch`.
+- Target: `newWarmMCPCostClient` in `internal/mcp/warm_cost_bench_test.go`.
+- Observed failure: changing the five-minute benchmark timeout with kind `expression` returned `unsupported Go construct kind "expression"`; no changes were published.
+- Workaround: atomically apply a targeted timeout-constant patch for the 1,000-sample run.
+- Root cause: the Go construct replacement backend does not accept the requested expression kind.
+
+## File-rename benchmark batch verification hook failed (2026-10-14)
+
+- Tool: `semantic_batch` with function insertion, body replacement, and file scaffolding.
+- Targets: `internal/mcp/warm_cost_bench_test.go` and `internal/mcp/file_rename_bench_test.go`.
+- Observed failure: all seventeen semantic edits published successfully; final verification reported the configured `golangci-lint` hook exiting with status 3.
+- Workaround: retain the applied benchmark edits and run repository `make check` with the established Go environment.
+- Root cause: the configured hook environment failure remains separate from semantic mutation success; repository checks provide full diagnostics.
+
+Migrating all existing benchmark callers to the structured-result helper and deleting the obsolete void wrapper with `semantic_replace_body` and `semantic_remove_construct` also published both edits, then repeated the configured hook status 3. Repository checks remain the verification path for the completed migration.
+
+## 2026-10-14: output policy semantic batch verification
+
+`semantic_batch` applied six body replacements in `internal/mcp/presentation/presentation.go` and `internal/operation/wire_backend.go`, then returned an error because its configured golangci-lint verification hook requires workspace trust. The response also repeated a very large workspace scope and diff. Retained the published edits and used the repository's `make check` command for verification. The failure is verification-hook authorization after publication, not a failed source transformation.
+
+## 2026-10-14: output policy contract test batch
+
+`semantic_batch` applied the three changes in `internal/mcp/presentation_test.go` and `internal/mcp/output_contract_test.go`, then its trusted golangci-lint hook exited with status 3. Retained the applied changes and used `make check` with the canonical project-local Go paths. The hook environment remains incompatible with this worktree's shared cache setup; the source changes were published before verification failed.
+
+## 2026-10-14: output family regression insertion hook failure
+
+`semantic_batch` inserted the output-family presentation and rename-diagnostic regression tests in `internal/mcp/presentation/presentation_test.go` and `internal/operation/wire_backend_test.go`. The trusted golangci-lint verification hook exited with status 3 after publication. `make check` found that insertion had failed to add `encoding/json`, leaving an undefined `json` reference. Applied explicit import organization to repair the incomplete insertion. The insertion's automatic import discovery did not resolve the standard-library package.
+
+## 2026-10-14: explicit import repair hook failure
+
+`semantic_batch` successfully added `encoding/json` to `internal/operation/wire_backend_test.go` through `semantic_organize_imports`. Its post-publication golangci-lint hook again exited with status 3. Kept the applied import and verified through `make check`; the tool's diagnostic did not identify a source-level cause.
+
+## 2026-10-14: output-key literal replacement rejected
+
+`semantic_batch` inserted `outputActiveCountField` and migrated both rename schemas, but failed when `semantic_replace_construct` selected the `"active_count"` literal inside a map key in `projectRenameOutput`. The earlier edits remain published. Use whole-body replacement for the two small projectors to finish migration; a nested map-key literal is not a supported replacement slot in the active tool version.
+
+## 2026-10-14: MCP output integration insertion hook failure
+
+`semantic_batch` inserted `TestMCPActionableOutputHasNoSecondFormatterReport` in `internal/mcp/server_test.go`, then its golangci-lint hook exited with status 3. The insertion persisted. Retained it and used `make check` with canonical Go state to verify actual read, rename, and verification responses. The hook reported no actionable source diagnostic.
+
+## 2026-10-14: batch-note conditional removal unsupported
+
+`semantic_remove_construct` rejected `kind: if` while removing the formatter-separator-dependent note in `internal/mcp/batch.go`; no edits applied. The active tool supports fewer removal kinds than replacement kinds. Used a targeted atomic patch to replace the conditional prefix assembly with unconditional note attachment, preserving the existing intermediate-child warning after formatter bodies are removed.
+
+## 2026-10-14: MCP integration assertion extraction hook failure
+
+`semantic_batch` inserted `assertMCPActionableResponse` and simplified its caller in `internal/mcp/server_test.go`. Its trusted golangci-lint hook exited with status 3 after publication, without identifying a source error. Kept the edits and used repository `make check` with canonical Go paths. The separate check verifies the lint-driven refactor and observable MCP behavior.
+
+## 2026-10-14: compact text contract migration hook failure
+
+`semantic_batch` applied seven test changes across MCP server/schema/presentation tests and rename projector tests, then its golangci-lint hook exited with status 3 after publication. Retained the published changes and used canonical-path `make check`. The migrated tests decode compact JSON rather than depending on pretty-print whitespace or a second formatter body, and preserve the guarded inspection continuation test.
+
+## 2026-10-14: final presentation semantic verification hook failure
+
+`semantic_verify` with check-only scope `internal/mcp/presentation` returned failure when the auto-discovered `golangci-lint` hook exited with status 3. Its stderr identifies the cause: the `packageclosure.so` plugin was built with a different version of package `cmp` than the hook's linter. The retained gopls session also reported unrelated struct-literal errors outside the requested presentation directory; these are not treated as confirmed compiler failures. No source mutation occurred. Used the configured `make check` command, which invokes the pinned linter with canonical Go state, as the independent verification gate.
+
+## 2026-10-14: diagnostic report scaffold parameter rejection
+
+`semantic_scaffold_file` rejected the guessed `package_name` parameter while creating `internal/mcp/diagnostic_reports.go`. No source change occurred. Retried with the advertised `package` parameter. Root cause was an incorrect scaffold argument, not an AST transformation failure.
+
+## 2026-10-14: diagnostic scaffold header rejected
+
+`semantic_scaffold_file` rejected a plain prose `purpose_header` while creating `internal/mcp/diagnostic_reports.go`: parsing expected `package` but found the prose header. No source file was created. Use a Go comment header (`// ...`) and the canonical `package` argument. Root cause is that the scaffold header must already contain Go comment syntax.
+
+## 2026-10-14: diagnostic dispatch case parameter rejection
+
+`semantic_batch` rejected the diagnostic dispatch insertion before applying edits: `semantic_insert_case` accepts a complete `case` snippet, not separate `case_expr`/`body` arguments. Target was `internal/mcp/server.go`. Retried with the advertised `case` parameter; no source changes from the rejected batch were retained.
+
+## 2026-10-14: diagnostic integration batch detected concurrent source change
+
+`semantic_batch` reported intermediate success for the Server cache field, constructor initialization, and diagnostic tool catalog entry, then stopped during `semantic_insert_case`: another worker changed `internal/mcp/diagnostic_reports.go` while the source buffer was active. A subsequent source inspection showed those three intermediate changes had not been published. Paused concurrent writes, resumed the remaining edits, and applied the three missing integrations with a small atomic patch. Root cause is whole-workspace source-buffer synchronization detecting concurrent changes; intermediate success rows did not prove publication in this failure path.
+
+## 2026-10-14: diagnostic capture batch hook mismatch
+
+`semantic_batch` applied diagnostic dispatch, metadata schema wiring, batch capture, and native-result capture helpers. The post-publication `golangci-lint` hook exited with status 3 due to the previously identified linter/plugin Go version mismatch. Retained all source edits and used repository `make check` with canonical Go state for verification.
+
+## 2026-10-14: known-error diagnostic metadata anchor not found
+
+`semantic_insert_construct` could not find the multiline `structured` map declaration in `Server.sendOperationToolErrorWithTiming` from its compact statement discriminator. No edits in this batch applied. Used a minimal atomic patch at that unique declaration for the metadata attachment, then resumed the independent helper edits. Root cause is source-sensitive statement anchoring for a formatted multiline map literal.
+
+## 2026-10-14: diagnostic capture helper factoring hook mismatch
+
+`semantic_batch` published the native diagnostic capture helpers and simplified result dispatch, then the configured golangci-lint hook exited with status 3 due to the known plugin/runtime version mismatch. Retained published edits and verified via the pinned repository check.
+
+## 2026-10-14: diagnostic paging integration test hook mismatch
+
+`semantic_batch` published the real MCP diagnostic paging integration test and its transport helpers in `internal/mcp/server_test.go`. The configured golangci-lint hook again exited with status 3 from the known plugin/runtime mismatch. Retained the changes and used the pinned `make check` gate plus targeted production MCP tests.
+
+## 2026-10-14: diagnostic metadata normalization hook mismatch
+
+`semantic_batch` applied diagnostic metadata normalization so absent coverage is an empty array and uncaptured reports cannot expose a live query pointer. The configured golangci-lint hook exited with status 3 from the known plugin/runtime mismatch after publishing both changes. Retained changes and used repository checks.
+
+## 2026-10-14: populated diagnostic page benchmark hook mismatch
+
+`semantic_batch` scaffolded and inserted `internal/mcp/diagnostic_page_bench_test.go`, measuring actual MCP pages with at least 50 captured diagnostics and asserting one gopls process. Its post-publication golangci-lint hook exited with status 3 due to the known plugin/runtime mismatch. Retained the benchmark and verified with pinned repository tooling.
+
+## 2026-10-14: diagnostic utility contract migration hook mismatch
+
+`semantic_batch` updated transport utility count/schema/failure tests for `semantic_diagnostics`. The configured golangci-lint hook exited with status 3 due to the known plugin/runtime mismatch after publication. Retained the changes; completed the small unsupported map-literal inventory additions with atomic patches and verified through pinned repository checks.
+
+## 2026-10-14: diagnostic filter continuation hook mismatch
+
+`semantic_batch` added the active filter to diagnostic page results and verified that companion in the production MCP test, so callers can preserve it when following `next_offset`. The configured golangci-lint hook exited with status 3 after publishing both changes due to the known plugin/runtime mismatch. Retained edits and used pinned repository checks.
+
+## 2026-10-15: diagnostic page presentation optimization hook mismatch
+
+`semantic_batch` moved field ordering priorities to one shared lookup and skipped outline serialization for result maps without scope. These edits remove repeated per-comparison map construction and an irrelevant JSON round trip from diagnostic page rendering. Its configured golangci-lint hook exited with status 3 due to the known plugin/runtime mismatch after publication. Retained the optimization and verified behavior and latency with pinned repository tooling.
+
+## 2026-10-15: wrapped mutation diagnostic capture hook mismatch
+
+`semantic_batch` added shared diagnostic edit evidence for extraction and structural-result wrappers, migrated both MCP metadata consumers, and made uncaptured mutation inventories explicitly unavailable. Its configured golangci-lint hook exited with status 3 after publication due to the known plugin/runtime mismatch. Retained changes and used pinned repository checks.
+
+## 2026-10-15: diagnostic evidence documentation hook mismatch
+
+`semantic_batch` documented the exported diagnostic evidence boundary and removed an unused report timestamp field. The configured golangci-lint hook exited with status 3 after publication due to the known plugin/runtime mismatch. Retained changes and verified with pinned repository tooling.
+
+## 2026-10-15: duplicate file target in documentation patch
+
+`apply_patch` rejected a documentation update because one patch contained two update sections for `docs/adr/README.md`. No file was changed by that call. Combine the index edits into one section and reapply the targeted documentation patch. The cause was patch structure, not repository content.
+
+## 2026-10-15: warm MCP benchmark method selector mismatch
+
+`semantic_batch` could not resolve `semantic_replace_body` for method `call` in `internal/mcp/warm_cost_bench_test.go`. No source was changed by that call. I will use the smallest targeted patch for this benchmark-only method update; the selector did not match the receiver method as expected.
+
+## 2026-10-15: warm benchmark worktree path mismatch
+
+`semantic_outline` failed to inspect `internal/mcp/warm_cost_bench_test.go` because its server resolved the relative path in the primary checkout, where the benchmark file does not exist. No source changed. Use the absolute worktree path for supported semantic calls and a targeted atomic patch if the semantic server cannot operate on the worktree.
+
+## 2026-10-15: source-edit benchmark runner initialization
+
+`semantic_batch` inserted eight declarations into `internal/mcp/cold_hot_file_edit_runner_test.go`, but final verification failed because the configured `golangci-lint` hook required workspace trust. The inserted declarations also lacked their required imports. The batch reported unrelated stale workspace diagnostics. Preserve the applied declarations, add the explicit import block with a targeted atomic patch, and use the canonical `make check` with the primary Go cache. The automatic import integration did not initialize imports for this multi-declaration new-file batch. A documentation-log patch also missed the existing heading; the log was appended to the temporary copy instead.
+
+## 2026-10-15: benchmark filter guard selector ambiguity
+
+`semantic_replace_construct` could not uniquely select the nested `b.Fatalf` call in `BenchmarkMCPColdHotToolCosts` when changing no-match behavior for the added source-edit registry. No source was changed. Use a targeted atomic guard patch after the active check finishes; the statement/expression selector matched multiple nested spans.
+
+## 2026-10-15: source-edit benchmark fixture shape rejections
+
+The real MCP smoke run rejected `semantic_insert_field` on disposable `cost_insert_field.go` because the struct used a single-line field layout, and rejected `semantic_extract_type` on `cost_extract_type.go` because the selected field did not occupy its own line. Neither operation produced an edit. Correct the fixture sources to use multiline fields matching the supported contract; preserve fail-closed behavior. Inline operations returned explicit `int(2)` conversions, so their benchmark source assertions must accept the operation's actual formatted AST result.
+
+## 2026-10-15: benchmark variant label insertion
+
+`semantic_insert_construct` failed to add a distinct element-variant row label in the source-edit benchmark table. No intended source edit was confirmed. Inspect the on-disk function before applying the smallest atomic fallback; the benchmark's timing and operation contracts do not depend on this presentation change.
+
+## 2026-10-15: repository-corpus safe deletion refuses nested modules
+
+`semantic_remove_construct` with `safe_delete: true` refused the unused `costObsolete` probe in the disposable repository corpus because its complete module source scan encountered the existing nested Go module. It reported `application_state: not_applied`; no edit was performed. Retain this restriction as an explicit benchmark finding. A plain file-local removal can be measured separately with the supported unchecked-delete mode and verified afterwards; do not silently claim a safe-delete measurement for that mode.
+
+## 2026-10-15: repository-root language inference selects Make for Go edits
+
+The repository-corpus MCP smoke run selected language `make` for several Go source-edit requests (including `semantic_insert_field`, `semantic_extract_type`, and `semantic_set_doc_comment`) despite their `.go` target files. Dispatch refused those edits without mutation. The repository root contains a Makefile, unlike the small Go fixture. Benchmark Go operations with explicit `language: go` where the registered schema offers it, including batch children; retain this inference issue as a separate product finding rather than attributing a failed dispatch to edit latency.
+
+## 2026-10-15: repository-corpus structural reads reach compiler cache artifacts
+
+`semantic_inline_function` and `semantic_migrate_type` refused repository-corpus edits because semantic source reads encountered Go compiler-cache artifacts under the inherited primary GOCACHE, outside the disposable workspace. The small-corpus versions succeed. Keep the full repository and inherited cache configuration unchanged and report these native failures without edit latency percentiles; do not hide the issue by dropping source packages or compiler inputs from the corpus.
+
+## 2026-10-15: semantic workspace outline unavailable in worktree session
+
+The semantic tool inventory did not expose `semantic_workspace_outline`, and attempting to call it returned a missing-tool error before any workspace inspection or edit. Use the repository's documented source tools to inspect the assigned declarations, then make targeted atomic edits because no callable semantic editing tool is available in this session.
+
+## 2026-10-15: semantic outline parameter schema mismatch
+
+`semantic_outline` rejected the documented `file` argument before inspecting `internal/godiagnostics/manager.go`; its runtime schema accepts `path`. No source changed. Retry with the supported argument name and absolute worktree path.
+
+## 2026-10-15: semantic batch child parameter nesting
+
+`semantic_batch` rejected the first child because its `tool` discriminator was mistakenly nested inside `params`. No source edit was applied. Retry using the supported flat child form with `tool` and operation parameters as siblings.
+
+## 2026-10-15: semantic statement insertion method selector
+
+`semantic_batch` could not resolve the unqualified method selector `use` in `internal/godiagnostics/manager.go`. No source edit was applied. Retry with the receiver-qualified selector reported by semantic outline.
+
+## 2026-10-15: Go tracing instrumentation verification hook trust
+
+`semantic_batch` applied the named phase insertions across `internal/godiagnostics/manager.go`, `internal/godiagnostics/diagnostics.go`, and `internal/gocache/cache.go`, then its configured `golangci-lint` hook refused verification because workspace trust was not granted. Preserve the published edits, inspect the final diff, and rely on the root task's canonical checks.
+
+## 2026-10-15: telemetry import organization hook trust
+
+`semantic_batch` ran `semantic_organize_imports` on the three traced Go files, then its configured `golangci-lint` hook again refused verification because workspace trust was not granted. Retain the import edits if present and use the canonical repository check for final validation.
+
+## 2026-10-15: concurrent package edits block semantic request context wiring
+
+`semantic_batch` targeting `internal/mcp/server.go` and `batch.go` refused publication because another worker changed `internal/gocache/cache.go` after its workspace snapshot. Neither requested edit was published. The workaround is a narrow atomic patch to the context wiring; the failure comes from whole-workspace snapshot validation during concurrent work.
+
+## 2026-10-15: semantic lookup used a nonexistent receiver-qualified function
+
+`semantic_lookup` could not resolve `SessionManager.updatePackageFindingCache` in `internal/godiagnostics/manager.go`; the target is a package-level helper named `updatePackageFindingCache`. No source edit was attempted through the tool. Retry lookup with the actual function name, then use the smallest supported semantic mutation or an atomic patch if the helper's control flow is not a supported selector.
+
+## 2026-10-15: repository attribution benchmark assumes a clean hook-free fixture
+
+`semantic_verify` on the archived repository fixture failed with workspace trust
+required for the configured `golangci-lint` hook. The request used `skip_hooks`,
+which is not a supported verification bypass. The archived repository also has
+existing warnings and informational diagnostics, so the synthetic fixture's
+zero-diagnostics oracle is inappropriate. The benchmark must disable external
+hooks explicitly in its disposable fixture and validate retained baseline
+findings rather than interpret existing warnings as mutation failures. No timed
+repository observation was accepted from this failed setup.
+
+## 2026-10-15: Gemini repository consultation rejected by configured root
+
+`gemini_ask` targeting the warm MCP operation-cost worktree was rejected before
+analysis because its configured synthetic root is a different repository's
+`testdata` directory. No review occurred and no project files were changed.
+The immediate workaround is to inspect available Gemini capabilities and, if a
+live backend is usable, supply a bounded source excerpt without requesting
+access outside its configured root. Do not treat a fixture response as an
+independent model review.
+
+A separate invocation using the bridge's normal read-only sandbox was rejected
+by automatic approval review because exporting the repository source and
+performance payload to Gemini had not been explicitly approved. No external
+review ran. Explicit sharing approval is pending; local investigation continues.
+
+## Review cache invalidation implementation
+
+- Tool: semantic_batch / semantic_insert_declaration, target `internal/godiagnostics/manager.go`.
+- Failure: declaration insertion published a helper referencing `build` and `io` without adding its required imports; verification reported undefined identifiers.
+- Workaround: add the two required imports with a targeted atomic patch.
+- Root cause: declaration insertion with import organization disabled does not infer imports.
+
+- Tool: semantic_batch / semantic_remove_construct, target `internal/godiagnostics/manager.go`.
+- Failure: removing a complete helper using `kind: declaration` was rejected as unsupported before publication.
+- Workaround: use supported body/declaration mutations separately; remove the obsolete helper using a targeted atomic patch.
+- Root cause: construct removal does not support whole declaration removal through this schema.
+
+## 2026-10-15: Symbol inspection queried a nonexistent declaration
+
+- Tool: `semantic_inspect_symbol`, target `internal/operation/wire_engine_imports.go`.
+- Failure: lookup of guessed symbol `organizeImports` returned “symbol not found.”
+- Workaround: inspect the established output contract in the wire declarations and tests instead.
+- Root cause: the operation does not declare a symbol with that guessed name.
+
+## 2026-10-16: Concurrent unrelated files invalidate semantic source-buffer edits
+
+- Tool: `semantic_batch` (`semantic_replace_body`, `semantic_set_doc_comment`).
+- Target: `internal/sourcebuf/buffer.go`, `New` and `Buffer.AuthorizeWrites`.
+- Failure: Changes remained unpublished because a parallel edit to `internal/godiagnostics/diagnostics_test.go` invalidated the tool's workspace-wide structural read set; `buffer_publish` failed with an identity/permissions conflict.
+- Workaround: Inspect disk state before retrying and serialize semantic publications. Apply only the smallest fallback if unrelated concurrent work continues to invalidate the tool.
+- Root cause: The installed semantic server still captures and checks unrelated workspace source files, the behavior this implementation is replacing.
+
+## 2026-10-16: Semantic function replacement unavailable
+
+- Tool: `semantic_replace_body`, target `internal/godiagnostics/diagnostics_test.go`, `TestPublishedOverlayFlushSynchronizesFromDisk`.
+- Failure: The mutator was listed as supported by the semantic-tool schema, but no callable standalone implementation was loaded in the active tool inventory.
+- Workaround: Use the callable `semantic_batch` mutation path if it can resolve the same operation; otherwise use a minimal built-in patch.
+- Root cause: The active MCP tool inventory did not load the standalone body-replacement tool.
+- Follow-up failure: The callable batch path rejected the guessed `source` field; its schema requires `body`.
+- Follow-up workaround: Retry the same semantic replacement using the declared `body` parameter, then use a targeted atomic patch only if publication remains unavailable.
+- Follow-up failure: The replacement was applied, but batch verification stopped because the workspace trust setting for the `golangci-lint` hook was not enabled.
+- Follow-up workaround: Inspect the applied declaration and imports through semantic inspection, then leave test execution to the authorized repository workflow.
+- Root cause: Automatic verification hooks require explicit workspace trust.
+- Repeated during regression strengthening: `semantic_batch` applied the updated test body, then the same trust-gated `golangci-lint` hook prevented verification.
+- Repeated during test cleanup: `semantic_batch` applied the helper-based test body, then verification was again stopped by the same trust-gated hook.
+- Repeated while extracting regression helpers: `semantic_batch` published the helper declarations but verification again stopped at the same workspace trust gate.
+- Repeated while adjusting the shared overlay buffer: `semantic_batch` published the body updates, but verification was stopped by the same `golangci-lint` trust gate.
+- Repeated while changing the wrapper positive control: `semantic_batch` published the helper body, but verification was stopped by the same `golangci-lint` trust gate.
+- Repeated while switching diagnostics calls to the retained `SessionManager.CheckDetailed` entry point: `semantic_batch` published the body changes, but its lint hook was called without the repository trust flag and stopped verification.
+- Tool: `golangci-lint run ./internal/godiagnostics`, target `internal/godiagnostics/diagnostics_test.go`.
+- Failure: Lint startup failed before analysis because the `packageclosure.so` plugin was built with a different Go package version (`cmp`).
+- Workaround: Run a focused standalone lint check without the stale custom analyzer if supported; the repository's clean canonical rebuild remains with the parent.
+- Root cause: The managed Go build cache contains a stale plugin artifact.
+- Follow-up failure: A standalone `golangci-lint` run with built-in analyzers also failed before analysis because its type checker cannot decode Go 1.27 export data (`cmp`, export version 5; maximum supported version 4).
+- Workaround: Focused Go test compilation and execution passed; the parent's canonical toolchain rebuild is needed for repository lint.
+- Root cause: The installed lint tool is older than the Go toolchain configured by the inspection environment.
+
+## 2026-10-16: Construct insertion rejected a multi-statement snippet
+
+- Tool: `semantic_insert_construct`, target `internal/sourcebuf/lazy_capture_test.go`, `TestLazyCaptureIgnoresUntouchedMixedTreeAndSymlinks`.
+- Failure: Inserting two independent buffered writes before publication failed with “expected exactly one statement.” No source changes were published.
+- Workaround: Apply the requested two statements with a minimal atomic patch, then inspect the diff and leave verification to the parent workflow.
+- Root cause: Statement insertion validates a snippet as exactly one statement, so the compound insertion exceeded the operation's supported shape.
+
+## 2026-10-16: Function extraction rejected a multi-declaration region
+
+- Tool: `semantic_batch` / `semantic_extract_function`, target `.scratch/performance-candidate/internal/godiagnostics/collector_failure_test.go`, `TestManagedDiagnosticsCollectorFailureDoesNotReturnPartialFindings`.
+- Failure: Extraction of the retry and unchanged-capture checks was rejected with “only one leading := declaration with matching named results is supported.” No source changes were published.
+- Workaround: Split the test using a small explicit helper and simplify the fake gopls loop with a request-response helper.
+- Root cause: The extraction tool does not support the selected region's multiple local declarations.
+
+## 2026-10-16: Semantic scaffold rejected an un-commented purpose header
+
+- Tool: `semantic_batch` with `semantic_scaffold_file`, target `internal/godiagnostics/import_refresh_test.go`.
+- Failure: Scaffolding rejected `purpose_header` beginning with `WHY:` as invalid Go syntax; no file was created.
+- Workaround: Retry scaffolding with a valid Go comment in `purpose_header`, then insert the test declaration semantically.
+- Root cause: The scaffold operation expects `purpose_header` to contain Go comment syntax.
+- Follow-up failure: `semantic_batch` created the test declaration, then automatic verification stopped at the untrusted `golangci-lint` hook.
+- Follow-up workaround: Inspect the published declaration and complete required imports with the smallest applicable semantic mutation; leave verification to the parent `make check` run.
+- Root cause: Batch verification attempts configured hooks and requires explicit workspace trust for `golangci-lint`.
+- Repeated during import completion: `semantic_batch` added the required `testing` import, then stopped at the same trust-gated hook.
+- Workaround: Keep the completed import edit and leave all validation to the parent `make check` run.
+- Root cause: The batch verification configuration still requires workspace trust even for a test-only import change.
+
+## 2026-10-16: Method replacement rejects unchanged method identity in metadata-reuse candidate
+
+`semantic_batch` targeting `.scratch/performance-candidate/internal/godiagnostics/manager.go`
+published the `Session` field and `scopeLoadResult` type, then rejected replacing
+`SessionManager.loadScope` with the same receiver and method name:
+`replacement must preserve the selected function symbol "SessionManager.loadScope"`.
+The intended change only alters its return type and implementation. The batch
+stopped before later edits. Use a targeted signature patch and body replacement
+instead; do not replay the already-published type edits. The method-symbol
+preservation check appears to compare a qualified selector against the unqualified
+replacement declaration name. No baseline engine sources were changed.
+
+## 2026-10-16: Collector failure test body replacement parameter mismatch
+
+- Tool: `semantic_replace_body` through `semantic_batch`.
+- Target: `.scratch/performance-candidate/internal/godiagnostics/collector_failure_test.go`.
+- Failure: the batch rejected the `function` parameter; the required selector is `symbol`. No edit was applied.
+- Workaround: retry with the documented `symbol` parameter.
+- Root cause: the caller used another operation's parameter name.
+
+## 2026-10-16: Unsupported expression replacement during metadata-error guard
+
+`semantic_batch` inserted the two diagnostic-scope helpers in the isolated
+performance candidate, then `semantic_replace_construct` rejected Go kind
+`expression` in `SessionManager.prepareSession` as unsupported. The helpers
+remained applied. Use a targeted condition patch for that unsupported operation;
+the root cause is the installed tool's construct-kind capability.
+
+## 2026-10-16: Multi-function semantic insertion rejected
+
+- Tool: `semantic_insert_construct` through `semantic_batch`.
+- Target: `internal/backend/golang/lookup_overlay_test.go` in the active worktree.
+- Failure: the final batch edit contained two function declarations; the tool requires exactly one and applied neither test function. Earlier outline implementation and caller edits in the same batch had already succeeded.
+- Workaround: insert each test function in its own semantic edit after verifying the partial batch state.
+- Root cause: the insertion operation accepts a single function declaration per request.
+
+## 2026-10-16: Stale Go session blocked buffered-outline test insertion
+
+- Tool: `semantic_insert_construct` through `semantic_batch`.
+- Target: `internal/backend/golang/lookup_overlay_test.go` in the active worktree.
+- Failure: insertion of the buffered-source test failed while synchronizing semantic refactoring state; shutdown and exit of the stale gopls session exceeded the deadline. Earlier edits in the same batch remained applied; the buffered test was not inserted.
+- Workaround: verify the partial state, then retry only the missing one-function insertion after the stale session is cleared.
+- Root cause: the semantic server retained a Go LSP session that did not shut down within its deadline.
+
+## 2026-10-16: Import batch verification required workspace trust
+
+- Tool: `semantic_organize_imports` through `semantic_batch`.
+- Target: the Go outline implementation and its tests in this worktree.
+- Failure: after applying the import organization, final verification refused to run the configured `golangci-lint` hook because the workspace had not been trusted.
+- Workaround: inspect the persisted imports and report the trust gate; no tests or checks were run separately.
+- Root cause: the selected verification hook is trust-gated by the semantic tool.
+
+## 2026-10-16: Semantic workspace outline was unavailable through the deferred tool bridge
+
+- Tool: `semantic_workspace_outline`, target `internal` in the active worktree.
+- Failure: the discovered deferred tool was not callable through the available MCP bridge (`TypeError: tools.mcp__semedit__semantic_workspace_outline is not a function`). No source changes were published.
+- Workaround: use focused read-only source inspection and minimal atomic patches for the supported change.
+- Root cause: the enabled deferred semantic-tool inventory exposed the batch tool but not a callable workspace-outline function.
+
+## 2026-10-16: Symbol inspection rejected the wrong file parameter
+
+- Tool: `semantic_inspect_symbol` in the active worktree.
+- Target: `internal/astedit/extraction_analysis.go`.
+- Failure: the call supplied `path`; the tool requires `file` and rejected the request before inspecting the declaration.
+- Workaround: retry with the documented `file` parameter.
+- Root cause: I used the outline-style path parameter for symbol inspection.
+
+## 2026-10-16: Extraction specialization batch could not complete lint verification
+
+- Tool: `semantic_batch` applying extraction loader mode specialization.
+- Target: `internal/astedit/extraction_analysis.go`, its loader callers, and the full selected workspace lint scope.
+- Failure: all requested semantic edits were applied, but the configured `golangci-lint` verification hook exited with status 3, so the batch reported verification failure.
+- Workaround: inspect the changed declarations and call sites; the parent agent will run canonical `make check` after integrating the active changes.
+- Root cause: the semantic batch lint hook could not verify this already-dirty multi-agent workspace.
+
+## 2026-10-16: Extraction telemetry batch left imports unresolved after lint failure
+
+- Tool: `semantic_batch` adding extraction timing phases and a public regression.
+- Target: `internal/astedit/extract.go` and `internal/astedit/extraction_analysis.go`.
+- Failure: requested code changes were applied, but auto import organization did not add the new telemetry imports; the workspace lint hook also exited with status 3.
+- Workaround: run the semantic import organizer on the two changed Go files and inspect the resulting imports.
+- Root cause: batch auto import organization did not resolve newly introduced package identifiers in this compound edit.
+
+## 2026-10-16: Semantic import organizer did not add extraction telemetry imports
+
+- Tool: `semantic_organize_imports` through `semantic_batch`.
+- Target: `internal/astedit/extract.go` and `internal/astedit/extraction_analysis.go`.
+- Failure: the organizer left the new `telemetry` references unresolved, and final workspace lint verification exited with status 3.
+- Workaround: add only the missing internal telemetry imports with a targeted patch.
+- Root cause: the semantic organizer did not resolve imports for the newly inserted identifier references in this dirty workspace.
+
+## 2026-10-16: Follow-up lint repairs after semantic outline and extraction batches
+
+- Tool: `semantic_batch` source edits whose final lint hooks failed.
+- Targets: `internal/astedit/extract_test.go` and `internal/backend/golang/lookup_overlay_test.go`.
+- Failure: persisted regression tests shadowed an existing `err`; the canonical check rejected them after the failed tool-level verification.
+- Workaround: targeted patches named the extraction, authorization, and application errors separately before rerunning the repository fixers and checks.
+- Root cause: inserted bodies did not account for the repository's enabled shadow analysis, and failed post-edit hooks left those edits applied.
+
+## 2026-10-16: Compiler-validation regression edit reported a failing workspace hook
+
+- Tool: `semantic_batch` with `semantic_replace_body`.
+- Target: `internal/astedit/extract_test.go:TestExtractFunctionRejectsTypeErrorsWithoutWriting`.
+- Failure: the targeted test replacement persisted, but the tool returned a `golangci-lint` hook failure with exit status 3 and a workspace-wide verification scope.
+- Workaround: inspect the persisted test, then run the repository's canonical check with its pinned local linter and isolated test temporary directory.
+- Root cause: tool-level hook execution did not match the successful canonical verification environment; the response still included the duplicated critical JSON payload under investigation.
+
+## 2026-10-16: Runtime-filter semantic edits needed a constant cleanup
+
+- Tool: `semantic_batch` source edits for runtime-directory filtering.
+- Target: `internal/gocache/cache.go`.
+- Failure: the persisted predicate increased the repeated `GOMODCACHE` key beyond the configured constant-analysis threshold; tool verification had failed before identifying this actionable lint result.
+- Workaround: consolidate that environment key into one constant and rerun the canonical fixers and checks.
+- Root cause: the semantic insertion did not consolidate an existing repeated configuration key.
+
+## 2026-10-16: Source filter test insertion hit a stale gopls session
+
+- Tool: `semantic_insert_construct` through `semantic_batch`.
+- Target: `internal/sourcebuf/buffer_test.go`.
+- Failure: the predicate, source filter fast path, and two earlier test insertions applied, but the next test insertion failed while replacing a stale Go LSP session; shutdown exceeded the context deadline.
+- Workaround: inspect the partial batch state and retry only the missing test declarations after the semantic server recovers.
+- Root cause: the retained gopls diagnostics session in this multi-agent workspace did not shut down within its deadline.
+
+## 2026-10-16: Source filter regression batch could not complete lint verification
+
+- Tool: `semantic_batch` inserting the seed-without-base regression.
+- Target: `internal/sourcebuf/buffer_test.go` and the selected workspace lint scope.
+- Failure: the regression insertion applied, but the configured `golangci-lint` verification hook exited with status 3.
+- Workaround: inspect the persisted test and leave canonical verification to the parent agent's `make check` gate.
+- Root cause: the tool-level lint hook could not verify the multi-agent workspace.
+
+## 2026-10-16: Source filter fast-path batch could not complete lint verification
+
+- Tool: `semantic_batch` replacing the explicit-runtime-roots regression body.
+- Target: `internal/sourcebuf/buffer_test.go` and the selected workspace lint scope.
+- Failure: the strengthened regression persisted, but the configured `golangci-lint` verification hook exited with status 3.
+- Workaround: inspect the persisted test and leave canonical verification to the parent agent's `make check` gate.
+- Root cause: the tool-level lint hook could not verify the multi-agent workspace.
 ## 2026-10-16: session wrap-up, actionable symbol suggestions
 
 Context: chat `01a14595-6049-7143-9408-ba2a0d055060`, detached base

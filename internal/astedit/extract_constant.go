@@ -16,6 +16,7 @@ import (
 	"sort"
 
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 	"github.com/spockz/semantic-editor/internal/symbol"
 
 	"strings"
@@ -49,7 +50,7 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	if opts.ExpectedRevision != "" && goReadRevision(content) != opts.ExpectedRevision {
 		return "", fmt.Errorf("selected source revision mismatch: expected %q, current %q", opts.ExpectedRevision, goReadRevision(content))
 	}
-	overlay := sourcebuf.Overlay(ctx)
+	overlay := sourcebuf.Overlay(ctx, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}
@@ -159,7 +160,7 @@ func constantExtractionSource(path string, source []byte, plan ConstantExtractio
 }
 
 func publishConstantExtraction(ctx context.Context, path string, before, after []byte, ownedBuffer *sourcebuf.Buffer, standalone bool) error {
-	validated := sourcebuf.Overlay(ctx)
+	validated := sourcebuf.Overlay(ctx, ".go")
 	if validated == nil {
 		validated = make(map[string][]byte)
 	}
@@ -183,7 +184,7 @@ func publishConstantExtraction(ctx context.Context, path string, before, after [
 }
 
 func loadConstantPackage(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
-	loaded, err := loadExtractionPackages(ctx, dir, overlay, true)
+	loaded, err := loadExtractionPackages(ctx, dir, overlay, extractionLoadOptions{tests: true, typeInfo: true})
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +344,7 @@ func bindExtractionModuleRoots(ctx context.Context, inputs extractionPackageInpu
 		if err := rejectExtractionModuleSymlinks(root); err != nil {
 			return false, err
 		}
-		if err := sourcebuf.ObserveTree(ctx, root); err != nil {
+		if err := sourcebuf.ObserveTree(ctx, root, ".go"); err != nil {
 			return false, fmt.Errorf("observe dependency module %q: %w", root, err)
 		}
 		bound[key] = true
@@ -367,7 +368,7 @@ func bindExtractionDirectories(ctx context.Context, directories, bound map[strin
 		if err := rejectExtractionPackageSymlinks(directory); err != nil {
 			return false, err
 		}
-		if err := sourcebuf.ObserveTree(ctx, directory); err != nil {
+		if err := sourcebuf.ObserveTree(ctx, directory, ".go"); err != nil {
 			return false, fmt.Errorf("observe package source directory %q: %w", directory, err)
 		}
 		bound[key] = true
@@ -459,7 +460,7 @@ func rejectExtractionModuleSymlinks(root string) error {
 			return fmt.Errorf("inspect dependency module source %q: %w", path, walkErr)
 		}
 		if entry.IsDir() {
-			if path != absolute && (entry.Name() == ".git" || entry.Name() == ".scratch" || entry.Name() == "vendor" || entry.Name() == "node_modules") {
+			if path != absolute && (entry.Name() == ".git" || entry.Name() == ".scratch" || entry.Name() == "vendor" || entry.Name() == "node_modules" || sourcefiles.IsBenchmarkDataDirectory(path)) {
 				return filepath.SkipDir
 			}
 			return nil

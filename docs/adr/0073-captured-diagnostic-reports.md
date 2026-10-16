@@ -33,9 +33,10 @@ Unknown, expired, and uncaptured categories are explicit errors.
 
 Retain at most 16 reports and 16 MiB of encoded report evidence, evicting oldest
 reports first. Report IDs are opaque and local to the originating server.
-Oversized evidence returns an unavailable query state. This bounded subsystem
-adapts the unmerged warm-MCP investigation without importing its unrelated
-performance, graph-cache, or notification changes.
+Oversized evidence returns an unavailable query state. The report cache reuses
+the retained diagnostic sessions without triggering additional analysis.
+CLI verification remains unchanged. MCP page text identifies `items` and
+`next_offset`; requested diagnostic items appear once in structured content.
 
 ## Invariants
 
@@ -43,6 +44,10 @@ performance, graph-cache, or notification changes.
 * Pagination performs no compiler, language-server, formatter, or hook call.
 * Snapshots and returned page memory are independent of later caller mutation.
 * Missing baselines do not invent introduced or resolved counts.
+* Uncaptured categories refuse queries; captured empty categories return zero
+  items. Partial counts retain the coverage of their captured scopes.
+* Default retrieval copies only the requested page. Filtering scans retained
+  evidence with bounded page memory.
 * Structured results retain detailed evidence. File-move text retains actionable
   publication state, paths, refusals, continuations, and captured counts.
 * Query metadata points only to an advertised utility with copyable arguments.

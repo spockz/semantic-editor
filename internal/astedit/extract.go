@@ -18,6 +18,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"github.com/spockz/semantic-editor/internal/symbol"
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 // ExtractKind selects the declaration form created by ExtractFunction.
@@ -1037,25 +1038,27 @@ func generalDeclarationMatchesHelper(decl *ast.GenDecl, helper string) bool {
 }
 
 func validateExtractionCandidate(ctx context.Context, filePath string, source []byte) error {
-	overlay := sourcebuf.Overlay(ctx)
+	defer telemetry.StartPhase(ctx, "go.extract.validate_candidate")()
+	overlay := sourcebuf.Overlay(ctx, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}
 	cleanPath := filepath.Clean(filePath)
 	overlay[cleanPath] = bytes.Clone(source)
-	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, false); err != nil {
+	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, extractionLoadOptions{}); err != nil {
 		return fmt.Errorf("validate complete extracted package: %w", err)
 	}
 	return nil
 }
 
 func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.File, outputs []extractionOutput, owner string, source []byte) error {
-	overlay := sourcebuf.Overlay(ctx)
+	defer telemetry.StartPhase(ctx, "go.extract.validate_original")()
+	overlay := sourcebuf.Overlay(ctx, ".go")
 	if overlay == nil {
 		overlay = make(map[string][]byte)
 	}
 	overlay[filepath.Clean(filePath)] = bytes.Clone(source)
-	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay, false)
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay, extractionLoadOptions{})
 	if err != nil {
 		return fmt.Errorf("resolve extracted result types: %w", err)
 	}
@@ -1089,7 +1092,7 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 				return fmt.Errorf("cannot extract %s: dot imports prevent proving generated result type bindings", owner)
 			}
 			if alias != "_" && alias == output.typeName {
-				return fmt.Errorf("cannot extract %s: generated result type %q is shadowed by a file import", owner, output.typeName)
+				return fmt.Errorf("cannot extract %s: generated result type %q conflicts with an imported package name", owner, output.typeName)
 			}
 		}
 	}

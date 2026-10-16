@@ -22,7 +22,7 @@ func WriteAtomicChecked(targetPath string, data []byte, check func() error) erro
 	}
 	defer staged.Discard()
 	if check != nil {
-		if err := check(); err != nil {
+		if err := traceDiskOperation("validate", check); err != nil {
 			return fmt.Errorf("%w: validate target before publication: %w", ErrAtomicWrite, err)
 		}
 	}

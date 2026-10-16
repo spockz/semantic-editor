@@ -5,6 +5,16 @@ the same lookup with one candidate's `arguments`; preserve its file and qualifie
 selector. Normal server configuration and workspace trust remain required.
 Suggestions do not edit source or retry automatically. See [configuration and limits](../../../docs/symbol-suggestions.md).
 
+MCP results follow the [shared output policy](../SKILL.md#copy-typed-results-and-respect-publication).
+Use typed continuations with their exact revisions, and retain failure and
+publication state when choosing follow-up calls. Structured results can be
+model-visible; text keeps exact next-step guards and names structured fields
+without repeating source, inventories, diagnostic pages, diffs, or logs.
+For diagnostic details, copy the response's `diagnostic_report.arguments` into
+`semantic_diagnostics`, choose a category/filter and page size, then follow
+`next_offset`. Pages reuse the captured report; a deferred/unavailable count
+does not indicate a clean workspace. Use verification only for a fresh report.
+
 This reference provides workflows for inspecting and refactoring Kotlin source files with `semedit` primitives. Read this document only when working with Kotlin source files.
 
 ---

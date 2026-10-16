@@ -25,9 +25,10 @@ setting. `WithInstructions` and `--instructions` override that guidance;
 explicit empty instructions omit the initialization field. Omission retains
 the prescriptive default, including direct `NewServer` callers.
 The launch CWD is only an initial fallback. During MCP `initialize`, resolve the
-workspace root supplied by the client before deriving the default Go state
-directory as `<workspace-root>/.scratch/go`; retain an explicitly configured
-`--go-base-dir`. The workspace root and Go cache base directory are distinct.
+workspace root supplied by the client before resolving any explicitly configured
+`--go-base-dir`. Normal use inherits Go state under ADR-0070; benchmark fixtures
+explicitly select `<workspace-root>/.scratch/go`. The workspace root and Go cache
+base directory are distinct.
 
 Each MCP operation may also select an optional `workspace_root` beneath the
 configured server root. Resolve relative roots against that root, canonicalize
@@ -37,10 +38,10 @@ keeping paths contained. Resolve relative file selectors beneath the selected
 root, normalize in-root absolute file selectors to relative paths, and reject
 parent traversal, symlinks, or escape across recursively checked file fields.
 Pass the canonical effective root through project and call contexts, trust
-scopes, continuations, and the default Go cache path so later operations keep
-using the same workspace boundary. A session manager reuses Go state for the
-configured root and same-module subdirectories; a different worktree module
-gets its own `<workspace-root>/.scratch/go` state.
+scopes and continuations so later operations keep using the same workspace
+boundary. A session manager reuses Go state for the configured root and
+same-module subdirectories. Benchmark fixtures explicitly configure separate
+worktree-local state; workspace routing alone does not enable isolation.
 
 After those directories are set, detect source languages and verification
 configuration in the resolved workspace, as specified by ADR-0054. Do not retain
@@ -78,17 +79,20 @@ silently leave semantic tools unavailable. Server instructions add their
 `--instructions` argument to this explicit base command.
 
 During initialization, after resolving the workspace and base directories and
-before advertising tools or executing operations, the MCP server verifies that
-the selected Go base directory and its build, module, temporary, and binary
+before advertising tools or executing operations, an explicitly isolated MCP
+server verifies that the selected Go base directory and its build, module, temporary, and binary
 subdirectories are readable and writable. Initialization fails with a clear
 error if that validation fails.
 
-The server carries the selected base directory through each request context.
-Every semedit-launched Go subprocess, including `gopls`, `go vet`, `go get`,
-and `go mod tidy`, receives a controlled environment: `GOENV`, `GOCACHE`,
+The server carries an explicit base directory through each request context.
+In isolated mode, semedit-launched Go subprocesses, including `gopls`, `go get`,
+and `go mod tidy`, receive a controlled environment: `GOENV`, `GOCACHE`,
 `GOMODCACHE`, `GOTMPDIR`, `GOBIN`, and `GOPATH` all resolve below that base
-directory. `GOWORK=off` and an empty `GOFLAGS` prevent inherited workspace or
-overlay configuration from changing the fixture's build. Codex benchmark
+directory. `GOWORK=off` and managed `GOFLAGS` prevent inherited workspace or
+overlay configuration from changing the fixture's build. Ordinary module
+operations retain `-mod=readonly`; explicit dependency operations may write
+module files. Normal inherited mode preserves workspace selection and unrelated
+flags (ADR-0070). Codex benchmark
 processes receive the same environment before they start, and the semedit MCP
 registration explicitly forwards those variables to its stdio child.
 
@@ -112,9 +116,9 @@ process must not expose those transient files in workspace snapshots.
   rewrite.
 - Default initialization guidance is prescriptive; explicit empty guidance
   remains distinct from an omitted override.
-- MCP startup fails before tool use when its Go state directory is inaccessible.
-- Go subprocess state is derived from the selected request context, never from
-  an inaccessible inherited cache path.
+- Isolated MCP startup fails before tool use when its selected Go state directory is inaccessible.
+- Go subprocess state follows the selected request context: inherited by default,
+  managed only with an explicit isolation base. Resolution failures remain errors.
 - Codex benchmark shells and semedit MCP children use the same fixture-local
   Go state; inherited `GOWORK` and `GOFLAGS` never select files outside it.
 - No project workspace manifest is created or modified to establish Go state.
@@ -123,14 +127,15 @@ process must not expose those transient files in workspace snapshots.
 
 MCP operation is reproducible in fixture sandboxes and fails early when the
 configured state location is invalid. The server owns more process-environment
-setup, but callers no longer need bespoke cache exports for semantic tool
-calls. Fixtures begin with isolated Go state. The default verify preflight is an explicit per-fixture cache seed; it does
+setup in isolated mode. Benchmark fixtures explicitly begin with isolated Go
+state; ordinary callers retain their own environment. The default verify preflight is an explicit per-fixture cache seed; it does
 not fall back to a mutable host cache. ADR-0038 governs its provenance. The inherited
 `GOPROXY` and `GOTOOLCHAIN` policy remains benchmark provenance.
 
 ## Restored module safeguards: 2026-10-12
 
-Ordinary Go subprocesses receive `GOFLAGS=-mod=readonly`; the explicit dependency
+Ordinary Go subprocesses retain module read-only protection without dropping
+unrelated inherited flags; the explicit dependency
 operation enables writable module changes for its own request. Benchmark builds
 also retain `-buildvcs=false`. Dynamic workspace routing remains supported; the
 archived restriction to one startup module is not restored.

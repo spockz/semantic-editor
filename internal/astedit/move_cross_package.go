@@ -1084,7 +1084,7 @@ func bindMoveInputs(ctx context.Context, root string, pkgs []*packages.Package, 
 	added := false
 	for _, tree := range slices.Sorted(maps.Keys(roots)) {
 		if !bound[tree] {
-			if err := sourcebuf.ObserveTree(ctx, tree); err != nil {
+			if err := sourcebuf.ObserveTree(ctx, tree, ".go"); err != nil {
 				return false, err
 			}
 			bound[tree] = true
@@ -1249,7 +1249,7 @@ func loadMovePackageScope(ctx context.Context, root string, changes map[string][
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("load move packages: %w", err)
 		}
-		overlay := sourcebuf.Overlay(ctx)
+		overlay := sourcebuf.Overlay(ctx, ".go")
 		if overlay == nil {
 			overlay = make(map[string][]byte)
 		}

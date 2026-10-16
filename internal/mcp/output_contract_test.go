@@ -164,11 +164,11 @@ func compileToolOutputSchema(t *testing.T, schemas map[string]json.RawMessage, n
 func assertRenameOutputSchema(t *testing.T, schemas map[string]json.RawMessage) {
 	schema := compileToolOutputSchema(t, schemas, "semantic_rename")
 	diagnostics := map[string]any{"net_delta": 0, "introduced": []any{}, "resolved": []any{}}
-	success := map[string]any{"status": "renamed", "application_state": "persisted", "diagnostics": diagnostics, "active": []any{}}
+	success := map[string]any{"status": "renamed", "application_state": "persisted", "diagnostics": diagnostics, "active_count": 0}
 	known := map[string]any{
 		"status": "applied_with_diagnostics", "application_state": "persisted",
 		"origin":      map[string]any{"file": "main.go", "symbol": "Existing"},
-		"diagnostics": diagnostics, "active": []any{},
+		"diagnostics": diagnostics, "active_count": 0,
 	}
 	assertOutputSchemaValue(t, schema, "rename success", map[string]any{"result": success}, true)
 	assertOutputSchemaValue(t, schema, "rename generic error", map[string]any{"error": "symbol not found", "application_state": "unknown"}, true)

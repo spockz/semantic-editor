@@ -300,6 +300,9 @@ func loadPackageTypeIndex(filePath, packageName string, reader *sourceSnapshotRe
 
 func packageSourcePaths(filePath string, selectedIsTest bool, reader *sourceSnapshotReader) ([]string, error) {
 	directory := filepath.Dir(filePath)
+	if err := sourcebuf.ObserveDirectory(reader.ctx, directory, ".go"); err != nil {
+		return nil, fmt.Errorf("observe package sources for %s: %w", filePath, err)
+	}
 	entries, err := os.ReadDir(directory)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("read package directory for %s: %w", filePath, err)
@@ -317,7 +320,7 @@ func packageSourcePaths(filePath string, selectedIsTest bool, reader *sourceSnap
 		return nil, fmt.Errorf("canonicalize package source %s: %w", filePath, err)
 	}
 	canonicalDirectory := filepath.Dir(canonicalFile)
-	for path := range sourcebuf.Overlay(reader.ctx) {
+	for path := range sourcebuf.Overlay(reader.ctx, ".go") {
 		canonicalPath, err := sourcebuf.CanonicalPath(reader.ctx, path)
 		if err != nil {
 			return nil, fmt.Errorf("canonicalize buffered package source %s: %w", path, err)

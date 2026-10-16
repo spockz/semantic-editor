@@ -79,6 +79,7 @@ func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trus
 }
 
 func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	ctx = gocache.WithEnvironmentCache(ctx)
 	ctx, release := godiagnostics.EnsureSessionManager(ctx)
 	observer := godiagnostics.SynchronizeWithContext
 	if !s.goEnabled() {
@@ -644,10 +645,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 				note += fmt.Sprintf(" Verification returned %d diagnostics.", len(response.Verification.Diagnostics))
 			}
 		}
-		prefix, remainder, found := strings.Cut(critical, "\n\n")
-		if found {
-			critical = note + "\n\n" + prefix + "\n\n" + remainder
-		}
+		critical = note + "\n\n" + critical
 	}
 	s.recordToolMetrics(timing)
 	if response.Status != "ok" {

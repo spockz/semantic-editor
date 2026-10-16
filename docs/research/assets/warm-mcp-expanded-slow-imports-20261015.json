@@ -1,0 +1,96 @@
+{
+  "schema_version": "semedit.warm-expanded-costs/v1",
+  "measured_at_utc": "2026-10-15 04:59:08 UTC",
+  "git_base": "1ff9655e5719c2d078c4e274e4a4817f006cced9",
+  "branch": "codex/warm-mcp-operation-costs",
+  "uncommitted_source": true,
+  "platform": "darwin/arm64",
+  "go_version": "go1.27.2 darwin/arm64",
+  "gopls_version": "golang.org/x/tools/gopls (devel)",
+  "gopls_executable_sha256": "5690ea7b1c8b5935bd218621561a4830edf57ca874d2f673a1f6097ecaa1c8b2",
+  "gopls_launcher_sha256": "336d7fb2a0e7619c83d9c34d1c096b5bbd34b05a693cbdc936f3428f08affe95",
+  "cpu": "Apple M5 Pro",
+  "budget_enforced": true,
+  "run_status": "complete_with_latency_budget_failure",
+  "command_exit_code": 1,
+  "samples_required_per_case": 200,
+  "completed_warm_cohorts": 1,
+  "measured_mcp_calls": 200,
+  "budget_misses": [
+    {
+      "benchmark": "BenchmarkMCPWarmOperationActualWork/packages_20/dirty_organize_imports",
+      "component": "organize_imports",
+      "p99_ms": 1852.00925,
+      "budget_ms": 1000
+    }
+  ],
+  "source_sha256": {
+    "internal/mcp/warm_actual_bench_test.go": "a72da6a52f14075615199f3b9ff4bf6f421cf249cb0d1e19cee617b283f439ff",
+    "internal/mcp/warm_cost_bench_test.go": "f71484639336bd7e7ab8a020b3bace82dd8f7f57e4449552180c9b2b6e858499",
+    "internal/mcp/diagnostic_page_bench_test.go": "2d70cb6993a160265793568c56c87ab6a4465b5dc14f6c4a33c70b20c05ad8cf",
+    "internal/mcp/file_rename_bench_test.go": "a982790fae45f3c17be65788bf616b9c76e29b8f951bce5a585224a5a68d7f52",
+    "internal/mcp/server_test.go": "92a1e83d1902c5479668424deb4c0789ea24fc491223a7ee66dec338382cefba",
+    "internal/mcp/server.go": "34ec5f1d9aba07e1e0d4426433b4d8438c8c6608913b88bd8fd2e76c3e4ffa8c",
+    "internal/mcp/batch.go": "82adb437cf2d25930fdcd90d8f38ccc6b5cf407c4f19481db4ae79e7d1901f35",
+    "internal/mcp/diagnostic_capture.go": "ace61c2e90964f5caeb76e098fc53902d0afe1a992aa2bbfa66449c853615ba9",
+    "internal/mcp/diagnostic_reports.go": "b871713f7119683687eb0524b50f99799213826ed4fcdffe442c5db92c0dc8e2",
+    "internal/mcp/presentation/presentation.go": "13f07b869037d4a753d0f58e742ed66abd3e06b8eedc1ce3b43959a31bc0431b",
+    "internal/operation/wire_backend.go": "05cf352c2f022df02e3127c6fc2c3011612de89bd3ec46c83f38053d0487202e",
+    "internal/operation/wire_engine.go": "6316556a0d697b71ba4cdfee49b8c1624558d7630cdd4435ba8c8ae7853c326b",
+    "internal/operation/wire_output_fields.go": "42e6d3542f8fc95f92176f8d2a90b088bb61f546277118330a44afc3a1a58766",
+    "internal/godiagnostics/manager.go": "f8eae3a4e1c291ae320f18c05ad820c9b964102e00ae8f8950064b55e42b088a"
+  },
+  "raw": "warm-mcp-expanded-slow-imports-20261015.jsonl",
+  "raw_sha256": "f514d095b379c0887786d12fdfe677e2e3706dbd90ada94ac796dc7295f9fdad",
+  "cases": [],
+  "observations": [
+    {
+      "benchmark": "BenchmarkMCPWarmOperationActualWork/packages_20/dirty_organize_imports",
+      "components": {
+        "organize_imports": {
+          "samples": 200,
+          "p50_ms": 1732.466416,
+          "p99_ms": 1852.00925,
+          "max_ms": 1869.28225,
+          "budget_ms": 1000,
+          "wire_bytes_mean": 2362.49,
+          "wire_bytes_max": 2363
+        }
+      },
+      "gopls_starts": 1
+    }
+  ],
+  "rejected": [],
+  "failures": [
+    "    warm_actual_bench_test.go:412: warm p99 exceeded target or one-second ceiling: organize_imports=1.85200925s (budget 1s)",
+    "--- FAIL: BenchmarkMCPWarmOperationActualWork/packages_20/dirty_organize_imports-18",
+    "--- FAIL: BenchmarkMCPWarmOperationActualWork/packages_20",
+    "--- FAIL: BenchmarkMCPWarmOperationActualWork"
+  ],
+  "limitations": [
+    "One retained in-process production MCP server and real external gopls per cohort; no separate semedit executable or coding client.",
+    "One- and twenty-package synthetic fixtures; not representative of large projects or richer build configurations.",
+    "No project-configured external verification hooks; built-in formatting and diagnostics remain part of completed mutation cost.",
+    "One independent run; individual request samples and confidence intervals are not retained in this aggregate event stream.",
+    "No language-server CPU, language-server allocations, or phase attribution.",
+    "Actual external file rename continuity still fails in its separately retained benchmark; runtime behavior is unchanged.",
+    "This already-slow cohort uses 200 measured calls, rather than 1000; its p99 is based on about two tail observations and is not evidence of meeting the target. Its measured median also exceeds one second."
+  ],
+  "command": [
+    "go",
+    "test",
+    "-json",
+    "./internal/mcp",
+    "-run",
+    "^$",
+    "-bench",
+    "^BenchmarkMCPWarmOperationActualWork$/^packages_20$/^dirty_organize_imports$",
+    "-benchtime=200x",
+    "-count=1",
+    "-timeout=45m"
+  ],
+  "environment": {
+    "SEMEDIT_BENCH_ENFORCE_BUDGETS": "1",
+    "GO_SCRATCH": "/Users/alessandro/sources/semantic-editor/.scratch/go"
+  }
+}

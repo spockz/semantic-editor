@@ -1,3 +1,4 @@
+// Package lsp keeps JSON-RPC transport behavior together so clients can own framing and lifecycle consistently.
 package lsp
 
 import (
@@ -8,8 +9,11 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/spockz/semantic-editor/internal/telemetry"
 )
 
 const jsonRPCVersion = "2.0"
@@ -67,6 +71,11 @@ type NotificationHandler func(Notification)
 // Option configures a Client.
 type Option func(*Client)
 
+// WithTelemetryPrefix enables request-scoped timing under prefix.request.<method> and prefix.notify.<method>.
+func WithTelemetryPrefix(prefix string) Option {
+	return func(c *Client) { c.telemetryPrefix = strings.TrimSuffix(prefix, ".") }
+}
+
 // WithMaxPayloadSize sets the maximum framed payload size.
 func WithMaxPayloadSize(size int64) Option { return func(c *Client) { c.maxPayloadSize = size } }
 
@@ -93,6 +102,7 @@ type Client struct {
 	maxPayloadSize      int64
 	requestHandler      RequestHandler
 	notificationHandler NotificationHandler
+	telemetryPrefix     string
 
 	frames        *FrameReader
 	output        *FrameWriter
@@ -441,6 +451,8 @@ func (c *Client) Request(ctx context.Context, method string, params any) (json.R
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	finishTiming := c.startTiming(ctx, "request", method)
+	defer finishTiming()
 	c.Start()
 	select {
 	case <-c.done:
@@ -456,7 +468,9 @@ func (c *Client) Request(ctx context.Context, method string, params any) (json.R
 	if params != nil {
 		message["params"] = params
 	}
+	finishSend := c.startTiming(ctx, "send", method)
 	started, err := c.sendTracked(ctx, message)
+	finishSend()
 	if err != nil {
 		c.removePending(id)
 		if started && ctx.Err() != nil {
@@ -464,6 +478,8 @@ func (c *Client) Request(ctx context.Context, method string, params any) (json.R
 		}
 		return nil, err
 	}
+	finishWait := c.startTiming(ctx, "wait", method)
+	defer finishWait()
 	select {
 	case result := <-resultCh:
 		c.removePending(id)
@@ -497,6 +513,8 @@ func (c *Client) Notify(ctx context.Context, method string, params any) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	finishTiming := c.startTiming(ctx, "notify", method)
+	defer finishTiming()
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
@@ -507,6 +525,13 @@ func (c *Client) Notify(ctx context.Context, method string, params any) error {
 		message["params"] = params
 	}
 	return c.send(ctx, message)
+}
+
+func (c *Client) startTiming(ctx context.Context, operation, method string) func() {
+	if c.telemetryPrefix == "" {
+		return func() {}
+	}
+	return telemetry.StartPhase(ctx, telemetry.Phase(c.telemetryPrefix+"."+operation+"."+method))
 }
 
 func (c *Client) finish(_ error) {

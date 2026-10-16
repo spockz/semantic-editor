@@ -159,8 +159,15 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 			failures = append(failures, fmt.Errorf("walk benchmark path %s: %w", path, walkErr))
 			return nil
 		}
-		if entry.IsDir() && (entry.Name() == "jobs" || entry.Name() == "evidence") {
-			return filepath.SkipDir
+		if entry.IsDir() && path != resultsDir {
+			relative, err := filepath.Rel(resultsDir, path)
+			if err != nil {
+				return fmt.Errorf("relativize benchmark directory %s: %w", path, err)
+			}
+			// Published reports live at results[/run[/task]]; deeper trees are captured workspaces.
+			if len(strings.Split(relative, string(filepath.Separator))) > 2 || excludedBenchmarkReportDirectory(entry.Name()) {
+				return filepath.SkipDir
+			}
 		}
 		if entry.IsDir() || filepath.Ext(path) != ".json" || entry.Name() == "manifest.json" || entry.Name() == "smoke-summary.json" {
 			return nil
@@ -180,6 +187,15 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 		failures = append(failures, fmt.Errorf("close benchmark results directory: %w", closeErr))
 	}
 	return sources, errors.Join(failures...)
+}
+
+func excludedBenchmarkReportDirectory(name string) bool {
+	switch name {
+	case "archive", "fixture-validation", "jobs", "evidence", "workspace", "workspaces", "source", "vendor", "node_modules":
+		return true
+	default:
+		return strings.HasPrefix(name, ".")
+	}
 }
 
 func collectBenchmarkDocumentationRuns(rootDir string, sources []benchmarkSource) []benchmarkDocumentationRun {

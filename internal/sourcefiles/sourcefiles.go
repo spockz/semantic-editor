@@ -48,3 +48,14 @@ var extensionLanguages = map[string]string{
 	".go": "go", ".rs": "rust", ".java": "java", ".scala": "scala", ".hs": "haskell",
 	".kt": "kotlin", ".kts": "kotlin", ".sh": "bash", ".bash": "bash",
 }
+
+// IsBenchmarkDataDirectory identifies captured benchmark trees before discovery enters them.
+func IsBenchmarkDataDirectory(path string) bool {
+	path = filepath.Clean(path)
+	return filepath.Base(path) == "benchmarks" && filepath.Base(filepath.Dir(path)) == "data"
+}
+
+// IsIgnoredDirectoryPath applies both name-based exclusions and benchmark artifact boundaries.
+func IsIgnoredDirectoryPath(path string) bool {
+	return IsIgnoredDirectory(filepath.Base(path)) || IsBenchmarkDataDirectory(path)
+}

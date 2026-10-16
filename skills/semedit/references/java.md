@@ -1,5 +1,17 @@
 # Java Semantic Refactoring Guide
 
+MCP results follow the [shared output policy](../SKILL.md#copy-typed-results-and-respect-publication).
+Use typed continuations with their exact revisions, and retain failure and
+publication state when choosing follow-up calls. Structured results can be
+model-visible; text keeps exact next-step guards and names structured fields
+without repeating source, inventories, diagnostic pages, diffs, or logs.
+For diagnostic details, copy the response's `diagnostic_report.arguments` into
+`semantic_diagnostics`, choose a category/filter and page size, then follow
+`next_offset`. Pages reuse the captured report; a deferred/unavailable count
+does not indicate a clean workspace. Use verification only for a fresh report.
+Rename returns `active_count` and diagnostic changes rather than every existing
+workspace warning; request `semantic_verify` for a full diagnostic inventory.
+
 This reference explains how to execute bounded and multi-step Java code transformations using `semedit` primitives and Maven integration. Read this document only when refactoring or modernizing Java source files.
 
 Trusted Java requests reuse a JDT LS session per workspace root and keep selected document versions synchronized with the source overlay. A trusted root with a regular `pom.xml` enables JDT LS Maven import by default; pass `import_maven: false` to disable it. JDT LS import does not execute Maven.

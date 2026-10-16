@@ -36,8 +36,11 @@ We introduce a dedicated, zero-token read operation: **`workspace_outline`** (`s
 
 ## Invariants
 
-* Read operations preserve workspace immutability: zero disk writes, unmodified git trees, and intact file timestamps.
+* Discovery does not mutate workspace source or manifests, their timestamps, or git-tracked files. Runtime/environment cache activity follows the selected backend policy; source immutability is not a universal zero-disk-I/O claim.
 * Package discovery respects standard directory exclusions (`.git`, `.scratch`, `vendor`, `node_modules`, `.cache`, build targets).
+* `data/benchmarks` is an artifact boundary, pruned before source discovery, buffered tree observation, snapshots, verification copies, and benchmark workspace copies descend into it. A source directory named `benchmarks` outside `data` is not excluded by this rule. Explicit file selection retains its existing semantics.
+* The user-approved module boundary at `data/benchmarks/go.mod` excludes artifact trees from native Go package discovery, tests, fixers, and module tidying. Formatting prunes the same path directly; filtering package names after discovery is insufficient.
+* Documentation intake is a separate, bounded reader: only result JSON at `results[/run[/task]]` is eligible. Archive, validation, checkpoint, evidence, hidden, dependency, and captured workspace directories are pruned before descent; candidate report validation remains strict.
 * Depth ordering is deterministic: packages at shallower directory depths strictly precede deeper packages.
 * Discovery fails closed on unreadable or non-directory target paths.
 * Parent manifest ascent stops at the applicable repository boundary. Broad input paths never change the precision of module ownership in results.

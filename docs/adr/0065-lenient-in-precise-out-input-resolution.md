@@ -45,7 +45,7 @@ We adopt the robustness principle (**Lenient In, Precise/Strict Out**) across al
 While ingress is lenient, tool outputs remain strictly canonical, precise, and deterministic:
 
 * **Canonical Coordinates**: Results return exact project-relative file paths, line and column numbers, and fully qualified symbol identifiers.
-* **Deterministic AST Normalization**: Mutated source files are always formatted using native formatters (`gofmt`, `goimports`) before disk publication.
+* **Backend-Owned Normalization**: Each mutation follows its backend's deterministic formatting/import policy. Go uses in-process AST/formatter paths; Java uses pre-publication JDT LS formatting and import actions (ADR-0068). Shared ingress does not impose Go-native formatters on other languages or add formatting to operations that preserve an exact planned splice.
 * **Strict Continuation Schemas**: Continuation records echo canonical parameter names and values matching target schemas exactly ([ADR-0055](0055-tool-parameter-schema-harmonization.md), [ADR-0062](0062-operation-specific-selector-continuations.md)).
 * **Fail-Closed on True Ambiguity**: Leniency never guesses when an intent is genuinely ambiguous (e.g., multiple declarations matching an unqualified identifier in a directory). The engine fails closed and returns the exact set of candidate options with structural paths.
 

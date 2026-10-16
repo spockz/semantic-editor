@@ -47,7 +47,7 @@ func TestLoadConstantPackageBindsReadSetBeforeApply(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, buffer, selected, dependency, manifest, original := constantInputFixture(t)
-			if _, err := loadConstantPackage(ctx, filepath.Dir(selected), sourcebuf.Overlay(ctx)); err != nil {
+			if _, err := loadConstantPackage(ctx, filepath.Dir(selected), sourcebuf.Overlay(ctx, ".go")); err != nil {
 				t.Fatalf("load constant package: %v", err)
 			}
 			tc.mutate(t, dependency, manifest)

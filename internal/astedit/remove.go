@@ -20,6 +20,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
 	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
@@ -260,7 +261,7 @@ func moduleDirectoryAction(root, path, name string) error {
 	if path == root {
 		return nil
 	}
-	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "vendor" {
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "vendor" || sourcefiles.IsBenchmarkDataDirectory(path) {
 		return filepath.SkipDir
 	}
 	return nil

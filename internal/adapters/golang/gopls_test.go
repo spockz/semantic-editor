@@ -191,9 +191,181 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 		t.Run(name, func(t *testing.T) { assertRenameEditRejected(t, root, source, edit) })
 	}
 
-	t.Run("changed lookup input", func(t *testing.T) {
-		assertChangedLookupSnapshotRejected(t, root, source)
+	t.Run("unrelated lookup input changed", func(t *testing.T) {
+		assertUnrelatedLookupChangeDoesNotBlockRename(t, root, source)
 	})
+}
+
+func TestGoRenamePublicationRejectsChangedTargets(t *testing.T) {
+	t.Run("same mtime content change", testSameMtimeContentChange)
+	t.Run("identity replacement", testIdentityReplacement)
+	t.Run("partial publication", testPartialRenamePublication)
+}
+
+func testSameMtimeContentChange(t *testing.T) {
+	t.Helper()
+	userContent := []byte("package sample\n\nfunc Value() int { return 9 }\n")
+	writer := func(ctx context.Context, path string, data []byte, check func() error) error {
+		return sourcebuf.WriteFileChecked(ctx, path, data, func() error {
+			info, statErr := os.Stat(path)
+			if statErr != nil {
+				return statErr
+			}
+			if writeErr := os.WriteFile(path, userContent, 0o600); writeErr != nil {
+				return writeErr
+			}
+			if timeErr := os.Chtimes(path, info.ModTime(), info.ModTime()); timeErr != nil {
+				return timeErr
+			}
+			updated, updatedErr := os.Stat(path)
+			if updatedErr != nil {
+				return updatedErr
+			}
+			if !updated.ModTime().Equal(info.ModTime()) {
+				return errors.New("test failed to preserve mtime")
+			}
+			return check()
+		})
+	}
+	paths, contents, err := runDiskRenameWithWriter(t, []string{"value.go"}, writer)
+	assertRetryablePublicationConflict(t, err, paths, filepath.Join(contents.root, "value.go"), userContent)
+}
+
+func testIdentityReplacement(t *testing.T) {
+	t.Helper()
+	userContent := []byte("package sample\n\nfunc Value() int { return 1 }\n")
+	writer := func(ctx context.Context, path string, data []byte, check func() error) error {
+		return sourcebuf.WriteFileChecked(ctx, path, data, func() error {
+			if writeErr := atomicfile.WriteAtomic(path, userContent); writeErr != nil {
+				return writeErr
+			}
+			return check()
+		})
+	}
+	paths, contents, err := runDiskRenameWithWriter(t, []string{"value.go"}, writer)
+	target := filepath.Join(contents.root, "value.go")
+	assertRetryablePublicationConflict(t, err, paths, target, userContent)
+}
+
+func testPartialRenamePublication(t *testing.T) {
+	t.Helper()
+	userContent := []byte("package sample\n\nfunc Value() int { return 7 }\n")
+	writer := func(ctx context.Context, path string, data []byte, check func() error) error {
+		return sourcebuf.WriteFileChecked(ctx, path, data, func() error {
+			if filepath.Base(path) == "b.go" {
+				if writeErr := atomicfile.WriteAtomic(path, userContent); writeErr != nil {
+					return writeErr
+				}
+			}
+			return check()
+		})
+	}
+	paths, contents, err := runDiskRenameWithWriter(t, []string{"a.go", "b.go"}, writer)
+	var publicationErr *RenamePublicationError
+	if !errors.As(err, &publicationErr) || publicationErr.Retryable() {
+		t.Fatalf("partial publication error = %v", err)
+	}
+	wantPublished := []string{filepath.Join(contents.root, "a.go")}
+	for _, detail := range []string{wantPublished[0], "inspect the disk diff", "remaining stale edits were not replayed"} {
+		if !strings.Contains(err.Error(), detail) {
+			t.Errorf("partial publication error %q lacks %q", err, detail)
+		}
+	}
+	if !slices.Equal(publicationErr.PublishedPaths, wantPublished) || !slices.Equal(paths, wantPublished) {
+		t.Fatalf("published paths error=%v callback=%v, want %v", publicationErr.PublishedPaths, paths, wantPublished)
+	}
+	if publicationErr.TotalFiles != 2 {
+		t.Fatalf("total files = %d, want 2", publicationErr.TotalFiles)
+	}
+	assertFileContent(t, filepath.Join(contents.root, "a.go"), []byte("package sample\n\nfunc Renamed() int { return 1 }\n"))
+	assertFileContent(t, filepath.Join(contents.root, "b.go"), userContent)
+}
+
+type renameTestContents struct {
+	root string
+}
+
+func runDiskRenameWithWriter(t *testing.T, names []string, writer renameFileWriter) ([]string, renameTestContents, error) {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := []byte("package sample\n\nfunc Value() int { return 1 }\n")
+	files := map[string][]byte{"go.mod": []byte("module example.com/renamepublish\n\ngo 1.24\n")}
+	documents := make([]any, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(root, name)
+		files[name] = source
+		documents = append(documents, map[string]any{
+			"textDocument": map[string]any{"uri": pathutil.FileURI(path), "version": 1},
+			"edits":        []any{map[string]any{"range": map[string]any{"start": map[string]any{"line": 2, "character": 5}, "end": map[string]any{"line": 2, "character": 10}}, "newText": "Renamed"}},
+		})
+	}
+	for name, content := range files {
+		if writeErr := atomicfile.WriteAtomic(filepath.Join(root, name), content); writeErr != nil {
+			t.Fatal(writeErr)
+		}
+	}
+	edit, err := json.Marshal(map[string]any{"documentChanges": documents})
+	if err != nil {
+		t.Fatal(err)
+	}
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(root, "gopls")
+	if writeErr := atomicfile.WriteAtomic(wrapper, []byte("#!/bin/sh\nexec \"$SEMEDIT_GO_RENAME_TEST_BIN\" -test.run=^TestGoRenameProtocolHelper$\n")); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if chmodErr := os.Chmod(wrapper, 0o700); chmodErr != nil {
+		t.Fatal(chmodErr)
+	}
+	t.Setenv("PATH", root+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_GO_RENAME_TEST_BIN", binary)
+	t.Setenv("SEMEDIT_GO_RENAME_HELPER", "1")
+	t.Setenv("SEMEDIT_GO_RENAME_EDIT", string(edit))
+	cacheCtx := gocache.WithBaseDir(t.Context(), filepath.Join(root, ".scratch", "go"))
+	environment, err := gocache.Environment(cacheCtx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := godiagnostics.NewSessionManager()
+	t.Cleanup(func() {
+		if err := manager.Close(); err != nil {
+			t.Error(err)
+		}
+	})
+	ctx := godiagnostics.WithSessionManager(cacheCtx, manager)
+	var published []string
+	callErr := godiagnostics.UseWithContext(ctx, root, wrapper, environment, func(ctx context.Context, session *godiagnostics.Session) error {
+		return renameInSessionFilesWithWriter(ctx, session, filepath.Join(root, names[0]), 3, 6, "Renamed", func(paths []string) { published = slices.Clone(paths) }, writer)
+	})
+	return published, renameTestContents{root: root}, callErr
+}
+
+func assertRetryablePublicationConflict(t *testing.T, err error, callbackPaths []string, target string, userContent []byte) {
+	t.Helper()
+	var publicationErr *RenamePublicationError
+	if !errors.As(err, &publicationErr) || !publicationErr.Retryable() || !errors.Is(err, ErrRenamePublicationConflict) || !errors.Is(err, godiagnostics.ErrSourceChanged) {
+		t.Fatalf("publication error = %v", err)
+	}
+	if len(publicationErr.PublishedPaths) != 0 || len(callbackPaths) != 0 || publicationErr.TotalFiles != 1 {
+		t.Fatalf("publication state = paths %v, callback %v, total %d", publicationErr.PublishedPaths, callbackPaths, publicationErr.TotalFiles)
+	}
+	assertFileContent(t, target, userContent)
+}
+
+func assertFileContent(t *testing.T, path string, want []byte) {
+	t.Helper()
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, want) {
+		t.Fatalf("%s content = %q, want %q", path, actual, want)
+	}
 }
 
 func assertRenameEditRejected(t *testing.T, root string, source []byte, edit any) {
@@ -216,7 +388,7 @@ func assertRenameEditRejected(t *testing.T, root string, source []byte, edit any
 	}
 }
 
-func assertChangedLookupSnapshotRejected(t *testing.T, root string, source []byte) {
+func assertUnrelatedLookupChangeDoesNotBlockRename(t *testing.T, root string, source []byte) {
 	t.Helper()
 	otherPath := filepath.Join(root, "other.go")
 	other, err := os.ReadFile(otherPath)
@@ -227,21 +399,37 @@ func assertChangedLookupSnapshotRejected(t *testing.T, root string, source []byt
 	if writeErr := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	selected := backend.NamedTarget{Name: "Value", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "value.go")), Range: backend.Range{Start: backend.PositionFromByteOffset(source, bytes.Index(source, []byte("Value")))}}}
-	err = RenameSelected(t.Context(), root, selected, expected, "Renamed")
-	if !errors.Is(err, ErrRenameFailed) || !strings.Contains(err.Error(), "changed since symbol lookup") {
-		t.Fatalf("RenameSelected error = %v", err)
-	}
-	actual, err := os.ReadFile(filepath.Join(root, "value.go"))
+	selectedPath := filepath.Join(root, "value.go")
+	selected := backend.NamedTarget{Name: "Value", Location: backend.SourceLocation{URI: pathutil.FileURI(selectedPath), Range: backend.Range{Start: backend.PositionFromByteOffset(source, bytes.Index(source, []byte("Value")))}}}
+	edit, err := json.Marshal(map[string]any{"documentChanges": []any{map[string]any{
+		"textDocument": map[string]any{"uri": pathutil.FileURI(selectedPath), "version": 1},
+		"edits":        []any{map[string]any{"range": map[string]any{"start": map[string]any{"line": 2, "character": 5}, "end": map[string]any{"line": 2, "character": 10}}, "newText": "Renamed"}},
+	}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(actual, source) {
-		t.Fatalf("stale lookup changed the selected source: %s", actual)
+	t.Setenv("SEMEDIT_GO_RENAME_EDIT", string(edit))
+	paths, err := RenameSelectedFiles(t.Context(), root, selected, expected, "Renamed")
+	if err != nil || !slices.Equal(paths, []string{selectedPath}) {
+		t.Fatalf("RenameSelectedFiles() = %v, %v; want selected path only", paths, err)
+	}
+	actual, err := os.ReadFile(selectedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(actual, []byte("func Renamed()")) {
+		t.Fatalf("selected source was not renamed: %s", actual)
+	}
+	changedOther, err := os.ReadFile(otherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(changedOther) != "package sample\n\nfunc Other() int {return 3}\n" {
+		t.Fatalf("unrelated user edit changed: %s", changedOther)
 	}
 }
 
-func TestBufferedRenameSaveNotifications(t *testing.T) {
+func TestBufferedRenamePublicationNotifications(t *testing.T) {
 	fixture := createBufferedRenameFixture(t)
 	assertBufferedRenameUnpublished(t, fixture)
 	if err := fixture.buffer.Flush(t.Context()); err != nil {
@@ -362,8 +550,14 @@ func assertBufferedRenameUnpublished(t *testing.T, fixture bufferedRenameFixture
 func assertBufferedRenamePublished(t *testing.T, fixture bufferedRenameFixture) {
 	t.Helper()
 	saved := fixture.methods(t)
-	if !slices.Contains(saved, "textDocument/didSave") || !slices.Contains(saved, "workspace/didChangeWatchedFiles") {
-		t.Fatalf("published notifications=%v", saved)
+	changes := 0
+	for _, method := range saved {
+		if method == "textDocument/didChange" {
+			changes++
+		}
+	}
+	if changes != 2 || slices.Contains(saved, "textDocument/didSave") || slices.Contains(saved, "workspace/didChangeWatchedFiles") {
+		t.Fatalf("published notifications=%v, want staged and published content changes only", saved)
 	}
 	disk, readErr := os.ReadFile(fixture.target)
 	if readErr != nil {

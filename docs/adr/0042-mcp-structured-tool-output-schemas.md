@@ -24,8 +24,8 @@ diagnostic delta; live reload must reply before re-executing the server.
 Advertise MCP protocol revision `2025-06-18` and provide an `outputSchema` for
 every advertised tool. Registry-derived direct tools use one common successful
 envelope with the operation's typed `result`. Their successful
-`structuredContent` uses the registered projector and schema; the formatted
-text remains in the human-readable `content` block. ADR-0052 defines the
+`structuredContent` uses the registered projector and schema; `content` gives
+a compact actionable view of that result. ADR-0052 defines the
 ordinary timing metadata boundary.
 
 `semantic_batch` uses the same envelope, but its `result` is the concrete
@@ -77,11 +77,47 @@ the complete native declaration or reference records. Its listing appears once
 in the emitted payload; structured content is treated as model-visible. Required
 scope, ambiguity, source-view, and continuation fields remain schema-validated.
 
+compact JSON and, optionally, a short plain-language summary. It preserves
+exact essential values and record order from the validated structured
+projection. Every tool, including transport-level utilities, must expose the
+outcome and the information needed for the next action in `content`: exact live
+continuation selectors and revisions, ambiguity choices, refusal and failure
+reasons, partial or unknown publication state, and diagnostic counts with a
+copyable `semantic_diagnostics` query when a report exists. Buffered batch
+children are historical evidence, never live continuations. Numeric guards
+must survive serialization without floating-point conversion or truncation.
+
+`structuredContent` remains the canonical full result. `content` must not
+serialize the whole structured result again. Source bodies, complete reference
+and outline inventories, diagnostic arrays and pages, mutation diffs, analysis
+read sets, hook logs, metric records, and feedback artifacts stay in structured
+fields. Compact text names the relevant fields and page cursors so a text-only
+reader knows where to inspect them. Small fields needed for immediate action
+may appear in both channels. No absolute text byte cap may truncate a selector,
+revision, ambiguity choice, or failure guard. Error text already present in the
+critical projection is not appended again.
+
+Rename success and known applied-error results report `active_count` instead of
+the full `active` workspace diagnostic array. Their diagnostic delta retains
+introduced, resolved, and suggested messages. Use `semantic_verify` for an
+explicit current diagnostic inventory. This changes the shared Go, Rust, and
+Java rename output schema; the native backend analysis remains unchanged.
+Verified MCP outcomes also expose scoped `diagnostic_report` counts and a
+copyable `semantic_diagnostics` query. Page the captured report rather than
+rerunning verification; see [ADR-0073](0073-captured-diagnostic-reports.md).
+
+Structured content must be treated as potentially model-visible. VS Code's
+MCP adapter forwards it instead of textual content; Copilot CLI has reports of
+forwarding both. Those observations do not establish what Copilot desktop
+1.1.29 forwards. Client choice cannot be inferred from the MCP protocol
+revision. See [RQ-0071](../research/RQ-0071-actionable-mcp-output.md) for
+source evidence and output-family coverage.
+
 Batch text first labels child results as intermediate evidence. Its critical
 projection omits child continuation records because later edits and publication
-can invalidate them. Literal artifacts, such as a feedback draft, retain their
-requested text when its leading summary already exposes the complete outcome
-and limitations; they do not need a duplicate JSON wrapper.
+can invalidate them. Feedback uses its own presentation path but follows the
+same rule: text reports draft status and names `result.markdown` for review,
+while the complete artifact appears once in structured content.
 
 Known error outcomes use an opt-in operation-owned error projector paired with
 a result schema that is included in the advertised output contract.
@@ -145,15 +181,15 @@ envelope extraction or separately declared informational metadata mode.
   advertised output schema in the MCP protocol tests. Deliberate failures cover
   every tool in the actual full catalog; protocol failures are checked separately.
 - Every native direct or batch outcome includes the schema-required
-  `structuredContent.result`; `content` retains human-readable output.
+  `structuredContent.result`; every tool's `content` retains the actionable
+  outcome and next-step guards without repeating the full result.
 - Full serialized structured JSON in text follows MCP's SHOULD recommendation.
   A compact essential projection is a bounded compatibility tradeoff, not
   equivalent protocol guidance compliance. Client presentation and model
   visibility remain client-controlled.
-- When a result includes large source or diff payloads, concise views preserve
-  status, limitations, ambiguity, and live continuations ahead of bulk text;
-  the compact prefix uses the shared essential projection. Truncation limits
-  remain open.
+- Source, inventory, page, diff, read-set, log, metric-record, and feedback
+  artifact payloads appear once in structured fields. Text identifies those
+  fields and cursors, and no absolute cap truncates essential guards.
 - Error projections are validated against their paired advertised schema.
   Generic errors cannot carry an undeclared result, and native outcomes cannot
   carry a top-level error. Error state does not produce live continuation guards.

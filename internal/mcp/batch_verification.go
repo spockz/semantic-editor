@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/spockz/semantic-editor/internal/backend"
-	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/operation"
 	"github.com/spockz/semantic-editor/internal/pipeline"
@@ -24,8 +22,6 @@ import (
 	"github.com/spockz/semantic-editor/internal/telemetry"
 
 	"go/build/constraint"
-
-	"golang.org/x/tools/go/packages"
 )
 
 type batchVerificationBaseline struct {
@@ -38,12 +34,6 @@ type batchVerificationBaseline struct {
 	ScaffoldGoTargets map[string]string
 	OmittedReason     string
 	ScopeReason       string
-}
-
-type batchGoPackageGraph struct {
-	root          string
-	packagesByDir map[string][]*packages.Package
-	reverse       map[string]map[string]struct{}
 }
 
 func collectBatchVerificationBaseline(ctx context.Context, workDir string, plan projectverify.Plan, allowedLanguages []backend.LanguageID, edits []BatchEntry) (batchVerificationBaseline, error) {
@@ -77,7 +67,8 @@ func collectBatchVerificationBaseline(ctx context.Context, workDir string, plan 
 		if patterns == nil {
 			continue
 		}
-		diagnostics, err := pipeline.CheckDiagnosticDetailsForPatterns(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), moduleRoot, patterns...)
+		diagnosticCtx := godiagnostics.WithIncrementalDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore))
+		diagnostics, err := pipeline.CheckDiagnosticDetailsForPatterns(diagnosticCtx, moduleRoot, patterns...)
 		if err != nil {
 			return batchVerificationBaseline{}, fmt.Errorf("batch diagnostics before in %q: %w", moduleRoot, err)
 		}
@@ -204,17 +195,9 @@ func selectBatchGoPatterns(ctx context.Context, workDir string, edits []BatchEnt
 		if len(targets) == 0 {
 			continue
 		}
-		graph, graphReason := loadModuleGoPackageGraph(ctx, moduleRoot)
-		if graphReason != "" {
-			return workspaceGoPatterns(moduleRoots), graphReason
-		}
-		targetDirs, targetReason := resolveBatchTargetDirs(graph, targets)
-		if targetReason != "" {
-			return workspaceGoPatterns(moduleRoots), targetReason
-		}
-		patterns, closureReason := reverseClosurePatterns(graph, targetDirs)
-		if closureReason != "" {
-			return workspaceGoPatterns(moduleRoots), closureReason
+		patterns, err := godiagnostics.AffectedPackagePatternsWithContext(ctx, moduleRoot, targets)
+		if err != nil {
+			return workspaceGoPatterns(moduleRoots), "Go package graph selection failed; verification used workspace-wide scope"
 		}
 		patternsByModule[moduleRoot] = patterns
 		relative, relErr := filepath.Rel(workDir, moduleRoot)
@@ -227,7 +210,13 @@ func selectBatchGoPatterns(ctx context.Context, workDir string, edits []BatchEnt
 		return workspaceGoPatterns(moduleRoots), "batch Go targets could not be assigned to an edited module; verification used workspace-wide scope"
 	}
 	slices.Sort(moduleLabels)
-	return patternsByModule, "verification used frozen Go package closures for edited module roots: " + strings.Join(moduleLabels, ", ")
+	detail := "verification used frozen Go package closures for edited module roots: " + strings.Join(moduleLabels, ", ")
+	for _, patterns := range patternsByModule {
+		if slices.Equal(patterns, []string{"./..."}) {
+			return patternsByModule, "cached Go package scope was unavailable; verification used workspace-wide scope for edited module roots: " + strings.Join(moduleLabels, ", ")
+		}
+	}
+	return patternsByModule, detail
 }
 
 func workspaceGoPatterns(moduleRoots []string) map[string][]string {
@@ -236,185 +225,6 @@ func workspaceGoPatterns(moduleRoots []string) map[string][]string {
 		patterns[root] = []string{"./..."}
 	}
 	return patterns
-}
-
-func loadModuleGoPackageGraph(ctx context.Context, moduleRoot string) (*batchGoPackageGraph, string) {
-	environment, err := gocache.Environment(ctx, moduleRoot)
-	if err != nil {
-		return nil, "Go package graph environment could not be resolved; verification fell back to workspace-wide scope"
-	}
-	loaded, err := packages.Load(&packages.Config{
-		Context: ctx, Dir: moduleRoot, Env: environment,
-		Mode:  packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps | packages.NeedModule,
-		Tests: true, BuildFlags: []string{"-mod=readonly"},
-	}, "./...")
-	if err != nil || len(loaded) == 0 {
-		return nil, "Go package graph loading failed; verification fell back to workspace-wide scope"
-	}
-	root, err := canonicalBatchPath(moduleRoot)
-	if err != nil {
-		return nil, "Go module root could not be canonicalized; verification fell back to workspace-wide scope"
-	}
-	buildCache := goEnvironmentValue(environment, "GOCACHE")
-	graph := &batchGoPackageGraph{root: root, packagesByDir: make(map[string][]*packages.Package), reverse: make(map[string]map[string]struct{})}
-	if collectionReason := graph.collectLocalPackages(loaded, buildCache); collectionReason != "" {
-		return nil, collectionReason
-	}
-	return graph, ""
-}
-
-func (graph *batchGoPackageGraph) collectLocalPackages(loaded []*packages.Package, buildCache string) string {
-	for _, pkg := range loaded {
-		if packageIsSyntheticTestRunner(pkg, buildCache) {
-			continue
-		}
-		dir, packageReason := localModulePackageDirectory(graph.root, pkg)
-		if packageReason != "" {
-			return packageReason
-		}
-		if dir == "" {
-			continue
-		}
-		if len(pkg.Errors) > 0 {
-			return "Go package graph contains unresolved packages; verification fell back to workspace-wide scope"
-		}
-		graph.packagesByDir[dir] = append(graph.packagesByDir[dir], pkg)
-		if edgeReason := graph.addLocalReverseEdges(pkg, dir); edgeReason != "" {
-			return edgeReason
-		}
-	}
-	return ""
-}
-
-func (graph *batchGoPackageGraph) addLocalReverseEdges(pkg *packages.Package, importingDir string) string {
-	for _, imported := range pkg.Imports {
-		importDir, importReason := localModulePackageDirectory(graph.root, imported)
-		if importReason != "" {
-			return importReason
-		}
-		if importDir == "" {
-			continue
-		}
-		if graph.reverse[importDir] == nil {
-			graph.reverse[importDir] = make(map[string]struct{})
-		}
-		graph.reverse[importDir][importingDir] = struct{}{}
-	}
-	return ""
-}
-
-func localModulePackageDirectory(root string, pkg *packages.Package) (string, string) {
-	owned, ownershipReason := packageOwnedByModule(pkg, root)
-	if ownershipReason != "" || !owned {
-		return "", ownershipReason
-	}
-	dir, err := packageDirectory(pkg)
-	if err != nil {
-		return "", "a Go package directory could not be resolved; verification fell back to workspace-wide scope"
-	}
-	if dir == "" {
-		return "", ""
-	}
-	dir, err = canonicalBatchPath(dir)
-	if err != nil || !pathWithinDir(root, dir) {
-		return "", "a Go package path could not be canonicalized within the selected module; verification fell back to workspace-wide scope"
-	}
-	return dir, ""
-}
-
-func goEnvironmentValue(environment []string, key string) string {
-	for _, entry := range environment {
-		name, value, found := strings.Cut(entry, "=")
-		if found && name == key {
-			return value
-		}
-	}
-	return ""
-}
-
-func packageIsSyntheticTestRunner(pkg *packages.Package, buildCache string) bool {
-	if pkg == nil {
-		return false
-	}
-	for _, path := range pkg.GoFiles {
-		if godiagnostics.IsSyntheticTestRunnerFile(pkg, path, buildCache) {
-			return true
-		}
-	}
-	return false
-}
-
-func packageOwnedByModule(pkg *packages.Package, root string) (bool, string) {
-	if pkg == nil || pkg.Module == nil || pkg.Module.Dir == "" {
-		return false, ""
-	}
-	moduleRoot, err := canonicalBatchPath(pkg.Module.Dir)
-	if err != nil {
-		return false, "a Go package module root could not be canonicalized; verification fell back to workspace-wide scope"
-	}
-	return moduleRoot == root, ""
-}
-
-func packageDirectory(pkg *packages.Package) (string, error) {
-	if pkg == nil {
-		return "", fmt.Errorf("nil package")
-	}
-	files := pkg.GoFiles
-	if len(files) == 0 {
-		files = pkg.CompiledGoFiles
-	}
-	if len(files) == 0 {
-		return "", nil
-	}
-	return filepath.Dir(files[0]), nil
-}
-
-func resolveBatchTargetDirs(graph *batchGoPackageGraph, targets []string) ([]string, string) {
-	selected := make(map[string]struct{}, len(targets))
-	for _, target := range targets {
-		path, err := canonicalBatchPath(target)
-		if err != nil || !pathWithinDir(graph.root, path) {
-			return nil, "a Go mutation target is outside its selected module; verification fell back to workspace-wide scope"
-		}
-		dir := filepath.Dir(path)
-		if _, ok := graph.packagesByDir[dir]; !ok {
-			return nil, "a Go mutation target has no loaded package; verification fell back to workspace-wide scope"
-		}
-		selected[dir] = struct{}{}
-	}
-	return slices.Collect(maps.Keys(selected)), ""
-}
-
-func reverseClosurePatterns(graph *batchGoPackageGraph, targets []string) ([]string, string) {
-	selected := make(map[string]struct{}, len(targets))
-	queue := slices.Clone(targets)
-	for _, target := range targets {
-		selected[target] = struct{}{}
-	}
-	for len(queue) > 0 {
-		current := queue[0]
-		queue = queue[1:]
-		for importer := range graph.reverse[current] {
-			if _, ok := selected[importer]; !ok {
-				selected[importer] = struct{}{}
-				queue = append(queue, importer)
-			}
-		}
-	}
-	patterns := make([]string, 0, len(selected))
-	for dir := range selected {
-		rel, err := filepath.Rel(graph.root, dir)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-			return nil, "a Go package graph edge leaves the selected module; verification fell back to workspace-wide scope"
-		}
-		if rel == "." {
-			patterns = append(patterns, ".")
-		} else {
-			patterns = append(patterns, "./"+filepath.ToSlash(rel))
-		}
-	}
-	slices.Sort(patterns)
-	return patterns, ""
 }
 
 func collectBatchGoTargets(workDir string, edits []BatchEntry, moduleRoots []string) (map[string][]string, string) {
@@ -483,14 +293,6 @@ func canonicalBatchTarget(workDir, target string) (string, error) {
 		missing = append(missing, filepath.Base(probe))
 		probe = parent
 	}
-}
-
-func canonicalBatchPath(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(absolute)
 }
 
 func pathWithinDir(root, path string) bool {

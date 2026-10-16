@@ -328,7 +328,7 @@ func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
 
 // CheckDiagnosticDetails returns root-wide typed gopls diagnostics under the selected project root.
 func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostics.Diagnostic, error) {
-	return CheckDiagnosticDetailsForPatterns(ctx, workDir)
+	return CheckDiagnosticDetailsForPatterns(godiagnostics.WithIncrementalDiagnostics(ctx), workDir)
 }
 
 // CheckDiagnosticDetailsForPatterns returns diagnostics for explicit Go package patterns; no patterns preserves workspace-wide behavior.
@@ -435,6 +435,9 @@ func collectGoPath(ctx context.Context, base, source string, cacheRoots []string
 	walkCacheRoots, err := cacheRootsForGoDirectory(target, cacheRoots)
 	if err != nil {
 		return err
+	}
+	if err := sourcebuf.ObserveTree(ctx, target, ".go"); err != nil {
+		return fmt.Errorf("observe selected Go sources: %w", err)
 	}
 	return collectGoDirectory(base, target, source, walkCacheRoots, selected)
 }

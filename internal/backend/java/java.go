@@ -2889,7 +2889,7 @@ func javaOutlineFiles(target, root string, includeTests bool) ([]string, error) 
 			return walkErr
 		}
 		if entry.IsDir() {
-			if path != target && sourcefiles.IsIgnoredDirectory(entry.Name()) {
+			if path != target && sourcefiles.IsIgnoredDirectoryPath(path) {
 				return filepath.SkipDir
 			}
 			return nil

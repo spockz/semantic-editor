@@ -136,6 +136,20 @@ type FileEditRes struct {
 	SelectorContinuation  *compositeSelectorContinuation
 }
 
+// DiagnosticFileEditResult exposes shared diagnostic evidence across native mutation result wrappers.
+func DiagnosticFileEditResult(value any) (FileEditRes, bool) {
+	switch result := value.(type) {
+	case FileEditRes:
+		return result, true
+	case ExtractionResult:
+		return result.Edit, true
+	case structuralPlanResult:
+		return result.Edit, true
+	default:
+		return FileEditRes{}, false
+	}
+}
+
 func formatFileEdit(res FileEditRes) (string, error) {
 	text := res.Detail
 	if res.Display != "" {

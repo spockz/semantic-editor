@@ -36,7 +36,7 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 			"receipt": map[string]any{"continuations": continuations, "changes": changes, "read_set": readSet, "diff": "large"},
 		},
 	}
-	body := strings.Repeat("large formatter body", 128)
+	body := "Formatter summary."
 	text, err := CriticalText(structured, body)
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
@@ -77,14 +77,14 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 	if !reflect.DeepEqual(gotContinuations, wantContinuations) {
 		t.Fatalf("continuations changed: got %s, want %s", gotContinuations, wantContinuations)
 	}
-	if strings.Index(prefix, `"continuations"`) > strings.Index(prefix, `"changes"`) {
+	if strings.Index(prefix, `"continuations"`) > strings.Index(prefix, `"changes_count"`) {
 		t.Fatalf("continuations must precede large changes: %q", prefix)
 	}
 	if _, exists := result["receipt"].(map[string]any)["read_set"]; exists {
 		t.Fatalf("receipt analysis read_set should be omitted from prefix: %#v", result["receipt"])
 	}
-	if _, exists := result["receipt"].(map[string]any)["changes"]; !exists {
-		t.Fatalf("known receipt changes were lost: %#v", result["receipt"])
+	if result["receipt"].(map[string]any)["changes_count"] != float64(len(changes)) {
+		t.Fatalf("receipt change count was lost: %#v", result["receipt"])
 	}
 }
 
@@ -111,15 +111,15 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 		t.Fatalf("decode critical projection: %v", decodeErr)
 	}
 	result := projection["result"].(map[string]any)
-	for _, field := range []string{"function_target", "changes"} {
+	for _, field := range []string{"function_target", "changes_count"} {
 		if _, exists := result[field]; !exists {
 			t.Fatalf("critical projection missing %s: %#v", field, result)
 		}
 	}
-	if _, exists := projection["read_set"]; !exists {
-		t.Fatalf("critical projection missing top-level read_set: %#v", projection)
+	if _, exists := projection["read_set"]; exists {
+		t.Fatalf("critical projection repeated top-level read_set: %#v", projection)
 	}
-	for _, field := range []string{`"read_set"`, `"changes"`} {
+	for _, field := range []string{`"changes_count"`} {
 		if strings.Index(prefix, `"function_target"`) > strings.Index(prefix, field) {
 			t.Fatalf("function target must precede %s: %q", field, prefix)
 		}
@@ -173,7 +173,7 @@ func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *test
 		},
 		"diagnostic_delta": delta,
 	}
-	text, err := CriticalText(structured, strings.Repeat("formatter", 128))
+	text, err := CriticalText(structured, ("Formatter summary."))
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -186,7 +186,7 @@ func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *test
 		strings.Index(prefix, `"result"`),
 		strings.Index(prefix, `"receipt"`),
 		strings.Index(prefix, `"continuations"`),
-		strings.Index(prefix, `"changes"`),
+		strings.Index(prefix, `"changes_count"`),
 		strings.Index(prefix, `"diagnostic_delta"`),
 	}
 	for index, position := range positions {
@@ -300,7 +300,7 @@ func TestBatchCriticalOutcomeKeepsChildrenIntermediateAndAheadOfDiffs(t *testing
 		},
 		FinalDiff: strings.Repeat("final diff", 256),
 	}
-	body := strings.Repeat("bulk result", 128)
+	body := "Batch summary."
 	text, err := CriticalText(map[string]any{"result": response}, body)
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
@@ -386,7 +386,7 @@ func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
 	checkHook := checks["Results"].([]any)[0].(map[string]any)
 	wantCheckHook := map[string]any{
 		"ID": "check", "Kind": "", "Status": string(projectverify.HookFailed),
-		"ExitCode": json.Number("2"), "Truncated": true, "Changed": []any{"main.go"},
+		"ExitCode": json.Number("2"), "Truncated": true, "Changed_count": json.Number("1"),
 		"StartedAt": started.Format(time.RFC3339Nano), "FinishedAt": started.Add(time.Second).Format(time.RFC3339Nano),
 		"Error": "hook failed", "Signal": "compiler", "ConfigPath": "", "ScopePaths": nil,
 	}
@@ -394,7 +394,7 @@ func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
 		t.Fatalf("failed hook summary = %#v, want %#v", checkHook, wantCheckHook)
 	}
 	wantCoverage := []any{map[string]any{
-		"language": "go", "status": "failed", "paths": []any{"main.go"}, "detail": "coverage note",
+		"language": "go", "status": "failed", "paths_count": json.Number("1"), "detail": "coverage note",
 	}}
 	if !reflect.DeepEqual(verification["coverage"], wantCoverage) {
 		t.Fatalf("coverage state = %#v, want %#v", verification["coverage"], wantCoverage)

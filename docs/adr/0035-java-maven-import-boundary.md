@@ -1,7 +1,13 @@
-# ADR-0034: Explicit Maven Import Boundary for Java
+# ADR-0035: Explicit Maven Import Boundary for Java
 
 Status: Accepted
 Date: 2026-09-20
+
+ADR-0068 supersedes the explicit-opt-in default below: Maven import defaults on
+for trusted Java workspaces containing a POM. Explicit reactor membership,
+disabled Gradle import, and scratch-owned JDT/M2E state remain required. The
+no-Maven-command rule applies to JDT LS import, not the separately requested
+fixed compile/test operations in ADR-0037.
 
 ## Context
 

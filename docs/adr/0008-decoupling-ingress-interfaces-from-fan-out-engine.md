@@ -14,13 +14,17 @@ Workspace diagnostics provide another use case for LSP ingress. A downstream ser
 
 ## Decision
 
+The LSP ingress and cross-domain fan-out portions are architectural direction,
+not implemented public capabilities. Existing CLI/MCP operations retain their
+backend-specific validation and publication contracts.
+
 1. **Three-Layer Decoupling**:
    * **Layer 1 (Ingress)**: Pluggable protocol adapters (MCP, LSP, CLI).
    * **Layer 2 (Core Engine)**: Target resolution, multi-domain fan-out, changeset merging, formatting, and diagnostics.
    * **Layer 3 (Downstream Adapters)**: Dedicated language engines (`gopls`, `marksman`, `rust-analyzer`, Tree-sitter).
 2. **Symmetric Protocol Execution**:
    * An incoming `textDocument/rename` over LSP triggers the exact same multi-domain fan-out engine as an incoming `semantic_rename` over MCP or a `semedit rename` CLI call.
-   * Cross-domain edits (updating code and documentation simultaneously) are returned as a unified `WorkspaceEdit` over LSP, or as an atomic changeset over MCP and CLI.
+   * A future cross-domain edit plan may return a unified `WorkspaceEdit` over LSP. MCP/CLI publication follows checked per-file atomic writes under ADR-0010 and ADR-0032; neither interface promises a multi-file atomic transaction.
 
 3. **Optional LSP Diagnostics Endpoint**:
    * Share diagnostic collection across ingress adapters. Use downstream `workspace/diagnostic` where supported; otherwise collect `textDocument/diagnostic` reports across the applicable source scope.

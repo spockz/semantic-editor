@@ -1,0 +1,50 @@
+# Import-only path changes must refresh diagnostics in dependent packages and their repairs.
+stdin requests.json
+exec semedit mcp
+stdout '"id":3,.*"introduced_count":1.*"remaining_count":1'
+stdout '"id":3,.*cannot use consumer.Value'
+stdout '"id":4,.*"remaining_count":0.*"resolved_count":1'
+cmp consumer/value.go .scratch/want/consumer.go
+cmp transitive/value.go .scratch/want/transitive.go
+
+-- go.mod --
+module example.com/importpathdelta
+
+go 1.24
+-- requests.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"consumer/value.go"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"consumer/value.go","remove":["example.com/importpathdelta/providerint"],"add":["api example.com/importpathdelta/providerstring"]}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"consumer/value.go","remove":["example.com/importpathdelta/providerstring"],"add":["api example.com/importpathdelta/providerint"]}}}
+-- providerint/value.go --
+package api
+
+func Value() int { return 1 }
+-- providerstring/value.go --
+package api
+
+func Value() string { return "one" }
+-- consumer/value.go --
+package consumer
+
+import api "example.com/importpathdelta/providerint"
+
+var Value = api.Value()
+-- transitive/value.go --
+package transitive
+
+import "example.com/importpathdelta/consumer"
+
+var Value int = consumer.Value
+-- .scratch/want/consumer.go --
+package consumer
+
+import api "example.com/importpathdelta/providerint"
+
+var Value = api.Value()
+-- .scratch/want/transitive.go --
+package transitive
+
+import "example.com/importpathdelta/consumer"
+
+var Value int = consumer.Value

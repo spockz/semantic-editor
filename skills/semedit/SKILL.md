@@ -7,6 +7,12 @@ description: Use semedit tools for symbol lookup, code inspection, outlines, ref
 
 When the request matches an operation exposed by the active semedit server, use that semantic operation as the primary code-editing path. It resolves symbols and applies supported structural changes through the language backend. Before calling the selected operation, read its description for scope, preconditions, and behavior, then follow its input schema for required fields and allowed values. Follow the result diagnostics; operation availability and scope vary by language.
 
+Go edits validate cached diagnostic inputs and refresh affected packages and reverse
+dependencies, with full-scan fallback for uncertain coverage. Explicit
+`semantic_verify` remains a full verification request. A rename can retry one fresh
+plan after a zero-write conflict; inspect published paths and the disk diff after
+partial application before planning further edits.
+
 Install the CLI with `go install github.com/spockz/semantic-editor/cmd/semedit@latest`; from a local checkout, use `go install ./cmd/semedit` at the repository root. Register the resulting `semedit` executable with the harness MCP configuration.
 
 Normal CLI and MCP use inherit the user's Go environment and caches. Only explicitly isolated runs use managed Go state: MCP `--go-base-dir` opts into isolation, and benchmark fixtures configure it themselves. Do not add isolated cache configuration to ordinary harness registrations. Ordinary semantic operations preserve read-only module-file protection; dependency operations can update module files explicitly.
@@ -82,6 +88,7 @@ separate package/module records; inspection still returns source and revisions.
 | Convert Go test assertions (t.Fatal/t.Error) between failure modes | `semantic_assertion_mode`; writes require `trust_workspace: true`, while `dry_run: true` previews without trust or writes | Built-in text replacement of `t.Fatal`/`t.Error` calls |
 | Apply several registered semantic edits in order | `semantic_batch`; successful earlier edits remain written if a later edit fails | Several built-in text patches |
 | Explicitly format or check Go or trusted Java sources | `semantic_verify`; Go verification runs formatting before diagnostics and can write files, and Java accepts a file or directory scope for JDT LS formatting/import organization. There is no dry-run | Shell formatters or ad hoc diagnostics; avoid a redundant call after an edit that already verifies |
+| Read diagnostics from a completed operation | `semantic_diagnostics` with `diagnostic_report.arguments`; choose `category`, `contains`, `limit`, and `offset`, then follow `next_offset` | Rerunning verification just to read or page an existing report |
 | Compile tests for a trusted Java root POM | `semantic_maven_compile`; set `trust_workspace: true`, runs offline unless `allow_network: true`, and writes build outputs plus temporary Maven data under `.scratch` | Shell Maven invocation |
 | Run tests for a trusted Java root POM | `semantic_maven_test`; set `trust_workspace: true`, runs offline unless `allow_network: true`, and writes build outputs plus temporary Maven data under `.scratch` | Shell Maven invocation |
 | Save a pre-edit rollback point for a bounded edit | `semantic_snapshot` | `git stash` or manual backup copies |
@@ -113,6 +120,44 @@ children report `applied_working` and omit live continuations. A batch failure
 can retain earlier successful edits, so inspect its persisted diff before retrying.
 Standalone AST edits prepare edits, formatting, and imports in one source buffer
 and publish the prepared result once.
+
+Treat `structuredContent` as the canonical full result and potentially
+model-visible when the client forwards it. Every tool's text carries the
+outcome and exact next-step guards: live selectors and revisions, ambiguity
+choices, refusal or failure reason, partial or unknown publication state, and
+diagnostic counts with a copyable query. Large source bodies, reference and
+outline inventories, diagnostic arrays and pages, diffs, read sets, logs,
+metric records, and feedback artifacts appear in structured fields. Text names
+those fields and page cursors without serializing them again. A compact text
+view never makes a buffered child continuation live or implies clean
+verification. Client model visibility varies; Copilot desktop 1.1.29 behavior
+has not been established by this project.
+
+For timing diagnosis, call `semantic_metrics` with `limit: 1` immediately after
+the operation and read structured `records[].metrics.phases`. Go calls include
+`gopls.request.<method>` and `gopls.notify.<method>` with attempted-call counts
+and cumulative elapsed milliseconds.
+`gopls.send.<method>` and `gopls.wait.<method>` separate transport completion
+from response waiting within each request. Exact `go.*` phases locate environment,
+package discovery, session synchronization, revision checks, and publication
+costs. Within fingerprinting, `go.scope.embed_patterns` and
+`go.scope.hash_inputs` separate directive scanning from input hashing.
+These include waiting and overlap their enclosing operation phases;
+they are not CPU measurements or disjoint totals. When the host enables Go
+execution tracing, the same scopes appear as named timeline regions; ordinary
+MCP output does not contain trace events.
+
+Rename reports `active_count` for existing workspace diagnostics and change
+evidence in `diagnostics`. Prefer `diagnostic_report`: it supplies the remaining
+captured count and a copyable `semantic_diagnostics` call. Set `limit` (default
+50, maximum 100), follow `next_offset`, and select `category` (`active`,
+`introduced`, `resolved`, `suggestions`) or `contains` for desired details.
+Read page `items` from the structured result; text gives the count and cursor.
+Pages reuse the same immutable report without analysis. Deferred or unavailable
+does not mean zero; partial counts cover completed scopes only. IDs expire on
+eviction or server restart. Use `semantic_verify` for a fresh report.
+Preserve application state, errors, revisions, and opaque stage/step IDs when
+choosing the next call.
 
 When the advertised Go or Java tools include retained staging, use
 `semantic_stage` for edits that span turns and should remain unpublished. Staged

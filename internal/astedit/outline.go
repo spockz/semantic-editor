@@ -2,28 +2,40 @@
 package astedit
 
 import (
+	"context"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/backend"
-	"github.com/spockz/semantic-editor/internal/pipeline"
 	"go/ast"
 	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // OutlineGo produces deterministic Go declarations from selected source files.
-func OutlineGo(root, path string, kinds []string, includeUnexported, includeTests bool) (*backend.OutlineResult, error) {
-	request, err := newGoOutlineRequest(root, path, kinds, includeUnexported, includeTests)
+func OutlineGo(ctx context.Context, root, path string, kinds []string, includeUnexported, includeTests bool) (*backend.OutlineResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("outline Go source: %w", err)
+	}
+	request, err := newGoOutlineRequest(ctx, root, path, kinds, includeUnexported, includeTests)
 	if err != nil {
 		return nil, err
 	}
 	result := request.result
 	for _, filePath := range request.files {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("outline Go source: %w", err)
+		}
 		if request.skipFile(filePath) {
 			continue
 		}
-		file, err := request.outlineFile(filePath)
+		file, err := request.outlineFile(ctx, filePath)
 		if err != nil {
 			return nil, err
 		}
@@ -42,7 +54,7 @@ type goOutlineRequest struct {
 	result            *backend.OutlineResult
 }
 
-func newGoOutlineRequest(root, path string, kinds []string, includeUnexported, includeTests bool) (*goOutlineRequest, error) {
+func newGoOutlineRequest(ctx context.Context, root, path string, kinds []string, includeUnexported, includeTests bool) (*goOutlineRequest, error) {
 	resolved, err := resolveGoOutlinePath(root, path)
 	if err != nil {
 		return nil, err
@@ -51,7 +63,7 @@ func newGoOutlineRequest(root, path string, kinds []string, includeUnexported, i
 	if err != nil {
 		return nil, err
 	}
-	files, err := pipeline.GoFiles(resolved.root, resolved.target)
+	files, err := pipeline.GoFilesContext(ctx, resolved.root, resolved.target)
 	if err != nil {
 		return nil, fmt.Errorf("select Go outline files under %q: %w", path, err)
 	}
@@ -129,8 +141,8 @@ func (request *goOutlineRequest) matchesKind(kind string) bool {
 	return len(request.kinds) == 0 || request.kinds[kind]
 }
 
-func (request *goOutlineRequest) outlineFile(filePath string) (backend.OutlineFile, error) {
-	source, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304 -- GoFiles returns the bounded selected source set.
+func (request *goOutlineRequest) outlineFile(ctx context.Context, filePath string) (backend.OutlineFile, error) {
+	source, err := sourcebuf.ReadFile(ctx, filepath.Clean(filePath))
 	if err != nil {
 		return backend.OutlineFile{}, fmt.Errorf("read Go outline source %s: %w", filePath, err)
 	}

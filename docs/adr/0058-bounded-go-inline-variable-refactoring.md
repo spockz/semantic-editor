@@ -11,6 +11,10 @@ The initial Go operation needs an explicit contract that reports useful edits wh
 
 ## Decision
 
+The restrictions below define the Go backend. Java variable and call inlining
+are independently delegated to JDT LS under ADR-0068; the Go call-inlining
+exclusion does not disable those Java operations.
+
 Register `semantic_inline_variable` and the matching CLI command `inline-variable` for Go. `symbol` targets the local variable or constant; `file` and `in_function` select the source file and containing function. The typed output receipt reports publication state, changed-file revisions, and scoped package-local read-set evidence. Transitive compiler inputs are revalidated internally before apply and are not claimed as complete receipt evidence. The CLI retains its diff and diagnostic details. The removed local name is historical evidence and is not returned as a live continuation; the current owner is returned as the live continuation. Batch child receipts omit live continuations; obtain fresh selectors with inspection or lookup after batch publication.
 
 The implementation accepts one local `:=`, `var`, or `const` binding with a single literal initializer, provided the declaration has no explicit type. It replaces every direct call argument or direct return value in the immediately following statement in the same lexical block, then removes the declaration. Because a local variable initialized by an untyped literal has a concrete default type, the operation inserts the matching conversion (`int`, `float64`, `complex128`, `rune`, or `string`) at each use. Untyped constants retain their literal form. It refuses expression initializers, explicitly typed declarations, local or package bindings, same-package declarations, and imports that could shadow the required default type conversion (unaliased imports are treated as uncertain), any additional identifier reference (including reassignment, address-taking, or shadowing), unsupported use shapes, intervening statements, ambiguous declarations, and declaration comments it cannot preserve.
@@ -24,7 +28,7 @@ Call inlining remains unsupported. It needs call resolution and argument-to-para
 * An explicit declaration type causes refusal; inferred default types are retained by conversion at each use. Same-package sibling declarations are scanned, and unaliased imports are refused because their declared package name may differ from the import path basename.
 * A function-wide identifier scan must find only the target binding and its accepted use sites; possible shadowing or reassignment causes refusal.
 * The engine validates and formats the complete result before an atomic write; parse or safety failures leave source unchanged.
-* The registered operation is advertised for Go only, with comparable CLI txtar positive and negative coverage.
+* The Go implementation has CLI txtar positive and negative coverage; each other advertised backend retains its own contract and comparable coverage.
 * The input `symbol` identifies the local binding to remove. `file` and `in_function` constrain where the engine resolves it. The removed name is never a live follow-up target.
 
 ## Consequences
