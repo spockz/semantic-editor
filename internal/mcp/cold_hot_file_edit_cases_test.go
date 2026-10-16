@@ -123,6 +123,16 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_move_destination.go": {"func costNormalize", "\"strings\""}}, absent: map[string][]string{"cost_move_source.go": {"costNormalize", "\"strings\""}},
 	},
 	{
+		name: "move_file", tool: "semantic_move_file",
+		files: map[string]string{
+			"cost_move_file.go":         "package sample\n\nfunc CostMovedValue() int { return 2 }\n",
+			"cost_move_target/value.go": "package moved\n",
+		},
+		args:     map[string]any{"file": "cost_move_file.go", "destination_file": "cost_move_target/value.go", "move_matching_tests": false},
+		expected: map[string][]string{"cost_move_target/value.go": {"func CostMovedValue() int", "return 2"}},
+		absent:   map[string][]string{"cost_move_file.go": {"CostMovedValue"}},
+	},
+	{
 		name: "extract_function", tool: "semantic_extract_function",
 		files:    map[string]string{"cost_extract_function.go": "package sample\n\nimport \"fmt\"\n\nfunc costEmit() {\n\tfmt.Println(\"selected\")\n\tfmt.Println(\"after\")\n}\n"},
 		args:     map[string]any{"file": "cost_extract_function.go", "symbol": "costSendSelected", "in_function": "costEmit", "kind": "function", "start_line": 6, "end_line": 6},

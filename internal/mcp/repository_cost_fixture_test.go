@@ -66,6 +66,9 @@ func newRepositoryCostCorpus(tb testing.TB) repositoryCostCorpus {
 	if _, err := os.Lstat(filepath.Join(root, "data", "benchmarks")); !os.IsNotExist(err) {
 		tb.Fatalf("repository corpus at %s unexpectedly contains benchmark artifacts: %v", revision, err)
 	}
+	if _, err := os.Lstat(filepath.Join(root, ".agents")); !os.IsNotExist(err) {
+		tb.Fatalf("repository corpus at %s unexpectedly contains agent configuration: %v", revision, err)
+	}
 	return repositoryCostCorpus{root: root, revision: revision}
 }
 
@@ -77,6 +80,9 @@ func repositoryCostArchivePaths(tb testing.TB, root, revision string) []string {
 	}
 	var paths []string
 	for entry := range strings.SplitSeq(strings.TrimSuffix(string(entries), "\x00"), "\x00") {
+		if entry == ".agents" {
+			continue
+		}
 		if entry != "data" {
 			paths = append(paths, entry)
 			continue

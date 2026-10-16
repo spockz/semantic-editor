@@ -207,6 +207,10 @@ timing, baseline restoration, and mutation assertions live in
 [`cold_hot_file_edit_runner_test.go`](../../internal/mcp/cold_hot_file_edit_runner_test.go).
 Git export and fixture cloning live in
 [`repository_cost_fixture_test.go`](../../internal/mcp/repository_cost_fixture_test.go).
+The exported corpus excludes archived benchmark data and `.agents` configuration.
+The latter contains a skill symlink unrelated to compilation; source symlinks
+remain intact so checked file moves retain their normal refusal behavior.
+The source-edit matrix includes cross-package `semantic_move_file` publication.
 Per-module session accounting and its semantic tests live in
 [`file_edit_session_cost_test.go`](../../internal/mcp/file_edit_session_cost_test.go).
 

@@ -677,8 +677,6 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertStandardOutputSchema(t, output, "object")
 		assertInspectOutputSchema(t, output)
 
-	case "semantic_diagnostics":
-		assertDiagnosticPageOutputSchema(t, output)
 	default:
 		assertStandardOutputSchema(t, output, "string")
 	}
@@ -686,7 +684,7 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 
 func assertDiagnosticReportToolOutputSchema(t *testing.T, name string, output any) {
 	t.Helper()
-	assertStandardOutputSchema(t, output, "object")
+	assertDiagnosticPageOutputSchema(t, output)
 	assertObjectRequiredFields(t, name, nativeResultSchema(t, output), "report_id", "workspace_root", "status", "category", "total", "offset", "limit", "items")
 }
 

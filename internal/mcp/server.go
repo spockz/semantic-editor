@@ -2308,10 +2308,16 @@ func (s *Server) sendToolResultWithNativeAndPresentation(id json.RawMessage, tex
 	if compactMoveFile {
 		presentationFields = moveFilePresentationFields(structured)
 	}
-	presented, err := CriticalText(presentationFields, text)
+	presentationBody := text
+	if compactMoveFile {
+		presentationBody = ""
+	}
+	presented, err := CriticalText(presentationFields, presentationBody)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		presented = criticalTextFallback(presentationFields, text, err)
+	} else if compactMoveFile && text != "" {
+		presented += "\n\n" + text
 	}
 	s.sendResult(id, map[string]any{
 		"content":            []map[string]any{{"type": "text", "text": presented}},

@@ -646,4 +646,3 @@ func finalizeFileEditOutput(cc CallContext, result FileEditRes) (FileEditRes, er
 	result.SuppressContinuations = result.SuppressContinuations || cc.InBatch
 	return result, nil
 }
-
