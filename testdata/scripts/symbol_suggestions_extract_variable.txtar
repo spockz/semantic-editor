@@ -1,0 +1,41 @@
+# A misspelled extraction owner is suggested without changing source; retry keeps the requested variable name.
+env SEMEDIT_SUGGESTIONS=generic
+cp source.go original.txt
+! exec semedit extract-variable --file source.go --symbol total --in-function Rennder --discriminator 'count + 1'
+stderr 'Suggested target: Render'
+cmp source.go original.txt
+exec semedit extract-variable --file source.go --symbol total --in-function Render --discriminator 'count + 1'
+stdout 'symbol: total'
+cmp source.go want/source.go
+
+-- go.mod --
+module example.com/suggestionsextractvariable
+go 1.23
+
+-- source.go --
+package sample
+
+func consume(int) {}
+
+func Render(count int) {
+	consume(count + 1)
+}
+
+-- original.txt --
+package sample
+
+func consume(int) {}
+
+func Render(count int) {
+	consume(count + 1)
+}
+
+-- want/source.go --
+package sample
+
+func consume(int) {}
+
+func Render(count int) {
+	total := count + 1
+	consume(total)
+}

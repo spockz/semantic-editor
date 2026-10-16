@@ -39,6 +39,7 @@ type Entry struct {
 	Invoke             func(CallContext, map[string]any) (any, error)
 	Format             func(any) (string, error)
 	LanguageContracts  map[backend.LanguageID]capability.OperationContract
+	TargetPreflight    func(context.Context, CallContext, map[string]any) error
 }
 
 // NormalizedInput returns canonical parameter spellings before a caller retains or forwards an operation request.
@@ -100,6 +101,8 @@ type Def[Req any, Res any] struct {
 	ProjectOutput func(Res) (any, error)
 	// ProjectErrorOutput projects known operation state carried by an error without changing dispatch error semantics.
 	ProjectErrorOutput func(error) (value any, known bool, err error)
+	// TargetPreflight shares an operation's non-mutating native plan with failed-selector validation.
+	TargetPreflight func(context.Context, CallContext, map[string]any) error
 }
 
 // Level identifies the scope an operation acts upon.

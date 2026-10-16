@@ -307,23 +307,9 @@ func runInsertConstruct(ctx context.Context, cc CallContext, req InsertConstruct
 }
 
 func runInsertFieldConstruct(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
-	fieldSymbol, err := constructFieldSymbol(req.TypeName, req.Source)
+	raw, err := insertFieldConstructRaw(req)
 	if err != nil {
 		return FileEditRes{}, err
-	}
-	fieldName := strings.TrimPrefix(fieldSymbol, req.TypeName+".")
-	if validateErr := astedit.ValidateAccess(astedit.GolangBackend{}, astedit.AccessModifier(req.AccessModifier), fieldName); validateErr != nil {
-		return FileEditRes{}, fmt.Errorf("validate field access modifier: %w: %w", validateErr, ErrInvalidParams)
-	}
-	raw := map[string]any{
-		"file": req.File, "in_type": req.TypeName, "symbol": fieldSymbol,
-		"source": req.Source, "placement": req.Placement,
-	}
-	if req.TargetSymbol != "" {
-		raw["target_symbol"] = req.TargetSymbol
-	}
-	if req.ExpectedRevision != "" {
-		raw[wireExpectedRevision] = req.ExpectedRevision
 	}
 	planned, err := insertFieldStructuralDef().Handlers[backend.LanguageGo](ctx, cc, raw)
 	if err != nil {
@@ -366,14 +352,15 @@ func constructContinuationDiscriminator(req InsertConstructReq) string {
 
 func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 	return Def[InsertConstructReq, FileEditRes]{
-		Key:            operationKeyInsertConstruct,
-		Summary:        ("Use this tool instead of text replacement to add one backend-supported declaration, field, keyed composite element, switch case, or anchored statement. For kind=element, select a typed map/dictionary literal and append one keyed `key: value` pair, or select a struct/object initializer and append one property; slices/arrays and positional elements are unsupported. Select the exact literal with `discriminator` and its owning top-level declaration or function/method with `in_declaration`. Element insertion preserves the exact planned bytes and ignores auto_organize_imports. Field insertion requires an existing locally declared, private, non-generic Go struct. Use semantic_replace_construct for existing targets; insertions fail closed on collisions." + automaticVerificationGuidance),
-		Params:         insertConstructParams,
-		Level:          LevelFile,
-		CLIName:        "insert-construct",
-		MCPName:        semanticInsertConstructToolName,
-		Parse:          parseInsertConstruct,
-		NormalizeInput: NormalizeConstructKindInput,
+		Key:             operationKeyInsertConstruct,
+		Summary:         ("Use this tool instead of text replacement to add one backend-supported declaration, field, keyed composite element, switch case, or anchored statement. For kind=element, select a typed map/dictionary literal and append one keyed `key: value` pair, or select a struct/object initializer and append one property; slices/arrays and positional elements are unsupported. Select the exact literal with `discriminator` and its owning top-level declaration or function/method with `in_declaration`. Element insertion preserves the exact planned bytes and ignores auto_organize_imports. Field insertion requires an existing locally declared, private, non-generic Go struct. Use semantic_replace_construct for existing targets; insertions fail closed on collisions." + automaticVerificationGuidance),
+		Params:          insertConstructParams,
+		Level:           LevelFile,
+		CLIName:         "insert-construct",
+		MCPName:         semanticInsertConstructToolName,
+		Parse:           parseInsertConstruct,
+		NormalizeInput:  NormalizeConstructKindInput,
+		TargetPreflight: validateInsertConstructTarget,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertConstructReq) (FileEditRes, error){
 			backend.LanguageGo:   bufferedFileEditHandler(operationKeyInsertConstruct, func(req InsertConstructReq) string { return req.File }, runInsertConstruct),
 			backend.LanguageJava: runInsertConstructJava,

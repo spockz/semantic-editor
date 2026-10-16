@@ -1,0 +1,43 @@
+# Suggestions resolve against the retained batch overlay and earlier rename aliases.
+env SEMEDIT_SUGGESTIONS=generic
+stdin input.json
+exec semedit mcp
+stdout 'isError":true'
+stdout '"suggestions":\s*\[\s*\{\s*"arguments":\s*\{[^}]*"symbol":"ReadConfig"'
+stdout 'Matched former name ParseConfig; now ReadConfig after an earlier retained rename.'
+cmp config.go want/batch.go
+
+exec semedit lookup --file config.go --symbol ReadConfig
+stdout '"symbol":\s*"ReadConfig"'
+exec semedit replace-body --file config.go --symbol ReadConfig --body 'return "ready"'
+grep 'func ReadConfig' config.go
+grep 'return "ready"' config.go
+
+-- go.mod --
+module example.com/suggestionbatch
+go 1.23
+
+-- config.go --
+package config
+
+func ParseConfig() string {
+	return "ready"
+}
+
+-- want/config.go --
+package config
+
+func ReadConfig() string {
+	return "ready"
+}
+
+-- want/batch.go --
+package config
+
+func ReadConfig() string {
+	return "ready"
+}
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfig","to":"LoadConfig"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"LoadConfig","to":"ReadConfig"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfg","to":"OpenConfig"}}]}}}

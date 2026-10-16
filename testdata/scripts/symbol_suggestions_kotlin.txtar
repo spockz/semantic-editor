@@ -1,0 +1,9 @@
+# Kotlin lookup recovery uses selected-file Kotlin LS outline and exact retry.
+env SEMEDIT_SUGGESTIONS=generic SEMEDIT_TEST_KOTLIN_OUTLINE=1
+! exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widgte
+stderr 'Suggested target: Widget \(src/Widget.kt:1\)'
+exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
+stdout '"symbol":\s*"Widget"'
+
+-- src/Widget.kt --
+class Widget { fun run() {} }

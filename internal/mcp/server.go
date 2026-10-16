@@ -927,6 +927,7 @@ func standardOutputSchema(resultSchema, errorResultSchema map[string]any) map[st
 	properties := map[string]any{
 		applicationStateField:         map[string]any{"type": "string"},
 		"error":                       map[string]any{"type": "string"},
+		"suggestions":                 targetSuggestionsSchema(),
 		"result":                      resultSchema,
 		"workspace_root":              map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used for this request; pass it to a later semantic tool call to keep using the same workspace."},
 		"presentation_error":          map[string]any{"type": "string"},
@@ -1141,6 +1142,28 @@ func batchResultBaseProperties(toolSchema map[string]any) map[string]any {
 		"projection_error":    map[string]any{"type": "string"},
 		"diff":                map[string]any{"type": "string"},
 		"error":               map[string]any{"type": "string"},
+		"suggestions":         targetSuggestionsSchema(),
+	}
+}
+
+func targetSuggestionsSchema() map[string]any {
+	return map[string]any{
+		"type":     "array",
+		"maxItems": 3,
+		"items": map[string]any{
+			"type": "object",
+			schemaPropertiesKey: map[string]any{
+				"arguments": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}},
+				"file":      map[string]any{"type": "string"},
+				"line":      map[string]any{"type": "integer"},
+				"column":    map[string]any{"type": "integer"},
+				"kind":      map[string]any{"type": "string"},
+				"signature": map[string]any{"type": "string"},
+				"reason":    map[string]any{"type": "string"},
+			},
+			"required":              []string{"arguments", "file", "line", "column", "kind", "reason"},
+			additionalPropertiesKey: false,
+		},
 	}
 }
 
@@ -1634,6 +1657,9 @@ func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text str
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	structured := map[string]any{"error": text, applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
+		if suggestions := operation.SuggestionsFromError(errs[0]); len(suggestions) > 0 {
+			structured["suggestions"] = suggestions
+		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
 		}
@@ -1657,6 +1683,9 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 	s.recordToolMetrics(timing)
 	structured := map[string]any{"error": text, applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
+		if suggestions := operation.SuggestionsFromError(errs[0]); len(suggestions) > 0 {
+			structured["suggestions"] = suggestions
+		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
 		}
@@ -1690,6 +1719,9 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 			"error_projection_failure": projectErr.Error(),
 		}
 		location := s.extractLocation(operationErr)
+		if suggestions := operation.SuggestionsFromError(operationErr); len(suggestions) > 0 {
+			structured["suggestions"] = suggestions
+		}
 		if location != nil {
 			structured["location"] = location
 		}
@@ -1717,6 +1749,9 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 		"error":               text,
 		"result":              projected,
 		applicationStateField: "unknown",
+	}
+	if suggestions := operation.SuggestionsFromError(operationErr); len(suggestions) > 0 {
+		structured["suggestions"] = suggestions
 	}
 	if _, refusal := errors.AsType[*operation.SafeDeleteRefusalError](operationErr); refusal {
 		structured[applicationStateField] = "not_applied"

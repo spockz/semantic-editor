@@ -8,6 +8,8 @@ import (
 	"go/ast"
 	"go/token"
 	"strings"
+
+	symbolresolver "github.com/spockz/semantic-editor/internal/symbol"
 )
 
 // SetDocCommentIntent distinguishes a missing comment from an explicit empty removal.
@@ -112,12 +114,12 @@ func findDocCommentTarget(file *ast.File, symbol string) (ast.Node, *ast.Comment
 			continue
 		}
 		if target.found {
-			return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
+			return nil, nil, fmt.Errorf("declaration %q is ambiguous: %w", symbol, &symbolresolver.SymbolError{Op: "set_doc_comment", Symbol: symbol, Err: symbolresolver.ErrAmbiguous})
 		}
 		target = candidate
 	}
 	if !target.found {
-		return nil, nil, fmt.Errorf("top-level declaration %q not found", symbol)
+		return nil, nil, fmt.Errorf("top-level declaration %q not found: %w", symbol, &symbolresolver.SymbolError{Op: "set_doc_comment", Symbol: symbol, Err: symbolresolver.ErrNotFound})
 	}
 	return target.node, target.doc, nil
 }

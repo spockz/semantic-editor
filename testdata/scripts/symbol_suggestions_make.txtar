@@ -1,0 +1,15 @@
+# Make lookup and inspect recovery use selected-file native server symbols and exact retries.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol alll
+stderr 'Suggested target: all \(Makefile:1\)'
+exec semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol all
+stdout '"symbol":\s*"all"'
+
+! exec semedit inspect-symbol --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol alll
+stderr 'Suggested target: all \(Makefile:1\)'
+exec semedit inspect-symbol --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol all
+stdout '"qualified_name":\s*"all"'
+
+-- Makefile --
+all:
+	@echo safe

@@ -30,13 +30,34 @@ type Change struct {
 
 // Buffer retains source preimages and working bytes for one buffered batch segment.
 type Buffer struct {
-	mu         sync.Mutex
-	root       string
-	exclusions []string
-	writeRoots map[string]bool
-	files      map[string]*fileState
-	trees      map[string]map[string]bool
-	aliases    map[string]string
+	mu                       sync.Mutex
+	root                     string
+	exclusions               []string
+	writeRoots               map[string]bool
+	files                    map[string]*fileState
+	trees                    map[string]map[string]bool
+	aliases                  map[string]string
+	symbolAliases            []SymbolAlias
+	invalidatedSymbolAliases []SymbolAlias
+}
+
+// SymbolAlias records one successfully applied rename in the current source view.
+// It lets later resolution follow a batch-local rename chain without treating an
+// uncommitted selector as a disk identity.
+type SymbolAlias struct {
+	Language    string
+	File        string
+	NewFile     string
+	OldSelector string
+	NewSelector string
+	Kind        string
+}
+
+// SymbolHistory carries batch-local rename and invalidation evidence across a
+// publication barrier, where the source buffer itself is intentionally reset.
+type SymbolHistory struct {
+	Renames     []SymbolAlias
+	Invalidated []SymbolAlias
 }
 
 // ChangedPaths reports outputs whose working bytes differ from their disk preimages.
@@ -75,6 +96,10 @@ func (b *Buffer) forkLocked(original bool) *Buffer {
 		trees:      make(map[string]map[string]bool, len(b.trees)),
 		aliases:    maps.Clone(b.aliases),
 	}
+	if !original {
+		fork.symbolAliases = slices.Clone(b.symbolAliases)
+		fork.invalidatedSymbolAliases = slices.Clone(b.invalidatedSymbolAliases)
+	}
 	for path, state := range b.files {
 		preimage := bytes.Clone(state.original)
 		content := bytes.Clone(state.content)
@@ -87,6 +112,156 @@ func (b *Buffer) forkLocked(original bool) *Buffer {
 		fork.trees[root] = maps.Clone(files)
 	}
 	return fork
+}
+
+// RecordSymbolRename retains a successful rename for later resolution in this
+// buffer. Callers must record only after the mutation and its finalization both
+// succeed, so failed operations cannot become aliases.
+func (b *Buffer) RecordSymbolRename(alias SymbolAlias) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if alias.Language == "" {
+		alias.Language = "go"
+	}
+	alias.File = filepath.Clean(alias.File)
+	if alias.NewFile == "" {
+		alias.NewFile = alias.File
+	}
+	alias.NewFile = filepath.Clean(alias.NewFile)
+	b.symbolAliases = append(b.symbolAliases, alias)
+}
+
+// SymbolAliases returns the ordered, batch-local rename history.
+func (b *Buffer) SymbolAliases() []SymbolAlias {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.symbolAliases)
+}
+
+// SymbolHistory returns independent copies of all retained identity evidence.
+func (b *Buffer) SymbolHistory() SymbolHistory {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return SymbolHistory{
+		Renames:     slices.Clone(b.symbolAliases),
+		Invalidated: slices.Clone(b.invalidatedSymbolAliases),
+	}
+}
+
+// RestoreSymbolHistory restores evidence into a fresh buffer after a publication barrier.
+func (b *Buffer) RestoreSymbolHistory(history SymbolHistory) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.symbolAliases) != 0 || len(b.invalidatedSymbolAliases) != 0 {
+		return errors.New("restore symbol history into non-fresh buffer")
+	}
+	b.symbolAliases = slices.Clone(history.Renames)
+	b.invalidatedSymbolAliases = slices.Clone(history.Invalidated)
+	return nil
+}
+
+// InvalidatedSymbolAliases returns rename identities that ceased to identify
+// the declaration they once described. Callers use this evidence to reject
+// stale indexed candidates after a replacement or deletion.
+func (b *Buffer) InvalidatedSymbolAliases() []SymbolAlias {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return slices.Clone(b.invalidatedSymbolAliases)
+}
+
+// InvalidateSymbolAliases removes rename history for a deleted or replaced
+// declaration. It also removes receiver-qualified descendants when a type is
+// removed, preventing a reused selector from being attributed to its former
+// declaration.
+func (b *Buffer) InvalidateSymbolAliases(file, selector string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return
+	}
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(b.root, file)
+	}
+	file = filepath.Clean(file)
+	type target struct{ file, selector string }
+	frontier := []target{{file, selector}}
+	invalid := make([]bool, len(b.symbolAliases))
+	for index := 0; index < len(frontier); index++ {
+		current := frontier[index]
+		for i, alias := range b.symbolAliases {
+			if invalid[i] || filepath.Ext(alias.File) != filepath.Ext(current.file) || (filepath.Dir(alias.File) != filepath.Dir(current.file) && filepath.Dir(alias.NewFile) != filepath.Dir(current.file)) {
+				continue
+			}
+			if !matchesSymbolAlias(alias.OldSelector, current.selector) && !matchesSymbolAlias(alias.NewSelector, current.selector) && !typeAliasContainsSelector(alias, current.selector) {
+				continue
+			}
+			invalid[i] = true
+			frontier = append(frontier, target{alias.File, alias.OldSelector}, target{alias.NewFile, alias.NewSelector})
+		}
+	}
+	aliases := b.symbolAliases[:0]
+	for i, alias := range b.symbolAliases {
+		if !invalid[i] {
+			aliases = append(aliases, alias)
+			continue
+		}
+		b.invalidatedSymbolAliases = append(b.invalidatedSymbolAliases, alias)
+	}
+	b.symbolAliases = aliases
+	if !symbolInvalidationRepresented(b.invalidatedSymbolAliases, file, selector) {
+		b.invalidatedSymbolAliases = append(b.invalidatedSymbolAliases, SymbolAlias{
+			Language: languageForSymbolFile(file), File: file, NewFile: file,
+			OldSelector: selector, NewSelector: selector, Kind: "declaration",
+		})
+	}
+}
+
+func symbolInvalidationRepresented(aliases []SymbolAlias, file, selector string) bool {
+	for _, alias := range aliases {
+		if filepath.Clean(alias.File) != file && filepath.Clean(alias.NewFile) != file {
+			continue
+		}
+		if selectorCoveredByAlias(selector, alias.OldSelector) || selectorCoveredByAlias(selector, alias.NewSelector) {
+			return true
+		}
+	}
+	return false
+}
+
+func selectorCoveredByAlias(selector, aliasSelector string) bool {
+	return selector == aliasSelector || strings.HasPrefix(selector, aliasSelector+".") ||
+		strings.HasPrefix(selector, "(*"+aliasSelector+").") ||
+		strings.HasPrefix(selector, "("+aliasSelector+").")
+}
+
+func languageForSymbolFile(file string) string {
+	if strings.EqualFold(filepath.Ext(file), ".java") {
+		return "java"
+	}
+	return "go"
+}
+
+func typeAliasContainsSelector(alias SymbolAlias, selector string) bool {
+	if alias.Kind != "type" {
+		return false
+	}
+	return selectorWithinTypeAlias(selector, alias.OldSelector) || selectorWithinTypeAlias(selector, alias.NewSelector)
+}
+
+func selectorWithinTypeAlias(selector, typeName string) bool {
+	return strings.HasPrefix(selector, typeName+".") ||
+		strings.HasPrefix(selector, "(*"+typeName+").") ||
+		strings.HasPrefix(selector, "("+typeName+").")
+}
+
+func matchesSymbolAlias(candidate, selector string) bool {
+	if candidate == selector {
+		return true
+	}
+	return strings.HasPrefix(candidate, selector+".") ||
+		strings.HasPrefix(candidate, "(*"+selector+").") ||
+		strings.HasPrefix(candidate, "("+selector+").")
 }
 
 // Fork returns an independent retained working revision.
@@ -155,7 +330,13 @@ func (b *Buffer) AssertDisk() error {
 func (b *Buffer) Flush(ctx context.Context) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	defer func() { clear(b.files); clear(b.trees); clear(b.aliases) }()
+	defer func() {
+		clear(b.files)
+		clear(b.trees)
+		clear(b.aliases)
+		clear(b.symbolAliases)
+		clear(b.invalidatedSymbolAliases)
+	}()
 	_, err := b.publishLocked(ctx)
 	return err
 }
@@ -460,8 +641,10 @@ func (b *Buffer) Checkpoint() Checkpoint {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	checkpoint := Checkpoint{
-		content:    make(map[string][]byte, len(b.files)),
-		writeRoots: maps.Clone(b.writeRoots),
+		content:                  make(map[string][]byte, len(b.files)),
+		writeRoots:               maps.Clone(b.writeRoots),
+		symbolAliases:            slices.Clone(b.symbolAliases),
+		invalidatedSymbolAliases: slices.Clone(b.invalidatedSymbolAliases),
 	}
 	for path, state := range b.files {
 		checkpoint.content[path] = bytes.Clone(state.content)
@@ -481,6 +664,8 @@ func (b *Buffer) Rollback(checkpoint Checkpoint) {
 		state.content = bytes.Clone(content)
 	}
 	b.writeRoots = maps.Clone(checkpoint.writeRoots)
+	b.symbolAliases = slices.Clone(checkpoint.symbolAliases)
+	b.invalidatedSymbolAliases = slices.Clone(checkpoint.invalidatedSymbolAliases)
 }
 
 // ErrConflict identifies stale disk inputs to a buffered transformation.
@@ -1116,8 +1301,10 @@ func containsGoSources(root string, exclusions []string) (bool, error) {
 
 // Checkpoint captures buffer state so a failed child edit can restore its parent revision.
 type Checkpoint struct {
-	content    map[string][]byte
-	writeRoots map[string]bool
+	content                  map[string][]byte
+	writeRoots               map[string]bool
+	symbolAliases            []SymbolAlias
+	invalidatedSymbolAliases []SymbolAlias
 }
 
 // Content returns a copy of one source revision captured by the checkpoint.

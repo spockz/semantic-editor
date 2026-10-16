@@ -1,5 +1,10 @@
 # Makefile Semantic Refactoring Guide
 
+Failed selected-file lookups and symbol inspections may include native-validated
+`suggestions`. Retry the same operation with one candidate's `arguments`. The
+normal installed server and workspace trust remain required; suggestions never
+edit the Makefile or retry automatically. See [configuration and limits](../../../docs/symbol-suggestions.md).
+
 This reference provides workflows for inspecting and refactoring Makefiles with `semedit` primitives. Read this document only when working with Makefiles.
 
 ---

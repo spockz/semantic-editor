@@ -1,0 +1,57 @@
+# Body replacement rejects matching fields and candidates on another receiver.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit replace-body --file api/client.go --symbol Client.Conenct --body 'return c.value'
+stderr 'Suggested target: Client.Connect \(api/client.go:8\)'
+! stderr 'Client.Conect'
+! stderr 'Server.Connect'
+! stderr 'Suggested target: Connect'
+exec semedit replace-body --file api/client.go --symbol Client.Connect --body 'return c.value'
+cmp api/client.go want/api/client.go
+
+-- go.mod --
+module example.com/suggestionfilter
+go 1.23
+
+-- api/client.go --
+package api
+
+type Client struct {
+	Conect int
+	value  int
+}
+
+func (c *Client) Connect() int {
+	return c.value
+}
+
+type Server struct{}
+
+func (s *Server) Connect() int {
+	return 0
+}
+
+func Connect() int {
+	return 1
+}
+
+-- want/api/client.go --
+package api
+
+type Client struct {
+	Conect int
+	value  int
+}
+
+func (c *Client) Connect() int {
+	return c.value
+}
+
+type Server struct{}
+
+func (s *Server) Connect() int {
+	return 0
+}
+
+func Connect() int {
+	return 1
+}

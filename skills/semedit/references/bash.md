@@ -1,5 +1,10 @@
 # Bash Semantic Refactoring Guide
 
+Failed selected-file lookups may include native-validated `suggestions`. Retry
+the same lookup with one candidate's `arguments`. The normal installed server
+and workspace trust remain required; suggestions never edit shell source or
+execute a mutation retry. See [configuration and limits](../../../docs/symbol-suggestions.md).
+
 This reference provides workflows for inspecting and refactoring shell scripts with `semedit` primitives. Read this document only when working with Bash scripts.
 
 ---

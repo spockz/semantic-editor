@@ -1,0 +1,33 @@
+# A misspelled private Go type selector suggests the owner; retry inserts the same field into that type.
+env SEMEDIT_SUGGESTIONS=generic
+cp config.go original.txt
+! exec semedit insert-field --file config.go --in-type confgi --symbol config.timeout --source 'timeout int' --placement type_end
+stderr 'Suggested target: config'
+cmp config.go original.txt
+exec semedit insert-field --file config.go --in-type config --symbol config.timeout --source 'timeout int' --placement type_end
+exec grep -F 'timeout int' config.go
+
+-- go.mod --
+module example.com/suggestionsfield
+go 1.24
+
+-- config.go --
+package config
+
+type config struct {
+	name string
+}
+
+var _ = config{name: "worker"}
+
+
+
+-- original.txt --
+package config
+
+type config struct {
+	name string
+}
+
+var _ = config{name: "worker"}
+

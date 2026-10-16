@@ -72,59 +72,40 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 		})
 		return diff, checks, refusal, err
 	}
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("read target file: %w", err)
-	}
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", nil, "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
-	}
-	target, err := resolveRemoveTarget(fset, fileNode, content, opts, cleanPath)
+	preflight, err := preflightRemoveTarget(ctx, filePath, opts)
 	if err != nil {
 		return "", nil, "", err
 	}
-	if opts.SafeDelete && target.class == "statement" {
-		return "", nil, "", fmt.Errorf("safe_delete is supported only for eligible top-level declarations")
+	if preflight.refusal != "" {
+		return "", preflight.checks, preflight.refusal, nil
 	}
-	start, end, err := removalRange(fset, fileNode, target.node, len(content))
+	start, end, err := removalRange(preflight.fset, preflight.file, preflight.target.node, len(preflight.content))
 	if err != nil {
-		return "", nil, "", err
+		return "", preflight.checks, "", err
 	}
-	checks := []string{"go_syntax_parse", "target_resolution"}
-	var snapshot *safeDeleteSnapshot
-	if opts.SafeDelete {
-		var refusal string
-		snapshot, checks, refusal = safeDeleteDeclaration(ctx, fset, fileNode, target.node, cleanPath, content, checks)
-		if refusal != "" {
-			return "", checks, refusal, nil
-		}
-	}
-	oldText := strings.TrimSpace(string(content[start:end]))
-	formatted, err := formatRemovedFile(cleanPath, content, start, end)
+	oldText := strings.TrimSpace(string(preflight.content[start:end]))
+	formatted, err := formatRemovedFile(preflight.cleanPath, preflight.content, start, end)
 	if err != nil {
-		return "", checks, "", err
+		return "", preflight.checks, "", err
 	}
-	if snapshot != nil {
-		checks = append(checks, "module_source_unchanged_before_write")
+	if preflight.snapshot != nil {
+		preflight.checks = append(preflight.checks, "module_source_unchanged_before_write")
 	}
 	var prepublish func() error
-	if snapshot != nil {
-		prepublish = func() error { return validateSafeDeleteSnapshot(ctx, snapshot) }
+	if preflight.snapshot != nil {
+		prepublish = func() error { return validateSafeDeleteSnapshot(ctx, preflight.snapshot) }
 	}
-	if err := publishRemovedFile(ctx, cleanPath, formatted, autoOrganizeImports, prepublish); err != nil {
+	if err := publishRemovedFile(ctx, preflight.cleanPath, formatted, autoOrganizeImports, prepublish); err != nil {
 		if snapshotErr, ok := errors.AsType[*SafeDeleteSnapshotError](err); ok {
-			return "", checks, "", snapshotErr
+			return "", preflight.checks, "", snapshotErr
 		}
-		return "", checks, "", err
+		return "", preflight.checks, "", err
 	}
 	targetName := opts.Symbol
 	if opts.Kind == "case" || opts.Kind == string(ConstructStatementOrExpr) {
-		targetName = target.owner
+		targetName = preflight.target.owner
 	}
-	return UnifiedDiff(targetName, oldText, ""), checks, "", nil
+	return UnifiedDiff(targetName, oldText, ""), preflight.checks, "", nil
 }
 
 func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.File, selected ast.Node, cleanPath string, content []byte, checks []string) (*safeDeleteSnapshot, []string, string) {
@@ -510,7 +491,7 @@ func findTopLevelTarget(file *ast.File, opts RemoveOptions, cleanPath string) (a
 		case *ast.FuncDecl:
 			if isSelectedFunction(node, opts.Kind, receiver, name) {
 				if selected != nil {
-					return nil, fmt.Errorf("symbol %q is ambiguous in %s", opts.Symbol, cleanPath)
+					return nil, &symbol.SymbolError{Op: "remove", File: cleanPath, Symbol: opts.Symbol, Err: symbol.ErrAmbiguous}
 				}
 				selected = node
 			}
@@ -521,7 +502,7 @@ func findTopLevelTarget(file *ast.File, opts RemoveOptions, cleanPath string) (a
 						return nil, fmt.Errorf("cannot remove %q from a shared value spec; split the spec first", opts.Symbol)
 					}
 					if selected != nil {
-						return nil, fmt.Errorf("symbol %q is ambiguous in %s", opts.Symbol, cleanPath)
+						return nil, &symbol.SymbolError{Op: "remove", File: cleanPath, Symbol: opts.Symbol, Err: symbol.ErrAmbiguous}
 					}
 					selected = spec
 				}
@@ -529,7 +510,7 @@ func findTopLevelTarget(file *ast.File, opts RemoveOptions, cleanPath string) (a
 		}
 	}
 	if selected == nil {
-		return nil, fmt.Errorf("%s %q not found in %s", opts.Kind, opts.Symbol, cleanPath)
+		return nil, &symbol.SymbolError{Op: "remove", File: cleanPath, Symbol: opts.Symbol, Err: symbol.ErrNotFound}
 	}
 	return selected, nil
 }

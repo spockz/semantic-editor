@@ -1,0 +1,14 @@
+# Rust lookup recovery uses selected-file rust-analyzer outline and exact retry.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit lookup --language rust --trust-workspace --file src/lib.rs --symbol Widgte
+stderr 'Suggested target: Widget \(src/lib.rs:1\)'
+exec semedit lookup --language rust --trust-workspace --file src/lib.rs --symbol Widget
+stdout '"symbol":\s*"Widget"'
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- src/lib.rs --
+struct Widget {}

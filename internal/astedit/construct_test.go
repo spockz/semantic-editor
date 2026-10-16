@@ -15,6 +15,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
 func writeGo(t *testing.T, path, content string) {
@@ -46,6 +47,30 @@ func TestReplaceConstruct_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) 
 		if !strings.Contains(got, preserved) {
 			t.Errorf("updated file missing %q:\n%s", preserved, got)
 		}
+	}
+}
+
+func TestValidateRemoveTargetUsesRemoveResolutionWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "remove.go")
+	initial := "package sample\n\nfunc Keep() {}\n"
+	writeGo(t, path, initial)
+	if err := astedit.ValidateRemoveTarget(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "Keep"}); err != nil {
+		t.Fatalf("ValidateRemoveTarget: %v", err)
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("validation mutated file:\n%s", got)
+	}
+	if err := astedit.ValidateRemoveTarget(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "Missing"}); !errors.Is(err, symbol.ErrNotFound) {
+		t.Fatalf("missing target error = %v, want symbol.ErrNotFound", err)
+	}
+}
+
+func TestValidateRemoveTargetReportsAmbiguousSymbolIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "remove.go")
+	writeGo(t, path, "package sample\n\nfunc Value() {}\nfunc Value() {}\n")
+	err := astedit.ValidateRemoveTarget(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "Value"})
+	if !errors.Is(err, symbol.ErrAmbiguous) {
+		t.Fatalf("ambiguous target error = %v, want symbol.ErrAmbiguous", err)
 	}
 }
 

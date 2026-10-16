@@ -3,7 +3,6 @@ package gobackend
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"path/filepath"
@@ -239,34 +238,9 @@ func (GoBackend) Lookup(ctx context.Context, project backend.ProjectContext, que
 
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
 func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*backend.RenameResult, error) {
-	snapshot, err := symbol.ResolveSnapshotWithContext(ctx, request.Project.RootDir, request.Project.File, request.Symbol)
+	snapshot, lookup, err := resolveRenameTarget(ctx, request.Project, request.Symbol)
 	if err != nil {
 		return nil, err
-	}
-	lookup, err := convertLookup(request.Project.RootDir, snapshot)
-	if err != nil {
-		return nil, fmt.Errorf("capture Go rename lookup: %w", err)
-	}
-	if lookup.IsAmbiguous() {
-		return nil, renameAmbiguity(request.Project.RootDir, request.Symbol, lookup.Candidates)
-	}
-	if lookup.Definition == nil {
-		return nil, fmt.Errorf("rename lookup lacks a declaration identity")
-	}
-	sourcePath, err := pathutil.FilePathFromURI(lookup.Definition.Location.URI)
-	if err != nil {
-		return nil, fmt.Errorf("resolve rename lookup location: %w", err)
-	}
-	if !filepath.IsAbs(sourcePath) {
-		sourcePath = filepath.Join(request.Project.RootDir, sourcePath)
-	}
-	sourcePath, err = filepath.Abs(sourcePath)
-	if err != nil {
-		return nil, fmt.Errorf("resolve rename lookup preimage: %w", err)
-	}
-	_, ok := snapshot.Files[filepath.Clean(sourcePath)]
-	if !ok {
-		return nil, errors.New("rename lookup lacks the source preimage")
 	}
 	var before []godiagnostics.Diagnostic
 	if !request.DeferVerification {

@@ -6,7 +6,7 @@ This reference provides workflows for inspecting and refactoring Haskell source 
 
 ## 1. Macro Refactorings in Haskell
 
-`semedit` core operations for standalone Haskell (`semantic_lookup`, `semantic_outline`) are indexed in the primary `SKILL.md` table. Standalone Haskell lookup requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. This reference defines macro patterns and verification practices.
+Standalone Haskell supports `semantic_lookup`. It requires `trust_workspace: true` and `standalone_haskell: true` with a preinstalled `haskell-language-server-wrapper`. Failed lookups may return validated spelling alternatives from the server's current document symbols. Retry explicitly with a returned selector and file; suggestion retrieval does not add public outline or mutation support. This reference defines planning patterns and verification practices.
 
 ---
 

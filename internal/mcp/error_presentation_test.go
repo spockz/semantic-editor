@@ -30,6 +30,7 @@ type knownOperationErrorCase struct {
 	Name        string
 	Known       bool
 	Projection  any
+	Suggestions []operation.TargetSuggestion
 	WantState   string
 	WantFailure bool
 }
@@ -40,8 +41,9 @@ type knownOperationErrorResponse struct {
 		Content []struct {
 			Text string `json:"text"`
 		} `json:"content"`
-		Location          map[string]any `json:"location"`
-		StructuredContent map[string]any `json:"structuredContent"`
+		Location          map[string]any               `json:"location"`
+		Suggestions       []operation.TargetSuggestion `json:"suggestions"`
+		StructuredContent map[string]any               `json:"structuredContent"`
 	} `json:"result"`
 }
 
@@ -51,10 +53,11 @@ type knownOperationBatchErrorResponse struct {
 		StructuredContent struct {
 			Result struct {
 				Results []struct {
-					Status           string         `json:"status"`
-					ApplicationState string         `json:"application_state"`
-					Error            string         `json:"error"`
-					Result           map[string]any `json:"result"`
+					Status           string                       `json:"status"`
+					ApplicationState string                       `json:"application_state"`
+					Error            string                       `json:"error"`
+					Suggestions      []operation.TargetSuggestion `json:"suggestions"`
+					Result           map[string]any               `json:"result"`
 				} `json:"results"`
 			} `json:"result"`
 		} `json:"structuredContent"`
@@ -62,15 +65,19 @@ type knownOperationBatchErrorResponse struct {
 }
 
 func knownOperationErrorCases() []knownOperationErrorCase {
+	suggestions := []operation.TargetSuggestion{{
+		Arguments: map[string]string{"file": "main.go", "symbol": "Value"},
+		File:      "main.go", Line: 3, Column: 6, Kind: "function", Signature: "func Value() int", Reason: "native target checks passed",
+	}}
 	return []knownOperationErrorCase{
 		{
-			Name: "known partial publication", Known: true,
+			Name: "known partial publication", Known: true, Suggestions: suggestions,
 			Projection: map[string]any{"application_state": "partially_published", "changed_files": []string{"main.go"}},
 			WantState:  "partially_published",
 		},
-		{Name: "unmatched error", WantState: "unknown"},
+		{Name: "unmatched error", WantState: "unknown", Suggestions: suggestions},
 		{
-			Name: "invalid known projection", Known: true,
+			Name: "invalid known projection", Known: true, Suggestions: suggestions,
 			Projection: map[string]any{"application_state": "partially_published", "changed_files": "main.go"},
 			WantState:  "unknown", WantFailure: true,
 		},
@@ -110,7 +117,8 @@ func registerKnownOperationErrorProbe(t *testing.T, registry *operation.Registry
 		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
 		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (string, error){
 			backend.LanguageGo: func(context.Context, operation.CallContext, struct{}) (string, error) {
-				return "", &astedit.SyntaxError{File: "main.go", Pos: token.Position{Filename: "main.go", Line: 1, Column: 2}, Err: errors.New("handler reported a partial write")}
+				cause := &astedit.SyntaxError{File: "main.go", Pos: token.Position{Filename: "main.go", Line: 1, Column: 2}, Err: errors.New("handler reported a partial write")}
+				return "", &operation.SuggestedTargetError{Cause: cause, Suggestions: test.Suggestions}
 			},
 		},
 		Format:        func(string) (string, error) { return "unused", nil },
@@ -199,6 +207,9 @@ func assertKnownOperationErrorFields(t *testing.T, test knownOperationErrorCase,
 	if response.Result.Location == nil || content["location"] == nil || !strings.Contains(text, `"location"`) {
 		t.Fatalf("typed error lost source location: %#v; %q", response.Result, text)
 	}
+	if len(content["suggestions"].([]any)) != len(test.Suggestions) {
+		t.Fatalf("structured error suggestions = %#v", content["suggestions"])
+	}
 	if test.Known && !test.WantFailure {
 		assertKnownErrorChangedPath(t, content["result"])
 	}
@@ -225,6 +236,9 @@ func assertKnownOperationBatchCall(t *testing.T, test knownOperationErrorCase, l
 	child := children[0]
 	if child.Status != "error" || child.ApplicationState != test.WantState || child.Error == "" {
 		t.Fatalf("failed batch child state/error = %#v", child)
+	}
+	if len(child.Suggestions) != len(test.Suggestions) {
+		t.Fatalf("batch error suggestions = %#v, want %#v", child.Suggestions, test.Suggestions)
 	}
 	if test.Known && !test.WantFailure {
 		assertKnownErrorChangedPath(t, child.Result)

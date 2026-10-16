@@ -1,5 +1,66 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-16: session wrap-up, actionable symbol suggestions
+
+Context: chat `01a14595-6049-7143-9408-ba2a0d055060`, detached base
+`1ff9655e`, linked `ios-4216a269` checkout. The wrap-up skill was read from
+local `main`. The history API returned six turns with no older page and two
+compaction boundaries. It exposed seven direct semantic attempts below; child
+agent implementation calls and individual operations executed inside CLI test
+processes are not recoverable as a complete call inventory. Those omissions
+prevent an exhaustive session-wide count. Catalog discovery is not execution.
+
+Stable references below are history execution IDs with their `exec-` prefix
+omitted. Totals for the seven recovered calls: four beneficial, two neutral,
+one harmful; no recovered semantic batch parents or children. No semantic
+operations were invoked solely for wrap-up.
+
+| Calls | Tool / target / intent | Outcome / mutation state | Built-in alternative / agent efficiency | QoL / friction / cause |
+| :--- | :--- | :--- | :--- | :--- |
+| `abfd141c-dbed-4432-9a98-bc89356dbf57` | `semantic_outline`, `internal/operation`, discover declarations | Completed, read-only; historical output unavailable | `rg --files` plus declaration searches and file reads; measured comparative effort unavailable | Neutral: structured navigation completed, but retained evidence cannot establish savings |
+| `5bf48e56-2c9e-4d70-883e-5e18681f1cb8` | `semantic_inspect_symbol`, Go reference backend `FindReferences` | Completed, read-only; historical output unavailable | `rg -n` plus file reads locate and inspect the declaration; compiler-backed resolution would require additional tooling | Neutral: useful inspection intent, insufficient evidence for an efficiency advantage |
+| `416b6478-ef7c-495f-a1e6-ad9e27ffdbb0` | `semantic_insert_construct`, generic validation callback | Automatic approval rejected before mutation; abandoned | A patch would also require safety review and could not make invoking a full operation a valid non-mutating preflight | Beneficial safety rejection; no runtime or effort saving claimed. See callback incident below |
+| `9c7a2f54-1657-48fb-a2e7-be0806e9d7bf` | `semantic_insert_construct`, signature-constraint helper | Function inserted and automatic diagnostics unchanged | One `apply_patch`, formatting, and checks; semantic insertion supplied AST placement and immediate diagnostics | Beneficial correctness feedback; no paired agent-efficiency measurement |
+| `3239992f-8d09-4937-9b76-995b1d25d14a` | `semantic_insert_construct`, two retrieval-context statements | Rejected before mutation: exactly one statement required | One patch could insert both statements, followed by formatting and checks | Harmful workflow friction from a caller snippet error, not corrupted AST output; see multiple-statements incident |
+| `87223a5d-4d3c-4d31-ac8d-3c2e1e2a139c` | `semantic_insert_construct`, signature query context | Applied one statement; automatic diagnostics unchanged | Patch the anchor, format, and check | Beneficial validated placement; retry costs must be included in the complete workflow |
+| `d8717943-b8fe-4b3e-8c0d-c2a0ce70bd9e` | `semantic_insert_construct`, receiver query context | Applied one statement; automatic diagnostics unchanged | Same patch could include both query assignments | Beneficial validated placement; two successful calls plus the rejection worsened round-trip efficiency against that hypothetical patch workflow |
+
+| Calls | Semantic runtime | Local built-in runtime | Measurement scope / comparability |
+| :--- | :--- | :--- | :--- |
+| `abfd141c-dbed-4432-9a98-bc89356dbf57` | 110 ms | Unavailable: no paired navigation measurement retained | History tool duration, one sample; server/cache state unknown; output guarantees unmatched |
+| `5bf48e56-2c9e-4d70-883e-5e18681f1cb8` | 279 ms | Unavailable: no paired compiler-aware inspection measurement | History tool duration, one sample; server/cache state unknown |
+| `416b6478-ef7c-495f-a1e6-ad9e27ffdbb0` | 0 ms reported | Unavailable: rejected action has no valid edit baseline | Approval rejection metadata, not a measured successful engine execution |
+| `9c7a2f54-1657-48fb-a2e7-be0806e9d7bf` | 12,402 ms | Unavailable: original mutation baseline not timed; no live replay | History tool duration includes automatic verification; one sample; cache state unknown |
+| `3239992f-8d09-4937-9b76-995b1d25d14a` | 1,360 ms | Unavailable: no paired rejected-snippet baseline | History tool duration, one sample; source unchanged |
+| `87223a5d-4d3c-4d31-ac8d-3c2e1e2a139c` | 2,193 ms | Unavailable: no isolated equivalent patch/check replay | History tool duration includes automatic verification, one sample |
+| `d8717943-b8fe-4b3e-8c0d-c2a0ce70bd9e` | 2,082 ms | Unavailable: no isolated equivalent patch/check replay | History tool duration includes automatic verification, one sample |
+
+Runtime ratios are inconclusive: no comparable paired built-in measurements
+exist. The tool-duration sum is 18,426 ms, excluding caller preparation,
+discovery, logging, orchestration, and subsequent repository checks; it is not
+a complete workflow runtime. No wrap-up-only mutation replay or benchmark was
+run. The insertion retry sequence added a round trip relative to preparing
+one valid statement per call; a hypothetical single patch could combine both
+assignments but would still require formatting and equivalent verification.
+Overall agent-efficiency improvement is unproven. More explicit single-statement
+schema guidance would avoid the observed caller error. Unavailable replacement
+and scaffolding tools caused the manual fallbacks recorded in `MANUAL_EDITS.md`.
+
+Wrap-up history retrieval also rejected `read_thread` with `turnLimit: 20`;
+retrying with eight succeeded. This was a caller parameter-bound error with no
+mutation. Subsequent history reads could recover tool status and duration but
+not original MCP response bodies; the assessment does not invent them.
+
+## 2026-10-16: suggestion implementation tool availability
+
+* Tool: `semantic_workspace_outline` discovery in the provider worker.
+* Target: workspace package discovery.
+* Observed failure: the tool was absent from the callable inventory; attempting access produced a JavaScript TypeError before an MCP invocation.
+* Workaround: inspect repository documentation and source directly. Applicable semantic mutation tools were also absent, so use targeted file patches.
+* Root cause: this session exposes only a subset of semedit operations.
+
+The first log patch used an incorrect heading as its context and was rejected without changing the file. Retrying with the actual heading succeeded.
+
 ## 2026-10-14: targeted Codex second opinion could not start
 
 * Tool: `codex_ask` with model `gpt-6-sol`.
@@ -7109,6 +7170,13 @@ A subsequent trusted `semantic_batch` inserted `sourceExclusions` in the same fi
 
 After the missing call sites were migrated, a trusted four-step `semantic_batch` published the split source-buffer exclusion helpers, but its automatic `golangci-lint` hook again exited with status 3. The tool reported each semantic edit as applied; repository `make check` will identify any remaining lint issue after all concurrent edits settle.
 
+## Suggestion callback rejected by automatic review (2026-10-16)
+
+* Tool: `semantic_insert_construct` on `internal/operation/suggestions.go`.
+* Observed result: automatic review rejected a callback that invoked a registered operation during suggestion validation because it could permit side effects or an automatic mutation retry. No source edit was applied.
+* Resolution: abandoned the generic invocation fallback; retain explicit non-mutating native preflights. No alternate write path was used to apply the rejected callback.
+* Root cause: a full operation callback does not provide the structural no-write guarantee required by the suggestion boundary, even when selected through read-only metadata.
+
 ## Inherited Go state exposed overlay and temporary-source assumptions (2026-10-14)
 
 * Tools: `semantic_insert_declaration`, `semantic_move_construct`, and signature operations through `semantic_batch` in CLI contract tests.
@@ -7116,3 +7184,10 @@ After the missing call sites were migrated, a trusted four-step `semantic_batch`
 * Observed failures: `go env` attempted to enter an overlay-only directory absent from disk; other batches reported that the source set changed when temporary Go files appeared beneath the fixture.
 * Workaround: resolve environment settings from the nearest existing directory and exclude configured temporary/cache roots from source snapshots.
 * Root cause: environment discovery assumed source directories already existed, and source-set discovery relied on the old `.scratch` cache layout to exclude transient files.
+
+### Multiple anchored statements rejected (2026-10-16)
+
+`semantic_insert_construct` rejected insertion of two statements in
+`internal/operation/suggestions.go:suggestionRetrievalContext` with
+`expected exactly one statement`. The statement insertion API accepts one
+statement per call. No source change was applied; use separate insertions.

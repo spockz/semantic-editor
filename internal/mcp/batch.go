@@ -36,21 +36,22 @@ type BatchEntry struct {
 
 // BatchResult records the execution status and output of an individual batch entry.
 type BatchResult struct {
-	Tool             string `json:"tool"`
-	File             string `json:"file,omitempty"`
-	OriginFile       string `json:"origin_file,omitempty"`
-	Symbol           string `json:"symbol,omitempty"`
-	Package          string `json:"package,omitempty"`
-	InFunction       string `json:"in_function,omitempty"`
-	Discriminator    string `json:"discriminator,omitempty"`
-	DiagnosticStatus string `json:"diagnostic_status,omitempty"`
-	ApplicationState string `json:"application_state,omitempty"`
-	ProjectionError  string `json:"projection_error,omitempty"`
-	DestinationFile  string `json:"destination_file,omitempty"`
-	Status           string `json:"status"`
-	Diff             string `json:"diff,omitempty"`
-	Error            string `json:"error,omitempty"`
-	Result           any    `json:"result,omitempty"`
+	Tool             string                       `json:"tool"`
+	File             string                       `json:"file,omitempty"`
+	OriginFile       string                       `json:"origin_file,omitempty"`
+	Symbol           string                       `json:"symbol,omitempty"`
+	Package          string                       `json:"package,omitempty"`
+	InFunction       string                       `json:"in_function,omitempty"`
+	Discriminator    string                       `json:"discriminator,omitempty"`
+	DiagnosticStatus string                       `json:"diagnostic_status,omitempty"`
+	ApplicationState string                       `json:"application_state,omitempty"`
+	ProjectionError  string                       `json:"projection_error,omitempty"`
+	DestinationFile  string                       `json:"destination_file,omitempty"`
+	Status           string                       `json:"status"`
+	Diff             string                       `json:"diff,omitempty"`
+	Error            string                       `json:"error,omitempty"`
+	Suggestions      []operation.TargetSuggestion `json:"suggestions,omitempty"`
+	Result           any                          `json:"result,omitempty"`
 }
 
 // BatchResponse aggregates the outcomes of a semantic batch execution.
@@ -259,6 +260,10 @@ func batchEntryResult(tool string, result BatchResult, err error) BatchResult {
 	if err != nil {
 		result.Status = "error"
 		result.Error = err.Error()
+		result.Suggestions = operation.SuggestionsFromError(err)
+		if enriched, ok := errors.AsType[*operation.SuggestedTargetError](err); ok {
+			result.Error = enriched.Cause.Error()
+		}
 	}
 	return result
 }

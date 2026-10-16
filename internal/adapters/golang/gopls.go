@@ -59,6 +59,21 @@ func RenameSelected(ctx context.Context, workDir string, selected backend.NamedT
 	return renameSelected(ctx, workDir, selected, expected, newName, nil)
 }
 
+// ValidateRenameSelected proves that gopls accepts the selected identifier for
+// a rename without requesting edits or publishing source changes.
+func ValidateRenameSelected(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string) error {
+	return withSelectedRenameSession(ctx, workDir, selected, expected, func(ctx context.Context, session *godiagnostics.Session, document godiagnostics.Document, coordinate renameCoordinate) error {
+		offset, err := selectedRenameOffset(document.Content, coordinate.line, coordinate.column, newName)
+		if err != nil {
+			return err
+		}
+		if _, err := prepareSelectedRename(ctx, session, document, offset); err != nil {
+			return err
+		}
+		return session.AssertCurrent()
+	})
+}
+
 // RenameSelectedFiles reports only sources changed by the validated shared-session rename.
 func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string) ([]string, error) {
 	paths := make([]string, 0)
@@ -70,12 +85,15 @@ func RenameSelectedFiles(ctx context.Context, workDir string, selected backend.N
 }
 
 func renameSelected(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, newName string, record func([]string)) error {
-	file, err := pathutil.FilePathFromURI(selected.Location.URI)
+	return withSelectedRenameSession(ctx, workDir, selected, expected, func(ctx context.Context, session *godiagnostics.Session, document godiagnostics.Document, coordinate renameCoordinate) error {
+		return renameInSessionFiles(ctx, session, document.Path, coordinate.line, coordinate.column, newName, record)
+	})
+}
+
+func withSelectedRenameSession(ctx context.Context, workDir string, selected backend.NamedTarget, expected map[string][]byte, action func(context.Context, *godiagnostics.Session, godiagnostics.Document, renameCoordinate) error) error {
+	file, err := selectedFilePath(workDir, selected)
 	if err != nil {
-		return fmt.Errorf("resolve rename target location: %w", err)
-	}
-	if !filepath.IsAbs(file) {
-		file = filepath.Join(workDir, file)
+		return err
 	}
 	executable, err := FindGopls()
 	if err != nil {
@@ -94,11 +112,22 @@ func renameSelected(ctx context.Context, workDir string, selected backend.NamedT
 		if err != nil {
 			return err
 		}
-		return renameInSessionFiles(ctx, session, file, coordinate.line, coordinate.column, newName, record)
+		return action(ctx, session, document, coordinate)
 	}); err != nil {
 		return fmt.Errorf("%w: %w", ErrRenameFailed, err)
 	}
 	return nil
+}
+
+func selectedFilePath(workDir string, selected backend.NamedTarget) (string, error) {
+	file, err := pathutil.FilePathFromURI(selected.Location.URI)
+	if err != nil {
+		return "", fmt.Errorf("resolve rename target location: %w", err)
+	}
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(workDir, file)
+	}
+	return file, nil
 }
 
 type renameCoordinate struct {

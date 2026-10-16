@@ -344,7 +344,7 @@ func (m *stageManager) Drop(ctx context.Context, root, stepID string) (operation
 		}
 		call := operation.CallContext{Ctx: sourcebuf.WithBuffer(ctx, candidate), WorkDir: state.key.root, Project: state.project, Registry: m.server.registry, Service: m.server.service, InBatch: true, DeferImports: true, DeferVerification: true, AllowedLanguages: m.server.enabledLanguages}
 		if _, err := m.server.registry.Dispatch(call, entry.Key, raw); err != nil {
-			return operation.StageReceipt{}, invalidateStagedView(ctx, fmt.Errorf("replay staged step %s: %w", step.id, err))
+			return operation.StageReceipt{}, invalidateStagedView(ctx, fmt.Errorf("replay staged step %s: %w", step.id, operation.NativeTargetError(err)))
 		}
 		if err := base.MergeReadSetFrom(candidate); err != nil {
 			return operation.StageReceipt{}, invalidateStagedView(ctx, err)

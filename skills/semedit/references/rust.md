@@ -1,5 +1,11 @@
 # Rust Semantic Refactoring Guide
 
+For a failed selected-file lookup, inspect optional `suggestions` and retry the
+same lookup with a candidate's `arguments`. Native outline and lookup checks
+validate each selector; Rust qualification is preserved. Suggestions require the
+normal trusted workspace and installed server, never edit source, and can be
+disabled with `SEMEDIT_SUGGESTIONS=off`. See [configuration and limits](../../../docs/symbol-suggestions.md).
+
 This reference provides workflows for executing Rust refactorings with `semedit` primitives. Read this document only when refactoring or inspecting Rust source files.
 
 ---

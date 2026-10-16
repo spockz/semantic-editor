@@ -1,0 +1,32 @@
+# A misspelled declaration selector suggests the private Go variable; retry appends the same element.
+env SEMEDIT_SUGGESTIONS=generic
+cp routes.go original.txt
+! exec semedit insert-construct --kind element --file routes.go --in-declaration routse --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
+stderr 'Suggested target: routes'
+cmp routes.go original.txt
+exec semedit insert-construct --kind element --file routes.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics": 2'
+stdout 'Appended one keyed composite element.'
+exec grep -F '"metrics": 2' routes.go
+
+-- go.mod --
+module example.com/suggestionselement
+go 1.24
+
+-- routes.go --
+package routes
+
+type Config struct {
+	Health int
+}
+
+var routes = map[string]int{"health": 1}
+
+-- original.txt --
+package routes
+
+type Config struct {
+	Health int
+}
+
+var routes = map[string]int{"health": 1}
+

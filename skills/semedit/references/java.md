@@ -6,6 +6,17 @@ Trusted Java requests reuse a JDT LS session per workspace root and keep selecte
 
 The default MCP base catalog includes Java-capable `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment` operations. `--tool-profile full` exposes all registered tools, while execution `--profile mutations-only` independently removes read-only tools such as workspace outline.
 
+Selected-file lookup, inspection, reference search, and rename failures may expose
+up to three structured `suggestions`. They come from the current native JDT LS
+outline or an optional provider and must pass native target validation. Retry
+the original operation with a candidate's `arguments`; preserve its overload
+signature and file scope. Earlier retained renames can contribute former-name
+evidence, but only the current selector is returned. Suggestions do not change
+source, choose a target, or retry a mutation. `SEMEDIT_SUGGESTIONS=generic` is the
+default; `codanna,generic` adds the optional installed search provider and `off`
+disables recovery. Normal Java workspace trust and server configuration remain
+required. See [configuration and limits](../../../docs/symbol-suggestions.md).
+
 Use `semantic_scaffold_file` with `language: "java"` to create a source file. `package: "infer"` uses a consistent package declaration from sibling `.java` files, or derives it from a path below `src/main/java` or `src/test/java` when no sibling declares one. Conflicting sibling packages fail closed. A scaffolded file contains only its package header; add declarations with the corresponding semantic operations.
 
 Use `semantic_workspace_outline` with `language: "java"` to list only Maven reactor modules and Java packages. Auto mode aggregates Java and Go in mixed repositories; a Java build manifest does not suppress Go discovery. Isolated Java documentation samples do not activate repository-wide Java discovery; select their directory explicitly. Package synopses prefer `package-info.java` Javadocs, then the primary public type's Javadoc. Module metadata carries Maven descriptions and scoped package counts; package records identify their owning module and language. `include_tests: true` includes test-source packages. MCP outline text summarizes the result; complete records appear once in `structuredContent`. Use `semantic_outline` with a Java file or directory path to inspect declarations; directory scope supports `include_unexported: false` and `include_tests: true`. `semantic_lookup` and `semantic_inspect_symbol` can also search a selected Java directory.

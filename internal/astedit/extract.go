@@ -62,16 +62,9 @@ type extractionCandidate struct {
 // ExtractFunction moves consecutive top-level call statements, optionally
 // preceded by one supported local declaration, into a helper.
 func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts ExtractOptions) (string, error) {
-	if err := validateExtractRequest(helper, opts); err != nil {
+	input, candidate, err := prepareFunctionExtraction(ctx, filePath, owner, helper, opts)
+	if err != nil {
 		return "", err
-	}
-	input, inputErr := loadExtractionInput(ctx, filePath, owner, opts)
-	if inputErr != nil {
-		return "", inputErr
-	}
-	candidate, planErr := planExtraction(input, owner, helper, opts)
-	if planErr != nil {
-		return "", planErr
 	}
 	return publishExtraction(input, candidate, owner)
 }
@@ -169,20 +162,13 @@ func planExtraction(input extractionInput, owner, helper string, opts ExtractOpt
 }
 
 func publishExtraction(input extractionInput, candidate extractionCandidate, owner string) (string, error) {
-	formatted, err := format.Source(candidate.source)
+	formatted, err := prepareFunctionExtractionOutput(input, candidate)
 	if err != nil {
-		return "", &SyntaxError{File: input.cleanPath, Snippet: candidate.declaration, Cause: err, Err: ErrSyntax}
-	}
-	formatted = normalizeExtractionNewlines(formatted)
-	if _, parseErr := parser.ParseFile(token.NewFileSet(), input.cleanPath, formatted, parser.ParseComments|parser.AllErrors); parseErr != nil {
-		return "", &SyntaxError{File: input.cleanPath, Snippet: candidate.declaration, Cause: parseErr, Err: ErrSyntax}
+		return "", err
 	}
 	current, err := sourcebuf.ReadFile(input.ctx, input.cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
-	}
-	if validateErr := validateExtractionCandidate(input.ctx, input.cleanPath, formatted); validateErr != nil {
-		return "", validateErr
 	}
 	if !bytes.Equal(current, input.content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)

@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"path/filepath"
@@ -53,15 +52,9 @@ type variableTypeContext struct {
 
 // ExtractVariable moves the first side-effect-free, typed argument of an unshadowed same-file package call into a local.
 func ExtractVariable(ctx context.Context, filePath, owner, name string, opts ExtractVariableOptions) (string, error) {
-	if err := validateVariableExtractionRequest(name, opts); err != nil {
-		return "", err
-	}
-	input, err := loadVariableExtractionInput(ctx, filePath, owner, opts)
+	input, err := prepareVariableExtraction(ctx, filePath, owner, name, opts)
 	if err != nil {
 		return "", err
-	}
-	if targetErr := validateVariableExtractionTarget(input, owner, name, opts); targetErr != nil {
-		return "", targetErr
 	}
 	updated, err := rewriteVariableArgument(input, name, opts.Discriminator)
 	if err != nil {
@@ -162,16 +155,9 @@ func rewriteVariableArgument(input variableExtractionInput, name, discriminator 
 }
 
 func publishVariableExtraction(input variableExtractionInput, owner, name, discriminator string, updated []byte) (string, error) {
-	formatted, err := format.Source(updated)
+	formatted, err := prepareVariableExtractionOutput(input, owner, name, discriminator, updated)
 	if err != nil {
-		return "", &SyntaxError{File: input.cleanPath, Snippet: discriminator, Cause: err, Err: ErrSyntax}
-	}
-	formatted = normalizeExtractionNewlines(formatted)
-	if _, parseErr := parser.ParseFile(token.NewFileSet(), input.cleanPath, formatted, parser.ParseComments|parser.AllErrors); parseErr != nil {
-		return "", &SyntaxError{File: input.cleanPath, Snippet: discriminator, Cause: parseErr, Err: ErrSyntax}
-	}
-	if validateErr := validateVariableCandidate(input.ctx, input.cleanPath, owner, name, discriminator, input.candidate.path, input.content, formatted); validateErr != nil {
-		return "", validateErr
+		return "", err
 	}
 	buffer := sourcebuf.FromContext(input.ctx)
 	if applyErr := buffer.Apply(input.ctx, []sourcebuf.Change{{Path: input.cleanPath, Before: input.content, After: formatted}}); applyErr != nil {

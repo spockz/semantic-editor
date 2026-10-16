@@ -38,7 +38,8 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 	}
 	result, err := entry.Invoke(cc, raw)
 	if err != nil {
-		return nil, rollbackDispatchError(ctx, buffer, checkpoint, !entry.ReadOnly, err)
+		cause := rollbackDispatchError(ctx, buffer, checkpoint, !entry.ReadOnly, err)
+		return nil, suggestFailedTarget(cc, entry, raw, cause)
 	}
 	if entry.FinalizeOutput != nil {
 		result, err = entry.FinalizeOutput(cc, raw, result)
@@ -46,6 +47,7 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 			return nil, rollbackDispatchError(ctx, buffer, checkpoint, !entry.ReadOnly, err)
 		}
 	}
+	recordSuccessfulTargetChange(ctx, entry.Key, raw, result)
 	return result, nil
 }
 

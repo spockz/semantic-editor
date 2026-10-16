@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -33,12 +34,12 @@ func structuralFieldOwner(snapshot *structuralSnapshot, selector string) (*packa
 			continue
 		}
 		if selected.Package != nil {
-			return nil, nil, "", fmt.Errorf("in_type %q is ambiguous in the selected package", selector)
+			return nil, nil, "", fmt.Errorf("in_type %q is ambiguous in the selected package: %w", selector, &symbol.SymbolError{Op: "in_type", File: snapshot.File, Symbol: selector, Err: symbol.ErrAmbiguous})
 		}
 		selected = candidate
 	}
 	if selected.Package == nil || selected.Named == nil {
-		return nil, nil, "", fmt.Errorf("in_type %q was not found in the selected Go file", selector)
+		return nil, nil, "", fmt.Errorf("in_type %q was not found in the selected Go file: %w", selector, &symbol.SymbolError{Op: "in_type", File: snapshot.File, Symbol: selector, Err: symbol.ErrNotFound})
 	}
 	if ast.IsExported(parsed.TypeName) {
 		return nil, nil, "", fmt.Errorf("cannot prove positional-literal compatibility for exported owner type %q", selector)

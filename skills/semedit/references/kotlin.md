@@ -1,5 +1,10 @@
 # Kotlin Semantic Refactoring Guide
 
+Failed selected-file lookups may include native-validated `suggestions`. Retry
+the same lookup with one candidate's `arguments`; preserve its file and qualified
+selector. Normal server configuration and workspace trust remain required.
+Suggestions do not edit source or retry automatically. See [configuration and limits](../../../docs/symbol-suggestions.md).
+
 This reference provides workflows for inspecting and refactoring Kotlin source files with `semedit` primitives. Read this document only when working with Kotlin source files.
 
 ---

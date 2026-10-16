@@ -10,6 +10,20 @@ The objective is to categorize the underlying intent of each manual edit, identi
 
 ## Log of Manual Edits
 
+### 2026-10-16: actionable symbol suggestions
+
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ME-0060** | `internal/operation/suggestions*.go`, `internal/suggestions/`, `internal/symbol/enumerate.go`, backend and AST preflight helpers | Added providers, current-state normalization, native acceptance checks, and shared failure enrichment | Cross-package implementation and planner extraction | Replacement, scaffolding, workspace-outline, and several specialized operations were unavailable in the callable session inventory; targeted patches preserved existing behavior and were verified with `make check`. Available construct insertion was used for the helper and query-context additions | Expose the documented replacement/scaffolding operations consistently |
+| **ME-0061** | `internal/sourcebuf/buffer.go`, `internal/mcp/`, operation registry and dispatch | Retained scoped rename/invalidation history through rollback, replay, and publication; added structured alternatives without changing failure status | Lifecycle and contract migration | These coordinated type/signature/caller changes lacked applicable callable semantic replacement tools; used targeted patches and native lifecycle tests | Shared declaration/signature and body replacements |
+| **ME-0062** | Suggestion unit tests, `cmd/semedit/language_txtar_test.go`, `testdata/scripts/symbol_suggestions_*.txtar` | Added explicit retry, no-source-mutation, scope/type, provider, and batch contract tests | Test and archive fixture editing | Txtar archive contents are outside semantic Go editing; test-source replacement tools were unavailable. Targeted patches also fixed a receiver guard, an unused Haskell return value, Java typed ambiguity, and test session ordering after inspection | Test scaffolding and callable construct/body replacement |
+
+Related QoL assessment: `SUBOPTIMAL_TOOLS.md`, session wrap-up for chat
+`01a14595-6049-7143-9408-ba2a0d055060`. Compacted and child-agent history is
+incomplete; these grouped entries describe the observed final diff rather than
+claiming a complete per-edit event inventory. Documentation and wrap-up log
+patches are ordinary documentation edits, not invented semantic failures.
+
 | ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **ME-0001** | `main.go` | Added `os`, `strings`, `semedit/internal/mcp` to imports | Import addition | Import management | `organize_imports` / `add_import` |

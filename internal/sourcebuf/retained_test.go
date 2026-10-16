@@ -37,6 +37,194 @@ func TestRetainedForkKeepsParentRevision(t *testing.T) {
 	}
 }
 
+func TestSymbolRenameAliasesFollowForkAndRollback(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "value.go")
+	if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Value", NewSelector: "Renamed", Kind: "function"})
+	child := buffer.Fork()
+	child.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Renamed", NewSelector: "Final", Kind: "function"})
+	if got := child.SymbolAliases(); len(got) != 2 || got[1].OldSelector != "Renamed" || got[1].NewSelector != "Final" {
+		t.Fatalf("child aliases = %#v", got)
+	}
+	if got := buffer.SymbolAliases(); len(got) != 1 || got[0].NewSelector != "Renamed" {
+		t.Fatalf("parent aliases = %#v", got)
+	}
+	checkpoint := child.Checkpoint()
+	child.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Final", NewSelector: "Published", Kind: "function"})
+	child.Rollback(checkpoint)
+	if got := child.SymbolAliases(); len(got) != 2 || got[1].NewSelector != "Final" {
+		t.Fatalf("rolled-back aliases = %#v", got)
+	}
+	if got := child.ForkOriginal().SymbolAliases(); len(got) != 0 {
+		t.Fatalf("original fork aliases = %#v", got)
+	}
+}
+
+func TestMergeReadSetDoesNotAcceptCandidateRenameAliases(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "value.go")
+	if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseline, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := baseline.Fork()
+	candidate.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Value", NewSelector: "Renamed", Kind: "function"})
+	if err := baseline.MergeReadSetFrom(candidate); err != nil {
+		t.Fatal(err)
+	}
+	if got := baseline.SymbolAliases(); len(got) != 0 {
+		t.Fatalf("read-set merge accepted unretained rename aliases = %#v", got)
+	}
+}
+
+func TestInvalidateSymbolAliasesRemovesDeletedTypeDescendants(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "value.go")
+	if err := os.WriteFile(path, []byte("package sample\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Server.Start", NewSelector: "Server.Serve", Kind: "method"})
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: path, OldSelector: "Other", NewSelector: "Replacement", Kind: "type"})
+	buffer.InvalidateSymbolAliases(path, "Server")
+	if got := buffer.SymbolAliases(); len(got) != 1 || got[0].OldSelector != "Other" {
+		t.Fatalf("aliases after type deletion = %#v", got)
+	}
+	buffer.InvalidateSymbolAliases(path, "Replacement")
+	if got := buffer.SymbolAliases(); len(got) != 0 {
+		t.Fatalf("aliases after replacement deletion = %#v", got)
+	}
+}
+
+func TestInvalidateSymbolAliasesRemovesWholeChainAcrossReceiverFiles(t *testing.T) {
+	root := t.TempDir()
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "source.go")
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "ParseConfig", NewSelector: "LoadConfig", Kind: "function"})
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "LoadConfig", NewSelector: "ReadConfig", Kind: "function"})
+	buffer.InvalidateSymbolAliases(file, "ReadConfig")
+	if aliases := buffer.SymbolAliases(); len(aliases) != 0 {
+		t.Fatalf("deleted identity retained an earlier edge: %#v", aliases)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: filepath.Join(root, "methods.go"), OldSelector: "(*Server).Start", NewSelector: "(*Server).Serve", Kind: "method"})
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: filepath.Join(root, "methods.go"), OldSelector: "(Server).Run", NewSelector: "(Server).Execute", Kind: "method"})
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: filepath.Join(root, "other", "methods.go"), OldSelector: "Server.Run", NewSelector: "Server.Execute", Kind: "method"})
+	buffer.InvalidateSymbolAliases(filepath.Join(root, "type.go"), "Server")
+	if aliases := buffer.SymbolAliases(); len(aliases) != 1 || aliases[0].File != filepath.Join(root, "other", "methods.go") {
+		t.Fatalf("receiver identity/scope invalidation: %#v", aliases)
+	}
+}
+
+func TestInvalidateSymbolAliasesRetainsTypeReplacementTombstone(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "reader.go")
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Parser", NewSelector: "Reader", Kind: "type"})
+	buffer.InvalidateSymbolAliases(file, "Reader.ParseConfig")
+	if aliases := buffer.SymbolAliases(); len(aliases) != 0 {
+		t.Fatalf("aliases after replacing a member of the renamed type = %#v", aliases)
+	}
+	invalidated := buffer.InvalidatedSymbolAliases()
+	if len(invalidated) != 1 || invalidated[0].OldSelector != "Parser" || invalidated[0].NewSelector != "Reader" {
+		t.Fatalf("type replacement tombstones = %#v", invalidated)
+	}
+	if copied := buffer.Fork().InvalidatedSymbolAliases(); len(copied) != 1 || copied[0] != invalidated[0] {
+		t.Fatalf("forked tombstones = %#v", copied)
+	}
+	if original := buffer.ForkOriginal().InvalidatedSymbolAliases(); len(original) != 0 {
+		t.Fatalf("original fork tombstones = %#v", original)
+	}
+}
+
+func TestInvalidatedSymbolAliasesSurviveReuseAndRollback(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "config.go")
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "ParseConfig", NewSelector: "ReadConfig", Kind: "function"})
+	checkpoint := buffer.Checkpoint()
+	buffer.InvalidateSymbolAliases(file, "ReadConfig")
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Other", NewSelector: "ParseConfig", Kind: "function"})
+	invalidated := buffer.InvalidatedSymbolAliases()
+	if len(invalidated) != 1 || invalidated[0].OldSelector != "ParseConfig" {
+		t.Fatalf("tombstones after selector reuse = %#v", invalidated)
+	}
+	buffer.Rollback(checkpoint)
+	if invalidated := buffer.InvalidatedSymbolAliases(); len(invalidated) != 0 {
+		t.Fatalf("rollback retained child tombstones = %#v", invalidated)
+	}
+	if aliases := buffer.SymbolAliases(); len(aliases) != 1 || aliases[0].NewSelector != "ReadConfig" {
+		t.Fatalf("rollback aliases = %#v", aliases)
+	}
+}
+
+func TestInvalidateSymbolAliasesTombstonesUnrenamedDeclaration(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "config.go")
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.InvalidateSymbolAliases(file, "ParseConfig")
+	invalidated := buffer.InvalidatedSymbolAliases()
+	if len(invalidated) != 1 {
+		t.Fatalf("unrenamed declaration tombstones = %#v", invalidated)
+	}
+	if got := invalidated[0]; got.File != file || got.NewFile != file || got.OldSelector != "ParseConfig" || got.NewSelector != "ParseConfig" || got.Language != "go" || got.Kind != "declaration" {
+		t.Fatalf("unrenamed declaration tombstone = %#v", got)
+	}
+}
+
+func TestSymbolHistoryRestoresBothRenameAndInvalidationEvidence(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "config.go")
+	buffer, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Live", NewSelector: "Current", Kind: "function"})
+	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Old", NewSelector: "Gone", Kind: "function"})
+	buffer.InvalidateSymbolAliases(file, "Gone")
+	history := buffer.SymbolHistory()
+	fresh, err := sourcebuf.New(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fresh.RestoreSymbolHistory(history); err != nil {
+		t.Fatal(err)
+	}
+	if aliases := fresh.SymbolAliases(); len(aliases) != 1 || aliases[0].OldSelector != "Live" {
+		t.Fatalf("restored live aliases = %#v", aliases)
+	}
+	if invalidated := fresh.InvalidatedSymbolAliases(); len(invalidated) != 1 || invalidated[0].OldSelector != "Old" {
+		t.Fatalf("restored tombstones = %#v", invalidated)
+	}
+	if err := fresh.RestoreSymbolHistory(history); err == nil {
+		t.Fatal("restoring history into non-fresh buffer succeeded")
+	}
+}
+
 func TestPublishRetainedReportsZeroPublicationWithoutClearing(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "value.go")

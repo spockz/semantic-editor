@@ -1,0 +1,26 @@
+# A rejected removal leaves source intact; a validated suggestion can be retried explicitly.
+env SEMEDIT_SUGGESTIONS=generic
+cp source.go original.txt
+! exec semedit remove-construct --file source.go --kind function --symbol ParseConfg
+stderr 'Suggested target: ParseConfig'
+cmp source.go original.txt
+exec semedit remove-construct --file source.go --kind function --symbol ParseConfig
+stdout 'Removed selected node from source.go'
+cmp source.go want/source.go
+
+-- go.mod --
+module example.com/suggestionsremove
+go 1.23
+
+-- source.go --
+package config
+
+func ParseConfig() {}
+
+-- original.txt --
+package config
+
+func ParseConfig() {}
+
+-- want/source.go --
+package config

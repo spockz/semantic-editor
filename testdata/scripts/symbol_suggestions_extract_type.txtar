@@ -1,0 +1,49 @@
+# A misspelled private type selector suggests the owner; retry extracts the same field under the same new type name.
+env SEMEDIT_SUGGESTIONS=generic
+cp cache.go original.txt
+! exec semedit extract-type --file cache.go --symbol cacheState --in-type cach --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'Suggested target: cache'
+cmp cache.go original.txt
+exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stdout 'Extracted selected fields into a composed Go struct type.'
+exec grep -F 'state cacheState' cache.go
+exec grep -F 'c.state.entries' cache.go
+
+-- go.mod --
+module example.com/suggestionsextracttype
+go 1.24
+
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+	limit int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.entries[key]
+	if ok {
+		return value, true
+	}
+	return c.limit, false
+}
+
+
+
+-- original.txt --
+package cache
+
+type cache struct {
+	entries map[string]int
+	limit int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.entries[key]
+	if ok {
+		return value, true
+	}
+	return c.limit, false
+}
+

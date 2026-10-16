@@ -172,6 +172,10 @@ func assertRenameOutputSchema(t *testing.T, schemas map[string]json.RawMessage) 
 	}
 	assertOutputSchemaValue(t, schema, "rename success", map[string]any{"result": success}, true)
 	assertOutputSchemaValue(t, schema, "rename generic error", map[string]any{"error": "symbol not found", "application_state": "unknown"}, true)
+	suggestion := map[string]any{"arguments": map[string]any{"file": "main.go", "symbol": "Existing"}, "file": "main.go", "line": 3, "column": 6, "kind": "function", "reason": "same package", "signature": "func Existing()"}
+	assertOutputSchemaValue(t, schema, "rename error with target suggestions", map[string]any{"error": "symbol is ambiguous", "application_state": "unknown", "suggestions": []any{suggestion}}, true)
+	assertOutputSchemaValue(t, schema, "rename error with malformed target suggestion", map[string]any{"error": "symbol is ambiguous", "application_state": "unknown", "suggestions": []any{map[string]any{"file": "main.go"}}}, false)
+	assertOutputSchemaValue(t, schema, "rename error with too many target suggestions", map[string]any{"error": "symbol is ambiguous", "application_state": "unknown", "suggestions": []any{suggestion, suggestion, suggestion, suggestion}}, false)
 	assertOutputSchemaValue(t, schema, "rename known projected error", map[string]any{
 		"error": "rename applied with diagnostics", "application_state": "persisted", "result": known,
 	}, true)
@@ -241,6 +245,7 @@ func assertBatchOutputSchemaFailures(t *testing.T, schemas map[string]json.RawMe
 			"status": "refused", "safe_delete": true, "checks_run": []any{}, "refusal": "exported declaration",
 		},
 	}
+	genericError["suggestions"] = []any{map[string]any{"arguments": map[string]any{"file": "main.go", "symbol": "Existing"}, "file": "main.go", "line": 3, "column": 6, "kind": "function", "reason": "same package"}}
 	assertOutputSchemaValue(t, schema, "successful batch with typed result", batchOutput("ok", []any{removeSuccess}, nil), true)
 	assertOutputSchemaValue(t, schema, "failed batch with generic error", batchOutput("error", []any{genericError}, nil), true)
 	assertOutputSchemaValue(t, schema, "failed batch with typed error", batchOutput("error", []any{knownError}, nil), true)

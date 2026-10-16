@@ -10,6 +10,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	symbolresolver "github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -567,7 +568,7 @@ func resolveSignatureCallTarget(snapshot *structuralSnapshot, symbol, newParamet
 		result = candidate
 	}
 	if !result.Found {
-		return signatureCallTarget{}, fmt.Errorf("private function %q was not found in the selected file", symbol)
+		return signatureCallTarget{}, &symbolresolver.SymbolError{Op: string(backend.OperationChangeSignature), File: snapshot.File, Symbol: symbol, Err: symbolresolver.ErrNotFound}
 	}
 	return result.Target, nil
 }

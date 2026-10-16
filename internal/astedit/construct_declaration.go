@@ -63,7 +63,7 @@ func replaceDeclarationConstruct(ctx context.Context, filePath, symbolQuery stri
 			return "", kindErr
 		}
 		if !found {
-			return "", fmt.Errorf("declaration %q not found in %s", symbolQuery, cleanPath)
+			return "", &symbol.SymbolError{Op: replaceConstructOperation, File: cleanPath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
 		}
 		if targetKind != kind {
 			return "", fmt.Errorf("selected declaration %q is %s, not %s", symbolQuery, targetKind, kind)
@@ -78,9 +78,12 @@ func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []b
 	if err != nil {
 		return "", err
 	}
-	target, err := findFunctionConstructTarget(file, replacement, symbolQuery, kind, cleanPath)
+	target, err := findFunctionConstructTarget(file, replacement, symbolQuery, cleanPath)
 	if err != nil {
 		return "", err
+	}
+	if identityErr := validateFunctionReplacementIdentity(replacement, symbolQuery, kind); identityErr != nil {
+		return "", identityErr
 	}
 	if (target.Recv != nil) && receiverTypeKey(target.Recv) != receiverTypeKey(replacement.declaration.Recv) {
 		return "", fmt.Errorf("replacement method receiver must preserve the selected receiver syntax")
@@ -148,33 +151,37 @@ func parseFunctionReplacement(symbolQuery string, kind ConstructKind, source str
 	if !ok {
 		return parsedFunctionReplacement{}, fmt.Errorf("replacement source must be one function or method declaration")
 	}
-	if declaration.Name.Name != name || (kind == ConstructMethod && declaration.Recv == nil) {
-		return parsedFunctionReplacement{}, fmt.Errorf("replacement must preserve the selected %s symbol %q", kind, symbolQuery)
-	}
 	sourceReceiver := extractReceiverName(declaration.Recv)
 	if kind == ConstructFunction && receiver == "" {
 		receiver = sourceReceiver
 	}
-	if sourceReceiver != receiver {
-		return parsedFunctionReplacement{}, fmt.Errorf("replacement method receiver must preserve %q", receiver)
-	}
 	return parsedFunctionReplacement{receiver: receiver, name: name, fset: fset, source: replacementSource, declaration: declaration}, nil
 }
 
-func findFunctionConstructTarget(file *ast.File, replacement parsedFunctionReplacement, symbolQuery string, kind ConstructKind, cleanPath string) (*ast.FuncDecl, error) {
+func validateFunctionReplacementIdentity(replacement parsedFunctionReplacement, symbolQuery string, kind ConstructKind) error {
+	if replacement.declaration.Name.Name != replacement.name || (kind == ConstructMethod && replacement.declaration.Recv == nil) {
+		return fmt.Errorf("replacement must preserve the selected %s symbol %q", kind, symbolQuery)
+	}
+	if extractReceiverName(replacement.declaration.Recv) != replacement.receiver {
+		return fmt.Errorf("replacement method receiver must preserve %q", replacement.receiver)
+	}
+	return nil
+}
+
+func findFunctionConstructTarget(file *ast.File, replacement parsedFunctionReplacement, symbolQuery string, cleanPath string) (*ast.FuncDecl, error) {
 	var target *ast.FuncDecl
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != replacement.name || extractReceiverName(function.Recv) != replacement.receiver || (replacement.declaration.Recv != nil) != (function.Recv != nil) {
+		if !ok || function.Name.Name != replacement.name || extractReceiverName(function.Recv) != replacement.receiver || (replacement.receiver != "") != (function.Recv != nil) {
 			continue
 		}
 		if target != nil {
-			return nil, fmt.Errorf("symbol %q is ambiguous in %s", symbolQuery, cleanPath)
+			return nil, &symbol.SymbolError{Op: replaceConstructOperation, File: cleanPath, Symbol: symbolQuery, Err: symbol.ErrAmbiguous}
 		}
 		target = function
 	}
 	if target == nil {
-		return nil, fmt.Errorf("%s %q not found in %s", kind, symbolQuery, cleanPath)
+		return nil, &symbol.SymbolError{Op: replaceConstructOperation, File: cleanPath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
 	}
 	return target, nil
 }

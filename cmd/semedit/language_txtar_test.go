@@ -318,8 +318,10 @@ func handleFakeDocumentChange(writer *lsp.FrameWriter, state *fakeLanguageServer
 	if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!state.formattingSeen || !state.codeActionSeen) {
 		return false
 	}
-	if os.Getenv("SEMEDIT_TEST_JAVA_SHARED_BATCH") != "" && len(change.ContentChanges) > 0 {
-		state.documents[change.TextDocument.URI] = change.ContentChanges[len(change.ContentChanges)-1].Text
+	if len(change.ContentChanges) > 0 {
+		text := change.ContentChanges[len(change.ContentChanges)-1].Text
+		state.documents[change.TextDocument.URI] = text
+		updateFakeDocumentSymbolFromText(state, text)
 	}
 	if change.TextDocument.Version <= 2 {
 		writeFakeDiagnostics(writer, change.TextDocument.URI, &change.TextDocument.Version, []any{})
@@ -327,6 +329,25 @@ func handleFakeDocumentChange(writer *lsp.FrameWriter, state *fakeLanguageServer
 	}
 	writeFakeDiagnostics(writer, change.TextDocument.URI, &change.TextDocument.Version, []any{})
 	return true
+}
+
+func updateFakeDocumentSymbolFromText(state *fakeLanguageServerState, text string) {
+	lines := strings.Split(text, "\n")
+	position := state.symbol.SelectionRange.Start
+	if position.Line < 0 || position.Line >= len(lines) || position.Character < 0 {
+		return
+	}
+	line := []rune(lines[position.Line])
+	start, end := position.Character, state.symbol.SelectionRange.End.Character
+	if start >= len(line) || end < start || end > len(line) {
+		return
+	}
+	name := string(line[start:end])
+	if name == "" || strings.ContainsAny(name, " \t{}();") {
+		return
+	}
+	state.symbol.Name = name
+	state.symbol.SelectionRange.End.Character = start + len([]rune(name))
 }
 
 func validConfiguredJavaSettings(raw json.RawMessage) bool {
@@ -392,15 +413,7 @@ func handleFakeLanguageRequest(state *fakeLanguageServerState, request fakeLSPRe
 	case "java/move":
 		return fakeJavaMove(request.Params), true
 	case "textDocument/rename":
-		edit := fakeRenameEdit(state.symbol, request.Params)
-		var params struct {
-			NewName string `json:"newName"`
-		}
-		if err := json.Unmarshal(request.Params, &params); err != nil {
-			failFakeLanguageServer(fmt.Errorf("decode fake rename name: %w", err))
-		}
-		state.symbol.Name = params.NewName
-		return edit, true
+		return fakeRenameEdit(state.symbol, request.Params), true
 	default:
 		return nil, true
 	}

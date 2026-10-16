@@ -15,12 +15,15 @@ The default MCP `--tool-profile base` includes workspace outline, signature chan
 
 Tool descriptions summarize single-fault support and conditional recovery. The generated capability reference retains the exact mixed-fault matrices; do not infer support for combinations from individual fault classes. Copy continuation fields from the same resolved structured record into follow-up calls, including its revision when required. Missing continuation fields mean no resolved target.
 
+For eligible target errors, inspect the optional structured `suggestions` array before searching broadly. Each candidate contains retry `arguments`, a file and source location, declaration kind, optional signature, and reason. Retry the same semantic operation with the candidate arguments and let native validation decide again. Go recovery includes structural owner selectors, signature changes, extraction owners, and declaration edits with native preflights. Java supports selected-file lookup, inspection, reference search, and rename; Rust, Scala, Kotlin, Haskell, Bash, and Make support selected-file lookup, with Make inspection too. Fresh names being introduced are never corrected. See [bounded symbol suggestions](../../docs/symbol-suggestions.md) for the exact operation list, provider modes, and limits.
+
 ## Choose the operation by intent
 
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
 | Discover packages, synopses, and module boundaries across a polyglot workspace | `semantic_workspace_outline` with optional `path` and `include_tests`; `language: "auto"` aggregates Go and Java, while `"go"` or `"java"` restricts discovery | Directory listing, `find`, or `tree` shell exploration |
 | Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
+| Retry an eligible symbol-target error | Review its structured `suggestions` and retry the same operation with one candidate's `arguments`; confirm the candidate's `file`, `kind`, and signature where present | Treating a similarity match or provider result as an accepted target |
 | Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
 | Inspect matching nested Go or Java constructs before selecting an ambiguous target | `semantic_inspect_construct`; copy a candidate path and selection revision from the same result | Guessing structural paths or retrying unchanged selectors |
 | View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` (use `semantic_workspace_outline` first to discover packages) | Reading whole files or manual grep navigation |
@@ -79,6 +82,7 @@ Examples:
 - “Change the initializer of `LedgerService.limit`” → use `semantic_replace_decl` with the complete Java field declaration, keeping its name and declaration kind.
 - “Add the `net/http` import” → use `semantic_organize_imports`; “add the module that provides this package” → use `semantic_add_build_dependency`.
 - “Where is `Config.Port` declared?” → use `semantic_lookup`, with the file path if needed to disambiguate.
+- “The Go symbol selector failed and returned candidates” → review the candidate evidence, then retry the original operation with one suggestion's arguments; unsupported cases keep the original error.
 
 For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration. Omitted access follows identifier casing; explicit access must agree with that casing. Relative file and path parameters resolve from the active semedit MCP workspace root, not the task's current directory. If MCP is rooted at the repository and the target is an isolated worktree, include `.scratch/worktrees/<name>/...` in the path; for Rust or Java rename, the selected file must belong to the trusted active workspace. Maven `root` must be absolute and remain inside the trusted workspace; use an absolute worktree path to target an isolated worktree.
 

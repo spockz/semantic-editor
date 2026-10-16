@@ -1,0 +1,37 @@
+# Suggestions respect explicit file and directory scopes and reject unrelated receivers.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit lookup --file api/client.go --symbol Client.Conenct
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+! stderr 'Server.Connect'
+! stderr 'Suggested target: Connect'
+! stderr 'other.Other.Connect'
+
+! exec semedit lookup --file api --symbol Client.Conenct
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+! stderr 'Server.Connect'
+! stderr 'Suggested target: Connect'
+! stderr 'other.Other.Connect'
+exec semedit lookup --file api/other.go --symbol Other.Connect
+stdout '"qualified_name":\s*"Other.Connect"'
+
+-- go.mod --
+module example.com/suggestionscope
+go 1.23
+
+-- api/client.go --
+package api
+
+type Client struct{}
+
+func (c *Client) Connect() {}
+
+type Server struct{}
+
+func (s *Server) Connect() {}
+
+-- api/other.go --
+package api
+
+type Other struct{}
+
+func (o *Other) Connect() {}

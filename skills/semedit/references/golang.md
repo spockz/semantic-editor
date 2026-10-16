@@ -10,6 +10,39 @@ When scripting semedit harness setup from a Go project, use `--json` with `insta
 
 Normal semantic operations inherit `GOENV`, `GOMODCACHE`, `GOCACHE`, `GOPATH`, `GOWORK`, temporary-directory settings, and gopls cache settings. They reuse the user's existing Go state and workspace configuration. Module files remain read-only for ordinary operations; use the explicit dependency operation when changing dependencies. MCP `--go-base-dir` enables isolated state intentionally, and benchmark fixtures opt into it. Do not configure `.scratch/go` caches for ordinary projects merely to use semedit.
 
+## Target suggestions
+
+When a supported Go `lookup`, `rename`, `inspect_symbol`, `find_references`, `replace_body`,
+`remove_construct`, `replace_construct`, `change_signature`, `extract_function`,
+`extract_variable`, `set_doc_comment`, `insert_field`, `extract_type`, or
+keyed-element/field `insert_construct`
+target fails, inspect the structured `suggestions` field when present. It is
+bounded to three alternatives that pass the requested file/package scope and
+the operation's native target checks. Retry the original operation with the
+candidate `arguments`; do not apply a candidate from spelling similarity
+alone. A candidate's file, one-based location, kind, optional signature, and
+reason provide review context. In a batch, suggestions describe the current
+working overlay; a publication failure clears them because that overlay may no
+longer exist. The original error remains authoritative until a retry succeeds.
+
+`SEMEDIT_SUGGESTIONS` accepts `off`, `generic` (default), `codanna`, or
+`codanna,generic`. Generic mode uses native Go declaration enumeration.
+Codanna modes use an installed CLI on `PATH`, optionally selected with
+`SEMEDIT_CODANNA_BIN`. semedit does not install Codanna, models, or
+dependencies, and does not explicitly run an index or rebuild command. A
+Codanna search may maintain its own index/cache during normal CLI startup.
+Provider output is only a candidate source and is combined with generic
+candidates in `codanna,generic` mode, then revalidated against native source.
+Extraction alternatives change only the existing `in_function` selector; a fresh
+helper or variable name is not a spelling-recovery target.
+Ordinary native target inspection is capped at 1.5 seconds; rename, extraction, and reference-search
+validation may take up to 5 seconds for compiler or gopls startup. Codanna retrieval
+is capped at 500 ms. Ranking examines at most 50 candidates, operation
+selectors are limited to 256 bytes and ranking selectors to 256 runes, and at
+most three results are returned.
+See [the suggestion contract](../../../docs/symbol-suggestions.md)
+for the complete scope and lifecycle boundary.
+
 ---
 
 ## Workspace discovery

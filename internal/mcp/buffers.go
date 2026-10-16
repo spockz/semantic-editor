@@ -30,6 +30,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 		return nil, fmt.Errorf("create batch source buffers: %w", err)
 	}
 	for _, batchEntry := range edits {
+		var retainedHistory sourcebuf.SymbolHistory
 		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
 		if !ok {
 			return buffer, fmt.Errorf("unregistered batch operation %q", batchEntry.Tool)
@@ -46,10 +47,11 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 		}
 		editCtx := sourcebuf.WithBuffer(ctx, buffer)
 		if !buffered {
+			retainedHistory = buffer.SymbolHistory()
 			if !s.finishBufferedBatch(ctx, buffer, response) {
 				return nil, errors.New("publish batch before disk operation failed")
 			}
-			editCtx = sourcebuf.WithoutBuffer(ctx)
+			editCtx = operation.WithSuggestionHistory(sourcebuf.WithoutBuffer(ctx), retainedHistory)
 		}
 		result, err := s.executeBatchEdit(editCtx, batchEntry)
 		response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, err))
@@ -62,6 +64,10 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 			if err != nil {
 				return nil, fmt.Errorf("restart batch source buffers: %w", err)
 			}
+			if restoreErr := buffer.RestoreSymbolHistory(retainedHistory); restoreErr != nil {
+				return nil, fmt.Errorf("restore batch symbol history: %w", restoreErr)
+			}
+			operation.InvalidateSuggestionAliases(buffer, entry.Key, raw)
 		}
 	}
 	return buffer, nil
@@ -73,6 +79,7 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 	}
 	if err := recordBufferedChanges(ctx, buffer); err != nil {
 		response.Status = "error"
+		clearBatchSuggestions(response)
 		response.Results = append(response.Results, BatchResult{Tool: "buffer_publish", Status: "error", Error: err.Error()})
 		return false
 	}
@@ -80,6 +87,7 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 	defer cancel()
 	if err := buffer.Flush(publicationCtx); err != nil {
 		response.Status = "error"
+		clearBatchSuggestions(response)
 		response.Results = append(response.Results, BatchResult{Tool: "buffer_publish", Status: "error", Error: err.Error()})
 		if syncErr := godiagnostics.InvalidateWithContext(publicationCtx); syncErr != nil {
 			response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: syncErr.Error()})
@@ -89,11 +97,18 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 	if s.goEnabled() {
 		if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(publicationCtx)); err != nil {
 			response.Status = "error"
+			clearBatchSuggestions(response)
 			response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
 			return false
 		}
 	}
 	return true
+}
+
+func clearBatchSuggestions(response *BatchResponse) {
+	for i := range response.Results {
+		response.Results[i].Suggestions = nil
+	}
 }
 
 func (s *Server) normalizeBufferedBatch(ctx context.Context, buffer *sourcebuf.Buffer, before map[string]string, organize bool) ([]string, error) {

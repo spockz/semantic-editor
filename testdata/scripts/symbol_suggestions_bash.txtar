@@ -1,0 +1,11 @@
+# Bash lookup recovery uses selected-file bash-language-server outline and exact retry.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file tool.sh --symbol funx
+stderr 'Suggested target: fun \(tool.sh:1\)'
+exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file tool.sh --symbol fun
+stdout '"symbol":\s*"fun"'
+
+-- tool.sh --
+function fun() {
+ local loc=value
+}

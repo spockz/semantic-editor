@@ -331,6 +331,9 @@ func resolveWorkspaceTargetFiles(ctx context.Context, rootDir string) ([]string,
 	rootPath := filepath.Clean(searchRoot)
 	targetFiles := make(map[string]bool)
 	err := filepath.WalkDir(searchRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if walkErr != nil {
 			return walkErr
 		}

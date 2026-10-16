@@ -1,0 +1,28 @@
+# A rejected whole-declaration replacement is unchanged until the corrected target is retried.
+env SEMEDIT_SUGGESTIONS=generic
+cp source.go original.txt
+! exec semedit replace-construct --file source.go --kind function --symbol ParseConfg --source 'func ParseConfig() int { return 2 }'
+stderr 'Suggested target: ParseConfig'
+cmp source.go original.txt
+exec semedit replace-construct --file source.go --kind function --symbol ParseConfig --source 'func ParseConfig() int { return 2 }'
+stdout 'Replaced.*ParseConfig'
+cmp source.go want/source.go
+
+-- go.mod --
+module example.com/suggestionsreplace
+go 1.23
+
+-- source.go --
+package config
+
+func ParseConfig() int { return 1 }
+
+-- original.txt --
+package config
+
+func ParseConfig() int { return 1 }
+
+-- want/source.go --
+package config
+
+func ParseConfig() int { return 2 }

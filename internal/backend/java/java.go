@@ -60,6 +60,8 @@ var (
 	ErrJavaSessionConflict = errors.New("another Java language session is active")
 	// ErrJavaSymbolNotFound indicates that no exact hierarchical candidate matched.
 	ErrJavaSymbolNotFound = errors.New("java symbol not found")
+	// ErrJavaSymbolAmbiguous indicates that a selector resolved to more than one Java symbol.
+	ErrJavaSymbolAmbiguous = errors.New("java symbol selector is ambiguous")
 	// ErrJavaRenameInvalidEdit indicates an unsafe or malformed workspace edit.
 	ErrJavaRenameInvalidEdit = errors.New("invalid Java rename edit")
 	// ErrJavaRenameStaleEdit indicates that an edit preimage differs from source.
@@ -591,7 +593,7 @@ func (b *JavaBackend) FindReferences(ctx context.Context, request backend.Refere
 		return nil, err
 	}
 	if lookup.IsAmbiguous() || lookup.Definition == nil {
-		return nil, &JavaError{Op: javaOperationReferences, File: file, Symbol: request.Symbol, Err: errors.New("references require one unique target")}
+		return nil, &JavaError{Op: javaOperationReferences, File: file, Symbol: request.Symbol, Err: ErrJavaSymbolAmbiguous}
 	}
 	params := map[string]any{
 		lspTextDocumentKey: map[string]string{"uri": lookup.Definition.Location.URI},
@@ -719,6 +721,44 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	return b.applyJavaRenameExecution(ctx, session, root, file, request, execution)
 }
 
+// ValidateRenameTarget confirms that JDT LS can safely prepare a rename without publishing source changes.
+func (b *JavaBackend) ValidateRenameTarget(ctx context.Context, request backend.RenameRequest) (retErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	request.Symbol = backend.NormalizeRenameInput(request.Symbol)
+	request.To = backend.NormalizeRenameInput(request.To)
+	root, file, source, resolveErr := resolveJavaProject(ctx, request.Project)
+	if resolveErr != nil {
+		return resolveErr
+	}
+	if !request.Project.WorkspaceTrust.Allows(root) {
+		return &backend.WorkspaceTrustError{Operation: backend.OperationRename, Language: backend.LanguageJava, Workspace: root}
+	}
+	config := effectiveJavaConfig(request.Project)
+	fingerprint, fingerprintErr := javaImportFingerprint(root, config)
+	if fingerprintErr != nil {
+		return &JavaError{Op: javaOperationFingerprint, Workspace: root, Err: fingerprintErr}
+	}
+	if request.Symbol == "" || request.To == "" {
+		return &backend.Error{Operation: backend.OperationRename, Language: backend.LanguageJava, Err: ErrJavaRenameInvalidEdit}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if sessionErr := b.ensureJavaSessionLocked(ctx, root, config, fingerprint); sessionErr != nil {
+		return sessionErr
+	}
+	session := b.session
+	defer func() {
+		if retErr == nil || b.session == nil {
+			return
+		}
+		retErr = errors.Join(retErr, b.invalidateJavaSessionLocked(session))
+	}()
+	_, err := b.prepareJavaRenameTarget(ctx, ctx, session, root, file, source, request, sourcebuf.FromContext(ctx))
+	return err
+}
+
 type javaRenameExecution struct {
 	edit          javaRenameEdit
 	buffer        *sourcebuf.Buffer
@@ -741,33 +781,43 @@ func (b *JavaBackend) prepareJavaRenameExecution(ctx context.Context, session Ja
 		}
 		workingCtx = sourcebuf.WithBuffer(ctx, workingBuffer)
 	}
-	if err := b.syncBufferedJavaDocuments(ctx, buffer); err != nil {
-		return javaRenameExecution{}, err
-	}
-	if err := b.syncJavaDocumentLocked(workingCtx, file, source); err != nil {
-		return javaRenameExecution{}, err
-	}
-	if err := b.saveCommittedJavaDocumentsLocked(ctx); err != nil {
-		return javaRenameExecution{}, err
-	}
-	edit, err := prepareJavaRenameEdit(ctx, session, root, file, source, request.Symbol, request.To)
+	edit, err := b.prepareJavaRenameTarget(ctx, workingCtx, session, root, file, source, request, buffer)
 	if err != nil {
 		return javaRenameExecution{}, err
-	}
-	for _, fileEdit := range edit.files {
-		err = b.syncJavaDocumentLocked(workingCtx, fileEdit.file, fileEdit.before)
-		if err != nil {
-			return javaRenameExecution{}, err
-		}
-		if fileEdit.version != nil && b.documents[fileEdit.uri].version != *fileEdit.version {
-			return javaRenameExecution{}, &JavaError{Op: "rename", File: fileEdit.file, Err: ErrJavaRenameStaleEdit}
-		}
 	}
 	before, err := b.javaRenameDiagnostics(ctx, session, root, edit, "rename diagnostics before", request.DeferVerification)
 	if err != nil {
 		return javaRenameExecution{}, err
 	}
 	return javaRenameExecution{edit: edit, buffer: buffer, workingBuffer: workingBuffer, workingCtx: workingCtx, beforeErrors: before}, nil
+}
+
+func (b *JavaBackend) prepareJavaRenameTarget(ctx, documentCtx context.Context, session JavaSession, root, file string, source []byte, request backend.RenameRequest, buffer *sourcebuf.Buffer) (javaRenameEdit, error) {
+	if err := b.syncBufferedJavaDocuments(ctx, buffer); err != nil {
+		return javaRenameEdit{}, err
+	}
+	if err := b.syncJavaDocumentLocked(documentCtx, file, source); err != nil {
+		return javaRenameEdit{}, err
+	}
+	if err := b.saveCommittedJavaDocumentsLocked(ctx); err != nil {
+		return javaRenameEdit{}, err
+	}
+	edit, err := prepareJavaRenameEdit(ctx, session, root, file, source, request.Symbol, request.To)
+	if err != nil {
+		return javaRenameEdit{}, err
+	}
+	if len(edit.renames) > 0 && buffer != nil {
+		return javaRenameEdit{}, ErrJavaBatchResourceRenameUnsupported
+	}
+	for _, fileEdit := range edit.files {
+		if err := b.syncJavaDocumentLocked(documentCtx, fileEdit.file, fileEdit.before); err != nil {
+			return javaRenameEdit{}, err
+		}
+		if fileEdit.version != nil && b.documents[fileEdit.uri].version != *fileEdit.version {
+			return javaRenameEdit{}, &JavaError{Op: "rename", File: fileEdit.file, Err: ErrJavaRenameStaleEdit}
+		}
+	}
+	return edit, nil
 }
 
 func (b *JavaBackend) syncBufferedJavaDocuments(ctx context.Context, buffer *sourcebuf.Buffer) error {
@@ -961,7 +1011,7 @@ func prepareJavaRenameEdit(ctx context.Context, session JavaSession, root, file 
 		return javaRenameEdit{}, err
 	}
 	if lookup.IsAmbiguous() || lookup.Definition == nil {
-		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: errors.New("rename requires one unique target")}
+		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Symbol: symbol, Err: ErrJavaSymbolAmbiguous}
 	}
 	position := lookup.Definition.Location.Range.Start
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": position})

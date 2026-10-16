@@ -1,0 +1,35 @@
+# A scaffold barrier must retain the current spelling for failed selector suggestions.
+env SEMEDIT_SUGGESTIONS=generic
+stdin input.json
+exec semedit mcp
+stdout 'isError":true'
+stdout '"arguments":\s*\{[^}]*"symbol":"ReadConfig"'
+stdout 'Matched former name ParseConfig; now ReadConfig after an earlier retained rename.'
+cmp config.go want/config.go
+cmp generated.go want/generated.go
+exec semedit lookup --file config.go --symbol ReadConfig
+stdout '"symbol":\s*"ReadConfig"'
+
+-- go.mod --
+module example.com/suggestionbarrier
+go 1.23
+
+-- config.go --
+package config
+
+func ParseConfig() string {
+	return "ready"
+}
+
+-- want/config.go --
+package config
+
+func ReadConfig() string {
+	return "ready"
+}
+
+-- want/generated.go --
+package config
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfig","to":"ReadConfig"}},{"tool":"semantic_scaffold_file","params":{"file":"generated.go","package":"config"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfg","to":"OpenConfig"}}]}}}

@@ -1,0 +1,16 @@
+# A valid target succeeds with an unavailable configured Codanna CLI.
+env SEMEDIT_SUGGESTIONS=codanna SEMEDIT_CODANNA_BIN=$WORK/missing-codanna
+exec semedit lookup --file api/client.go --symbol Client.Connect
+stdout '"symbol":\s*"Client.Connect"'
+
+-- go.mod --
+module example.com/suggestionprovider
+go 1.23
+
+-- api/client.go --
+package api
+
+type Client struct{}
+
+func (c *Client) Connect() {}
+

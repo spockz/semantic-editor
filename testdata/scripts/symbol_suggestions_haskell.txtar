@@ -1,0 +1,11 @@
+# Haskell typo recovery reuses the trusted standalone native document-symbol snapshot.
+env SEMEDIT_SUGGESTIONS=generic
+cp src/Widget.hs original.txt
+! exec semedit lookup --language haskell --haskell-standalone --trust-workspace --ghc-bin $SEMEDIT_TEST_GHC --hls-bin $SEMEDIT_TEST_HLS --ghc-version 9.8.2 --hls-version 2.9.0 --file src/Widget.hs --symbol Widgte
+stderr 'Suggested target: Widget \(src/Widget.hs:1\)'
+exec semedit lookup --language haskell --haskell-standalone --trust-workspace --ghc-bin $SEMEDIT_TEST_GHC --hls-bin $SEMEDIT_TEST_HLS --ghc-version 9.8.2 --hls-version 2.9.0 --file src/Widget.hs --symbol Widget
+stdout '"symbol":\s*"Widget"'
+cmp src/Widget.hs original.txt
+
+-- src/Widget.hs --
+data Widget = Widget

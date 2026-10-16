@@ -204,56 +204,75 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project neutralbackend.Proj
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	root, file, source, err := resolveHaskellProject(project)
+	if strings.TrimSpace(query) == "" {
+		return nil, &HaskellError{Op: "lookup", File: project.File, Symbol: query, Err: ErrHaskellMalformedResponse}
+	}
+	file, symbols, err := b.documentSymbols(ctx, project, "lookup", query)
 	if err != nil {
 		return nil, err
 	}
-	if !project.WorkspaceTrust.Allows(root) {
-		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationLookup, Language: neutralbackend.LanguageHaskell, Workspace: root}
-	}
-	if strings.TrimSpace(query) == "" {
-		return nil, &HaskellError{Op: "lookup", File: file, Symbol: query, Err: ErrHaskellMalformedResponse}
-	}
+	return selectHaskellSymbol(query, file, symbols)
+}
 
+// SymbolCandidates enumerates the validated hierarchy from the selected Haskell document.
+func (b *HaskellBackend) SymbolCandidates(ctx context.Context, project neutralbackend.ProjectContext) ([]neutralbackend.ReadSymbol, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	file, symbols, err := b.documentSymbols(ctx, project, "symbolCandidates", "")
+	if err != nil {
+		return nil, err
+	}
+	return flattenHaskellSymbols(file, symbols, nil), nil
+}
+
+func (b *HaskellBackend) documentSymbols(ctx context.Context, project neutralbackend.ProjectContext, op, query string) (string, []haskellDocumentSymbol, error) {
+	root, file, source, err := resolveHaskellProject(project)
+	if err != nil {
+		return "", nil, err
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return "", nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationLookup, Language: neutralbackend.LanguageHaskell, Workspace: root}
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.session != nil && b.root != root {
-		return nil, &HaskellError{Op: "lookup", Workspace: root, Err: ErrHaskellSessionConflict}
+		return "", nil, &HaskellError{Op: op, Workspace: root, Err: ErrHaskellSessionConflict}
 	}
 	if b.session == nil {
 		if b.factory == nil {
-			return nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
+			return "", nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
 		}
 		config := project.Haskell
 		runtimeConfig := haskellRuntimeConfig{HaskellConfig: config, workingDir: filepath.Dir(file)}
 		session, factoryErr := b.factory(ctx, root, runtimeConfig)
 		if factoryErr != nil {
-			return nil, &HaskellError{Op: "start", Workspace: root, Err: factoryErr}
+			return "", nil, &HaskellError{Op: "start", Workspace: root, Err: factoryErr}
 		}
 		if session == nil {
-			return nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
+			return "", nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
 		}
 		b.session, b.root = session, root
 		if initializeErr := initializeHaskellSession(ctx, session, root); initializeErr != nil {
 			_ = session.Close()
 			b.session, b.root = nil, ""
-			return nil, &HaskellError{Op: "initialize", Workspace: root, Err: initializeErr}
+			return "", nil, &HaskellError{Op: "initialize", Workspace: root, Err: initializeErr}
 		}
 	}
 	if openErr := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
 		"uri": pathutil.FileURI(file), "languageId": "haskell", "version": 1, "text": string(source),
 	}}); openErr != nil {
-		return nil, &HaskellError{Op: "didOpen", File: file, Err: openErr}
+		return "", nil, &HaskellError{Op: "didOpen", File: file, Err: openErr}
 	}
 	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
-		return nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return "", nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
 	symbols, err := decodeHaskellDocumentSymbols(raw, root, file, source)
 	if err != nil {
-		return nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return "", nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
-	return selectHaskellSymbol(query, file, symbols)
+	return file, symbols, nil
 }
 
 // Rename is intentionally unavailable for the Haskell lookup-only slice.
@@ -654,6 +673,25 @@ func haskellCandidate(file string, symbol haskellDocumentSymbol, path []string) 
 	start := symbol.SelectionRange.Start
 	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
 	return &neutralbackend.NamedTarget{Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), Location: location}
+}
+
+func flattenHaskellSymbols(file string, symbols []haskellDocumentSymbol, parents []string) []neutralbackend.ReadSymbol {
+	result := make([]neutralbackend.ReadSymbol, 0, len(symbols))
+	for _, symbol := range symbols {
+		path := append(append([]string(nil), parents...), strings.Split(symbol.Name, ".")...)
+		kind := haskellKindName(symbol.Kind, symbol.Name)
+		if kind != "" {
+			result = append(result, neutralbackend.ReadSymbol{
+				Name: symbol.Name, QualifiedName: strings.Join(path, "."), Kind: kind, File: file,
+				Range:          neutralbackend.Range{Start: neutralbackend.Position(symbol.Range.Start), End: neutralbackend.Position(symbol.Range.End)},
+				SelectionRange: neutralbackend.Range{Start: neutralbackend.Position(symbol.SelectionRange.Start), End: neutralbackend.Position(symbol.SelectionRange.End)},
+			})
+		}
+		if kind != "value" && kind != "field" {
+			result = append(result, flattenHaskellSymbols(file, symbol.Children, path)...)
+		}
+	}
+	return result
 }
 
 func haskellByteOffset(source []byte, position haskellPosition) (int, error) {

@@ -1,0 +1,69 @@
+# Go target suggestions for lookup, rename, inspection, and body replacement.
+env SEMEDIT_SUGGESTIONS=generic
+cp api/client.go original.txt
+! exec semedit lookup --file api/client.go --symbol Client.Conenct
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+! stderr 'Server.Connect'
+exec semedit lookup --file api/client.go --symbol Client.Connect
+stdout '"qualified_name":\s*"Client.Connect"'
+
+! exec semedit rename --file api/client.go --symbol Client.Conenct --to Open
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+
+! exec semedit inspect-symbol --file api/client.go --symbol Client.Conenct
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+exec semedit inspect-symbol --file api/client.go --symbol Client.Connect
+stdout '"qualified_name":\s*"Client.Connect"'
+
+! exec semedit find-references --file api/client.go --symbol Client.Conenct
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+exec semedit find-references --file api/client.go --symbol Client.Connect
+stdout '"qualified_name":\s*"Client.Connect"'
+cmp api/client.go original.txt
+
+! exec semedit replace-body --file api/client.go --symbol Client.Conenct --body 'return c.value'
+stderr 'Suggested target: Client.Connect \(api/client.go:5\)'
+exec semedit replace-body --file api/client.go --symbol Client.Connect --body 'return c.value'
+cmp api/client.go want/api/client.go
+
+-- go.mod --
+module example.com/suggestions
+go 1.23
+
+-- api/client.go --
+package api
+
+type Client struct{ value int }
+
+func (c *Client) Connect() int {
+	return c.value
+}
+
+type Server struct{}
+
+func (s *Server) Connect() int {
+	return 0
+}
+
+func Connect() int {
+	return 1
+}
+
+-- want/api/client.go --
+package api
+
+type Client struct{ value int }
+
+func (c *Client) Connect() int {
+	return c.value
+}
+
+type Server struct{}
+
+func (s *Server) Connect() int {
+	return 0
+}
+
+func Connect() int {
+	return 1
+}

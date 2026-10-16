@@ -1,0 +1,25 @@
+# A misspelled declaration selector suggests the private Go function; retry changes only the selector.
+env SEMEDIT_SUGGESTIONS=generic
+cp doc.go original.txt
+! exec semedit set-doc-comment --file doc.go --scope declaration --symbol Servce --comment 'Serve answers.'
+stderr 'Suggested target: Serve'
+cmp doc.go original.txt
+exec semedit set-doc-comment --file doc.go --scope declaration --symbol Serve --comment 'Serve answers.'
+exec grep -F '// Serve answers.' doc.go
+
+-- go.mod --
+module example.com/suggestionsdoc
+go 1.24
+
+-- doc.go --
+package docs
+
+func Serve() {}
+
+
+
+-- original.txt --
+package docs
+
+func Serve() {}
+

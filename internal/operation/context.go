@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/suggestions"
 )
 
 // CallContext carries request-scoped state shared by every operation invocation.
@@ -27,6 +28,8 @@ type CallContext struct {
 	// AllowedLanguages applies an ingress language policy to verification; nil leaves CLI calls unrestricted.
 	AllowedLanguages []backend.LanguageID
 	StageRuntime     StageRuntime
+	// SuggestionProvider overrides optional indexed retrieval; native target validation remains authoritative.
+	SuggestionProvider suggestions.Provider
 }
 
 // StageRuntime owns volatile MCP-only retained staging state.

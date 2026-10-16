@@ -1,0 +1,9 @@
+# Scala lookup recovery uses selected-file Metals outline and exact retry.
+env SEMEDIT_SUGGESTIONS=generic
+! exec semedit lookup --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Widget.scala --symbol Widgte
+stderr 'Suggested target: Widget \(src/Widget.scala:1\)'
+exec semedit lookup --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Widget.scala --symbol Widget
+stdout '"symbol":\s*"Widget"'
+
+-- src/Widget.scala --
+object Widget {}

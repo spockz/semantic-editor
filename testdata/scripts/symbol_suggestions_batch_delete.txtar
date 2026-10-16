@@ -1,0 +1,25 @@
+# Removing a renamed target invalidates its retry aliases while preserving successful prefix edits.
+env SEMEDIT_SUGGESTIONS=generic
+stdin input.json
+exec semedit mcp
+stdout 'isError":true'
+stdout 'resolve ParseConfg in config.go: symbol not found'
+! stdout '"arguments":'
+cmp config.go want/config.go
+
+-- go.mod --
+module example.com/suggestionbatchdelete
+go 1.23
+
+-- config.go --
+package config
+
+func ParseConfig() string {
+	return "ready"
+}
+
+-- want/config.go --
+package config
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfig","to":"LoadConfig"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"LoadConfig","to":"ReadConfig"}},{"tool":"semantic_remove_construct","params":{"file":"config.go","kind":"function","symbol":"ReadConfig"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"ParseConfg","to":"OpenConfig"}}]}}}

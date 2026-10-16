@@ -53,11 +53,11 @@ func insertFieldStructuralDef() Def[map[string]any, structuralPlanResult] {
 		ExampleRaw:  map[string]any{"file": "config.go", "in_type": "config", "symbol": "config.timeout", "source": "timeout int", "placement": "type_end"},
 		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 			inType := stringParam(raw, "in_type")
-			fieldName, err := structuralMemberName(inType, stringParam(raw, "symbol"))
+			owner, named, typeName, err := structuralFieldOwner(snapshot, inType)
 			if err != nil {
 				return astedit.SourcePlan{}, err
 			}
-			owner, named, typeName, err := structuralFieldOwner(snapshot, inType)
+			fieldName, err := structuralMemberName(inType, stringParam(raw, "symbol"))
 			if err != nil {
 				return astedit.SourcePlan{}, err
 			}

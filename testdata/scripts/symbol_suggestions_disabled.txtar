@@ -1,0 +1,16 @@
+# SEMEDIT_SUGGESTIONS=off keeps the original failure without candidate retrieval.
+env SEMEDIT_SUGGESTIONS=off
+! exec semedit lookup --file api/client.go --symbol Client.Conenct
+stderr 'symbol not found'
+! stderr 'Suggested target:'
+
+-- go.mod --
+module example.com/suggestionsdisabled
+go 1.23
+
+-- api/client.go --
+package api
+
+type Client struct{}
+
+func (c *Client) Connect() {}

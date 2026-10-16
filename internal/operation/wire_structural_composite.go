@@ -10,6 +10,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/javacst"
+	"github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -37,13 +38,7 @@ type compositeSelectorCandidate struct {
 }
 
 func runInsertElementConstruct(ctx context.Context, cc CallContext, req InsertConstructReq) (FileEditRes, error) {
-	raw := map[string]any{
-		"file": req.File, wireInDeclaration: req.InDeclaration, wireDiscriminator: req.Discriminator,
-		"source": req.Source, "placement": req.Placement,
-	}
-	if req.ExpectedRevision != "" {
-		raw[wireExpectedRevision] = req.ExpectedRevision
-	}
+	raw := insertElementConstructRaw(req)
 	result, err := runStructuralPlan(ctx, cc, raw, insertElementPlanSpec())
 	if err != nil {
 		return FileEditRes{}, err
@@ -339,12 +334,12 @@ func structuralDeclarationOwner(file *ast.File, name string) (ast.Node, error) {
 			continue
 		}
 		if owner != nil {
-			return nil, fmt.Errorf("declaration %q is ambiguous", name)
+			return nil, fmt.Errorf("declaration %q is ambiguous: %w", name, &symbol.SymbolError{Op: wireInDeclaration, Symbol: name, Err: symbol.ErrAmbiguous})
 		}
 		owner = candidate.Node
 	}
 	if owner == nil {
-		return nil, fmt.Errorf("declaration %q not found", name)
+		return nil, fmt.Errorf("declaration %q not found: %w", name, &symbol.SymbolError{Op: wireInDeclaration, Symbol: name, Err: symbol.ErrNotFound})
 	}
 	return owner, nil
 }
@@ -394,7 +389,7 @@ func structuralSpecOwner(specs []ast.Spec, name string) (structuralDeclarationMa
 		}
 		if match.Found {
 			if selected.Found {
-				return structuralDeclarationMatch{}, fmt.Errorf("declaration %q is ambiguous", name)
+				return structuralDeclarationMatch{}, fmt.Errorf("declaration %q is ambiguous: %w", name, &symbol.SymbolError{Op: wireInDeclaration, Symbol: name, Err: symbol.ErrAmbiguous})
 			}
 			selected = structuralDeclarationMatch{Node: spec, Found: true}
 		}

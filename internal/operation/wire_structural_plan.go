@@ -57,8 +57,16 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 		ExampleRaw: spec.ExampleRaw,
 		Parse:      func(raw map[string]any) (map[string]any, error) { return maps.Clone(raw), nil },
 		Handlers:   handlers,
-		Format:     func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
-		Output:     spec.Output,
+		TargetPreflight: func(ctx context.Context, cc CallContext, raw map[string]any) error {
+			snapshot, err := prepareStructuralPlanInput(ctx, cc, raw)
+			if err != nil {
+				return err
+			}
+			_, err = planStructuralSource(snapshot, raw, spec)
+			return err
+		},
+		Format: func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
+		Output: spec.Output,
 		FinalizeOutput: func(cc CallContext, _ map[string]any, result structuralPlanResult) (structuralPlanResult, error) {
 			ctx := cc.Ctx
 			if ctx == nil {
@@ -99,29 +107,15 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 }
 
 func runStructuralPlan(ctx context.Context, cc CallContext, raw map[string]any, spec structuralPlanSpec) (structuralPlanResult, error) {
-	snapshot, err := prepareStructuralSnapshot(ctx, cc, stringParam(raw, "file"))
+	snapshot, err := prepareStructuralPlanInput(ctx, cc, raw)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
 	before := snapshot.Sources[snapshot.File]
-	if expected, ok := raw["expected_revision"]; ok {
-		revision, valid := expected.(string)
-		if !valid || revision == "" {
-			return structuralPlanResult{}, fmt.Errorf("expected_revision must be a non-empty string")
-		}
-		if revision != structuralRevision(before) {
-			return structuralPlanResult{}, fmt.Errorf("expected_revision does not match the current selected-file revision")
-		}
-	}
 	finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
-	plan, err := spec.Plan(snapshot, raw)
+	plan, err := planStructuralSource(snapshot, raw, spec)
 	if err != nil {
 		return structuralPlanResult{}, err
-	}
-	if plan.Changed {
-		if outputErr := snapshot.validateOutput(plan.Source); outputErr != nil {
-			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", outputErr)
-		}
 	}
 	changed, err := snapshot.applyOutput(plan.Source)
 	if err != nil {
