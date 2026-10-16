@@ -951,11 +951,11 @@ The first log patch used an incorrect heading as its context and was rejected wi
 
 ## 2026-10-16: move-file formatter published before trust-hook refusal
 
-* Tool: `semantic_batch`, `semantic_insert_function`.
-* Target: `internal/operation/wire_move_file.go`, `formatMoveFile`.
-* Observed failure: the formatter published, then verification refused an untrusted configured lint hook.
-* Workaround: retain the published formatter and verify with the repository's pinned `make check` command.
-* Root cause: the batch omitted request-local hook trust; post-publication verification does not roll back source edits.
+- Tool: `semantic_batch`, `semantic_insert_function`.
+- Target: `internal/operation/wire_move_file.go`, `formatMoveFile`.
+- Observed failure: the formatter published, then verification refused an untrusted configured lint hook.
+- Workaround: retain the published formatter and verify with the repository's pinned `make check` command.
+- Root cause: the batch omitted request-local hook trust; post-publication verification does not roll back source edits.
 
 The following trusted batch refined the formatter's continuation text and
 published successfully, then its configured lint hook returned status 3. The
@@ -973,11 +973,11 @@ changed restart expectations with the complete implementation.
 
 ## 2026-10-16: expression replacement did not select a composite-literal key
 
-* Tool: `semantic_replace_construct` through `semantic_batch`.
-* Target: `internal/operation/wire_move_file.go`, `moveFileDef`.
-* Observed failure: the string key `"destination_file"` in a nested example map was not selectable as a statement/expression; earlier constant, variable, and parser edits published.
-* Workaround: replace the complete small definition function, then relocate the contract switch case structurally.
-* Root cause: nested composite-literal keys are outside this expression selector's advertised slots.
+- Tool: `semantic_replace_construct` through `semantic_batch`.
+- Target: `internal/operation/wire_move_file.go`, `moveFileDef`.
+- Observed failure: the string key `"destination_file"` in a nested example map was not selectable as a statement/expression; earlier constant, variable, and parser edits published.
+- Workaround: replace the complete small definition function, then relocate the contract switch case structurally.
+- Root cause: nested composite-literal keys are outside this expression selector's advertised slots.
 
 The complete-function replacement and contract-case relocation published on the
 next batch. Its configured lint hook returned status 3 while the feature's
@@ -1003,11 +1003,11 @@ will check the refactored tests before completion.
 
 ## 2026-10-16: concurrent test edit prevented buffer API publication
 
-* Tool: `semantic_batch`, field insertion and body replacement.
-* Target: `internal/sourcebuf/buffer.go`, `Change` and `Buffer.Apply`.
-* Observed failure: preparation detected a concurrent change to `internal/astedit/move_file_test.go`; checked publication refused.
-* Workaround: coordinate a source mutation window and retry after checking which outputs persisted.
-* Root cause: semantic batches bind the complete source read set, including files edited by another worker.
+- Tool: `semantic_batch`, field insertion and body replacement.
+- Target: `internal/sourcebuf/buffer.go`, `Change` and `Buffer.Apply`.
+- Observed failure: preparation detected a concurrent change to `internal/astedit/move_file_test.go`; checked publication refused.
+- Workaround: coordinate a source mutation window and retry after checking which outputs persisted.
+- Root cause: semantic batches bind the complete source read set, including files edited by another worker.
 
 The coordinated retry published `Change.Create`, the checked all-output apply
 implementation, and the native diagnostic evidence adapter. Its configured lint
@@ -1021,43 +1021,43 @@ then returned the same lint-hook status 3. The tests remain in
 
 ## 2026-10-16: registry contract batch failed its post-publication hook
 
-* Tool: `semantic_batch` inserting the move-file contract case and helper.
-* Target: `internal/operation/language_contracts.go` and `language_contract_profiles.go`.
-* Observed failure: both insertions published, then the configured lint hook exited with status 3 while concurrent planner implementation was incomplete.
-* Workaround: retain the published contract and run the configured repository checks on the complete implementation.
-* Root cause: post-publication verification does not imply rollback of successfully prepared edits.
+- Tool: `semantic_batch` inserting the move-file contract case and helper.
+- Target: `internal/operation/language_contracts.go` and `language_contract_profiles.go`.
+- Observed failure: both insertions published, then the configured lint hook exited with status 3 while concurrent planner implementation was incomplete.
+- Workaround: retain the published contract and run the configured repository checks on the complete implementation.
+- Root cause: post-publication verification does not imply rollback of successfully prepared edits.
 
 ## 2026-10-16: switch insertion did not locate the registry contract switch
 
-* Tool: `semantic_insert_construct` through `semantic_batch`.
-* Target: `internal/operation/language_contracts.go`, `goOperationContract`.
-* Observed failure: `discriminator: key` returned "switch statement not found"; the earlier parse-body correction and registration insertion published.
-* Workaround: inspect the delegated typed-operation contract helper and insert the case there.
-* Root cause: the selected function delegates to helpers and has no direct switch.
+- Tool: `semantic_insert_construct` through `semantic_batch`.
+- Target: `internal/operation/language_contracts.go`, `goOperationContract`.
+- Observed failure: `discriminator: key` returned "switch statement not found"; the earlier parse-body correction and registration insertion published.
+- Workaround: inspect the delegated typed-operation contract helper and insert the case there.
+- Root cause: the selected function delegates to helpers and has no direct switch.
 
 ## 2026-10-16: new move-file wiring published before verification failure
 
-* Tool: `semantic_batch` with scaffold and declaration insertion.
-* Target: `internal/operation/wire_move_file.go`.
-* Observed failure: both source edits published, then the configured lint verification hook exited with status 3 while the new operation was incomplete. The result included a large workspace diff.
-* Workaround: retain the published file, finish registry wiring, and use `make check` to diagnose the complete candidate.
-* Root cause: incremental operation construction temporarily referenced incomplete declarations; the tool reports post-publication verification separately from edits.
+- Tool: `semantic_batch` with scaffold and declaration insertion.
+- Target: `internal/operation/wire_move_file.go`.
+- Observed failure: both source edits published, then the configured lint verification hook exited with status 3 while the new operation was incomplete. The result included a large workspace diff.
+- Workaround: retain the published file, finish registry wiring, and use `make check` to diagnose the complete candidate.
+- Root cause: incremental operation construction temporarily referenced incomplete declarations; the tool reports post-publication verification separately from edits.
 
 ## 2026-10-16: empty-body replacement blocked before mutation
 
-* Tool: `semantic_batch` with child `semantic_replace_body`.
-* Target: `internal/godiagnostics/manager.go`, retained document synchronization.
-* Observed failure: the worker accidentally supplied an empty replacement body; automatic approval review rejected the destructive request before mutation.
-* Workaround: use the complete intended source with semantic replacement and review the resulting diff.
-* Root cause: an incomplete mutation payload was submitted while preparing the refactor.
+- Tool: `semantic_batch` with child `semantic_replace_body`.
+- Target: `internal/godiagnostics/manager.go`, retained document synchronization.
+- Observed failure: the worker accidentally supplied an empty replacement body; automatic approval review rejected the destructive request before mutation.
+- Workaround: use the complete intended source with semantic replacement and review the resulting diff.
+- Root cause: an incomplete mutation payload was submitted while preparing the refactor.
 
 ## 2026-10-16: scaffold publication conflicted with concurrent source changes
 
-* Tool: `semantic_batch` with child `semantic_scaffold_file`.
-* Target: `internal/astedit/move_file.go`.
-* Observed failure: the scaffold operation reached `buffer_publish` but failed because `internal/godiagnostics/diagnostics_test.go` changed on disk during the buffered publication; no new source file was created.
-* Workaround: coordinate with the owner of the concurrent changes and retry after the shared workspace is stable.
-* Root cause: a concurrent edit invalidated the source buffer's captured preimage.
+- Tool: `semantic_batch` with child `semantic_scaffold_file`.
+- Target: `internal/astedit/move_file.go`.
+- Observed failure: the scaffold operation reached `buffer_publish` but failed because `internal/godiagnostics/diagnostics_test.go` changed on disk during the buffered publication; no new source file was created.
+- Workaround: coordinate with the owner of the concurrent changes and retry after the shared workspace is stable.
+- Root cause: a concurrent edit invalidated the source buffer's captured preimage.
 
 ## 2026-10-16: wrap-up history request exceeded the tool limit
 
@@ -4249,44 +4249,44 @@ The implementation and session assessment were integrated as `a535efa095d269e836
 
 ## RQ-0069 semantic body replacement parameter mismatch (2026-10-16)
 
-* Tool: `semantic_replace_body` through `semantic_batch`.
-* Target: `internal/godiagnostics/collector_failure_test.go` in the performance candidate.
-* Observed failure: the batch rejected the `function` parameter before applying edits and reported that the required selector is `symbol`; no source mutation occurred.
-* Workaround: retry the same body replacement with the documented `symbol` parameter.
-* Root cause: the batch caller used the wrong parameter name for the semantic tool schema.
+- Tool: `semantic_replace_body` through `semantic_batch`.
+- Target: `internal/godiagnostics/collector_failure_test.go` in the performance candidate.
+- Observed failure: the batch rejected the `function` parameter before applying edits and reported that the required selector is `symbol`; no source mutation occurred.
+- Workaround: retry the same body replacement with the documented `symbol` parameter.
+- Root cause: the batch caller used the wrong parameter name for the semantic tool schema.
 
 ## 2026-10-16: scaffold parameter mismatch
 
-* Tool: `semantic_batch` with child `semantic_scaffold_file`.
-* Target: `internal/astedit/move_file.go`.
-* Observed failure: the first scaffold request supplied `path`, but the tool schema requires `file`; the call returned a validation error before creating or changing any file.
-* Workaround: retry with the declared `file` parameter.
-* Root cause: scaffold parameter naming differs from the common path terminology used by other semantic tools.
+- Tool: `semantic_batch` with child `semantic_scaffold_file`.
+- Target: `internal/astedit/move_file.go`.
+- Observed failure: the first scaffold request supplied `path`, but the tool schema requires `file`; the call returned a validation error before creating or changing any file.
+- Workaround: retry with the declared `file` parameter.
+- Root cause: scaffold parameter naming differs from the common path terminology used by other semantic tools.
 
 ## 2026-10-16: diagnostics scaffold lost a stale gopls session
 
-* Tool: `semantic_batch` with two `semantic_scaffold_file` children.
-* Targets: `internal/mcp/diagnostic_reports.go` and `internal/mcp/diagnostic_capture.go`.
-* Observed failure: the first child reported success; the second reported an error while synchronizing Go refactoring state because shutting down a stale gopls diagnostics session exceeded its context deadline. Both package-only scaffold files were present after the batch returned.
-* Workaround: retain the scaffold files that were present and use targeted file edits to add their contents, then run focused package checks after concurrent edits settle.
-* Root cause: the semantic batch could not replace the stale Go diagnostics session in time; earlier successful batch edits are not rolled back.
+- Tool: `semantic_batch` with two `semantic_scaffold_file` children.
+- Targets: `internal/mcp/diagnostic_reports.go` and `internal/mcp/diagnostic_capture.go`.
+- Observed failure: the first child reported success; the second reported an error while synchronizing Go refactoring state because shutting down a stale gopls diagnostics session exceeded its context deadline. Both package-only scaffold files were present after the batch returned.
+- Workaround: retain the scaffold files that were present and use targeted file edits to add their contents, then run focused package checks after concurrent edits settle.
+- Root cause: the semantic batch could not replace the stale Go diagnostics session in time; earlier successful batch edits are not rolled back.
 
 ## 2026-10-16: apply_patch rejected a multi-target initialization-helper patch
 
-* Tool: `apply_patch`.
-* Target: `internal/astedit/move_file_initialization.go`.
-* Observed failure: the patch combined repeated updates for the same file, so patch validation rejected it before changing source.
-* Workaround: inspect the current helper and apply one focused patch per target file.
-* Root cause: the patch format did not permit multiple operations targeting one path.
+- Tool: `apply_patch`.
+- Target: `internal/astedit/move_file_initialization.go`.
+- Observed failure: the patch combined repeated updates for the same file, so patch validation rejected it before changing source.
+- Workaround: inspect the current helper and apply one focused patch per target file.
+- Root cause: the patch format did not permit multiple operations targeting one path.
 
 The follow-up correction repeated that invalid multi-operation structure and was rejected before changing source. The workaround remains focused one-file patches.
 
 ## 2026-10-16: session wrap-up, Add Go package file move
 
-* Session: `01a145e4-3af2-7250-9b03-ebcc3d98281b`; branch `codex/go-move-file`, base `1ff9655e`, nested worktree `.scratch/worktrees/go-move-file`.
-* History: normalized recorded events from the root and 9 direct child-agent transcripts. Root compaction is covered by the on-disk transcript. Records are identified below by agent, ordinal, and stable event ID. Some serialized MCP results are truncated; missing child mutation states are explicitly unknown. Discovery listings, help requests, and suggested calls are excluded. Test-suite expansions are covered by their test results rather than invented per-operation call counts. No semantic calls were made for wrap-up itself.
-* Inventory: 35 rows, including 20 batch parents, 46 ordered requested batch children (not additional parent attempts), and one unavailable dispatch. Child suffixes c0… identify requests; after a failed child, later execution is unconfirmed unless retained result evidence says otherwise. Ratings by parent/direct attempt: beneficial 11, harmful 22, neutral 2.
-* Integration boundary: local main initially had dirty friction-log and skill edits. The user authorized merging those edits and required rebasing and renewed verification for other changes. The session was rebased onto current main; both code paths and log histories were retained, and the permitted destination edits are reconciled before final verification.
+- Session: `01a145e4-3af2-7250-9b03-ebcc3d98281b`; branch `codex/go-move-file`, base `1ff9655e`, nested worktree `.scratch/worktrees/go-move-file`.
+- History: normalized recorded events from the root and 9 direct child-agent transcripts. Root compaction is covered by the on-disk transcript. Records are identified below by agent, ordinal, and stable event ID. Some serialized MCP results are truncated; missing child mutation states are explicitly unknown. Discovery listings, help requests, and suggested calls are excluded. Test-suite expansions are covered by their test results rather than invented per-operation call counts. No semantic calls were made for wrap-up itself.
+- Inventory: 35 rows, including 20 batch parents, 46 ordered requested batch children (not additional parent attempts), and one unavailable dispatch. Child suffixes c0… identify requests; after a failed child, later execution is unconfirmed unless retained result evidence says otherwise. Ratings by parent/direct attempt: beneficial 11, harmful 22, neutral 2.
+- Integration boundary: local main initially had dirty friction-log and skill edits. The user authorized merging those edits and required rebasing and renewed verification for other changes. The session was rebased onto current main; both code paths and log histories were retained, and the permitted destination edits are reconciled before final verification.
 
 | Call reference | Tool, target, and ordered children | Outcome and mutation evidence | Built-in alternative and agent efficiency | QoL / friction / cause |
 | :--- | :--- | :--- | :--- | :--- |
@@ -4364,7 +4364,7 @@ The follow-up correction repeated that invalid multi-operation structure and was
 | /root/session_finish@67 | 2073 ms | unavailable: equivalent historical preimage and complete built-in workflow were not timed; no live mutation replay | Parent event envelope only; child durations unavailable and not assigned the parent duration. One observed call; server/cache state mixed or unknown, concurrent heavy tests present. Not a representative performance claim; no comparable ratio. |
 | /root/file_contract_tests@423 | unavailable: dispatch had no server execution interval | unavailable: equivalent historical preimage and complete built-in workflow were not timed; no live mutation replay | Recorded item start/completion envelope. One observed call; server/cache state mixed or unknown, concurrent heavy tests present. Not a representative performance claim; no comparable ratio. |
 
-* Net agent efficiency: the semantic route worsened effort for these incremental mutations because repeated hook failures, setup, selector retries, and publication uncertainty added round trips and log/repair work before the same required make check. Targeted inspections were useful; broad outlines were harmful to context volume. Typed selection and stale-read-set rejections provided correctness guarantees that unchecked text edits do not match. No token-saving estimate is claimed.
-* Runtime conclusion: event-envelope measurements above describe observed attempts, not matched built-in comparisons. Full workflow totals (including discovery, waits, repairs and final checks) were not measured comparably; overlapping intervals must not be summed. Engine-only durations and orchestration yield times are not substituted for these envelopes. No speedup ratio is justified. Wrap-up transcript processing is separate from original operation execution and adds no benchmark samples.
-* Improvements: keep output bounded at the tool boundary, expose authoritative publication state after hook failures, distinguish schema/selection errors, and coordinate whole-workspace snapshots before parallel mutations. See earlier dated incident entries for formatter hooks, concurrent buffer conflicts, schema mismatch, stale gopls scaffolds, and the rejected empty-body request. Manual fallback coverage is recorded in ME-0066.
-* Rebase reconciliation: retain main's symbol-alias cleanup and target suggestions together with checked publication errors and diagnostic reports. Metadata now shares the existing `suggestionsField` constant after the combined lint check found duplicate literals. These were targeted conflict/metadata text edits within the existing manual-fallback boundary; no additional semantic operations were invoked. The standalone skill validator could not run because the available Python runtimes lack PyYAML; repository checks cover the combined tree.
+- Net agent efficiency: the semantic route worsened effort for these incremental mutations because repeated hook failures, setup, selector retries, and publication uncertainty added round trips and log/repair work before the same required make check. Targeted inspections were useful; broad outlines were harmful to context volume. Typed selection and stale-read-set rejections provided correctness guarantees that unchecked text edits do not match. No token-saving estimate is claimed.
+- Runtime conclusion: event-envelope measurements above describe observed attempts, not matched built-in comparisons. Full workflow totals (including discovery, waits, repairs and final checks) were not measured comparably; overlapping intervals must not be summed. Engine-only durations and orchestration yield times are not substituted for these envelopes. No speedup ratio is justified. Wrap-up transcript processing is separate from original operation execution and adds no benchmark samples.
+- Improvements: keep output bounded at the tool boundary, expose authoritative publication state after hook failures, distinguish schema/selection errors, and coordinate whole-workspace snapshots before parallel mutations. See earlier dated incident entries for formatter hooks, concurrent buffer conflicts, schema mismatch, stale gopls scaffolds, and the rejected empty-body request. Manual fallback coverage is recorded in ME-0066.
+- Rebase reconciliation: retain main's symbol-alias cleanup and target suggestions together with checked publication errors and diagnostic reports. Metadata now shares the existing `suggestionsField` constant after the combined lint check found duplicate literals. These were targeted conflict/metadata text edits within the existing manual-fallback boundary; no additional semantic operations were invoked. The standalone skill validator could not run because the available Python runtimes lack PyYAML; repository checks cover the combined tree.

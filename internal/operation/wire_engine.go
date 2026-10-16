@@ -647,16 +647,3 @@ func finalizeFileEditOutput(cc CallContext, result FileEditRes) (FileEditRes, er
 	return result, nil
 }
 
-// DiagnosticFileEditResult exposes captured evidence from native edit result wrappers.
-func DiagnosticFileEditResult(value any) (FileEditRes, bool) {
-	switch result := value.(type) {
-	case FileEditRes:
-		return result, true
-	case ExtractionResult:
-		return result.Edit, true
-	case structuralPlanResult:
-		return result.Edit, true
-	default:
-		return FileEditRes{}, false
-	}
-}
