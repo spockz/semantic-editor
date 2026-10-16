@@ -930,7 +930,7 @@ func standardOutputSchema(resultSchema, errorResultSchema map[string]any) map[st
 	properties := map[string]any{
 		applicationStateField:         map[string]any{"type": "string"},
 		"error":                       map[string]any{"type": "string"},
-		"suggestions":                 targetSuggestionsSchema(),
+		suggestionsField:              targetSuggestionsSchema(),
 		"result":                      resultSchema,
 		"workspace_root":              map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used for this request; pass it to a later semantic tool call to keep using the same workspace."},
 		"presentation_error":          map[string]any{"type": "string"},
@@ -1147,7 +1147,7 @@ func batchResultBaseProperties(toolSchema map[string]any) map[string]any {
 		"projection_error":    map[string]any{"type": "string"},
 		"diff":                map[string]any{"type": "string"},
 		"error":               map[string]any{"type": "string"},
-		"suggestions":         targetSuggestionsSchema(),
+		suggestionsField:      targetSuggestionsSchema(),
 	}
 }
 
@@ -1676,7 +1676,7 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	structured := map[string]any{"error": structuredToolErrorText(text, errs...), applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if suggestions := operation.SuggestionsFromError(errs[0]); len(suggestions) > 0 {
-			structured["suggestions"] = suggestions
+			structured[suggestionsField] = suggestions
 		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
@@ -1702,7 +1702,7 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 	structured := map[string]any{"error": structuredToolErrorText(text, errs...), applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if suggestions := operation.SuggestionsFromError(errs[0]); len(suggestions) > 0 {
-			structured["suggestions"] = suggestions
+			structured[suggestionsField] = suggestions
 		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			structured["location"] = loc
@@ -1748,7 +1748,7 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 		}
 		location := s.extractLocation(operationErr)
 		if suggestions := operation.SuggestionsFromError(operationErr); len(suggestions) > 0 {
-			structured["suggestions"] = suggestions
+			structured[suggestionsField] = suggestions
 		}
 		if location != nil {
 			structured["location"] = location
@@ -1779,7 +1779,7 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 		applicationStateField: "unknown",
 	}
 	if suggestions := operation.SuggestionsFromError(operationErr); len(suggestions) > 0 {
-		structured["suggestions"] = suggestions
+		structured[suggestionsField] = suggestions
 	}
 	if report := s.diagnosticReportForError(operationErr); report != nil {
 		structured["diagnostic_report"] = report

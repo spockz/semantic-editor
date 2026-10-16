@@ -246,7 +246,7 @@ func diagnosticsToolSchema() map[string]any {
 			"report_id":                  map[string]any{"type": "string"},
 			diagnosticWorkspaceRootField: map[string]any{"type": "string"},
 			"status":                     map[string]any{"type": "string", "enum": []string{"available", "partial"}},
-			"category":                   map[string]any{"type": "string", "enum": []string{"active", "introduced", "resolved", "suggestions"}},
+			"category":                   map[string]any{"type": "string", "enum": []string{"active", "introduced", "resolved", suggestionsField}},
 			"total":                      map[string]any{"type": "integer", "minimum": 0},
 			"offset":                     map[string]any{"type": "integer", "minimum": 0},
 			"limit":                      map[string]any{"type": "integer", "minimum": 1, "maximum": diagnosticReportMaxPage, "default": diagnosticReportPageSize},
@@ -263,7 +263,7 @@ func diagnosticsToolSchema() map[string]any {
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
 				"report_id": map[string]any{"type": "string"},
-				"category":  map[string]any{"type": "string", "enum": []string{"active", "introduced", "resolved", "suggestions"}, "default": "active"},
+				"category":  map[string]any{"type": "string", "enum": []string{"active", "introduced", "resolved", suggestionsField}, "default": "active"},
 				"offset":    map[string]any{"type": "integer", "minimum": 0, "default": 0},
 				"limit":     map[string]any{"type": "integer", "minimum": 1, "maximum": diagnosticReportMaxPage, "default": diagnosticReportPageSize},
 				"contains":  map[string]any{"type": "string", schemaDescriptionKey: "Return items whose message or source URI contains this text, ignoring case."},
