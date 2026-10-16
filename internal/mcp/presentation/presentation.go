@@ -500,6 +500,18 @@ func compactPresentationField(result map[string]any, key string, value any, hasM
 }
 
 func presentationBody(result any, body string) (string, error) {
+	if navigation, ok := result.(map[string]any); ok && !json.Valid([]byte(body)) {
+		if summary, ok := navigation["summary"].(string); ok && summary != "" {
+			for _, count := range []string{"candidate_count", "reference_count", "symbol_count"} {
+				if _, compact := navigation[count]; compact {
+					if strings.Contains(strings.TrimSpace(body), "\n") {
+						return body, nil
+					}
+					return "", nil
+				}
+			}
+		}
+	}
 	if summary, isOutline, err := outlineSummary(result); err != nil {
 		return "", fmt.Errorf("summarize outline result: %w", err)
 	} else if isOutline {

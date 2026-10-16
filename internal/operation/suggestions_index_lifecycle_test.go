@@ -15,7 +15,10 @@ import (
 
 func TestIndexedSuggestionRejectsDeletedIdentityWithReusedName(t *testing.T) {
 	t.Setenv("SEMEDIT_SUGGESTIONS", "codanna")
-	cc, buffer := suggestionFixture(t, map[string]string{"source.go": "package config\nfunc ParseConfig() int { return 1 }\n"})
+	cc, buffer := suggestionFixture(t, map[string]string{
+		"go.mod":    "module example.com/indexlifecycle\n\ngo 1.24\n",
+		"source.go": "package config\nfunc ParseConfig() int { return 1 }\n",
+	})
 	cc.SuggestionProvider = fixedSuggestionProvider{candidates: []suggestions.Candidate{
 		{Selector: "ParseConfig", File: "source.go", Kind: "function", Identity: "old-index-identity"},
 	}}

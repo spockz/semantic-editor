@@ -214,6 +214,15 @@ func TestCriticalTextKeepsReadNavigationListingInTextOnly(t *testing.T) {
 			body:    "Ambiguous lookup for \"Keep\": 2 candidates.\nfunction A.Keep at a.go:3:6\nfunction B.Keep at b.go:3:6",
 			listing: "A.Keep", critical: "2 candidates", preserved: []string{`"candidate_count":2`},
 		},
+		{
+			name: "empty references",
+			result: map[string]any{
+				"summary":         "References to sample.Keep: 0 locations in 0 files.",
+				"reference_count": 0, "file_count": 0,
+			},
+			body:    "References to sample.Keep: 0 locations in 0 files.",
+			listing: "References to sample.Keep", critical: "0 locations in 0 files", preserved: []string{`"reference_count":0`},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			structured := map[string]any{"result": test.result}

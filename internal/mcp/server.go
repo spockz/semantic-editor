@@ -1847,9 +1847,6 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 	if report := s.diagnosticReportForError(operationErr); report != nil {
 		structured["diagnostic_report"] = report
 	}
-	if report := s.diagnosticReportForError(operationErr); report != nil {
-		structured["diagnostic_report"] = report
-	}
 	if _, refusal := errors.AsType[*operation.SafeDeleteRefusalError](operationErr); refusal {
 		structured[applicationStateField] = "not_applied"
 	} else if result, ok := projected.(map[string]any); ok {

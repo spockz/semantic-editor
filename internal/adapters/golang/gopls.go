@@ -89,10 +89,11 @@ func ValidateRenameSelected(ctx context.Context, workDir string, selected backen
 		if err != nil {
 			return err
 		}
-		if _, err := prepareSelectedRename(ctx, session, document, offset); err != nil {
-			return err
+		if _, prepareErr := prepareSelectedRename(ctx, session, document, offset); prepareErr != nil {
+			return prepareErr
 		}
-		return session.AssertCurrent()
+		_, err = session.Snapshot(document.Path)
+		return err
 	})
 }
 

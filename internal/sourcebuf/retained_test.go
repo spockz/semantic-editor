@@ -229,9 +229,9 @@ func TestFlushClearsSymbolHistoryAndAllowsBufferReuse(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "value.go")
 	writeFiles(t, []string{file}, []byte("package sample\n"))
-	buffer, err := sourcebuf.New(t.Context(), root)
-	if err != nil {
-		t.Fatal(err)
+	buffer, createErr := sourcebuf.New(t.Context(), root)
+	if createErr != nil {
+		t.Fatal(createErr)
 	}
 	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	buffer.RecordSymbolRename(sourcebuf.SymbolAlias{File: file, OldSelector: "Value", NewSelector: "Renamed", Kind: "function"})
