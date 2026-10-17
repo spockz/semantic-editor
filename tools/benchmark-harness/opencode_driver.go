@@ -43,7 +43,7 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	if err != nil {
 		return "", err
 	}
-	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, modelURL)
+	sandboxPath, profilePath, err := r.localProviderSandboxProfile(workDir, openCodePath, modelURL)
 	if err != nil {
 		return "", fmt.Errorf("prepare OpenCode filesystem containment: %w", err)
 	}
@@ -270,14 +270,14 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	case "openrouter":
 		providerConfig = map[string]any{"models": map[string]any{providerModel: map[string]any{"name": providerModel}}}
 	case "amdbeast":
-		baseURL := strings.TrimSpace(r.openCodeRelayURL)
+		baseURL := strings.TrimSpace(r.localModelRelayURL)
 		if baseURL == "" {
-			return nil, fmt.Errorf("AMD Beast requires a run-owned OpenCode relay; configure the Runner with WithOpenCodeRelayURL")
+			return nil, fmt.Errorf(("AMD Beast requires a run-owned local model relay; configure the Runner with WithLocalModelRelayURL"))
 		}
-		if r.openCodeModelLimits == nil {
-			return nil, fmt.Errorf("AMD Beast requires model limits discovered by the run-owned OpenCode relay; configure the Runner with WithOpenCodeModelLimits")
+		if r.localModelLimits == nil {
+			return nil, fmt.Errorf(("AMD Beast requires model limits discovered by the run-owned local model relay; configure the Runner with WithLocalModelLimits"))
 		}
-		limits := *r.openCodeModelLimits
+		limits := *r.localModelLimits
 		if limits.Context <= 0 || limits.Output <= 0 || limits.Output >= limits.Context {
 			return nil, fmt.Errorf("AMD Beast model limits are invalid: context=%d output=%d", limits.Context, limits.Output)
 		}
@@ -627,6 +627,7 @@ type openCodeProvider struct {
 	runner  *Runner
 	session *openCodeSession
 	runtime *openCodePreparedRuntime
+	config  adapterSessionConfig
 }
 
 func (p *openCodeProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
@@ -664,6 +665,38 @@ func (p *openCodeProvider) close() error {
 		return fmt.Errorf("close OpenCode provider session: %w", err)
 	}
 	return nil
+}
+
+func (p *openCodeProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	started := time.Now()
+	p.config = input.Session
+	err := p.prepareFixture(ctx, input.Session.WorkDir, input.Session.Target, input.Session.Arm, input.Session.External)
+	return completeAdapterStage(adapterStage(adapterPreparationStage, started, time.Now()), adapterPreparationStage, started, err), err
+}
+
+func (p *openCodeProvider) warmup(_ context.Context) (adapterStageResult, error) {
+	return adapterNoopStage(adapterWarmupStage), nil
+}
+
+func (p *openCodeProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	started := time.Now()
+	turn := &RunResult{Target: p.config.Target, Arm: p.config.Arm}
+	sessionID, err := p.run(ctx, p.config.WorkDir, p.config.Target, input.Prompt, turn, input.ResumeID)
+	stage := adapterStage(adapterTurnStage, started, time.Now())
+	stage.ProcessStartedAt = cloneTimePtr(nonzeroTime(turn.processStartedAt))
+	stage.SessionID = sessionID
+	return adapterTurnResult{Stage: completeAdapterStage(stage, adapterTurnStage, started, err), Observation: observationFromRunResult(turn)}, err
+}
+
+func (p *openCodeProvider) shutdown() adapterShutdownResult {
+	started := time.Now()
+	err := p.close()
+	stage := completeAdapterStage(adapterStage(adapterShutdownStage, started, time.Now()), adapterShutdownStage, started, err)
+	shutdown := adapterShutdownFromError(stage, err)
+	if p.session != nil {
+		shutdown.Stderr = p.session.diagnostic()
+	}
+	return shutdown
 }
 
 func (p *openCodeProvider) prepareFixture(ctx context.Context, workDir string, target Target, arm ArmType, external bool) error {

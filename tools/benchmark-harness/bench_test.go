@@ -331,7 +331,7 @@ func assertOpenCodeBaselineConfiguration(t *testing.T, runner *Runner) {
 func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
 	t.Helper()
 	const relayURL = "http://127.0.0.1:43123/v1"
-	runner = NewRunner(runner.baseScratchDir, WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
+	runner = NewRunner(runner.baseScratchDir, WithLocalModelRelayURL(relayURL), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192}))
 	configPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "qwen36-iq4-xs"})
 	if err != nil {
 		t.Fatal(err)
@@ -372,11 +372,11 @@ func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
 
 func TestOpenCodeAMDConfigRequiresRunRelay(t *testing.T) {
 	target := Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}
-	if _, err := NewRunner(t.TempDir()).openCodeConfig(t.TempDir(), ArmBaseline, target, nil); err == nil || !strings.Contains(err.Error(), "run-owned OpenCode relay") {
+	if _, err := NewRunner(t.TempDir()).openCodeConfig(t.TempDir(), ArmBaseline, target, nil); err == nil || !strings.Contains(err.Error(), ("run-owned local model relay")) {
 		t.Fatalf("config without relay error = %v, want explicit relay requirement", err)
 	}
 	const relayURL = "http://127.0.0.1:43123/v1"
-	config, err := NewRunner(t.TempDir(), WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192})).openCodeConfig(t.TempDir(), ArmBaseline, target, nil)
+	config, err := NewRunner(t.TempDir(), WithLocalModelRelayURL(relayURL), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192})).openCodeConfig(t.TempDir(), ArmBaseline, target, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

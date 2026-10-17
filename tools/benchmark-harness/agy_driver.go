@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spockz/semantic-editor/internal/mcp"
 )
@@ -237,6 +238,7 @@ func writeAgyMCPConfigForRunner(runner *Runner, workDir, repositoryRoot string, 
 type agyProvider struct {
 	runner  *Runner
 	session *agySession
+	config  adapterSessionConfig
 }
 
 func (p *agyProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
@@ -250,6 +252,34 @@ func (p *agyProvider) run(ctx context.Context, workDir string, target Target, pr
 		return "", fmt.Errorf("agy session workspace, target, or arm changed")
 	}
 	return p.session.run(ctx, prompt, result, resumeID)
+}
+
+func (p *agyProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	started := time.Now()
+	p.config = input.Session
+	err := p.prepareFixture(ctx, input.Session.WorkDir, input.Session.Target, input.Session.Arm, input.Session.External)
+	return completeAdapterStage(adapterStage(adapterPreparationStage, started, time.Now()), adapterPreparationStage, started, err), err
+}
+
+func (p *agyProvider) warmup(_ context.Context) (adapterStageResult, error) {
+	return adapterNoopStage(adapterWarmupStage), nil
+}
+
+func (p *agyProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	started := time.Now()
+	turn := &RunResult{Target: p.config.Target, Arm: p.config.Arm}
+	sessionID, err := p.run(ctx, p.config.WorkDir, p.config.Target, input.Prompt, turn, input.ResumeID)
+	stage := adapterStage(adapterTurnStage, started, time.Now())
+	stage.ProcessStartedAt = cloneTimePtr(nonzeroTime(turn.processStartedAt))
+	stage.SessionID = sessionID
+	return adapterTurnResult{Stage: completeAdapterStage(stage, adapterTurnStage, started, err), Observation: observationFromRunResult(turn)}, err
+}
+
+func (p *agyProvider) shutdown() adapterShutdownResult {
+	started := time.Now()
+	err := p.close()
+	stage := completeAdapterStage(adapterStage(adapterShutdownStage, started, time.Now()), adapterShutdownStage, started, err)
+	return adapterShutdownFromError(stage, err)
 }
 
 func (p *agyProvider) close() error {

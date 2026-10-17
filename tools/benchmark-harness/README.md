@@ -15,7 +15,12 @@ flowchart TD
     Print --> Schedule[planner.go: ExecutePlan]
     Schedule --> Agent[driver.go: Runner.ExecuteAgent]
     Schedule --> Control[runner.go: Runner.ExecuteControlVariant]
-    Agent --> Session[session.go: agentSession]
+    Agent --> Fixture[driver.go: generic hydrate and extract]
+    Fixture --> AdapterPrepare[session.go: adapter configuration preparation]
+    AdapterPrepare --> GenericWarmup[driver.go: generic dependency and semedit prewarm]
+    GenericWarmup --> AdapterWarmup[session.go: adapter-specific warmup]
+    AdapterWarmup --> Lifecycle[session_lifecycle.go: agentSession.execute]
+    Lifecycle --> Session[session.go: agentSession.runTurn]
     Session --> Provider[Selected provider adapter]
     Provider --> Session
     Session --> Oracle[oracle.go: Evaluate]
@@ -253,11 +258,13 @@ Paths in this table are relative to this directory unless they start with `../..
 | Local OpenCode endpoint confinement and shared transport lifecycle | [opencode_relay.go](opencode_relay.go), [opencode_sandbox.go](opencode_sandbox.go), [main.go](main.go): `executeBenchmarkPlan` | The run owns one fixed-destination loopback relay shared by its jobs. Provider configuration and server/client profiles use the same selected URL. Relay tests prove forwarding and shutdown; Seatbelt tests prove selected-port access and filesystem confinement. |
 | Restriction values and semantic-arm steering | [session_policy.go](session_policy.go): `ParseSemeditArmRestriction`, `ResolveAgentExecution`, `semeditRestrictionSteering` | Resolve initial and follow-up prompts centrally. Base prompt assembly and fixture mutation guidance remain in [driver.go](driver.go). See [session_policy_test.go](session_policy_test.go) and CLI policy-isolation tests. |
 | MCP server instruction mode matrix | [runner.go](runner.go): `ParseMCPServerInstructionModes`; [planner.go](planner.go): `normalizePlanOptions`, `makePlannedJobs` | Expand each selected server instruction mode into independent paired agent jobs with mode-specific identities. Deterministic control jobs remain single. See `planner_test.go` and `cli_integration_test.go`. |
-| Agent lifecycle and measurement boundaries | [driver.go](driver.go): `Runner.ExecuteAgent`, `mergeTurn`, `requestSemanticToolReflection` | Orchestrate setup, task turns, oracle checks, task metric finalization, and optional diagnostic questioning. See [session_test.go](session_test.go). |
-| Workspace preparation and runtime directory/file creation | [workspace.go](workspace.go): `fixtureGoEnvironment`, `runSemeditVerifyWarmup`, `prepareFixtureGoDependencies`, `prepareRuntimeLayout`; [driver.go](driver.go): `prepareAgentWorkspace` | Shared code applies fixture preparation and atomic runtime file publication for every harness. The generic session invokes provider configuration preparation before the workspace snapshot. Providers select protocol paths and contents; shared code creates directories and publishes files within an `os.Root`. See the offline dependency test, warmup tests, and the Agy no-op regression. |
-| Workspace ownership, original snapshot, continuation state, transcript recording, or follow-up sequencing | [session.go](session.go): `agentSession`, `prepareFixture`, `runTurn`, `runFollowups`, `runStagedFollowups`, `evaluateStage`, `close` | One session owns mutable state and one selected adapter. Cleanup retains evidence outside the task workspace. See `session_test.go`. |
+| Agent lifecycle and measurement boundaries | [session_lifecycle.go](session_lifecycle.go): `agentSession.execute`, `runInitialTask`, `runFollowups`, `runStagedFollowups`, `runDiagnostics`, `mergeTurn` | One provider-independent lifecycle owns task turns, oracle checks, aggregation, the task clock freeze, and diagnostic questioning. [driver.go](driver.go): `Runner.ExecuteAgent` prepares the job and invokes this lifecycle. See [session_test.go](session_test.go). |
+| Workspace preparation and runtime directory/file creation | [workspace.go](workspace.go): `fixtureGoEnvironment`, `runSemeditVerifyWarmup`, `prepareFixtureGoDependencies`, `prepareRuntimeLayout`; [driver.go](driver.go): `prepareAgentWorkspace` | Shared code owns external checkout hydration, fixture extraction, semedit skill installation, Go dependency preparation, generic semedit prewarm, workspace snapshots, and atomic runtime file publication. The shared session invokes adapter configuration preparation after fixture extraction and adapter-specific warmup after generic pre-run setup. Providers select protocol paths and contents; shared code creates directories and publishes files within an `os.Root`. See the offline dependency test, warmup tests, and the Agy no-op regression. |
+| Workspace ownership, original snapshot, continuation state, or transcript recording | [session.go](session.go): `agentSession`, `prepareAdapter`, `runTurn`, `evaluateStage`, `close`; [adapter_lifecycle.go](adapter_lifecycle.go) | One session wraps every selected adapter with continuation guards, classified per-turn measurements, and task MCP evidence capture. Stage outcomes and complete normalized turn observations are persisted generically; diagnostic observations stay in the transcript and out of work totals. Cleanup retains evidence outside the task workspace. Follow-up sequencing belongs to `session_lifecycle.go`. See `session_contract_test.go` and `session_test.go`. |
+| Provider initial and follow-up invocation construction | [adapter_lifecycle.go](adapter_lifecycle.go): `adapterInvocation`, `newInitialPromptCommand`, `newFollowUpCommand`, `validateAdapterInvocation`; [session.go](session.go): `agentSession.dispatchAdapterInvocation`; provider-specific mappings remain in [codex_app_server.go](codex_app_server.go), [agy_stream.go](agy_stream.go), [opencode_session.go](opencode_session.go), and [copilot_session.go](copilot_session.go) | The shared lifecycle constructs one typed invocation for the initial prompt and a distinct follow-up form for later task or diagnostic prompts. It validates that the first command has no session ID and every follow-up preserves the original ID before passing the invocation to the adapter. Each adapter maps it into its native CLI arguments or protocol request. See `session_contract_test.go` and [ADR-0050](../../docs/adr/0050-benchmark-planning-sessions-and-arm-policy.md). |
 | Provider process arguments, environment, event parsing, tool outcomes, or provider diagnostics | [codex_app_server.go](codex_app_server.go), [agy_stream.go](agy_stream.go), [opencode_session.go](opencode_session.go), [codex_driver.go](codex_driver.go), [agy_driver.go](agy_driver.go), [opencode_driver.go](opencode_driver.go), [opencode_usage.go](opencode_usage.go) | Each coding job owns a persistent backend. Codex uses app-server; Agy streams prompts through one process and normalizes cumulative observations; OpenCode attaches thin clients to one retained server instance. Shared adapter selection and continuation guards live in `session.go`. Legacy drivers retain stream parsing contracts. Process tests inject a pass-through profile factory so event accounting runs on every OS; production still rejects OpenCode execution without macOS Seatbelt. See [codex_app_server_test.go](codex_app_server_test.go), [agy_stream_test.go](agy_stream_test.go), [opencode_session_test.go](opencode_session_test.go), [session_continuity_test.go](session_continuity_test.go), and [opencode_usage_test.go](opencode_usage_test.go). |
 | Target syntax or a pinned model catalog | [target.go](target.go), [openrouter.go](openrouter.go) | Parse harness/model/effort and expand the explicitly selected catalog. See [target_test.go](target_test.go), [openrouter_test.go](openrouter_test.go), and [the OpenRouter guide](../../docs/benchmark-openrouter.md). |
+| Copilot process, runtime, and evidence | [copilot_session.go](copilot_session.go), [copilot_runtime.go](copilot_runtime.go) | Keep one ACP session and MCP process tree per job, configure isolated cloud or local inference and containment, and validate tool and usage evidence. Adjacent process/runtime tests cover continuation and failure paths. |
 | Result fields, tool telemetry types, runner options, or deterministic control execution | [runner.go](runner.go): `RunResult`, `ToolCall`, `Runner`, `ExecuteControlVariant` | Shared runtime data and control execution. A serialized field change also needs review of `report.go` and the docgen read model. |
 | Fixture metadata, extraction, mutation guards, hidden tests, or acceptance evaluation | [oracle.go](oracle.go): `TaskMetadata`, `ParseTask`, `ExtractVariantTo`, `Evaluate` | [txtar.go](txtar.go) wraps archive parsing; [large_overlay.go](large_overlay.go) supplies supported large-context overlays. Inputs live in [testdata/bench](../../testdata/bench), with some script fixtures also usable as benchmarks. See `bench_test.go` and planner context tests. |
 | Extraction/evaluation utility behavior | [extract.go](extract.go), [evaluate_cmd.go](evaluate_cmd.go) | Utility entry points used by `main.go:runFixtureUtility`; they reuse fixture and oracle logic. |
@@ -368,13 +375,13 @@ Codex uses one owned `codex app-server` process and one `thread/start` per task.
 
 OpenCode owns one sandboxed `opencode serve` process bound to a selected localhost port. Each `run --attach` client submits to that server with the same absolute `--dir` and original `--session` ID. The server retains the directory instance, coding session, and MCP state; the client performs no local coding operations. OpenCode 1.18.30 can exit an attached client before its turn finishes. If its stream lacks terminal usage, the harness waits for the retained session to become idle and reads persisted parts from this turn, excluding prior assistant messages and duplicate usage parts. Missing counters and provider errors remain failures. The sandbox adds only the selected localhost listener port to its existing permissions. Agy owns one process with `--input-format stream-json --output-format stream-json`; each prompt is an NDJSON user message in the original conversation. Its transport checks the init/result identity, computes usage differences from cumulative totals, and reads only newly appended transcript observations.
 
-`RunResult` holds normalized task measurements. `InteractionStep` records each turn, including its cumulative edit count, oracle outcome, elapsed time, and token usage for staged fixtures. `sessionTurn` records classified transcript evidence, including diagnostic turns, provider errors, and raw events. The transcript path is retained in provenance and lives under the runner's `transcripts` directory outside the disposable workspace. Semedit agent jobs also persist MCP server timing records under the fixture's `.scratch` directory during execution. At close, the harness retains task-only records beside the transcript and records `mcp_metrics_file` in result provenance when any records exist.
+`RunResult` holds normalized task measurements. `InteractionStep` records each turn, including its cumulative edit count, oracle outcome, elapsed time, and token usage for staged fixtures. `sessionTurn` records the complete normalized `adapterTurnObservation` for every classified turn, including diagnostics, provider errors, raw events, usage, tool evidence, latency, and availability provenance. Shared elapsed time and failure classification sit beside the observation, with duration fields in `_ns` units. The generic session applies the same output contract to work and diagnostic turns; diagnostic observations remain in the transcript but never feed benchmark aggregates. The transcript path is retained in provenance and lives under the runner's `transcripts` directory outside the disposable workspace. Semedit agent jobs also persist MCP server timing records under the fixture's `.scratch` directory during execution. Before the first diagnostic, the harness freezes completed task records, including an empty snapshot when no task record exists. At close it retains that snapshot beside the transcript and records `mcp_metrics_file` in result provenance when any records exist. Runs without diagnostics capture their records at close. Late diagnostic records are excluded without relying on timestamps.
 
 Codex benchmark threads start with `ephemeral: true`, and the adapter requires that the server confirms it. They retain their live identity throughout the task but do not become stored Codex conversations or sidebar workspace groups. The harness JSON transcript remains the durable record for human inspection in Codex's file panel and agent analysis; its path is `provenance.session_transcript` in the run report. Transcripts include prompts, responses, raw protocol events, tool observations, usage, and failures. These files survive fixture cleanup, but the ephemeral conversation cannot be reopened as a native chat after the run. Each job keeps its isolated fixture directory; no shared top-level Codex project is needed. `codex_app_server_test.go` covers continuation and rejection of a server that returns a persistent thread.
 
 The session closes and reaps its provider before retaining MCP timing records or removing the fixture. Codex raw evidence contains app-server JSON-RPC messages; normalized item observations remain separate. A matching `turn/completed` with completed status confirms capture. Per-turn token counts are differences between cumulative thread usage snapshots, so repeated usage updates and diagnostic turns cannot inflate task totals.
 
-Results record `provider_transport` as `codex_app_server_v2`, `agy_stream_json_v1`, or `opencode_attached_server_v1`. Every coding transport participates in resume fingerprints, preventing a partially saved run from mixing earlier CLI-resume measurements with persistent-session measurements. Archived results keep their original evidence.
+Results record `provider_transport` as `codex_app_server_v2`, `agy_stream_json_v1`, `opencode_attached_server_v1`, or `copilot_acp_v1`. Every coding transport participates in resume fingerprints, preventing a partially saved run from mixing earlier CLI-resume measurements with persistent-session measurements. Archived results keep their original evidence.
 
 ## Measurement and policy boundaries
 
@@ -389,6 +396,27 @@ An optional `oracle.diagnostic_expected_tools` list adds informational tool-use 
 Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
 
 Task elapsed time is finalized before optional diagnostic questioning. A non-use, batching, integration-value, or timeout reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every successful semedit session with a continuation identity receives an integration-value question after any behavior-specific reflection, regardless of observed tool use. A timed-out semedit session with a resumable identity receives a timeout diagnosis followed by integration feedback. Save the timeout diagnosis as `diagnostic_timeout_reflection` and integration feedback as `semantic_integration_reflection`. Reflection prompts prohibit edits, tools, and retries. Reports label feedback as agent opinion or best-effort timeout analysis; browser metric rows exclude the entire object.
+
+The turn wrapper owns session identity. Callers pass a prompt, a typed task or
+diagnostic kind, and a result destination; they cannot supply a second target.
+Before dispatch, `runTurn` sets the result's target, arm, and prompt from the
+session, binds the original workspace/target/arm, and rejects later changes.
+Continuation turns cannot reuse the work aggregate. Once diagnostics start,
+task work is forbidden. Invalid kinds fail explicitly. These checks apply even
+to an adapter that implements none of them itself; `session_contract_test.go`
+proves that contract across all arms with an otherwise unguarded adapter.
+
+New adapters implement transport, native continuation identity, per-turn usage
+normalization, process timing, and shutdown. They must not construct follow-up
+results or decide whether a turn contributes to work totals. Protocol-specific
+identity/configuration checks remain useful inside adapters, but the shared
+wrapper enforces the benchmark contract before any provider call. Exercise the
+adapter through that wrapper as well as testing its protocol parser.
+
+A failed diagnostic subprocess records its exit in the diagnostic transcript and
+does not invalidate accepted work. Genuine cleanup and work-evidence failures
+remain execution errors. Diagnostic turns preserve the original arm, including
+the explicit semedit arm. See [ADR-0076](../../docs/adr/0076-work-and-diagnostic-measurement-boundaries.md).
 
 Agy transcript reads are cumulative. Its session adapter advances a cursor and returns only new observations, including after a failed resume. A regressed transcript must not reintroduce old calls into task totals. Missing transcripts, invalid streaming records, and transcript-write failures remain explicit errors. Missing evidence is not a successful zero-tool measurement. Keep raw evidence and normalized observations distinct when changing a parser.
 
@@ -466,6 +494,73 @@ Policy changes must remain consistent across planning, prompts, result metadata,
 An explicit prompt names the complete semantic tool arguments and execution order, batching compatible mutations in an ordered `semantic_batch`. Select first-party fixtures with `--variants small:explicit` (or `large:explicit`); external fixtures schedule all three arms by default and require the exact recipe. The implicit and explicit arms share the baseline run and rotate execution order across repeats. Independent reads may run in parallel. A missing recipe never falls back to the issue or a fix patch.
 
 The experiment investigates whether semedit's extra time and tool cycles come from model-side operation selection and planning or from MCP execution. Explicit instructions add input tokens, so compare turns, tool cycles, invocations, failures, token components, and wall time together rather than assuming lower total tokens. See [RQ-0065](../../docs/research/RQ-0065-explicit-semedit-prompt-arm.md).
+
+## Copilot cloud and local-model runs
+
+`copilot/<model>` uses GitHub Copilot's hosted routing with a pinned cloud model:
+
+```sh
+COPILOT_GITHUB_TOKEN="$(gh auth token)"
+export COPILOT_GITHUB_TOKEN
+make bench TARGET=copilot/gpt-5.4 TASK=task-01-rename-local VARIANTS=small
+```
+
+Cloud authentication accepts `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or
+`GITHUB_TOKEN`, in that order. Supply a supported Copilot or GitHub CLI OAuth
+token, or a fine-grained PAT with Copilot Requests permission. The adapter
+passes only the selected token and marks it secret for shell/MCP children and
+output redaction. It keeps account/config/cache state fixture-local rather than
+reading saved Copilot login state. Missing credentials fail explicitly. Cloud
+runs remove inherited offline and custom-provider settings, require no local
+relay or model properties, and use the hosted model's catalog limits. `auto`
+is rejected because benchmark runs require a pinned model identity.
+
+Use the installed Copilot CLI with the same local Saluki server:
+
+```sh
+make bench-smoke-saluki SALUKI_TARGET='copilot/local/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest'
+```
+
+`copilot/local/<model>` selects local inference and preserves the entire wire
+model ID, including slashes. Effort suffixes are not interpreted in either mode.
+`SEMEDIT_COPILOT_BASE_URL` overrides the local endpoint;
+otherwise it uses `SEMEDIT_OPENCODE_QWEN_BASE_URL` or
+`http://192.168.1.122:1234/v1`. Copilot uses Chat Completions with offline mode
+and fixture-local account/config/cache state. No GitHub login is required.
+The existing OpenCode Saluki suite default remains unchanged.
+
+Each task owns one persistent ACP process and session. Corrective prompts,
+staged turns, and reflections retain that process and its MCP children. Semedit
+arms register the benchmark semedit binary and receive native Copilot repository
+instructions; baseline has no semedit registration or generated restriction file.
+The installed runtime bundle is granted read access in the existing macOS
+Seatbelt boundary. Local model traffic uses the shared fixed-upstream relay,
+and llama.cpp properties supply the model alias and context/output limits.
+Cloud mode permits outbound HTTPS and DNS for hosted authentication and model
+requests; this network permission also applies to child tools. Filesystem
+containment remains the same in both modes.
+
+Cloud runs require a model catalog advertising the requested canonical ID.
+An unavailable catalog fails with credential/entitlement guidance before inference.
+The adapter selects the wire model with ACP `session/set_config_option` before
+the first prompt and requires cloud confirmation of the actual current model.
+A rejected or unapplied selection fails startup, and reported per-call model IDs
+must still match. Responses use ordered standard ACP text chunks, avoiding the
+size limit on redundant raw assistant-message events.
+
+`copilot_session.go` owns ACP framing, identity, usage, and tool evidence;
+`copilot_runtime.go` owns configuration, process arguments, and containment.
+Their adjacent tests cover continuation and explicit failure paths.
+`opencode_relay.go` now implements the shared local-model relay used by both
+clients; its tests cover mixed-harness model/endpoint validation. Shared runner
+configuration uses `WithLocalModelRelayURL` and `WithLocalModelLimits`.
+
+Copilot raw per-call input/output usage must match cumulative ACP prompt usage
+deltas. Missing required counters, omitted event payloads, truncation, or
+incomplete tool observations fail the run. Missing optional cache/reasoning
+buckets are marked unavailable in provenance. Original ACP messages remain in
+the retained session transcript. `copilot_acp_v1` identifies this transport in
+provenance and resume fingerprints. See [ADR-0075](../../docs/adr/0075-copilot-local-model-benchmark-transport.md).
 
 ## OpenCode AMD Beast smoke run
 

@@ -11,52 +11,24 @@ func TestParseTarget(t *testing.T) {
 		want    Target
 		wantErr bool
 	}{
-		{
-			input: "codex",
-			want:  Target{Harness: "codex"},
-		},
-		{
-			input: "codex/gpt-5-mini",
-			want:  Target{Harness: "codex", Model: "gpt-5-mini"},
-		},
-		{
-			input: "codex/gpt-5-mini/low",
-			want:  Target{Harness: "codex", Model: "gpt-5-mini", Effort: "low"},
-		},
-		{
-			input: "agy/gemini-3.8-flash-low",
-			want:  Target{Harness: "agy", Model: "gemini-3.8-flash-low"},
-		},
-		{
-			input: "agy/gemini-3.8-flash-low/low",
-			want:  Target{Harness: "agy", Model: "gemini-3.8-flash-low", Effort: "low"},
-		},
-		{
-			input: "opencode/amdbeast/qwen36-coder",
-			want:  Target{Harness: "opencode", Model: "amdbeast/qwen36-coder"},
-		},
-		{
-			input: "opencode/amdbeast/qwen36-coder/high",
-			want:  Target{Harness: "opencode", Model: "amdbeast/qwen36-coder", Effort: "high"},
-		},
-		{
-			input: "opencode/openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
-			want:  Target{Harness: "opencode", Model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"},
-		},
-		{
-			input: "opencode/openrouter/cohere/north-mini-code:free/medium",
-			want:  Target{Harness: "opencode", Model: "openrouter/cohere/north-mini-code:free", Effort: "medium"},
-		},
-		{
-			input:   "",
-			wantErr: true,
-		},
-		{
-			input:   "a/b/c/d",
-			wantErr: true,
-		},
+		{input: "codex", want: Target{Harness: "codex"}},
+		{input: "codex/gpt-5-mini", want: Target{Harness: "codex", Model: "gpt-5-mini"}},
+		{input: "codex/gpt-5-mini/low", want: Target{Harness: "codex", Model: "gpt-5-mini", Effort: "low"}},
+		{input: "agy/gemini-3.8-flash-low", want: Target{Harness: "agy", Model: "gemini-3.8-flash-low"}},
+		{input: "agy/gemini-3.8-flash-low/low", want: Target{Harness: "agy", Model: "gemini-3.8-flash-low", Effort: "low"}},
+		{input: "opencode/amdbeast/qwen36-coder", want: Target{Harness: "opencode", Model: "amdbeast/qwen36-coder"}},
+		{input: "opencode/amdbeast/qwen36-coder/high", want: Target{Harness: "opencode", Model: "amdbeast/qwen36-coder", Effort: "high"}},
+		{input: "opencode/openrouter/nvidia/nemotron-3-ultra-550b-a55b:free", want: Target{Harness: "opencode", Model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"}},
+		{input: "opencode/openrouter/cohere/north-mini-code:free/medium", want: Target{Harness: "opencode", Model: "openrouter/cohere/north-mini-code:free", Effort: "medium"}},
+		{input: "copilot/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest", want: Target{Harness: "copilot", Model: "Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"}},
+		{input: "copilot/local/Underdog-Saluki-27B-1.0-MTP-GGUF:latest", want: Target{Harness: "copilot", Model: "local/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"}},
+		{input: "Copilot/provider/model/with/slashes", want: Target{Harness: "copilot", Model: "provider/model/with/slashes"}},
+		{input: "copilot", wantErr: true},
+		{input: "copilot/local/", wantErr: true},
+		{input: "copilot/auto", wantErr: true},
+		{input: "", wantErr: true},
+		{input: "a/b/c/d", wantErr: true},
 	}
-
 	for _, tt := range tests {
 		got, err := ParseTarget(tt.input)
 		if (err != nil) != tt.wantErr {
@@ -95,5 +67,22 @@ func TestOpenCodeShortTarget(t *testing.T) {
 	}
 	if _, err := ParseTarget("opencode/"); err == nil {
 		t.Fatal("empty model accepted")
+	}
+}
+
+func TestCopilotTargetLocalSelectionAndWireModel(t *testing.T) {
+	local := Target{Harness: string(HarnessCopilot), Model: "local/Kujira/model:latest"}
+	if model, ok := copilotLocalModel(local); !ok || model != "Kujira/model:latest" {
+		t.Fatalf("copilotLocalModel() = (%q, %t)", model, ok)
+	}
+	if got := copilotWireModel(local); got != "Kujira/model:latest" {
+		t.Errorf("copilotWireModel(local) = %q", got)
+	}
+	cloud := Target{Harness: string(HarnessCopilot), Model: "Kujira/model:latest"}
+	if model, ok := copilotLocalModel(cloud); ok || model != "" {
+		t.Errorf("copilotLocalModel(cloud) = (%q, %t)", model, ok)
+	}
+	if got := copilotWireModel(cloud); got != cloud.Model {
+		t.Errorf("copilotWireModel(cloud) = %q, want %q", got, cloud.Model)
 	}
 }

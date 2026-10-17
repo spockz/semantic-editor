@@ -21,7 +21,7 @@ func TestAgentSessionSeparatesPersistentEvidenceFromFixtureCleanup(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := session.runTurn(t.Context(), Target{}, "task", "task", &RunResult{}); err != nil {
+	if err := session.runTurn(t.Context(), "task", sessionTaskTurn, &RunResult{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.close(); err != nil {

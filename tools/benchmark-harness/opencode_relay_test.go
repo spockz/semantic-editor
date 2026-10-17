@@ -25,7 +25,7 @@ func TestOpenCodeRelayForwardsToConfiguredEndpoint(t *testing.T) {
 		}
 	}()
 	endpoint := "http://" + upstream.Addr().String() + "/v1"
-	relay, err := startOpenCodeRelay(endpoint)
+	relay, err := startLocalModelRelay(endpoint)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,11 +91,11 @@ func TestParseOpenCodeRelayEndpointFailsClosed(t *testing.T) {
 		"http://192.168.1.122:1234/v1#fragment",
 		"http://192.168.1.122:1234/v1#",
 	} {
-		if _, _, err := parseOpenCodeRelayEndpoint(endpoint); err == nil {
+		if _, _, err := parseLocalModelRelayEndpoint(endpoint); err == nil {
 			t.Errorf("endpoint %q was accepted", endpoint)
 		}
 	}
-	_, upstream, err := parseOpenCodeRelayEndpoint("http://192.168.1.122:1234/v1")
+	_, upstream, err := parseLocalModelRelayEndpoint("http://192.168.1.122:1234/v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestOpenCodeRelayCloseStopsActiveConnections(t *testing.T) {
 			t.Errorf("close upstream listener: %v", closeErr)
 		}
 	}()
-	relay, err := startOpenCodeRelay("http://" + upstream.Addr().String() + "/v1")
+	relay, err := startLocalModelRelay("http://" + upstream.Addr().String() + "/v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestOpenCodeRelayForJobsSharesOneRunEndpoint(t *testing.T) {
 		{Target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/model-b"}},
 		{Target: Target{Harness: string(HarnessOpenCode), Model: "openrouter/model-c"}},
 	}
-	relay, err := startOpenCodeRelayForJobs(jobs)
+	relay, err := startLocalModelRelayForJobs(jobs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +174,7 @@ func TestOpenCodeRelayForJobsSharesOneRunEndpoint(t *testing.T) {
 	if !strings.HasPrefix(relay.URL(), "http://127.0.0.1:") || !strings.HasSuffix(relay.URL(), "/v1") {
 		t.Fatalf("run relay URL = %q", relay.URL())
 	}
-	if relay, err := startOpenCodeRelayForJobs([]Job{{Target: Target{Harness: string(HarnessOpenCode), Model: "openrouter/model"}}}); err != nil || relay != nil {
+	if relay, err := startLocalModelRelayForJobs([]Job{{Target: Target{Harness: string(HarnessOpenCode), Model: "openrouter/model"}}}); err != nil || relay != nil {
 		t.Fatalf("OpenRouter-only jobs relay = %v, error = %v; want no relay", relay, err)
 	}
 }
@@ -189,7 +189,7 @@ func TestOpenCodeRelayHandlesConcurrentClients(t *testing.T) {
 			t.Errorf("close upstream listener: %v", closeErr)
 		}
 	}()
-	relay, err := startOpenCodeRelay("http://" + upstream.Addr().String() + "/v1")
+	relay, err := startLocalModelRelay("http://" + upstream.Addr().String() + "/v1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,7 @@ func TestPrepareOpenCodeRunRelayDiscoversLlamaCppLimitsOnce(t *testing.T) {
 	defer server.Close()
 	t.Setenv(openCodeQwenBaseURLEnv, server.URL+"/v1")
 
-	relayURL, limits, closeRelay, err := prepareOpenCodeRunRelay([]Job{{Target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/" + model}}})
+	relayURL, limits, closeRelay, err := prepareLocalModelRunRelay([]Job{{Target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/" + model}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,10 +304,67 @@ func TestPrepareOpenCodeRunRelayDiscoversLlamaCppLimitsOnce(t *testing.T) {
 	if !strings.HasSuffix(relayURL, "/v1") {
 		t.Fatalf("relay URL = %q, want API path", relayURL)
 	}
-	if limits != (openCodeModelLimits{Context: 65536, Output: openCodeModelOutputReserve}) {
+	if limits != (localModelLimits{Context: 65536, Output: localModelOutputReserve}) {
 		t.Fatalf("limits = %+v", limits)
 	}
 	if propsCalls != 1 {
 		t.Fatalf("props requests = %d, want 1", propsCalls)
 	}
+}
+
+func TestLocalModelRelaySharedByCopilotAndOpenCode(t *testing.T) {
+	const model = "Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+	propsCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/props" {
+			http.NotFound(writer, request)
+			return
+		}
+		propsCalls++
+		_, _ = io.WriteString(writer, `{"model_alias":"Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest","default_generation_settings":{"n_ctx":65536,"params":{"n_predict":-1}}}`)
+	}))
+	defer server.Close()
+	t.Setenv(openCodeQwenBaseURLEnv, server.URL+"/v1")
+	t.Setenv(copilotBaseURLEnv, server.URL+"/v1")
+	copilot := Job{Target: Target{Harness: string(HarnessCopilot), Model: "local/" + model}}
+	openCode := Job{Target: Target{Harness: string(HarnessOpenCode), Model: "amdbeast/" + model}}
+	t.Run("shared endpoint and model limits", func(t *testing.T) {
+		relayURL, limits, closeRelay, err := prepareLocalModelRunRelay([]Job{copilot, openCode})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := closeRelay(); err != nil {
+				t.Error(err)
+			}
+		})
+		if !strings.HasPrefix(relayURL, "http://127.0.0.1:") || limits.Context != 65536 || limits.Output != localModelOutputReserve || propsCalls != 1 {
+			t.Fatalf("relay=%s limits=%+v props=%d", relayURL, limits, propsCalls)
+		}
+	})
+	t.Run("different models rejected", func(t *testing.T) {
+		other := openCode
+		other.Target.Model = "amdbeast/other"
+		if _, err := selectedLocalModelRelayModel([]Job{copilot, other}); err == nil {
+			t.Fatal("accepted multiple local models")
+		}
+	})
+	t.Run("cloud Copilot targets do not use local relay", func(t *testing.T) {
+		cloud := Job{Target: Target{Harness: string(HarnessCopilot), Model: model}}
+		selected, err := selectedLocalModelRelayModel([]Job{cloud})
+		if err != nil || selected != "" {
+			t.Fatalf("selectedLocalModelRelayModel(cloud) = (%q, %v)", selected, err)
+		}
+	})
+	t.Run("different endpoints rejected", func(t *testing.T) {
+		t.Setenv(copilotBaseURLEnv, "http://127.0.0.1:2/v1")
+		if relay, err := startLocalModelRelayForJobs([]Job{copilot, openCode}); err == nil {
+			if relay != nil {
+				if closeErr := relay.Close(); closeErr != nil {
+					t.Error(closeErr)
+				}
+			}
+			t.Fatal("accepted multiple endpoints")
+		}
+	})
 }

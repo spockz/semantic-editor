@@ -18,9 +18,9 @@ import (
 	"strings"
 )
 
-func (r *Runner) openCodeSandboxProfile(workDir, openCodePath, modelURL string) (string, string, error) {
-	if r.openCodeSandboxProfileFactory != nil {
-		return r.openCodeSandboxProfileFactory(workDir, openCodePath, modelURL)
+func (r *Runner) localProviderSandboxProfile(workDir, openCodePath, modelURL string) (string, string, error) {
+	if r.localProviderSandboxProfileFactory != nil {
+		return r.localProviderSandboxProfileFactory(workDir, openCodePath, modelURL)
 	}
 	if runtime.GOOS != "darwin" {
 		return "", "", fmt.Errorf("OpenCode benchmark containment requires macOS Seatbelt")
@@ -85,10 +85,10 @@ func (r *Runner) openCodeSandboxProfile(workDir, openCodePath, modelURL string) 
 func (r *Runner) openCodeModelEndpointURL(target Target) (string, error) {
 	provider, _, _ := strings.Cut(openCodeProviderModel(target.Model), "/")
 	if provider == "amdbeast" {
-		if relayURL := strings.TrimSpace(r.openCodeRelayURL); relayURL != "" {
+		if relayURL := strings.TrimSpace(r.localModelRelayURL); relayURL != "" {
 			return relayURL, nil
 		}
-		return "", fmt.Errorf("AMD Beast requires a run-owned OpenCode relay; configure the Runner with WithOpenCodeRelayURL")
+		return "", fmt.Errorf(("AMD Beast requires a run-owned local model relay; configure the Runner with WithLocalModelRelayURL"))
 	}
 	return openCodeModelBaseURL(target), nil
 }
@@ -98,10 +98,10 @@ func openCodeSandboxRelayPort(modelURL string) (string, error) {
 	if err != nil || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.ForceQuery || endpoint.Fragment != "" {
 		return "", fmt.Errorf("OpenCode model URL %q is invalid", modelURL)
 	}
-	if endpoint.Scheme == "https" && endpoint.Hostname() == "openrouter.ai" {
+	if endpoint.Scheme == "https" && endpoint.Hostname() == "openrouter.ai" || modelURL == copilotCloudAPIBaseURL {
 		return "", nil
 	}
-	_, _, relayErr := parseOpenCodeRelayEndpoint(modelURL)
+	_, _, relayErr := parseLocalModelRelayEndpoint(modelURL)
 	if relayErr != nil || !net.ParseIP(endpoint.Hostname()).IsLoopback() {
 		return "", fmt.Errorf("OpenCode relay URL %q must use a loopback IP address and explicit port", modelURL)
 	}
@@ -190,7 +190,7 @@ func sanitizedOpenCodeEnvironment(source []string) []string {
 }
 
 func (r *Runner) openCodeSessionSandboxProfile(workDir, openCodePath, modelURL, port string) (string, string, error) {
-	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, modelURL)
+	sandboxPath, profilePath, err := r.localProviderSandboxProfile(workDir, openCodePath, modelURL)
 	if err != nil {
 		return "", "", err
 	}

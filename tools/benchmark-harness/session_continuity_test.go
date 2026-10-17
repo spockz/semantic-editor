@@ -31,11 +31,11 @@ func TestAgentSessionRejectsChangedOriginalThread(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	if err := session.runTurn(t.Context(), Target{}, "initial", "task", &RunResult{}); err != nil {
+	if err := session.runTurn(t.Context(), "initial", sessionTaskTurn, &RunResult{}); err != nil {
 		t.Fatal(err)
 	}
 	turn := &RunResult{}
-	if err := session.runTurn(t.Context(), Target{}, "hint", "task", turn); err == nil || !strings.Contains(err.Error(), "changed the original session ID") {
+	if err := session.runTurn(t.Context(), "hint", sessionTaskTurn, turn); err == nil || !strings.Contains(err.Error(), "changed the original session ID") {
 		t.Fatalf("continuation error = %v, want thread identity failure", err)
 	}
 	if session.resumeID != "original-thread" || turn.toolObservationState != ToolObservationPartial {
@@ -150,9 +150,25 @@ func (p *sessionIdentityProvider) run(_ context.Context, _ string, _ Target, _ s
 	return p.ids[index], nil
 }
 
+func (p *sessionIdentityProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	p.config = input.Session
+	return testAdapterPrepare(ctx, input)
+}
+
+func (p *sessionIdentityProvider) warmup(ctx context.Context) (adapterStageResult, error) {
+	return testAdapterWarmup(ctx)
+}
+
+func (p *sessionIdentityProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	return testAdapterTurn(ctx, p.config, input, p.run)
+}
+
+func (p *sessionIdentityProvider) shutdown() adapterShutdownResult { return testAdapterShutdown(nil) }
+
 type sessionIdentityProvider struct {
 	ids     []string
 	resumes []string
+	config  adapterSessionConfig
 }
 
 func (p *continuitySessionProvider) run(_ context.Context, _ string, _ Target, _ string, result *RunResult, _ string) (string, error) {
@@ -171,9 +187,27 @@ func (p *continuitySessionProvider) close() error {
 	return nil
 }
 
+func (p *continuitySessionProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	p.config = input.Session
+	return testAdapterPrepare(ctx, input)
+}
+
+func (p *continuitySessionProvider) warmup(ctx context.Context) (adapterStageResult, error) {
+	return testAdapterWarmup(ctx)
+}
+
+func (p *continuitySessionProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	return testAdapterTurn(ctx, p.config, input, p.run)
+}
+
+func (p *continuitySessionProvider) shutdown() adapterShutdownResult {
+	return testAdapterShutdown(p.close)
+}
+
 type continuitySessionProvider struct {
 	calls     int
 	closeHook func() error
+	config    adapterSessionConfig
 }
 
 func sessionIdentityCases() []sessionIdentityCase {
@@ -224,13 +258,13 @@ func assertSessionIdentityTurns(t *testing.T, session *agentSession, provider *s
 	t.Helper()
 	for index, classification := range []string{"task", "task", "diagnostic_reflection"} {
 		turn := &RunResult{Target: target}
-		runErr := session.runTurn(t.Context(), target, classification, classification, turn)
+		runErr := session.runTurn(t.Context(), classification, sessionTurnKind(classification), turn)
 		if index == testCase.failAt {
 			if runErr == nil || turn.toolObservationState != ToolObservationPartial {
 				t.Fatalf("identity failure was not reported: error=%v capture=%s", runErr, turn.toolObservationState)
 			}
 			calls := len(provider.resumes)
-			if retryErr := session.runTurn(t.Context(), target, "retry", "task", &RunResult{Target: target}); retryErr == nil || len(provider.resumes) != calls {
+			if retryErr := session.runTurn(t.Context(), "retry", sessionTaskTurn, &RunResult{}); retryErr == nil || len(provider.resumes) != calls {
 				t.Fatalf("failed session was dispatched again: error=%v calls=%d", retryErr, len(provider.resumes))
 			}
 			return

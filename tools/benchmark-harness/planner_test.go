@@ -283,3 +283,25 @@ func assertPlannedSkillArm(t *testing.T, withSkill, withoutSkill Job, wantSkill 
 		t.Errorf("%s identity did not record skill injection", withSkill.Arm)
 	}
 }
+
+func TestValidatePlanTargetsAcceptsSlashSeparatedCopilotModel(t *testing.T) {
+	targets := []Target{
+		{Harness: string(HarnessCopilot), Model: "Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"},
+		{Harness: string(HarnessCopilot), Model: "local/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"},
+	}
+	for _, target := range targets {
+		if err := validatePlanTargets([]Target{target}); err != nil {
+			t.Errorf("validatePlanTargets(%q): %v", target.String(), err)
+		}
+	}
+	for _, invalid := range []Target{
+		{Harness: string(HarnessCopilot)},
+		{Harness: string(HarnessCopilot), Model: "Kujira/model", Effort: "high"},
+		{Harness: string(HarnessCopilot), Model: "local/"},
+		{Harness: string(HarnessCopilot), Model: "auto"},
+	} {
+		if err := validatePlanTargets([]Target{invalid}); err == nil {
+			t.Errorf("validatePlanTargets(%+v) unexpectedly succeeded", invalid)
+		}
+	}
+}

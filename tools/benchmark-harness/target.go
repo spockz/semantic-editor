@@ -67,6 +67,13 @@ func ParseTarget(raw string) (Target, error) {
 		}
 		return Target{Harness: string(HarnessOpenCode), Model: model, Effort: effort}, nil
 	}
+	if strings.EqualFold(parts[0], string(HarnessCopilot)) {
+		model := strings.Join(parts[1:], "/")
+		if model == "" || (strings.HasPrefix(model, "local/") && strings.TrimPrefix(model, "local/") == "") || strings.EqualFold(model, "auto") {
+			return Target{}, fmt.Errorf("invalid Copilot target specification %q: explicit model is required", raw)
+		}
+		return Target{Harness: string(HarnessCopilot), Model: model}, nil
+	}
 	switch len(parts) {
 	case 1:
 		return Target{Harness: strings.ToLower(parts[0])}, nil
@@ -108,4 +115,22 @@ func (tl *TargetList) Set(value string) error {
 		*tl = append(*tl, target)
 	}
 	return nil
+}
+
+func copilotLocalModel(target Target) (string, bool) {
+	if target.Harness != string(HarnessCopilot) {
+		return "", false
+	}
+	model, local := strings.CutPrefix(target.Model, "local/")
+	if !local {
+		return "", false
+	}
+	return model, true
+}
+
+func copilotWireModel(target Target) string {
+	if model, local := copilotLocalModel(target); local {
+		return model
+	}
+	return target.Model
 }

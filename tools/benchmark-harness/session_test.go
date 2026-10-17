@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +34,7 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 	taskStarted := time.Now()
 	for _, prompt := range []string{"original", "correction"} {
 		turn := &RunResult{}
-		if err := session.runTurn(context.Background(), Target{}, prompt, "task", turn); err != nil {
+		if err := session.runTurn(context.Background(), prompt, sessionTaskTurn, turn); err != nil {
 			t.Fatal(err)
 		}
 		mergeTurn(taskResult, turn)
@@ -41,7 +42,7 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 	taskResult.WallClock = time.Since(taskStarted)
 	frozenWallClock := taskResult.WallClock
 	reflection := &RunResult{}
-	if err := session.runTurn(context.Background(), Target{}, "diagnostic", "diagnostic_reflection", reflection); err != nil {
+	if err := session.runTurn(context.Background(), "diagnostic", sessionDiagnosticTurn, reflection); err != nil {
 		t.Fatal(err)
 	}
 	if provider.calls != 3 || provider.workDirs[0] != provider.workDirs[1] || provider.workDirs[1] != provider.workDirs[2] {
@@ -53,9 +54,13 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 	if taskResult.Turns != 2 || taskResult.PromptTokens != 14 || taskResult.OutputTokens != 6 || taskResult.ToolCount != 2 || taskResult.WallClock != frozenWallClock {
 		t.Fatalf("diagnostic telemetry affected task measurements: %+v", taskResult)
 	}
-	if reflection.Turns != 1000 || reflection.PromptTokens != 100000 || len(reflection.ToolCalls) != 500 {
+	if reflection.Turns != 1000 || reflection.PromptTokens != 100000 || reflection.OutputTokens != 100000 || len(reflection.ToolCalls) != 500 {
 		t.Fatalf("fake diagnostic did not emit large telemetry: %+v", reflection)
 	}
+	if len(session.turns) != 3 || session.turns[0].Classification != "task" || session.turns[1].Classification != "task" || session.turns[2].Classification != "diagnostic_reflection" {
+		t.Fatalf("unexpected explicit transcript turns: %+v", session.turns)
+	}
+	assertDiagnosticTranscriptSnapshot(t, session, reflection)
 	if err := os.RemoveAll(workDir); err != nil {
 		t.Fatal(err)
 	}
@@ -63,12 +68,41 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transcript did not survive workspace cleanup: %v", err)
 	}
+	if !strings.Contains(string(transcript), `"wall_clock_ns"`) || strings.Contains(string(transcript), `"wall_clock_ms"`) {
+		t.Fatalf("transcript duration fields do not use nanoseconds: %s", transcript)
+	}
 	var turns []sessionTurn
 	if decodeErr := json.Unmarshal(transcript, &turns); decodeErr != nil {
 		t.Fatal(decodeErr)
 	}
-	if len(turns) != 3 || turns[0].Classification != "task" || turns[1].Classification != "task" || turns[2].Classification != "diagnostic_reflection" {
-		t.Fatalf("unexpected explicit transcript turns: %+v", turns)
+	if len(turns) != 3 || turns[2].WallClock < 15*time.Millisecond || turns[2].Observation.PromptTokens != 100000 {
+		t.Fatalf("serialized transcript lost diagnostic-only measurements: %+v", turns)
+	}
+}
+
+func TestMergeTurnRetainsFirstAvailableStartupMeasurements(t *testing.T) {
+	durationPointer := func(value time.Duration) *time.Duration { return &value }
+	total := &RunResult{}
+	firstFollowup := &RunResult{
+		ProcessStartToFirstEvent:         durationPointer(11 * time.Millisecond),
+		FirstEventToFirstToolCall:        durationPointer(12 * time.Millisecond),
+		MCPInitializeToFirstSemanticCall: durationPointer(13 * time.Millisecond),
+		MCPServerStartToInitialize:       durationPointer(14 * time.Millisecond),
+	}
+	mergeTurn(total, firstFollowup)
+	mergeTurn(total, &RunResult{
+		ProcessStartToFirstEvent:         durationPointer(21 * time.Millisecond),
+		FirstEventToFirstToolCall:        durationPointer(22 * time.Millisecond),
+		MCPInitializeToFirstSemanticCall: durationPointer(23 * time.Millisecond),
+		MCPServerStartToInitialize:       durationPointer(24 * time.Millisecond),
+	})
+	got := []time.Duration{
+		*total.ProcessStartToFirstEvent, *total.FirstEventToFirstToolCall,
+		*total.MCPInitializeToFirstSemanticCall, *total.MCPServerStartToInitialize,
+	}
+	want := []time.Duration{11 * time.Millisecond, 12 * time.Millisecond, 13 * time.Millisecond, 14 * time.Millisecond}
+	if !slices.Equal(got, want) {
+		t.Fatalf("startup measurements = %v, want first available values %v", got, want)
 	}
 }
 
@@ -84,20 +118,26 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 	}
 	session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
 	session.result = &RunResult{}
+	if err := session.runTurn(context.Background(), "task", sessionTaskTurn, session.result); err != nil {
+		t.Fatal(err)
+	}
 	taskFinishedAt := time.Now()
-	session.turns = []sessionTurn{
-		{Classification: "task", FinishedAt: taskFinishedAt},
-		{Classification: "diagnostic_reflection", FinishedAt: taskFinishedAt.Add(time.Second)},
-	}
-	records := []map[string]any{
-		{"sequence": 1, "tool": "semantic_rename", "completed_at": taskFinishedAt.Add(-time.Millisecond), "metrics": map[string]any{"total_ms": 1250}},
-		{"sequence": 2, "tool": "semantic_lookup", "completed_at": taskFinishedAt.Add(time.Millisecond), "metrics": map[string]any{"total_ms": 10}},
-	}
+	records := []map[string]any{{"sequence": 1, "tool": "semantic_rename", "completed_at": taskFinishedAt, "metrics": map[string]any{"total_ms": 1250}}}
 	data, marshalErr := json.Marshal(records)
 	if marshalErr != nil {
 		t.Fatal(marshalErr)
 	}
 	if err := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), data); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.runTurn(context.Background(), "diagnostic", sessionDiagnosticTurn, &RunResult{}); err != nil {
+		t.Fatal(err)
+	}
+	lateRecord, marshalErr := json.Marshal(([]map[string]any{{"sequence": 2, "tool": "semantic_lookup", "completed_at": taskFinishedAt.Add(-time.Hour), "metrics": map[string]any{"total_ms": 10}}, {"sequence": 3, "tool": "semantic_lookup", "completed_at": "invalid diagnostic timestamp", "metrics": map[string]any{"total_ms": 20}}}))
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	if err := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), lateRecord); err != nil {
 		t.Fatal(err)
 	}
 	if err := session.close(); err != nil {
@@ -125,6 +165,117 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 	}
 }
 
+func TestAgentSessionDoesNotRetainMetricsCreatedAfterDiagnosticOnlyTurn(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(filepath.Join(workDir, ".scratch"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	session, err := newAgentSession(&behavioralSessionProvider{}, root, root, "diagnostic-only-metrics", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
+	session.result = &RunResult{}
+	if err := session.runTurn(context.Background(), "task", sessionTaskTurn, session.result); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.runTurn(context.Background(), "diagnostic", sessionDiagnosticTurn, &RunResult{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), []byte(`[{"tool":"semantic_lookup","completed_at":"2026-10-17T10:00:00Z"}]`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(session.transcriptPath[:len(session.transcriptPath)-len(".json")] + ".mcp-metrics.json"); !os.IsNotExist(err) {
+		t.Fatalf("diagnostic-only metrics artifact stat = %v, want not-exist", err)
+	}
+}
+
+func TestAgentSessionRecordsDiagnosticExitButReturnsCleanupFailure(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	if err := os.Mkdir(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	exitErr := sessionTestExitError(t)
+	provider := &closingErrorSessionProvider{closeErr: fmt.Errorf("provider wait and cleanup: %w", errors.Join(exitErr, errors.New("cleanup fault")))}
+	session, sessionErr := newAgentSession(provider, root, root, "diagnostic-exit", workDir)
+	if sessionErr != nil {
+		t.Fatal(sessionErr)
+	}
+	if runErr := session.runTurn(context.Background(), "diagnostic", sessionDiagnosticTurn, &RunResult{}); runErr == nil {
+		t.Fatal("diagnostic provider failure was not returned by runTurn")
+	}
+	closeErr := session.close()
+	if closeErr == nil || !strings.Contains(closeErr.Error(), "cleanup fault") || strings.Contains(closeErr.Error(), "exit status 17") {
+		t.Fatalf("close error = %v, want cleanup fault without diagnostic exit status", closeErr)
+	}
+	transcript, err := os.ReadFile(session.transcriptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var turns []sessionTurn
+	if decodeErr := json.Unmarshal(transcript, &turns); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if len(turns) != 1 || !strings.Contains(turns[0].ProviderExit, "exit status 17") {
+		t.Fatalf("transcript did not retain diagnostic exit: %+v", turns)
+	}
+	if _, statErr := os.Stat(workDir); statErr != nil {
+		t.Fatalf("failed diagnostic workspace was not retained: %v", statErr)
+	}
+}
+
+func TestSessionCloseExitCodeChild(_ *testing.T) {
+	if os.Getenv("SEMEDIT_SESSION_EXIT_CHILD") == "1" {
+		os.Exit(17)
+	}
+}
+
+func sessionTestExitError(t *testing.T) error {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSessionCloseExitCodeChild$")
+	cmd.Env = append(os.Environ(), "SEMEDIT_SESSION_EXIT_CHILD=1")
+	err := cmd.Run()
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
+		t.Fatalf("child exit error = %v, want *exec.ExitError", err)
+	}
+	return err
+}
+
+type closingErrorSessionProvider struct {
+	closeErr error
+	config   adapterSessionConfig
+}
+
+func (*closingErrorSessionProvider) run(context.Context, string, Target, string, *RunResult, string) (string, error) {
+	return "session", errors.New("diagnostic provider failure")
+}
+
+func (p *closingErrorSessionProvider) close() error {
+	return p.closeErr
+}
+
+func (p *closingErrorSessionProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	p.config = input.Session
+	return testAdapterPrepare(ctx, input)
+}
+
+func (p *closingErrorSessionProvider) warmup(ctx context.Context) (adapterStageResult, error) {
+	return testAdapterWarmup(ctx)
+}
+
+func (p *closingErrorSessionProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	return testAdapterTurn(ctx, p.config, input, p.run)
+}
+
+func (p *closingErrorSessionProvider) shutdown() adapterShutdownResult {
+	return testAdapterShutdown(p.close)
+}
+
 func TestParseAgyTranscriptRejectsMalformedEvent(t *testing.T) {
 	result := &RunResult{}
 	if err := parseAgyTranscript([]byte("{not-json}\n"), result); err == nil {
@@ -141,7 +292,8 @@ func TestPrepareAgentWorkspaceReportsInitialFileReadErrors(t *testing.T) {
 		Metadata: TaskMetadata{TaskID: "initial-file-read", Oracle: OracleConfig{AST: ASTConfig{File: "nested"}}},
 		Archive:  ParseArchive([]byte("-- nested/child.txt --\ncontent\n")),
 	}
-	_, err := prepareAgentWorkspace(context.Background(), &Runner{}, task, Target{Harness: "fake"}, ArmBaseline, "small", workDir, &agentSession{})
+	session := &agentSession{adapter: &sessionContractProvider{}, workDir: workDir, execution: AgentExecution{Task: task}}
+	_, err := prepareAgentWorkspace(context.Background(), &Runner{}, task, Target{Harness: "fake"}, ArmBaseline, "small", workDir, session)
 	if err == nil || !strings.Contains(err.Error(), "read initial benchmark file") {
 		t.Fatalf("prepare workspace error = %v, want initial file read failure", err)
 	}
@@ -390,7 +542,7 @@ func TestAgentLaunchFailureHasZeroTaskTimeForBothArms(t *testing.T) {
 	for _, harness := range []HarnessType{HarnessOpenCode, HarnessAgy} {
 		for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
 			t.Run(string(harness)+"/"+string(arm), func(t *testing.T) {
-				runner := NewRunner(filepath.Join(root, string(harness), string(arm), "scratch"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
+				runner := NewRunner(filepath.Join(root, string(harness), string(arm), "scratch"), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192}), WithLocalModelRelayURL("http://127.0.0.1:12345/v1"))
 				runner.agyExecutable = filepath.Join(root, "missing-agy")
 				target := Target{Harness: string(harness), Model: "amdbeast/fake"}
 				execution := AgentExecution{Task: task, Target: target, Arm: arm, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
@@ -457,7 +609,7 @@ done
 	if err := os.Mkdir(workDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	runner := NewRunner(filepath.Join(root, "scratch"), WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
+	runner := NewRunner(filepath.Join(root, "scratch"), WithLocalModelRelayURL("http://127.0.0.1:43123/v1"), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192}))
 	runner.agyExecutable = script
 	provider := &agyProvider{runner: runner}
 	t.Cleanup(func() {
@@ -513,7 +665,7 @@ func TestAgentSessionReportsTranscriptWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	session.transcriptPath = root
-	err = session.runTurn(context.Background(), Target{}, "task", "task", &RunResult{})
+	err = session.runTurn(context.Background(), "task", sessionTaskTurn, &RunResult{})
 	if err == nil || !strings.Contains(err.Error(), "record session transcript") {
 		t.Fatalf("transcript write failure was not returned: %v", err)
 	}
@@ -577,7 +729,7 @@ exit 0
 	}
 	sandboxOption := installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	runner := NewRunner(filepath.Join(root, "scratch"), sandboxOption, WithOpenCodeRelayURL("http://127.0.0.1:43123/v1"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}))
+	runner := NewRunner(filepath.Join(root, "scratch"), sandboxOption, WithLocalModelRelayURL("http://127.0.0.1:43123/v1"), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192}))
 	for _, mode := range []string{"empty", "malformed", "null", "object"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("SEMEDIT_OPENCODE_STREAM", mode)
@@ -605,6 +757,7 @@ type behavioralSessionProvider struct {
 	resumeIDs []string
 	firstErr  error
 	prompts   []string
+	config    adapterSessionConfig
 }
 
 func (p *behavioralSessionProvider) run(_ context.Context, workDir string, _ Target, prompt string, result *RunResult, resumeID string) (string, error) {
@@ -614,9 +767,24 @@ func (p *behavioralSessionProvider) run(_ context.Context, workDir string, _ Tar
 	p.prompts = append(p.prompts, prompt)
 	result.Turns = 1
 	result.PromptTokens = 7
+	result.CachedPromptTokens = 2
+	result.UncachedPromptTokens = 5
 	result.OutputTokens = 3
+	result.ReasoningTokens = 1
+	result.InitialLoadTurns = 2
+	result.MCPLoadTurns = 3
+	result.InternalTurns = 4
 	result.ToolCalls = []ToolCall{{Name: "semantic_replace_body", TransportStatus: ToolCallStatusSucceeded}}
 	result.ToolCount = 1
+	firstEvent := 3 * time.Millisecond
+	firstTool := 2 * time.Millisecond
+	mcpInitialize := 4 * time.Millisecond
+	serverStart := 5 * time.Millisecond
+	result.ProcessStartToFirstEvent = &firstEvent
+	result.FirstEventToFirstToolCall = &firstTool
+	result.MCPInitializeToFirstSemanticCall = &mcpInitialize
+	result.MCPServerStartToInitialize = &serverStart
+	result.Provenance = ProvenanceSet{"copilot_usage_cache_read": "available"}
 	result.agentResponse = prompt
 	if p.firstErr != nil && p.calls == 1 {
 		return "session-id", p.firstErr
@@ -624,12 +792,36 @@ func (p *behavioralSessionProvider) run(_ context.Context, workDir string, _ Tar
 	if prompt == "diagnostic" {
 		result.Turns = 1000
 		result.PromptTokens = 100000
+		result.CachedPromptTokens = 20000
+		result.UncachedPromptTokens = 80000
 		result.OutputTokens = 100000
+		result.ReasoningTokens = 5000
+		result.InitialLoadTurns = 10
+		result.MCPLoadTurns = 20
+		result.InternalTurns = 30
 		result.ToolCalls = make([]ToolCall, 500)
+		result.ToolCount = 500
+		firstEvent = 12 * time.Millisecond
+		result.Provenance["copilot_usage_cache_read"] = "unavailable"
 		time.Sleep(15 * time.Millisecond)
 	}
 	return "session-id", nil
 }
+
+func (p *behavioralSessionProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	p.config = input.Session
+	return testAdapterPrepare(ctx, input)
+}
+
+func (p *behavioralSessionProvider) warmup(ctx context.Context) (adapterStageResult, error) {
+	return testAdapterWarmup(ctx)
+}
+
+func (p *behavioralSessionProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	return testAdapterTurn(ctx, p.config, input, p.run)
+}
+
+func (p *behavioralSessionProvider) shutdown() adapterShutdownResult { return testAdapterShutdown(nil) }
 
 func TestDiagnosticToolCoverageUsesAllTaskToolSelectionsAndKeepsBatchExplicit(t *testing.T) {
 	coverage := diagnosticToolCoverage([]string{
@@ -964,7 +1156,7 @@ func TestTimeoutReflectionsResumeFailedProviderSession(t *testing.T) {
 		}
 	}()
 	taskTurn := &RunResult{}
-	if err := session.runTurn(context.Background(), Target{}, "task", "task", taskTurn); !errors.Is(err, context.DeadlineExceeded) {
+	if err := session.runTurn(context.Background(), "task", sessionTaskTurn, taskTurn); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("timed-out task turn error = %v", err)
 	}
 	if session.resumeID != "session-id" {
@@ -977,7 +1169,7 @@ func TestTimeoutReflectionsResumeFailedProviderSession(t *testing.T) {
 	if !shouldRequestTimeoutReflections(taskCtx, parentCtx, session, ArmSemedit) {
 		t.Fatal("timed-out semedit task did not request diagnostic reflections")
 	}
-	NewRunner(filepath.Join(root, "scratch")).requestTimeoutReflections(parentCtx, session, Target{}, result)
+	session.requestTimeoutReflections(parentCtx)
 	if result.DiagnosticTimeoutReflection == nil || result.DiagnosticTimeoutReflection.Response != semanticTimeoutDiagnosticReflectionPrompt {
 		t.Fatalf("timeout diagnostic reflection = %#v", result.DiagnosticTimeoutReflection)
 	}
@@ -992,5 +1184,63 @@ func TestTimeoutReflectionsResumeFailedProviderSession(t *testing.T) {
 	}
 	if len(session.turns) != 3 || session.turns[1].Classification != "diagnostic_reflection" || session.turns[2].Classification != "diagnostic_reflection" {
 		t.Fatalf("timeout reflection turns missing from transcript: %+v", session.turns)
+	}
+}
+
+func TestAgentSessionDoesNotDiscardWorkMetricsCaptureFailure(t *testing.T) {
+	for _, test := range []struct{ name, data, want string }{
+		{"null", "null", "JSON array"},
+		{"missing completion", "[{}]", "no completion time"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			workDir := filepath.Join(root, "workspace")
+			if err := os.MkdirAll(filepath.Join(workDir, ".scratch"), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			provider := &behavioralSessionProvider{}
+			session, sessionErr := newAgentSession(provider, root, root, "invalid-work-metrics", workDir)
+			if sessionErr != nil {
+				t.Fatal(sessionErr)
+			}
+			session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
+			session.result = &RunResult{Success: true}
+			if writeErr := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), []byte(test.data)); writeErr != nil {
+				t.Fatal(writeErr)
+			}
+			runErr := session.runTurn(context.Background(), "diagnostic", sessionDiagnosticTurn, &RunResult{})
+			if runErr == nil || !strings.Contains(runErr.Error(), test.want) || provider.calls != 0 {
+				t.Fatalf("diagnostic boundary error=%v provider calls=%d; want capture failure before inference", runErr, provider.calls)
+			}
+			if closeErr := session.close(); closeErr == nil || !strings.Contains(closeErr.Error(), test.want) {
+				t.Fatalf("close error=%v; work measurement failure was discarded", closeErr)
+			}
+		})
+	}
+}
+
+func assertDiagnosticTranscriptSnapshot(t *testing.T, session *agentSession, reflection *RunResult) {
+	t.Helper()
+	for index, turn := range session.turns[:2] {
+		observation := turn.Observation
+		if observation.PromptTokens != 7 || observation.OutputTokens != 3 || len(observation.ToolCalls) != 1 || turn.WallClock <= 0 {
+			t.Errorf("task transcript turn %d has incorrect observation: %+v", index+1, observation)
+		}
+	}
+	diagnostic := session.turns[2].Observation
+	if diagnostic.Turns != 1000 || diagnostic.PromptTokens != 100000 || diagnostic.OutputTokens != 100000 || len(diagnostic.ToolCalls) != 500 || session.turns[2].WallClock < 15*time.Millisecond {
+		t.Fatalf("diagnostic transcript metrics do not retain per-turn measurements: %+v", diagnostic)
+	}
+	if diagnostic.CachedPromptTokens != 20000 || diagnostic.UncachedPromptTokens != 80000 || diagnostic.ReasoningTokens != 5000 ||
+		diagnostic.InitialLoadTurns != 10 || diagnostic.MCPLoadTurns != 20 || diagnostic.InternalTurns != 30 {
+		t.Errorf("diagnostic transcript omitted normalized counters: %+v", diagnostic)
+	}
+	if diagnostic.Provenance["copilot_usage_cache_read"] != "unavailable" || diagnostic.Measurements.ProcessStartToFirstEvent == nil || *diagnostic.Measurements.ProcessStartToFirstEvent != 12*time.Millisecond {
+		t.Fatalf("diagnostic transcript did not snapshot unavailable marker and latency: %+v", diagnostic)
+	}
+	reflection.Provenance["copilot_usage_cache_read"] = "changed-after-snapshot"
+	*reflection.ProcessStartToFirstEvent = 99 * time.Millisecond
+	if diagnostic.Provenance["copilot_usage_cache_read"] != "unavailable" || *diagnostic.Measurements.ProcessStartToFirstEvent != 12*time.Millisecond {
+		t.Errorf("transcript metrics were not cloned: %+v", diagnostic)
 	}
 }

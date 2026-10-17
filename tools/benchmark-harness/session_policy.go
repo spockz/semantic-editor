@@ -127,3 +127,13 @@ func correctiveFollowupsFor(task *Task, arm ArmType) []string {
 	}
 	return task.Metadata.InteractiveFollowups
 }
+
+func copilotInstructionConfiguration(execution AgentExecution) (string, error) {
+	if execution.Arm == ArmBaseline {
+		return "", nil
+	}
+	if isSemeditArm(execution.Arm) {
+		return semeditRestrictionSteering(execution.Policy)
+	}
+	return "", fmt.Errorf("unsupported Copilot instruction arm %s", execution.Arm)
+}

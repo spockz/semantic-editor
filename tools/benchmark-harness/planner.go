@@ -487,12 +487,27 @@ func validatePlanTargets(targets []Target) error {
 	for _, target := range targets {
 		target.Harness = strings.ToLower(strings.TrimSpace(target.Harness))
 		switch target.Harness {
-		case string(HarnessControl), string(HarnessCodex), string(HarnessAgy), string(HarnessOpenCode):
+		case string(HarnessControl), string(HarnessCodex), string(HarnessAgy), string(HarnessOpenCode), string(HarnessCopilot):
 		default:
 			return fmt.Errorf("unsupported target harness %q", target.Harness)
 		}
 		if target.Harness == string(HarnessControl) && (target.Model != "" || target.Effort != "") {
 			return fmt.Errorf("control target does not accept a model or effort")
+		}
+		if target.Harness == string(HarnessCopilot) {
+			if strings.TrimSpace(target.Model) == "" {
+				return fmt.Errorf("copilot target requires a model")
+			}
+			if target.Effort != "" {
+				return fmt.Errorf("copilot target does not accept an effort")
+			}
+			localModel, local := copilotLocalModel(target)
+			if local && strings.TrimSpace(localModel) == "" {
+				return fmt.Errorf("copilot local target requires a wire model")
+			}
+			if !local && strings.EqualFold(strings.TrimSpace(target.Model), "auto") {
+				return fmt.Errorf("copilot cloud target requires an explicit model")
+			}
 		}
 		key := target.String()
 		if seen[key] {

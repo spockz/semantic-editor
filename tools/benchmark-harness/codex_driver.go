@@ -495,6 +495,7 @@ type codexProvider struct {
 	workDir string
 	target  Target
 	arm     ArmType
+	config  adapterSessionConfig
 }
 
 func (p *codexProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
@@ -524,6 +525,34 @@ func (p *codexProvider) close() error {
 		return nil
 	}
 	return p.server.close()
+}
+
+func (p *codexProvider) prepare(ctx context.Context, input adapterPreparationInput) (adapterStageResult, error) {
+	started := time.Now()
+	p.config = input.Session
+	err := p.prepareFixture(ctx, input.Session.WorkDir, input.Session.Target, input.Session.Arm, input.Session.External)
+	return completeAdapterStage(adapterStage(adapterPreparationStage, started, time.Now()), adapterPreparationStage, started, err), err
+}
+
+func (p *codexProvider) warmup(_ context.Context) (adapterStageResult, error) {
+	return adapterNoopStage(adapterWarmupStage), nil
+}
+
+func (p *codexProvider) runTurn(ctx context.Context, input adapterInvocation) (adapterTurnResult, error) {
+	started := time.Now()
+	turn := &RunResult{Target: p.config.Target, Arm: p.config.Arm}
+	sessionID, err := p.run(ctx, p.config.WorkDir, p.config.Target, input.Prompt, turn, input.ResumeID)
+	stage := adapterStage(adapterTurnStage, started, time.Now())
+	stage.ProcessStartedAt = cloneTimePtr(nonzeroTime(turn.processStartedAt))
+	stage.SessionID = sessionID
+	return adapterTurnResult{Stage: completeAdapterStage(stage, adapterTurnStage, started, err), Observation: observationFromRunResult(turn)}, err
+}
+
+func (p *codexProvider) shutdown() adapterShutdownResult {
+	started := time.Now()
+	err := p.close()
+	stage := completeAdapterStage(adapterStage(adapterShutdownStage, started, time.Now()), adapterShutdownStage, started, err)
+	return adapterShutdownFromError(stage, err)
 }
 
 func (p *codexProvider) prepareFixture(_ context.Context, workDir string, _ Target, _ ArmType, external bool) error {

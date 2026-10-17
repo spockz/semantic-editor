@@ -591,7 +591,7 @@ func TestOpenCodeProviderReusesPreparedConfigurationAtLaunch(t *testing.T) {
 	if mkdirErr := os.Mkdir(workspace, 0o750); mkdirErr != nil {
 		t.Fatal(mkdirErr)
 	}
-	runner := NewRunner(filepath.Join(root, ".scratch", "benchmarks"), WithOpenCodeModelLimits(openCodeModelLimits{Context: 65536, Output: 8192}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
+	runner := NewRunner(filepath.Join(root, ".scratch", "benchmarks"), WithLocalModelLimits(localModelLimits{Context: 65536, Output: 8192}), WithLocalModelRelayURL("http://127.0.0.1:12345/v1"))
 	provider := &openCodeProvider{runner: runner}
 	target := Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}
 	if prepErr := provider.prepareFixture(t.Context(), workspace, target, ArmBaseline, false); prepErr != nil {
@@ -625,7 +625,7 @@ func TestOpenCodeLocalCompactionThreshold(t *testing.T) {
 		{"output_requires_earlier_compaction", 16384, 8192, 8192},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			runner := NewRunner(t.TempDir(), WithOpenCodeModelLimits(openCodeModelLimits{Context: tc.context, Output: tc.output}), WithOpenCodeRelayURL("http://127.0.0.1:12345/v1"))
+			runner := NewRunner(t.TempDir(), WithLocalModelLimits(localModelLimits{Context: tc.context, Output: tc.output}), WithLocalModelRelayURL("http://127.0.0.1:12345/v1"))
 			config, err := runner.openCodeConfig(t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/saluki"}, nil)
 			if err != nil {
 				t.Fatal(err)

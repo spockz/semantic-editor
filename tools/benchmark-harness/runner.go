@@ -303,19 +303,19 @@ func elapsedTaskTime(start time.Time) time.Duration {
 
 // Runner coordinates execution across evaluation arms and benchmarks.
 type Runner struct {
-	baseScratchDir                string
-	fixtureRoot                   string
-	ramFixtureRootConfigured      bool
-	moduleCache                   string
-	configurationErr              error
-	mcpServerInstructionsMode     MCPServerInstructionMode
-	semeditArmRestriction         SemeditArmRestriction
-	semeditPrewarmVerify          bool
-	provenance                    ProvenanceSet
-	agyExecutable                 string
-	openCodeRelayURL              string
-	openCodeModelLimits           *openCodeModelLimits
-	openCodeSandboxProfileFactory func(workDir, openCodePath, modelURL string) (string, string, error)
+	baseScratchDir                     string
+	fixtureRoot                        string
+	ramFixtureRootConfigured           bool
+	moduleCache                        string
+	configurationErr                   error
+	mcpServerInstructionsMode          MCPServerInstructionMode
+	semeditArmRestriction              SemeditArmRestriction
+	semeditPrewarmVerify               bool
+	provenance                         ProvenanceSet
+	agyExecutable                      string
+	localModelRelayURL                 string
+	localModelLimits                   *localModelLimits
+	localProviderSandboxProfileFactory func(workDir, openCodePath, modelURL string) (string, string, error)
 }
 
 // RunnerOption configures one benchmark runner without adding global process state.
@@ -654,11 +654,11 @@ func isSemeditArm(arm ArmType) bool {
 	return arm == ArmSemedit || arm == ArmSemeditAgentic || arm == ArmSemeditExplicit
 }
 
-func WithOpenCodeRelayURL(url string) RunnerOption {
-	return func(r *Runner) { r.openCodeRelayURL = url }
+func WithLocalModelRelayURL(url string) RunnerOption {
+	return func(r *Runner) { r.localModelRelayURL = url }
 }
 
-// WithOpenCodeModelLimits supplies limits discovered once by the run-owned relay.
-func WithOpenCodeModelLimits(limits openCodeModelLimits) RunnerOption {
-	return func(r *Runner) { r.openCodeModelLimits = &limits }
+// WithLocalModelLimits supplies limits discovered once by the run-owned relay.
+func WithLocalModelLimits(limits localModelLimits) RunnerOption {
+	return func(r *Runner) { r.localModelLimits = &limits }
 }

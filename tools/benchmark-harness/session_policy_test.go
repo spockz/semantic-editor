@@ -158,3 +158,49 @@ func TestNewRunnerDefaultsMCPInstructionsToPrescriptive(t *testing.T) {
 		t.Fatalf("empty MCP instruction option = %q, want prescriptive", runner.mcpServerInstructionsMode)
 	}
 }
+
+func TestCopilotInstructionConfigurationUsesArmPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		execution AgentExecution
+		want      string
+		wantErr   bool
+	}{
+		{
+			name:      "baseline",
+			execution: AgentExecution{Arm: ArmBaseline},
+			want:      (""),
+		},
+		{
+			name:      "semedit write policy",
+			execution: AgentExecution{Arm: ArmSemedit, Policy: SemeditArmRestrictWrite},
+			want:      "Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed.",
+		},
+		{
+			name:      "read restriction",
+			execution: AgentExecution{Arm: ArmSemedit, Policy: SemeditArmRestrictRead},
+			want:      "Do not inspect Go implementation files (non-test *.go) with shell commands such as cat, sed, or rg. Use semantic code inspection tools for those files. Reading project documentation (docs/*.md), build manifests (go.mod, Makefile), and visible test files in the task workspace is permitted. Shell commands for builds and tests are allowed.",
+		},
+		{
+			name:      "unsupported arm",
+			execution: AgentExecution{Arm: ArmControl},
+			wantErr:   true,
+		},
+		{
+			name:      "invalid policy",
+			execution: AgentExecution{Arm: ArmSemedit, Policy: "invalid"},
+			wantErr:   true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := copilotInstructionConfiguration(test.execution)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("copilotInstructionConfiguration() error = %v, wantErr %t", err, test.wantErr)
+			}
+			if !test.wantErr && got != test.want {
+				t.Errorf("copilot instruction configuration = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
