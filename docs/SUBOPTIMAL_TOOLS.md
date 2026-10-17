@@ -51,6 +51,24 @@
 * Workaround: targeted fixture patch copies the new shared Make configuration and resolver alongside the fixture Makefile.
 * Root cause: the supplied range-loop header did not resolve as a statement anchor; exact selector support was not established.
 
+## 2026-10-17: session wrap-up, Check transcript semantic call tool
+
+* Context: detached HEAD `99894be26e57f308c6be70031fc73b6caa92df51`; linked worktree `/Users/alessandro/.codex/worktrees/c3cb/semantic-editor`. Work added a paginated local transcript extractor and wrap-up guidance. The available transcript is one JSONL source with 569 records and one compaction. One page covered all 25 returned items; no child logs were present. Historical completeness remains unknown beyond retained local evidence.
+* Totals: 2 semantic attempts, beneficial 2, neutral 0, harmful 0, unknown 0; no batch parents or children. Both calls completed and recorded results. The 23 command-review candidates were manually inspected; they were transcript searches, test/check, staging/publish, or extraction/reporting commands, not hidden semantic CLI executions.
+
+| Call reference | Tool / target / intent | Observed outcome / mutation state | Built-in alternative / agent efficiency | QoL effect and evidence | Friction / workaround / cause |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `01a14923-6634-7381-ad0e-4eb6ad8bb80a` / `exec-43c8d7e9-d0c0-4c6d-b196-31a7afd202e9` | `semantic_workspace_outline`, `internal/mcp`; inspect the available MCP package boundary | Completed, read-only; returned one module and three packages with concise package synopses. No files changed. | `go list ./internal/mcp/...` plus reading relevant package files; estimated 2–3 shell/read steps. One semantic call/round trip returned hierarchy and summaries together. | **Beneficial:** useful bounded package discovery in one call, no retry or manual repair. | Event envelope 3,576 ms; server engine 1.231 ms. Equivalent local workflow was not timed on the same state; no runtime ratio. |
+| `01a14927-e7a4-70f2-8581-5f44913548c0` / `exec-c0ebc14f-32dc-4e31-88df-3daa16349f3d` | `semantic_workspace_outline`, `tools`; inspect tool and helper package layout | Completed, read-only; returned two modules and six packages with concise summaries. No files changed. | `go list` across the directory and nested module, then read package documentation; estimated 2–4 shell/read steps. One semantic call/round trip supplied both module and package summaries. | **Beneficial:** compact inventory avoided separate module/package discovery and required no retry. | Event envelope 2,684 ms; server engine 1.920 ms. Equivalent local workflow was not timed on the same state; no runtime ratio. |
+
+| Calls | Semantic runtime | Local built-in runtime | Scope / timing source / samples / cache state | Semantic / built-in ratio or limitation |
+| :--- | :--- | :--- | :--- | :--- |
+| `exec-43c8d7e9-d0c0-4c6d-b196-31a7afd202e9` | 1.231 ms engine; 3,576 ms event envelope | unavailable: no same-input local baseline was timed | One recorded MCP result; engine duration from `recorded_item.duration`; envelope from item start/completion timestamps. Cache/server state for a fair replay is unavailable. | Inconclusive; timings cover different boundaries. |
+| `exec-c0ebc14f-32dc-4e31-88df-3daa16349f3d` | 1.920 ms engine; 2,684 ms event envelope | unavailable: no same-input local baseline was timed | One recorded MCP result; engine duration from `recorded_item.duration`; envelope from item start/completion timestamps. Cache/server state for a fair replay is unavailable. | Inconclusive; timings cover different boundaries. |
+
+* Net effect: agent efficiency was beneficial for both package discovery calls because each returned a structured inventory in one round trip; estimated built-in workflows need multiple listing and documentation reads. Runtime speed is inconclusive because equivalent local timings were not collected and engine durations exclude orchestration. This wrap-up added one transcript extraction pass and manual command-candidate review; no semantic calls were needed during the wrap-up itself.
+* Related incidents/manual fallbacks: no incident was observed in these calls. The Python extractor and tests were added through atomic text edits because this repository's semantic editor exposes Go AST operations, not Python editing; see `ME-0069` in `docs/MANUAL_EDITS.md`.
+
 ## 2026-10-16: suggestion worktree archival refused
 
 * Tool: `codex_app.archive_worktree`.
@@ -4430,4 +4448,18 @@ The follow-up correction repeated that invalid multi-operation structure and was
 * Runtime conclusion: event-envelope measurements above describe observed attempts, not matched built-in comparisons. Full workflow totals (including discovery, waits, repairs and final checks) were not measured comparably; overlapping intervals must not be summed. Engine-only durations and orchestration yield times are not substituted for these envelopes. No speedup ratio is justified. Wrap-up transcript processing is separate from original operation execution and adds no benchmark samples.
 * Improvements: keep output bounded at the tool boundary, expose authoritative publication state after hook failures, distinguish schema/selection errors, and coordinate whole-workspace snapshots before parallel mutations. See earlier dated incident entries for formatter hooks, concurrent buffer conflicts, schema mismatch, stale gopls scaffolds, and the rejected empty-body request. Manual fallback coverage is recorded in ME-0066.
 * Rebase reconciliation: retain main's symbol-alias cleanup and target suggestions together with checked publication errors and diagnostic reports. Metadata now shares the existing `suggestionsField` constant after the combined lint check found duplicate literals. These were targeted conflict/metadata text edits within the existing manual-fallback boundary; no additional semantic operations were invoked. The standalone skill validator could not run because the available Python runtimes lack PyYAML; repository checks cover the combined tree.
-* 2026-10-17: `semantic_batch` / `semantic_replace_body` on `tools/benchmark-harness/cost_test.go` applied the test refactor, but bundled `semantic_verify` failed while inspecting `tools/go-cache-root.sh` because workspace trust was required. The source mutation was independently read back; use targeted Go tests and repository checks for validation. Root cause: bundled verification expanded beyond the changed Go file into an untrusted Bash workspace scope.
+
+## 2026-10-17: semantic verification stopped at workspace trust gate
+
+* Tool: `semantic_batch` / `semantic_replace_body` on `tools/benchmark-harness/cost_test.go` applied the test refactor; bundled `semantic_verify` then failed while inspecting `tools/go-cache-root.sh` because workspace trust was required.
+* Workaround: read back the source mutation and use targeted Go tests plus repository checks for validation.
+* Root cause: bundled verification expanded beyond the changed Go file into an untrusted Bash workspace scope.
+
+## 2026-10-17: thread history omits recorded semantic results
+
+* Tool: `codex_app.read_thread`, with `includeOutputs: true`.
+* Target: thread `01a148b6-a4bd-78d0-a4ff-572abe0feebd`, local rollout dated 2026-10-17.
+* Observed: five pages contain ten distinct turns and 200 distinct semantic calls (181 completed, 19 failed), matching every root-transcript canonical semantic call ID and status across two compactions. All 200 raw transcript records contain results; all 200 history-tool records omit them. Twelve batch parents contain 64 requested edits, whose child outcomes cannot be inferred from parent status alone.
+* Workaround: add a read-only, repository-owned wrap-up transcript extractor with exact recorded results, explicit coverage limits, linked child requests/outcomes, command-review candidates, and frozen-prefix pagination. The installed app plugin only forwards requests; its native handler source is unavailable in this checkout.
+* Root cause: omission is confirmed at the history-tool response boundary. The native handler's implementation reason is unknown. Retained result text may itself be truncated; the extractor preserves that evidence without claiming recovery of missing content.
+* Extractor validation: exhaust 14 root-only pages at limit 17 and compare all 200 call records exactly with raw evidence. Including all three discovered child transcripts exhausts 27 pages, preserving 407 exact call/result records (356 completed, 51 failed), 39 command-review candidates, and 24 batches with 175 requested children. Only six child outcomes decode from retained batch envelopes; the remaining execution outcomes are explicitly unknown. Snapshot pagination and malformed-input behavior also have executable CLI coverage.

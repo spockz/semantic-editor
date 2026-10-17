@@ -10,6 +10,12 @@ The objective is to categorize the underlying intent of each manual edit, identi
 
 ## Log of Manual Edits
 
+### 2026-10-17: wrap-up transcript extraction
+
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ME-0069** | `skills/wrap-up/scripts/extract_semantic_calls.py`, `test_extract_semantic_calls.py` | Added a standard-library JSONL transcript reader with cursor pagination and focused tests | Local skill helper and Python test tooling | The repository's semantic editor exposes Go AST operations and has no Python source editing operation; targeted atomic text edits were appropriate for this standalone helper | No applicable `semedit` operation; a Python-aware editor would be a separate capability |
+
 ### 2026-10-16: MCP test CPU optimization
 
 | ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |

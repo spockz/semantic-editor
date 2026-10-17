@@ -251,7 +251,7 @@ vuln: go-env ## Run vulnerability security check
 .PHONY: test test-core
 test: test-core ## Alias for test-core
 
-test-core: go-env test-package-closure ## Run core engine unit tests excluding benchmark-harness
+test-core: go-env test-package-closure test-wrap-up-transcript ## Run core engine unit tests excluding benchmark-harness
 	@echo "==> Running core engine tests..."
 	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
 	go test $$CORE_PACKAGES
@@ -259,6 +259,10 @@ test-core: go-env test-package-closure ## Run core engine unit tests excluding b
 .PHONY: test-package-closure
 test-package-closure: go-env ## Test the custom package-closure linter module
 	cd tools/package-closure && go test ./...
+
+.PHONY: test-wrap-up-transcript
+test-wrap-up-transcript: ## Test wrap-up transcript extraction and pagination
+	python3 -B -m unittest discover -s skills/wrap-up/scripts -p 'test_*.py'
 
 .PHONY: test-race
 test-race: go-env ## Run core engine unit tests with race detector
