@@ -2,21 +2,13 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null)
-ifeq ($(strip $(REPO_ROOT)),)
-$(error cannot determine repository root; run in a Git checkout or set REPO_ROOT)
+ifeq ($(origin REPO_ROOT),undefined)
+REPO_ROOT := $(shell cd "$(dir $(lastword $(MAKEFILE_LIST)))/../.." && pwd -P)
 endif
-GO_SCRATCH ?= $(REPO_ROOT)/.scratch/go
-export GOENV := $(GO_SCRATCH)/env
-export GOCACHE := $(GO_SCRATCH)/build
-export GOMODCACHE := $(GO_SCRATCH)/mod
-export GOTMPDIR := $(GO_SCRATCH)/tmp
-export GOBIN := $(GO_SCRATCH)/bin
-export GOPATH := $(GO_SCRATCH)
-export GOPLSCACHE := $(GO_SCRATCH)/gopls
-export GOFLAGS :=
-export GOWORK := off
-export GOLANGCI_LINT_CACHE := $(REPO_ROOT)/.scratch/golangci-lint-cache
+ifeq ($(strip $(REPO_ROOT)),)
+$(error cannot determine repository root; set REPO_ROOT explicitly)
+endif
+include $(subst $() $(),\ ,$(REPO_ROOT))/tools/go-environment.mk
 ifneq ($(CURDIR),$(REPO_ROOT))
 ifeq ($(MAKELEVEL),0)
 export PATH := $(REPO_ROOT)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)

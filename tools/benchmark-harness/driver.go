@@ -19,6 +19,11 @@ import (
 	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
+const (
+	semanticTimeoutDiagnosticReflectionPrompt  = "The benchmark task stopped because its execution timed out. Do not use tools, edit files, or retry the task. Based only on the conversation so far, identify the last action underway, where time appears to have gone (model reasoning, tool wait, repeated verification or undo, exploration, or another cause), and the strongest evidence for that diagnosis. Clearly separate observed evidence from inference, and answer in a few concise sentences."
+	semanticTimeoutIntegrationReflectionPrompt = "The benchmark task stopped because its execution timed out. For benchmark analysis only, do not use tools, edit files, or retry the task. In one sentence, say whether semedit's tools helped or hindered the work before the timeout, grounded in what actually happened. If you could not assess their value, say so."
+)
+
 func boundedDiagnostic(data []byte, limit int) string {
 	if len(data) <= limit {
 		return string(data)
@@ -170,10 +175,15 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	defer cancelTask()
 	initialTask := runInitialAgentTask(taskCtx, ctx, session, target, task, prompt, res)
 	if initialTask.stopEarly {
+		if shouldRequestTimeoutReflections(taskCtx, ctx, session, arm) {
+			r.requestTimeoutReflections(ctx, session, target, res)
+		}
 		return res, session.executionErr
 	}
 	r.runAgentFollowups(taskCtx, ctx, session, target, arm, initialTask.started, res)
-	if isSemeditArm(arm) && session.resumeID != "" && res.Success {
+	if shouldRequestTimeoutReflections(taskCtx, ctx, session, arm) {
+		r.requestTimeoutReflections(ctx, session, target, res)
+	} else if isSemeditArm(arm) && session.resumeID != "" && res.Success {
 		res.SemanticIntegrationReflection = r.requestSemanticToolReflection(ctx, session, target, semanticIntegrationReflectionPrompt)
 	}
 	return res, session.executionErr
@@ -193,7 +203,7 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return agentWorkspaceSetup{}, fmt.Errorf("extract task fixture: %w", err)
 	}
-	if task.Metadata.Repository.URL != "" && session.execution.SemeditSkill {
+	if session.execution.SemeditSkill {
 		if err := installSemeditSkill(workDir, runner.baseScratchDir); err != nil {
 			return agentWorkspaceSetup{}, fmt.Errorf("install semedit benchmark skill: %w", err)
 		}
@@ -227,7 +237,7 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 }
 
 func installSemeditSkill(workDir, scratchRoot string) error {
-	repositoryRoot := filepath.Dir(filepath.Dir(filepath.Dir(scratchRoot)))
+	repositoryRoot := filepath.Dir(filepath.Dir(scratchRoot))
 	sourcePath := filepath.Join(repositoryRoot, "skills", "semedit", "SKILL.md")
 	// #nosec G304 -- the source is the repository-owned semedit skill.
 	content, err := os.ReadFile(sourcePath)
@@ -437,11 +447,11 @@ const semanticBatchReflectionPrompt = "The benchmark task is complete. For bench
 const semanticIntegrationReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits."
 
 func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && !result.MCPVerified
+	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && result.Error == "" && !result.MCPVerified
 }
 
 func shouldRequestSemanticBatchReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
+	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && result.Error == "" && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
 }
 
 func hasConsecutiveUnbatchedSemanticToolCalls(calls []ToolCall) bool {
@@ -675,4 +685,22 @@ func formatDiffSummary(filename, before, after string) string {
 	bLines := strings.Split(before, "\n")
 	aLines := strings.Split(after, "\n")
 	return fmt.Sprintf("File %s modified (%d lines -> %d lines)", filename, len(bLines), len(aLines))
+}
+
+func (r *Runner) requestTimeoutReflections(ctx context.Context, session *agentSession, target Target, result *RunResult) {
+	if session.resumeID == "" {
+		result.DiagnosticReflectionSkipped = "provider did not expose a resumable session ID after timeout"
+		return
+	}
+	reflectionCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	result.DiagnosticTimeoutReflection = r.requestSemanticToolReflection(reflectionCtx, session, target, semanticTimeoutDiagnosticReflectionPrompt)
+	result.SemanticIntegrationReflection = r.requestSemanticToolReflection(reflectionCtx, session, target, semanticTimeoutIntegrationReflectionPrompt)
+}
+
+func shouldRequestTimeoutReflections(taskCtx, parentCtx context.Context, session *agentSession, arm ArmType) bool {
+	if !isSemeditArm(arm) || parentCtx.Err() != nil {
+		return false
+	}
+	return errors.Is(taskCtx.Err(), context.DeadlineExceeded) || errors.Is(session.executionErr, context.DeadlineExceeded)
 }

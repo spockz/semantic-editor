@@ -39,27 +39,19 @@ treated as comparable and are resolved by lower relative model cost. A cost
 improvement of at least tenfold overrides a non-comparable wall-clock
 regression; a smaller improvement does not. Cost differences within five
 percentage points are also treated as comparable; a Semedit completion in
-exactly one top-level user turn then wins. Model cost is credit consumption:
-(uncached input tokens × input credits + cached input tokens × cached credits +
-(reasoning tokens + visible output tokens) × output credits) / 1,000,000.
-Thinking tokens are reasoning tokens and use the output rate. The declared
-credits per one million tokens are:
-
-| Model | Input | Cached input | Output |
-| :--- | ---: | ---: | ---: |
-| GPT-6 Astra | 250 | 25 | 1,250 |
-| GPT-6 Sol | 50 | 5 | 250 |
-| GPT-5.6 Sol | 100 | 10 | 500 |
-| GPT-5.6 Terra | 50 | 5 | 300 |
-| GPT-6 Luna | 2.5 | 0.25 | 12.5 |
-| GPT-5.6 Luna | 5 | 0.5 | 30 |
+exactly one top-level user turn then wins. Cost comparisons use the harness's
+per-run `estimated_cost_usd`; docgen does not infer cost from token counts or
+apply current rates to historical runs. The harness also stores the pricing ID,
+rate-card date, and estimate basis alongside each value. Runs without a recorded
+estimate have unavailable cost and cannot decide cost-based ties.
 
 Stable run identity breaks remaining ties.
 
-Every published detailed and aggregate table also reports model-specific
-credits when the target model has a declared rate schedule. This is the same
-per-million-token credit cost used for best-case selection. Cache-adjusted
-token units remain published telemetry, but do not rank best-case pairs.
+Every published detailed and aggregate table reports the recorded USD estimate
+when present. Aggregate cost groups stay separated by pricing ID and rate-card
+date, and reports without recorded estimates remain unavailable rather than
+being repriced. Cache-adjusted token units remain published telemetry, but do
+not rank best-case pairs.
 
 Oracle outcome is absolute: no speed, token, or one-shot advantage can cause a
 failed arm to outrank a passing arm. The tenfold override applies only after
@@ -95,9 +87,9 @@ known-cost total.
 - A cached token contributes one tenth of an uncached token only to the
   published cache-adjusted-token metric, not to raw telemetry values or
   best-case selection.
-- A reported model cost is measured in credits and only available for an explicitly
-  declared target-model rate schedule; unavailable cost is never treated as
-  zero.
+- A reported model cost is the per-run USD estimate recorded by the harness with
+  its pricing metadata; docgen never recalculates it from a current rate card.
+  Missing estimates remain unavailable and are never treated as zero.
 - Repeated sessions with the same experiment-defining configuration share one
   aggregate arm across runs; changes to a recorded treatment field keep arms
   separate.

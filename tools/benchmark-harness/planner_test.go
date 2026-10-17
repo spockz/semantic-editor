@@ -211,3 +211,75 @@ func TestBuildBenchmarkPlanDefaultsMCPInstructionsToPrescriptive(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildBenchmarkPlanInjectsSkillOnlyIntoSemeditArms(t *testing.T) {
+	for _, promptVariant := range []string{"default", "explicit"} {
+		t.Run(promptVariant, func(t *testing.T) {
+			assertPlannedSkillCondition(t, promptVariant)
+		})
+	}
+}
+
+func assertPlannedSkillCondition(t *testing.T, promptVariant string) {
+	t.Helper()
+	dir := t.TempDir()
+	writePlanningFixture(t, dir, "skill-"+promptVariant, "contexts:\n  - small\nprompt_variants:\n  default: concise\n  explicit: use the prescribed semantic operations\n")
+	options := PlanOptions{
+		BenchDir:     dir,
+		OutDir:       "",
+		Targets:      []Target{{Harness: "codex", Model: "gpt-6-luna", Effort: "medium"}},
+		Variants:     []string{"small:" + promptVariant},
+		SemeditSkill: true,
+		Repeats:      1,
+	}
+	withSkill, err := BuildBenchmarkPlan(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.SemeditSkill = false
+	withoutSkill, err := BuildBenchmarkPlan(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedJobs := 2
+	if promptVariant == "explicit" {
+		expectedJobs = 3
+	}
+	if len(withSkill.Jobs) != expectedJobs || len(withoutSkill.Jobs) != expectedJobs {
+		t.Fatalf("job counts with and without skill = %d and %d, want %d each", len(withSkill.Jobs), len(withoutSkill.Jobs), expectedJobs)
+	}
+	withByArm := plannedJobsByArm(withSkill.Jobs)
+	withoutByArm := plannedJobsByArm(withoutSkill.Jobs)
+	assertPlannedSkillArm(t, withByArm[ArmBaseline], withoutByArm[ArmBaseline], false)
+	assertPlannedSkillArm(t, withByArm[ArmSemedit], withoutByArm[ArmSemedit], true)
+	if promptVariant == "explicit" {
+		assertPlannedSkillArm(t, withByArm[ArmSemeditExplicit], withoutByArm[ArmSemeditExplicit], true)
+	}
+}
+
+func plannedJobsByArm(jobs []Job) map[ArmType]Job {
+	byArm := make(map[ArmType]Job, len(jobs))
+	for _, job := range jobs {
+		byArm[job.Arm] = job
+	}
+	return byArm
+}
+
+func assertPlannedSkillArm(t *testing.T, withSkill, withoutSkill Job, wantSkill bool) {
+	t.Helper()
+	if withSkill.SemeditSkill != wantSkill || withSkill.Execution.SemeditSkill != wantSkill {
+		t.Errorf("%s skill settings = job %t / execution %t, want %t", withSkill.Arm, withSkill.SemeditSkill, withSkill.Execution.SemeditSkill, wantSkill)
+	}
+	if withSkill.PairID == withoutSkill.PairID {
+		t.Errorf("%s pair identity did not record the skill condition", withSkill.Arm)
+	}
+	if withSkill.Arm == ArmBaseline {
+		if withSkill.ID != withoutSkill.ID {
+			t.Errorf("baseline identity changed with skill option: %q != %q", withSkill.ID, withoutSkill.ID)
+		}
+		return
+	}
+	if withSkill.ID == withoutSkill.ID {
+		t.Errorf("%s identity did not record skill injection", withSkill.Arm)
+	}
+}

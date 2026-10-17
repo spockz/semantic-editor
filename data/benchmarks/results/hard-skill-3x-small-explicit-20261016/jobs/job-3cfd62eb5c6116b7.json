@@ -1,0 +1,137 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-3cfd62eb5c6116b7",
+    "pair_id": "pair-a29a4e0434a26981",
+    "task_id": "task-09-composite-refactor",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_09_composite_refactor.txtar",
+    "context": "small",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "baseline-diff",
+    "repeat": 2,
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nRename the Config field from Port to ListenPort and update its uses, including Addr. Addr must continue to format the configured Host and port; unrelated Port fields in other packages are outside this change.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nDefaultConfig() *Config should return a non-nil configuration with Host set to `localhost` and ListenPort set to 8080, so its Addr() is `localhost:8080` without caller initialization.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nClean up imports left unused in config/config.go while preserving Addr behavior for caller-supplied host and port values, not just the defaults.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: Config exposes ListenPort instead of Port; DefaultConfig() *Config supplies Host `localhost` and ListenPort 8080; and Addr formats the current configuration values. Remove unused imports, preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 19072,
+        "codex_stderr": "{\"timestamp\":\"2026-10-16T21:15:01.613378Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-16T21:15:01.613401Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-16T21:15:01.647542Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-16T21:15:01.669864Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-16T21:15:01.691296Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-16T21:15:01.715790Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-16T21:15:01.791196Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-16T21:15:01.904886Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-16T21:15:01.904904Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n",
+        "comparison_pair_id": "pair-a29a4e0434a26981",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4539,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 19072,
+            "initial_load_turns": 1,
+            "internal_turns": 2,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2092,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 429,
+            "process_start_to_first_event_ms": 26,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 58797,
+            "reasoning_tokens": 87,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 39725,
+            "wall_clock_ms": 8281
+          }
+        ],
+        "internal_turns": 2,
+        "job_id": "job-3cfd62eb5c6116b7",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2092,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 429,
+        "process_start_to_first_event_ms": 26,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 58797,
+        "provenance": {
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "provider_transport": "codex_app_server_v2",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-09-composite-refactor_1792185301423139000.json"
+        },
+        "reasoning_tokens": 87,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 2,
+        "tools_used": [
+          "/bin/zsh -lc \"sed -n '1,240p' config/config.go \u0026\u0026 git status --short\"",
+          "file_change"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 39725,
+        "variant": "small",
+        "wall_clock_ms": 10454
+      }
+    ],
+    "timestamp": "2026-10-16T21:15:12.090692Z"
+  }
+}

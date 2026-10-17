@@ -395,7 +395,7 @@ func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
 	fs.StringVar(&input.outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped results; empty disables run output")
 	fs.StringVar(&input.runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
 	fs.BoolVar(&input.resume, "resume", false, "Resume an existing run directory and skip jobs with saved results")
-	fs.BoolVar(&input.semeditSkill, "semedit-skill", false, "Expose the semedit skill to semedit-agentic repository benchmark jobs")
+	fs.BoolVar(&input.semeditSkill, "semedit-skill", false, "Install the semedit skill in both semedit benchmark arms")
 	fs.StringVar(&input.settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
 	fs.StringVar(&input.settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
 	fs.DurationVar(&input.timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")

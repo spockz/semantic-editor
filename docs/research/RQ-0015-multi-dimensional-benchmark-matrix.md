@@ -244,6 +244,14 @@ Each benchmark run emits a single JSON record capturing configuration, outcomes,
 }
 ```
 
+This example shows the earlier conceptual `eval_result.json` shape, where cost
+lives under `resource_metrics`. The current Go harness serializes `RunResult` as
+a flat record: it keeps the established `estimated_cost_usd` key at the top
+level and writes `estimated_cost_pricing_id`,
+`estimated_cost_rate_card_as_of`, and `estimated_cost_basis` beside it. All four
+fields are omitted when the target is unpriced or token counters are incomplete;
+the harness does not emit a second `cloud_cost_estimate` object.
+
 ---
 
 ## 8. Credibility & Blind Spots
@@ -353,3 +361,7 @@ This research investigation concludes with three major resolutions codified acro
 3. **Pre-Wall-Clock Copy-on-Write (CoW) Hydration**:
    * Evaluated instant APFS/reflink cloning (`cp -Rc`) from shallow-cloned `.scratch/cache/repos/` repositories into disposable run workspaces.
    * Workspace hydration completes in $<150\text{ms}$ strictly outside measured agent wall-clock time, enabling authentic monorepo benchmarking without network or git clone latency distortion.
+
+4. **Cloud token OPEX estimates**:
+   * Current agent reports calculate per-run estimates from observed uncached input, cached input, and generated output. GPT-6 Luna medium/high, Gemini 3.8 Flash low/medium, and Gemini 4 Argon low/medium/high share unit rates within each model, leaving observed token consumption to explain effort-level cost differences. Gemini estimates assume global Standard routing because region is not recorded; Batch/Flex discounts are excluded because benchmark turns use interactive requests.
+   * The harness records `estimated_cost_usd` with the pricing ID, rate-card date, and basis used for that run. Benchmark docs and the browser render those saved values and never recalculate historical costs from current rates; old records without a saved estimate remain unavailable. This is a public list-rate equivalent, not an invoice: cache writes/storage, subscription allowances, negotiated discounts, taxes, and non-token charges are excluded. Local model hardware CAPEX remains user-specific and is not compared with cloud OPEX.

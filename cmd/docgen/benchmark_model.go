@@ -61,6 +61,10 @@ type BenchRunResult struct {
 	UncachedPromptTokens             int                          `json:"uncached_prompt_tokens"`
 	OutputTokens                     int                          `json:"output_tokens"`
 	ReasoningTokens                  int                          `json:"reasoning_tokens"`
+	EstimatedCostUSD                 *float64                     `json:"estimated_cost_usd,omitempty"`
+	EstimatedCostPricingID           string                       `json:"estimated_cost_pricing_id,omitempty"`
+	EstimatedCostRateCardAsOf        string                       `json:"estimated_cost_rate_card_as_of,omitempty"`
+	EstimatedCostBasis               string                       `json:"estimated_cost_basis,omitempty"`
 	Oracle                           *BenchOracleResult           `json:"oracle"`
 	Prompt                           string                       `json:"prompt,omitempty"`
 	BeforeState                      string                       `json:"before_state,omitempty"`

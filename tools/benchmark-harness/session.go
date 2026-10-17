@@ -29,7 +29,7 @@ func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, class
 	var returnedID string
 	var runErr error
 	switch {
-	case s.continuationErr != nil:
+	case s.continuationErr != nil && (classification != "diagnostic_reflection" || strings.TrimSpace(s.resumeID) == ""):
 		runErr = fmt.Errorf("cannot continue failed provider session: %w", s.continuationErr)
 	case len(s.turns) > 0 && strings.TrimSpace(s.resumeID) == "":
 		runErr = fmt.Errorf("cannot continue provider session: original session ID is missing")
@@ -216,6 +216,20 @@ func (s *agentSession) finalizeResult() {
 	if s.result == nil {
 		return
 	}
+	cost := estimateCloudCost(
+		s.result.Target,
+		s.result.PromptTokens,
+		s.result.CachedPromptTokens,
+		s.result.UncachedPromptTokens,
+		s.result.OutputTokens,
+		s.result.ReasoningTokens,
+	)
+	if cost != nil {
+		s.result.EstimatedCostUSD = &cost.TotalUSD
+		s.result.EstimatedCostPricingID = cost.PricingID
+		s.result.EstimatedCostRateCardAsOf = cost.RateCardAsOf
+		s.result.EstimatedCostBasis = cost.Basis
+	}
 	state := s.toolObservationState
 	reason := strings.Join(s.toolObservationReasons, "; ")
 	if s.taskObservationTurns == 0 {
@@ -223,8 +237,8 @@ func (s *agentSession) finalizeResult() {
 		reason = "no task turn produced tool observation evidence"
 	}
 	s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
-	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success
-	if shouldSkipReflection {
+	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success && s.result.DiagnosticTimeoutReflection == nil
+	if shouldSkipReflection && s.result.DiagnosticReflectionSkipped == "" {
 		s.result.DiagnosticReflectionSkipped = diagnosticReflectionSkipReason(s.result.Error)
 	}
 }

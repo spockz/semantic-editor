@@ -6,17 +6,8 @@ export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
 endif
 HUGO_BASE_URL ?= /
 DOCGEN_ARGS ?=
-GO_SCRATCH := $(CURDIR)/.scratch/go
-export GOENV := $(GO_SCRATCH)/env
-export GOCACHE := $(GO_SCRATCH)/build
-export GOMODCACHE := $(GO_SCRATCH)/mod
-export GOTMPDIR := $(GO_SCRATCH)/tmp
-export GOBIN := $(GO_SCRATCH)/bin
-export GOPATH := $(GO_SCRATCH)
-export GOPLSCACHE := $(GO_SCRATCH)/gopls
-export GOFLAGS :=
-export GOWORK := off
-export GOLANGCI_LINT_CACHE := $(CURDIR)/.scratch/golangci-lint-cache
+REPO_ROOT := $(CURDIR)
+include tools/go-environment.mk
 export HUGO_CACHEDIR := $(CURDIR)/.scratch/hugo-cache
 GOLANGCI_LINT_VERSION ?= v2.14.0
 GOLANGCI_GO_VERSION := $(shell GOMODCACHE="$(GOMODCACHE)" go env GOVERSION)
@@ -38,7 +29,7 @@ endif
 
 .DEFAULT_GOAL := check
 
-## Go commands use project-local state so caches and temporary files stay under the workspace.
+## Go commands share reusable caches with the primary checkout and retain local temporary files and tools.
 .PHONY: go-env
 go-env:
 	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOPLSCACHE)" "$(GOLANGCI_LINT_CACHE)" "$(HUGO_CACHEDIR)" "$(CURDIR)/.scratch/tools"
@@ -47,7 +38,15 @@ go-env:
 ## Check targets
 ## ---------------------------------------------------------
 .PHONY: check
-check: lint-check test-core ## Run fast iterative checks (linting and core engine tests)
+check: lint-check test-core test-go-environment test-worktreecheck ## Run fast iterative checks (linting and core engine tests)
+
+.PHONY: test-go-environment
+test-go-environment: ## Verify cache sharing and local state across Git worktrees
+	@bash tools/test-go-environment.sh
+
+.PHONY: test-worktreecheck
+test-worktreecheck: ## Verify finished-worktree detection and safe local module cache cleanup
+	@bash tools/test-worktreecheck.sh
 
 .PHONY: check-ci
 check-ci: lint vuln test-all verify-docs ## Run comprehensive checks (format, tidy, full linters, security, all tests, docs)
@@ -398,12 +397,12 @@ verify-docs: docgen ## Generate the site and assert its published files exist
 ## ---------------------------------------------------------
 -include tools/benchmark-harness/Makefile
 
-.PHONY: list-clean-worktrees clean-clean-worktrees
-list-clean-worktrees: go-env ## List worktrees that are clean and integrated into local main
-	@go run ./cmd/worktreecheck
+.PHONY: list-finished-worktrees clean-finished-worktrees
+list-finished-worktrees: go-env ## List clean worktrees integrated into local main
+	@bash tools/worktreecheck.sh list-finished-worktrees
 
-clean-clean-worktrees: go-env ## Remove clean worktrees integrated into local main
-	@go run ./cmd/worktreecheck --remove-done
+clean-finished-worktrees: go-env ## Remove clean worktrees integrated into local main
+	@bash tools/worktreecheck.sh clean-finished-worktrees
 
 .PHONY: clean
 clean: go-env ## Clean build artifacts and test cache

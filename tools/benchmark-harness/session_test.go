@@ -2,9 +2,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/spockz/semantic-editor/internal/pipeline"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
@@ -600,18 +603,24 @@ type behavioralSessionProvider struct {
 	calls     int
 	workDirs  []string
 	resumeIDs []string
+	firstErr  error
+	prompts   []string
 }
 
 func (p *behavioralSessionProvider) run(_ context.Context, workDir string, _ Target, prompt string, result *RunResult, resumeID string) (string, error) {
 	p.calls++
 	p.workDirs = append(p.workDirs, workDir)
 	p.resumeIDs = append(p.resumeIDs, resumeID)
+	p.prompts = append(p.prompts, prompt)
 	result.Turns = 1
 	result.PromptTokens = 7
 	result.OutputTokens = 3
 	result.ToolCalls = []ToolCall{{Name: "semantic_replace_body", TransportStatus: ToolCallStatusSucceeded}}
 	result.ToolCount = 1
 	result.agentResponse = prompt
+	if p.firstErr != nil && p.calls == 1 {
+		return "session-id", p.firstErr
+	}
 	if prompt == "diagnostic" {
 		result.Turns = 1000
 		result.PromptTokens = 100000
@@ -905,5 +914,83 @@ func assertIntegrationFeedbackCapture(t *testing.T, testCase integrationFeedback
 		}
 	} else if !strings.Contains(feedback.Response, "would not ask my owner") || feedback.Error != "" {
 		t.Fatalf("negative feedback was not preserved: %#v", feedback)
+	}
+}
+
+func TestInstallSemeditSkillCopiesSkillIntoWorkspace(t *testing.T) {
+	root := t.TempDir()
+	scratchRoot := filepath.Join(root, ".scratch", "benchmarks")
+	workDir := filepath.Join(scratchRoot, "fixture")
+	skillPath := filepath.Join(root, "skills", "semedit", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("# semedit benchmark skill\nUse semantic tools for supported code changes.\n")
+	if err := os.WriteFile(skillPath, want, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := installSemeditSkill(workDir, scratchRoot); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(workDir, ".agents", "skills", "semedit", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("installed skill content = %q, want %q", got, want)
+	}
+}
+
+func TestTimeoutReflectionsResumeFailedProviderSession(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	if err := os.Mkdir(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	provider := &behavioralSessionProvider{firstErr: context.DeadlineExceeded}
+	session, err := newAgentSession(provider, root, "timeout-reflection", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
+	result := &RunResult{WallClock: time.Second, Turns: 1, PromptTokens: 7, ToolCount: 1}
+	session.result = result
+	defer func() {
+		if closeErr := session.close(); closeErr != nil {
+			t.Errorf("close timeout reflection session: %v", closeErr)
+		}
+	}()
+	taskTurn := &RunResult{}
+	if err := session.runTurn(context.Background(), Target{}, "task", "task", taskTurn); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("timed-out task turn error = %v", err)
+	}
+	if session.resumeID != "session-id" {
+		t.Fatalf("failed task turn lost resumable session ID: %q", session.resumeID)
+	}
+	session.recordExecutionError(context.DeadlineExceeded)
+	taskCtx, cancelTask := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancelTask()
+	parentCtx := context.Background()
+	if !shouldRequestTimeoutReflections(taskCtx, parentCtx, session, ArmSemedit) {
+		t.Fatal("timed-out semedit task did not request diagnostic reflections")
+	}
+	NewRunner(filepath.Join(root, "scratch")).requestTimeoutReflections(parentCtx, session, Target{}, result)
+	if result.DiagnosticTimeoutReflection == nil || result.DiagnosticTimeoutReflection.Response != semanticTimeoutDiagnosticReflectionPrompt {
+		t.Fatalf("timeout diagnostic reflection = %#v", result.DiagnosticTimeoutReflection)
+	}
+	if result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Response != semanticTimeoutIntegrationReflectionPrompt {
+		t.Fatalf("timeout integration reflection = %#v", result.SemanticIntegrationReflection)
+	}
+	if result.WallClock != time.Second || result.Turns != 1 || result.PromptTokens != 7 || result.ToolCount != 1 || result.Success {
+		t.Fatalf("diagnostic reflections changed task measurements or outcome: %+v", result)
+	}
+	if !errors.Is(session.continuationErr, context.DeadlineExceeded) || len(provider.prompts) != 3 || provider.resumeIDs[0] != "" || provider.resumeIDs[1] != "session-id" || provider.resumeIDs[2] != "session-id" {
+		t.Fatalf("reflections did not resume the same failed session: prompts=%v resumeIDs=%v continuationErr=%v", provider.prompts, provider.resumeIDs, session.continuationErr)
+	}
+	if len(session.turns) != 3 || session.turns[1].Classification != "diagnostic_reflection" || session.turns[2].Classification != "diagnostic_reflection" {
+		t.Fatalf("timeout reflection turns missing from transcript: %+v", session.turns)
 	}
 }

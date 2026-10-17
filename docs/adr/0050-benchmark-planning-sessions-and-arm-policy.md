@@ -51,6 +51,12 @@ declared base commit before agent timing begins. The harness uses copy-on-write
 or reflink copy where supported and falls back to a regular recursive copy
 without changing the measurement boundary.
 
+When enabled, the optional semedit skill is installed in every semedit agent
+workspace, including first-party fixtures, before the initial workspace
+snapshot. Baseline workspaces never receive it. The skill condition is recorded
+in each job identity and comparison-pair identity so skill and no-skill runs
+cannot share checkpoints or be resumed as the same plan.
+
 Fixtures declare supported physical contexts. An archive without additional
 context declarations has only its established base context. Verification
 variants remain treatments over those physical contexts. The planner intersects
@@ -112,6 +118,45 @@ OpenCode owns one `serve` process. Thin `run --attach` clients submit each turn
 with the same absolute directory and original session ID; tools and MCP state
 remain in the server's retained directory instance. Its sandbox permits only
 the selected localhost listener port in addition to existing permissions.
+
+Cloud benchmark results estimate comparable token OPEX using a dated public
+Standard API rate card. The estimate prices uncached input, cached input, and
+generated output separately, and records its rate-card identity with the result.
+Reasoning effort does not change a model's unit rates; observed token usage
+determines the per-run difference. Gemini thinking tokens are charged as output;
+Codex reasoning tokens are already included in its output-token counter. Local
+model hardware CAPEX remains unpriced because it depends on the user's hardware
+and allocation policy.
+
+As of 2026-10-17, the estimator uses these Standard text-token rates per million. OpenAI rates use short-context pricing; GPT-6 Sol and GPT-6.1 Sol are separate model IDs with different cached-input prices:
+
+| Target model | Uncached input | Cached input | Output |
+| :--- | ---: | ---: | ---: |
+| GPT-6 Astra | $10.00 | $1.00 | $50.00 |
+| GPT-6 Sol | $2.00 | $0.20 | $10.00 |
+| GPT-6.1 Sol | $2.00 | $0.10 | $10.00 |
+| GPT-6 Luna | $0.10 | $0.01 | $0.50 |
+| GPT-5.6 / GPT-5.6 Sol | $4.00 | $0.40 | $20.00 |
+| GPT-5.6 Terra | $2.00 | $0.20 | $12.00 |
+| GPT-5.6 Luna | $0.20 | $0.02 | $1.20 |
+| GPT-5.6 Cyber | $12.50 | $1.25 | $75.00 |
+| Gemini 3.8 Flash | $0.75 | $0.075 | $3.75 |
+| Gemini 4 Argon | $2.00 | $0.10 | $10.00 |
+
+The formula is `uncached_input × input_rate + cached_input × cached_rate +
+billed_output × output_rate`, with token counts divided by 1,000,000. The
+Gemini Flash introductory rates are published through 2026-12-31, and Gemini 4 Argon introductory rates through 2026-11-30; the estimator switches to their published global Standard rates on the following dates. Google Agent Platform lists non-global rates 10% above global for these models:
+
+| Target model | Period | Non-global input | Non-global cached input | Non-global output |
+| :--- | :--- | ---: | ---: | ---: |
+| Gemini 3.8 Flash | Introductory | $0.825 | $0.0825 | $4.125 |
+| Gemini 3.8 Flash | Standard from 2027-01-01 | $1.65 | $0.165 | $8.25 |
+| Gemini 4 Argon | Introductory | $2.20 | $0.11 | $11.00 |
+| Gemini 4 Argon | Standard from 2026-12-01 | $4.40 | $0.22 | $22.00 |
+
+Benchmark results do not record routing region, so estimates explicitly assume global routing. Gemini Batch and Flex rates are 50% of Standard rates, but benchmark runs use interactive requests and do not select those service tiers. The pricing ID and effective rate-card date are recorded with each estimate, and documentation renders these stored values instead of repricing historical runs. Future provider price changes still require a code update. The harness does not retain per-request context lengths to apply OpenAI long-context multipliers. Sources: [OpenAI API pricing](https://developers.openai.com/api/docs/pricing),
+[GPT-6 model catalog](https://developers.openai.com/api/docs/models), [GPT-6 Sol pricing](https://developers.openai.com/api/docs/models/gpt-6-sol), [GPT-6.1 Sol pricing](https://developers.openai.com/api/docs/models/gpt-6.1-sol), [GPT-5.6 Sol pricing](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [GPT-5.6 Terra pricing](https://developers.openai.com/api/docs/models/gpt-5.6-terra), [GPT-5.6 Luna pricing](https://developers.openai.com/api/docs/models/gpt-5.6-luna), [GPT-5.6 Cyber pricing](https://developers.openai.com/api/docs/models/gpt-5.6-cyber),
+[Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing.md), [Gemini 4 Argon pricing](https://ai.google.dev/gemini-api/docs/latest-model), [Gemini 3.8 deprecation routing](https://ai.google.dev/gemini-api/docs/deprecations), and [Google Agent Platform Gemini pricing](https://cloud.google.com/gemini-enterprise-agent-platform/generative-ai/pricing).
 macOS 26 requires read access to the exact root directory vnode for loader
 startup; grant `(literal "/")` while retaining fixture and outside-file
 containment checks.
@@ -187,7 +232,14 @@ response, and capture error in `semantic_integration_reflection`; ask for a cand
 one-sentence coding-agent recommendation, including whether the agent would ask
 its owner to add semedit. Accept negative recommendations and acknowledge unassessed
 tools. Render this as agent opinion, never a performance measurement. Failed or
-non-resumable sessions keep the existing diagnostic skip behavior.
+non-resumable sessions keep the existing diagnostic skip behavior. When a semedit
+task times out but its provider exposed a resumable identity and the parent job is
+still active, make two best-effort diagnostic continuations on that same identity:
+first ask where execution stalled using observed evidence, then ask for integration
+feedback grounded in the partial run. Bound this work separately from the expired
+task deadline, but honor parent cancellation. Store the timeout analysis in
+`diagnostic_timeout_reflection`; neither reflection changes task measurements or
+success. Only diagnostic-reflection turns may continue a failed provider session.
 Cumulative provider transcripts must contribute each task event at most once.
 
 The CLI defaults to the control target, all discoverable benchmark fixtures,
@@ -229,6 +281,8 @@ signal-cancelled jobs remain pending and can run on resume.
   sessions cannot dispatch another turn or silently create a replacement.
 - Provider cleanup precedes MCP evidence retention and workspace deletion.
 - Diagnostic questioning never changes measured task aggregates.
+- Cloud token estimates use explicit rate-card metadata and never imply actual
+  invoice charges; unavailable token usage remains unavailable rather than zero.
 - Transcript failures remain explicit; missing telemetry is not measured zero.
 - Explicit recipes must pass the oracle when executed through semedit. Git fix
   replay cannot substitute for recipe validation or measured execution.

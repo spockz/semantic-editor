@@ -31,6 +31,13 @@ func TestGoAndFormattingPruneBenchmarkData(t *testing.T) {
 		".scratch/formatters/gofumpt":        "#!/bin/sh\nset -eu\nexec \"$GOFMT\" \"$@\"\n",
 		".scratch/formatters/goimports":      "#!/bin/sh\nset -eu\nshift 3\nexec \"$GOFMT\" -w \"$@\"\n",
 	}
+	for _, relative := range []string{"tools/go-environment.mk", "tools/go-cache-root.sh"} {
+		contents, err := os.ReadFile(filepath.Join(repositoryRoot, relative))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[relative] = string(contents)
+	}
 	for relative, contents := range files {
 		path := filepath.Join(root, filepath.FromSlash(relative))
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {

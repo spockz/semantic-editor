@@ -105,6 +105,33 @@ Implementation and the scenario registry live in
 The target reuses the existing MCP transport and native-result checks. It does
 not run the functional agent benchmark harness.
 
+Agent comparison reports include `estimated_cost_usd` when complete token
+counters are available for a priced cloud target. The estimator applies the
+dated model rate card to uncached input, cached input, and generated output.
+GPT-6 Astra, GPT-6 Sol, GPT-6.1 Sol, GPT-6 Luna, and GPT-5.6 Sol, Terra, Luna,
+and Cyber are explicitly priced. The `gpt-5.6` alias uses the GPT-5.6 Sol rate
+card. Reasoning effort does not change these models' token rates, so per-run
+differences come from observed token consumption. Gemini 3.7/3.8 Flash and
+Gemini 4 Argon effort variants likewise share their model rates. Gemini
+thinking tokens are priced as output; Codex output already includes reasoning
+tokens.
+
+These are comparable list-rate token estimates, not invoice amounts. The
+benchmark pages and browser display the cost recorded by the harness for each
+run, together with its pricing ID and rate-card date; docgen never recalculates
+historical cost using today's rates. Older reports without recorded estimates
+show cost as unavailable. Gemini
+regional routing is not recorded by the harness, so estimates use global rates;
+the current interactive runs do not use Batch or Flex requests, which have
+separate discounted rates. Estimates omit cache-write and cache-storage fees,
+subscription entitlements, negotiated discounts, taxes, and non-token service
+charges. OpenAI estimates use Standard short-context rates because the harness
+does not retain per-request context lengths needed to apply long-context
+multipliers. The rate-card identity and
+dated basis accompany `estimated_cost_usd` in JSON. Local OpenCode models have no cloud-cost
+estimate; their hardware CAPEX is user-specific and is not mixed into cloud
+OPEX. The exact formula and pricing sources are recorded in [ADR-0050](../../docs/adr/0050-benchmark-planning-sessions-and-arm-policy.md).
+
 The source-edit registry covers insertion, replacement, removal, movement,
 extraction, inlining, signature and type transformations, comments, contracts,
 file scaffolding, and undo. `CORPUS=20` keeps exactly twenty source files before
@@ -220,7 +247,7 @@ Paths in this table are relative to this directory unless they start with `../..
 | :--- | :--- | :--- |
 | CLI flags, defaults, utility dispatch, output destinations, or resume behavior | [main.go](main.go): `parseBenchmarkCLI`, `runPlannedCLI`, `executeBenchmarkPlan`; [resume.go](resume.go) | Translate user input into `PlanOptions`, print the plan before execution, checkpoint terminal job results, validate a saved run manifest, and rebuild reports. Process-level contracts are in [cli_integration_test.go](cli_integration_test.go) and checkpoint contracts are in [resume_test.go](resume_test.go). |
 | External repository cache, pinned checkout hydration, private test/fix patches, or fixture diagnostics | [external_repo.go](external_repo.go), [oracle.go](oracle.go) | Prepare local pinned checkouts before timing; keep acceptance patches private. Human fix replay diagnoses fixture validity and is excluded from agent comparisons. See [external_repo_test.go](external_repo_test.go). |
-| Make variables, forwarded flags, and local Go state | [Makefile](Makefile) | Both `bench` and `bench-all` use the same CLI path. Forward `SEMEDIT_ARM_RESTRICT`, defaulting to `write`, and `RESUME=true` with a caller-stable `RUN_ID`. The root Makefile includes this file, and standalone harness targets derive their Go caches from the repository's `.scratch/go` directory. Check the Make tests in `cli_integration_test.go`. |
+| Make variables, forwarded flags, and local Go state | [Makefile](Makefile) | Both `bench` and `bench-all` use the same CLI path. Forward `SEMEDIT_ARM_RESTRICT`, defaulting to `write`, and `RESUME=true` with a caller-stable `RUN_ID`. Both Make entry points include `tools/go-environment.mk`: development module/build caches default to the primary checkout's `.scratch/go`; tools and temporary state remain worktree-local. Explicit `GOMODCACHE`, `GOCACHE`, or `GO_CACHE_ROOT` overrides retain control. Fixture cache isolation is unchanged. Check the Make tests in `cli_integration_test.go`. |
 | Fixture selection, context compatibility, prompt expansion, pairing, job identities, exclusions, or plan display | [planner.go](planner.go): `BuildBenchmarkPlan`, `RenderBenchmarkPlan` | Load fixtures, normalize selections, and create all jobs and resolved prompts once. See [planner_test.go](planner_test.go). |
 | Concurrency, cancellation, per-job timeout, completion output, or failed-job accounting | [planner.go](planner.go): `ExecutePlan` | Scheduling currently shares this file with planning. It consumes existing jobs, fills terminal result metadata, emits completion order, and returns plan order. See [scheduler_test.go](scheduler_test.go). |
 | Local OpenCode endpoint confinement and shared transport lifecycle | [opencode_relay.go](opencode_relay.go), [opencode_sandbox.go](opencode_sandbox.go), [main.go](main.go): `executeBenchmarkPlan` | The run owns one fixed-destination loopback relay shared by its jobs. Provider configuration and server/client profiles use the same selected URL. Relay tests prove forwarding and shutdown; Seatbelt tests prove selected-port access and filesystem confinement. |
@@ -295,7 +322,7 @@ automatically discover models or change the user's OpenCode configuration.
 | `VARIANTS` | Hard/Saluki `small:explicit`; SWE `small:default` | Declared contexts and prompts, including `large:explicit` for hard tasks |
 | `MCP_SERVER_INSTRUCTIONS` | `prescriptive` | `none`, `descriptive`, or a comma-separated subset of all three |
 | `SEMEDIT_ARM_RESTRICT` | `write` | `read` or `readwrite` |
-| `SEMEDIT_SKILL` | `false` | `true` for the SWE semedit arms; first-party explicit cells keep it disabled |
+| `SEMEDIT_SKILL` | `false` | `true` to install the semedit skill in both semedit arms; baseline remains unchanged |
 | `SEMEDIT_PREWARM_VERIFY` | `true` | `false` to include cold semantic startup |
 | `CONCURRENCY` | Hard/SWE 2; Saluki 1 | Any positive integer; local models share desktop capacity |
 | `TIMEOUT` | `5m` per job, including corrective follow-ups | Any positive Go duration |
@@ -307,13 +334,14 @@ Fixture-authored corrective hints remain part of each measured session. One
 repeat means one independent session per arm, including any corrective turns;
 it does not mean one model turn. The CLI has no random-seed or hint-count flag.
 
-For `bench-smoke-swe`, `SEMEDIT_SKILL=true` delivers the skill to both semedit
-arms while leaving the baseline unchanged. The smoke target still uses its
+`SEMEDIT_SKILL=true` delivers the skill to both semedit arms for first-party
+and external-repository fixtures while leaving the baseline unchanged. The
+skill file is installed before the initial workspace snapshot, and the setting
+is included in job and pair identities. The smoke target still uses its
 existing one-repeat, `codex/gpt-6-luna/medium` configuration; the single-fixture
 example only narrows `TASKS`. The run metadata records the skill condition, and
 resume requires an identical plan, so an existing run cannot be resumed with a
-different skill setting. Hard and Saluki use first-party explicit cells, where
-the planner does not deliver this optional skill.
+different skill setting.
 
 ## Contracts and state ownership
 
@@ -330,7 +358,7 @@ remaining jobs finish.
 
 `agentSession` owns the workspace, snapshot, selected `providerAdapter`, resume identifier, transcript, start time, measured result, and retention decision. `Runner.ExecuteAgent` provides lifecycle orchestration; session methods run follow-ups, evaluate results, and clean up. A provider adapter handles one turn and continuation mechanics. It does not decide whether the oracle requires a corrective attempt.
 
-Every coding harness keeps the original live coding session and MCP service through initial work, corrective hints, staged prompts, and diagnostic reflection. The shared session layer rejects missing or changed identities, preserves the original ID in its state, and records the error in the transcript. Once a provider fails, later turns cannot dispatch or start a replacement. Workspace, target, arm, configuration, and sandbox settings remain bound to that session.
+Every coding harness keeps the original live coding session and MCP service through initial work, corrective hints, staged prompts, and diagnostic reflection. The shared session layer rejects missing or changed identities, preserves the original ID in its state, and records the error in the transcript. After a task failure, only diagnostic-reflection turns may make a best-effort continuation on the original session ID; task turns cannot continue or start a replacement. Workspace, target, arm, configuration, and sandbox settings remain bound to that session.
 
 Before the timed agent work, every Go fixture prepares production and test dependencies with `go list -mod=readonly -deps -test ./...` in its local Go environment. Preparation is bounded to five minutes, leaves module manifests unchanged, and fails explicitly if dependencies cannot be resolved. This applies to every arm and provider so sandboxed OpenCode jobs can use semantic tools and run checks without dependency-network access. `driver_dependency_test.go` proves a prepared module builds with its proxy disabled and unchanged manifests.
 
@@ -354,13 +382,13 @@ Fixture extraction, directory preparation, provider configuration, and semedit v
 
 The measured lifecycle is initial task answer, oracle evaluation, and declared corrective follow-ups with oracle evaluation after each. Follow-ups stop on success or terminal failure. A staged fixture instead runs every declared checkpoint in one workspace and provider session, evaluating its stage oracle after each turn. A failed checkpoint remains a failed overall result even when later stages pass. The printed plan includes every resolved staged prompt. Staged turns are excluded from corrective-attempt publication statistics. Hidden oracle output never becomes agent steering.
 
-Failed or exhausted task attempts do not trigger diagnostic reflection. The result retains the last oracle and task measurements and records why reflection was skipped.
+Failed or exhausted task attempts normally do not trigger diagnostic reflection. A semedit task stopped by a deadline receives two best-effort reflections when the provider exposed a resumable session ID and the parent job is still active: a timeout diagnosis based on observed conversation evidence, followed by integration feedback about semedit. The reflection context is newly bounded and detached from the expired task deadline; parent cancellation still suppresses it. Failed, non-timeout, non-resumable, or externally cancelled runs retain their skip outcome.
 
 An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after the matching app-server `turn/completed` notification reports completed status; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
 
 Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
 
-Task elapsed time is finalized before optional diagnostic questioning. A non-use, batching, or integration-value reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every successful semedit session with a continuation identity receives an integration-value question after any behavior-specific reflection, regardless of observed tool use. Save its prompt, response, and capture error as `semantic_integration_reflection`. The prompt requests a candid one-sentence recommendation from the coding agent, grounded in this run, including whether it would ask its owner to add semedit. It prohibits edits, tools, and retries. Reports label the response as agent opinion; browser metric rows exclude the entire object.
+Task elapsed time is finalized before optional diagnostic questioning. A non-use, batching, integration-value, or timeout reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every successful semedit session with a continuation identity receives an integration-value question after any behavior-specific reflection, regardless of observed tool use. A timed-out semedit session with a resumable identity receives a timeout diagnosis followed by integration feedback. Save the timeout diagnosis as `diagnostic_timeout_reflection` and integration feedback as `semantic_integration_reflection`. Reflection prompts prohibit edits, tools, and retries. Reports label feedback as agent opinion or best-effort timeout analysis; browser metric rows exclude the entire object.
 
 Agy transcript reads are cumulative. Its session adapter advances a cursor and returns only new observations, including after a failed resume. A regressed transcript must not reintroduce old calls into task totals. Missing transcripts, invalid streaming records, and transcript-write failures remain explicit errors. Missing evidence is not a successful zero-tool measurement. Keep raw evidence and normalized observations distinct when changing a parser.
 

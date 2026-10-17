@@ -2,6 +2,55 @@
 
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-17: Batch function insertion rejected multiple declarations
+
+* Tool: `semantic_batch` containing `semantic_insert_construct` for timeout reflection helpers in `tools/benchmark-harness/driver.go`.
+* Failure: The earlier field and method edits were applied, but helper insertion failed with `function insertion requires exactly one function declaration` because the snippet contained two functions.
+* Workaround: Insert each helper as a separate declaration; inspect the partial batch result and final diff before continuing.
+* Root cause: Each function insertion operation accepts exactly one function declaration, while batch child edits are not rolled back when a later child fails.
+
+## 2026-10-17: Semantic insertion kind mismatch for method
+
+* Tool: `semantic_insert_construct`, target `tools/benchmark-harness/driver.go`.
+* Failure: Inserting a declaration with a `*Runner` receiver as `kind: "function"` failed with `source declaration does not match construct kind "function"`; no mutation was reported.
+* Workaround: Retry with the semantically matching `kind: "method"` after confirming the receiver declaration.
+* Root cause: The insertion tool distinguishes receiver methods from package-level functions and validates the supplied construct kind.
+
+## 2026-10-17: Semantic batch verification stopped at workspace trust gate
+
+* Tool: `semantic_batch` replacing benchmark reflection lifecycle helpers in `tools/benchmark-harness/`.
+* Failure: Edits were reported as intermediate; final verification failed because the worktree's `tools/go-cache-root.sh` requires explicit workspace trust.
+* Workaround: Retry the scoped verification only after explicitly enabling trust for this user-selected repository root, then inspect every child result and the final diff.
+* Root cause: Repository verification executes configured shell hooks, and the tool requires explicit trust before running the newly present shell hook.
+
+## 2026-10-17: Semantic batch linter verification failed after test edits
+
+* Tool: `semantic_batch` adding timeout-resume regression coverage in `tools/benchmark-harness/session_test.go` with explicit workspace trust.
+* Failure: Child edits were reported before final verification; the configured `golangci-lint` hook exited with status 3 and no diagnostic text was retained in the tool response.
+* Workaround: Read back the working tree and run repository formatting/check commands to capture the linter failure before making further edits.
+* Root cause: The semantic batch runs repository hooks before returning success, but this hook supplied only an exit status for the aggregate operation.
+
+## 2026-10-16: Function extraction rejected assignment statement in Normalize
+
+* Tool: `semantic_extract_function`, target `request/request.go`, function `Normalize`.
+* Failure: Extraction of normalization statements (`kind = strings.TrimSpace(kind)`, `kind = strings.ToLower(kind)`) was rejected with "cannot extract Normalize: only one leading := declaration with matching named results is supported".
+* Workaround: Applied function insertion and body replacement via semantic tools.
+* Root cause: Go function extraction requires extracted statements to be pure call expressions or a single leading `:=` short variable declaration; reassignment statements (`=`) are rejected.
+
+## 2026-10-16: construct replacement rejected multiple declarations
+
+* Tool: `semantic_replace_construct`, targeting `TestBuildBenchmarkPlanInjectsSkillOnlyIntoSemeditArms` in `tools/benchmark-harness/planner_test.go`.
+* Failure: a replacement snippet containing the test plus several helper declarations was rejected with `multiple declarations found in snippet`.
+* Workaround: replace the test function alone, then insert each helper as a separate function declaration.
+* Root cause: the construct replacement operation accepts one declaration per request.
+
+## 2026-10-16: range-loop anchor rejected during shared cache setup
+
+* Tool: `semantic_insert_construct`, targeting `TestGoAndFormattingPruneBenchmarkData` in `cmd/semedit/benchmark_exclusions_test.go`.
+* Failure: the existing `for relative, contents := range files` anchor was reported not found; no mutation was reported.
+* Workaround: targeted fixture patch copies the new shared Make configuration and resolver alongside the fixture Makefile.
+* Root cause: the supplied range-loop header did not resolve as a statement anchor; exact selector support was not established.
+
 ## 2026-10-16: suggestion worktree archival refused
 
 * Tool: `codex_app.archive_worktree`.
@@ -4381,3 +4430,4 @@ The follow-up correction repeated that invalid multi-operation structure and was
 * Runtime conclusion: event-envelope measurements above describe observed attempts, not matched built-in comparisons. Full workflow totals (including discovery, waits, repairs and final checks) were not measured comparably; overlapping intervals must not be summed. Engine-only durations and orchestration yield times are not substituted for these envelopes. No speedup ratio is justified. Wrap-up transcript processing is separate from original operation execution and adds no benchmark samples.
 * Improvements: keep output bounded at the tool boundary, expose authoritative publication state after hook failures, distinguish schema/selection errors, and coordinate whole-workspace snapshots before parallel mutations. See earlier dated incident entries for formatter hooks, concurrent buffer conflicts, schema mismatch, stale gopls scaffolds, and the rejected empty-body request. Manual fallback coverage is recorded in ME-0066.
 * Rebase reconciliation: retain main's symbol-alias cleanup and target suggestions together with checked publication errors and diagnostic reports. Metadata now shares the existing `suggestionsField` constant after the combined lint check found duplicate literals. These were targeted conflict/metadata text edits within the existing manual-fallback boundary; no additional semantic operations were invoked. The standalone skill validator could not run because the available Python runtimes lack PyYAML; repository checks cover the combined tree.
+* 2026-10-17: `semantic_batch` / `semantic_replace_body` on `tools/benchmark-harness/cost_test.go` applied the test refactor, but bundled `semantic_verify` failed while inspecting `tools/go-cache-root.sh` because workspace trust was required. The source mutation was independently read back; use targeted Go tests and repository checks for validation. Root cause: bundled verification expanded beyond the changed Go file into an untrusted Bash workspace scope.

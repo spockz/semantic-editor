@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,7 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if err := os.MkdirAll(resultsDir, 0o750); err != nil {
 		t.Fatalf("create benchmark results directory: %v", err)
 	}
-	report := `{"timestamp":"2026-09-24T12:00:00Z","comparisons":[{"task_id":"task-a","target":{"harness":"codex","model":"gpt-5.6-luna","effort":"medium"},"dynamic_dimension":{"variant":"new-schema"},"new_array":["a",{"b":2}],"small_baseline":{"task_id":"task-a","arm":"baseline-diff","turns":4,"wall_clock_ms":1200000000,"prompt_tokens":1000,"uncached_prompt_tokens":1000,"cached_prompt_tokens":0,"output_tokens":500,"oracle":{"passed":true,"duration_ms":30000000},"mcp_verified":false,"dynamic_run_field":{"source":"trial"}},"small_semedit":{"task_id":"task-a","arm":"semedit","turns":3,"wall_clock_ms":900000000,"mcp_verified":true},"large_semedit":{"task_id":"task-a","arm":"semedit","turns":2,"wall_clock_ms":800000000,"mcp_verified":true}},{"task_id":"task-b","another_dimension":"other-schema","small_baseline":{"task_id":"task-b","turns":5}}]}`
+	report := `{"timestamp":"2026-09-24T12:00:00Z","comparisons":[{"task_id":"task-a","target":{"harness":"codex","model":"gpt-5.6-luna","effort":"medium"},"dynamic_dimension":{"variant":"new-schema"},"new_array":["a",{"b":2}],"small_baseline":{"task_id":"task-a","arm":"baseline-diff","turns":4,"wall_clock_ms":1200000000,"prompt_tokens":1000,"uncached_prompt_tokens":1000,"cached_prompt_tokens":0,"output_tokens":500,"estimated_cost_usd":0.123456,"estimated_cost_pricing_id":"openai-api-gpt-5.6-luna-standard","estimated_cost_rate_card_as_of":"2026-09-24","estimated_cost_basis":"recorded benchmark harness estimate","oracle":{"passed":true,"duration_ms":30000000},"mcp_verified":false,"dynamic_run_field":{"source":"trial"}},"small_semedit":{"task_id":"task-a","arm":"semedit","turns":3,"wall_clock_ms":900000000,"mcp_verified":true},"large_semedit":{"task_id":"task-a","arm":"semedit","turns":2,"wall_clock_ms":800000000,"mcp_verified":true}},{"task_id":"task-b","another_dimension":"other-schema","small_baseline":{"task_id":"task-b","turns":5}}]}`
 	if err := os.WriteFile(filepath.Join(resultsDir, "report.json"), []byte(report), 0o600); err != nil {
 		t.Fatalf("write benchmark report: %v", err)
 	}
@@ -104,6 +105,19 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	}
 	if len(summaryRows) != 4 {
 		t.Fatalf("benchmark browser summary rows = %d, want 4 condition groups", len(summaryRows))
+	}
+	for _, row := range summaryRows {
+		var task, arm string
+		if err := json.Unmarshal(row["task_id"], &task); err != nil {
+			t.Fatalf("decode summarized task ID: %v", err)
+		}
+		if err := json.Unmarshal(row["arm"], &arm); err != nil {
+			t.Fatalf("decode summarized arm: %v", err)
+		}
+		if task == "task-a" && arm == "baseline" {
+			assertJSONFieldValue(t, row, "cost__p50", 0.123456)
+			assertJSONFieldValue(t, row, "estimated_cost_pricing_id", "openai-api-gpt-5.6-luna-standard")
+		}
 	}
 	rows := loadIndividualBenchmarkBrowserRows(t, rootDir, report)
 	if len(rows) != 4 {
@@ -140,7 +154,9 @@ func assertBenchmarkBrowserRows(t *testing.T, rows []map[string]json.RawMessage)
 	assertJSONFieldValue(t, rows[0], "wall_clock_ms", int64(1200))
 	assertJSONFieldValue(t, rows[0], "wall_clock_seconds", 1.2)
 	assertJSONFieldValue(t, rows[0], "oracle__duration_ms", int64(30))
-	assertJSONFieldValue(t, rows[0], "cost", 0.02)
+	assertJSONFieldValue(t, rows[0], "cost", 0.123456)
+	assertJSONFieldValue(t, rows[0], "estimated_cost_usd", 0.123456)
+	assertJSONFieldValue(t, rows[0], "estimated_cost_pricing_id", "openai-api-gpt-5.6-luna-standard")
 	assertJSONFieldValue(t, rows[0], "dynamic_run_field__source", "trial")
 	assertJSONFieldValue(t, rows[1], "context_variant", "small")
 	if len(rows[0]["expected_semantic_tools_used"]) != 0 && string(rows[0]["expected_semantic_tools_used"]) != "null" {
@@ -169,7 +185,7 @@ func assertJSONFieldValue[T comparable](t *testing.T, row map[string]json.RawMes
 
 func assertBenchmarkBrowserShortcode(t *testing.T, shortcode string) {
 	t.Helper()
-	for _, want := range []string{"Rows are pre-aggregated by task, target, prompt variant", `group_by: []`, `columns: [...new Set(rows.flatMap(Object.keys))]`, `await viewer.restore({ filter: filters });`, "MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each restriction policy, target, and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
+	for _, want := range []string{"Rows are pre-aggregated by task, target, prompt variant", "harness-recorded USD estimate", `group_by: []`, `columns: [...new Set(rows.flatMap(Object.keys))]`, `await viewer.restore({ filter: filters });`, "MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each restriction policy, target, and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
 		expected := strings.Replace(want, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
 		if !strings.Contains(shortcode, expected) {
 			t.Errorf("benchmark browser shortcode missing %q", expected)
@@ -451,9 +467,11 @@ func TestBestBenchmarkPairAllowsTenfoldCostGainToOverrideSpeed(t *testing.T) {
 }
 
 func benchmarkDocumentationRunResult(passed bool, wallClock time.Duration, uncached int) *BenchRunResult {
+	cost := float64(uncached) * 0.000001
 	return &BenchRunResult{
 		Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"}, Arm: "baseline-diff", Success: passed,
 		Turns: 1, WallClock: wallClock, PromptTokens: uncached, UncachedPromptTokens: uncached, CachedPromptTokens: 0,
+		EstimatedCostUSD: &cost, EstimatedCostPricingID: "test-rate-card", EstimatedCostRateCardAsOf: "2026-10-17",
 		Oracle: &BenchOracleResult{Passed: passed, Level1Policy: passed, Level2AST: passed, Level3Build: passed, Level4Test: passed},
 	}
 }
@@ -699,32 +717,39 @@ func TestDocCachedToUncachedTokenRatioFavorsHigherCachedShare(t *testing.T) {
 	}
 }
 
-func TestBenchmarkCostUsesDeclaredModelRatesAndCountsThinkingAsOutput(t *testing.T) {
+func TestBenchmarkCostUsesHarnessRecordedEstimateWithoutRepricing(t *testing.T) {
 	t.Parallel()
 
+	recordedCost := 0.123456
 	run := &BenchRunResult{
-		Target:               BenchTarget{Model: "gpt-5.6-luna"},
-		UncachedPromptTokens: 100,
-		CachedPromptTokens:   20,
-		OutputTokens:         3,
-		ReasoningTokens:      2,
-		MCPVerified:          true,
+		Target:                    BenchTarget{Model: "gpt-5.6-luna"},
+		UncachedPromptTokens:      100,
+		CachedPromptTokens:        20,
+		OutputTokens:              3,
+		ReasoningTokens:           2,
+		EstimatedCostUSD:          &recordedCost,
+		EstimatedCostPricingID:    "pricing-from-run",
+		EstimatedCostRateCardAsOf: "2026-09-24",
+		MCPVerified:               true,
 	}
 	cost, available := benchmarkCost(run)
 	if !available {
-		t.Fatal("Luna cost must be available")
+		t.Fatal("stored cost must be available")
 	}
-	if want := 0.00066; cost != want {
-		t.Errorf("Luna cost = %v, want %v", cost, want)
+	if cost != recordedCost {
+		t.Errorf("recorded cost = %v, want %v", cost, recordedCost)
+	}
+	if got := formatBenchmarkCostUSD(0.0000001234); got != "$0.0000001234" {
+		t.Errorf("small recorded cost = %q, want exact decimal display", got)
 	}
 
-	if _, available := benchmarkCost(&BenchRunResult{Target: BenchTarget{Model: "unpriced-model"}}); available {
-		t.Fatal("unknown model cost must remain unavailable")
+	if _, available := benchmarkCost(&BenchRunResult{Target: BenchTarget{Model: "gpt-6-luna"}, PromptTokens: 100}); available {
+		t.Fatal("missing historical estimate must not be recalculated from current rates")
 	}
 
 	row := formatDocCostRow(run, run, nil, nil)
-	if !strings.Contains(row, "| **Cost** | 0.0007 | 0.0007 | 0% |") {
-		t.Errorf("cost row = %q, want values in model credits", row)
+	if !strings.Contains(row, "| **Recorded Cost (USD)** | $0.123456 | $0.123456 | 0% |") || !strings.Contains(row, "pricing-from-run (2026-09-24)") {
+		t.Errorf("cost row = %q, want stored dollars and rate-card provenance", row)
 	}
 }
 
@@ -742,35 +767,16 @@ func TestBestBenchmarkPairUsesModelCostInsteadOfCacheAdjustedTokenUnits(t *testi
 		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 500),
 	}
 	lowerCacheAdjustedUnits.semedit.OutputTokens = 400
+	baselineCost := 0.001
+	lowerModelCost.baseline.EstimatedCostUSD = &baselineCost
+	lowerCacheAdjustedUnits.baseline.EstimatedCostUSD = &baselineCost
+	lowerModelSemeditCost := 0.0008
+	lowerModelCost.semedit.EstimatedCostUSD = &lowerModelSemeditCost
+	lowerCacheAdjustedSemeditCost := 0.0009
+	lowerCacheAdjustedUnits.semedit.EstimatedCostUSD = &lowerCacheAdjustedSemeditCost
 
 	if !lowerModelCost.preferredTo(lowerCacheAdjustedUnits) {
 		t.Fatal("lower model cost must outrank lower cache-adjusted token units when speed is comparable")
-	}
-}
-
-func TestBenchmarkCostRatesMatchDeclaredModelSchedule(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]benchmarkCostRates{
-		"GPT-6 Astra":   {input: 250, cached: 25, output: 1250},
-		"GPT-6 Sol":     {input: 50, cached: 5, output: 250},
-		"GPT-5.6 Sol":   {input: 100, cached: 10, output: 500},
-		"GPT-5.6 Terra": {input: 50, cached: 5, output: 300},
-		"GPT-6 Luna":    {input: 2.5, cached: 0.25, output: 12.5},
-		"GPT-5.6 Luna":  {input: 5, cached: 0.5, output: 30},
-	}
-	for model, want := range tests {
-		got, available := benchmarkCostRatesForModel(model)
-		if !available {
-			t.Errorf("rates for %q are unavailable", model)
-			continue
-		}
-		if got != want {
-			t.Errorf("rates for %q = %#v, want %#v", model, got, want)
-		}
-	}
-	if _, available := benchmarkCostRatesForModel("Gemini 3.8 Flash"); available {
-		t.Error("model without a declared credit schedule must remain unavailable")
 	}
 }
 
@@ -1194,11 +1200,18 @@ func TestPublishableBenchmarkRunExcludesLegacyFixReplay(t *testing.T) {
 
 func benchmarkAggregateUsageTestComparisons() []*BenchComparisonSummary {
 	makeRun := func(arm, model string, input, output int, seconds float64) *BenchRunResult {
+		var cost *float64
+		if model == "gpt-6-luna" {
+			value := float64(input)*0.10/1_000_000 + float64(output)*0.50/1_000_000
+			cost = &value
+		}
 		return &BenchRunResult{
 			Arm: arm, Target: BenchTarget{Harness: "codex", Model: model, Effort: "medium"},
 			PromptTokens: input, OutputTokens: output, ReasoningTokens: output / 10,
-			WallClock: time.Duration(seconds * float64(time.Second)),
-			Oracle:    &BenchOracleResult{Passed: true},
+			EstimatedCostUSD: cost, EstimatedCostPricingID: "test-rate-card", EstimatedCostRateCardAsOf: "2026-10-17",
+			EstimatedCostBasis: "synthetic test amount",
+			WallClock:          time.Duration(seconds * float64(time.Second)),
+			Oracle:             &BenchOracleResult{Passed: true},
 		}
 	}
 	target := BenchTarget{Harness: "codex", Model: "gpt-6-luna", Effort: "medium"}
@@ -1235,8 +1248,8 @@ func assertBenchmarkAggregateUsageGroups(t *testing.T, groups []benchmarkAggrega
 	if latency == nil || latency.count != 2 || latency.median() != 2 || latency.quantile(0.75)-latency.quantile(0.25) != 1 || latency.quantile(0.9) != 2.8 || latency.quantile(1) != 3 {
 		t.Errorf("pooled latency = %#v; want N=2, median=2, IQR=1, p90=2.8, max=3", latency)
 	}
-	if !baseline.costKnown || baseline.totalCost != 0.00155 {
-		t.Errorf("known baseline cost = (%v, %v), want (0.00155, true)", baseline.totalCost, baseline.costKnown)
+	if !baseline.costKnown || math.Abs(baseline.totalCost-0.00006) > 1e-12 {
+		t.Errorf("known baseline cost = (%v, %v), want (0.00006, true)", baseline.totalCost, baseline.costKnown)
 	}
 	semedit := findBenchmarkAggregateUsageGroup(t, groups, "gpt-6-luna", "system-a", "semedit-implicit")
 	if semedit.sessionCount != 2 {
@@ -1246,7 +1259,7 @@ func assertBenchmarkAggregateUsageGroups(t *testing.T, groups []benchmarkAggrega
 		t.Errorf("different prompt configuration sessions = %d, want 1", separate.sessionCount)
 	}
 	if unknown := findBenchmarkAggregateUsageGroup(t, groups, "unknown-model", "system-a", "baseline"); unknown.costKnown {
-		t.Error("unknown model cost formula was marked available")
+		t.Error("cost without a recorded harness estimate was marked available")
 	}
 }
 
@@ -1256,11 +1269,11 @@ func assertBenchmarkAggregateUsageTotalsAndPage(t *testing.T, groups []benchmark
 	if totals.sessions != 8 || totals.inputTokens != 1260 || totals.outputTokens != 126 || totals.reasoningTokens != 10 || totals.pricedGroups != 4 || totals.unpricedGroups != 2 {
 		t.Errorf("overall totals = %+v, want 8 sessions, 1260 input, 126 output, 10 reasoning, 4 priced and 2 unpriced arms", totals)
 	}
-	if totals.cost < 0.0042874 || totals.cost > 0.0042876 {
-		t.Errorf("overall known cost = %.8f credits, want approximately 0.0042875 across four priced arms", totals.cost)
+	if totals.cost < 0.0001664 || totals.cost > 0.0001666 {
+		t.Errorf("overall known cost = %.8f USD, want approximately 0.0001665 across four priced arms", totals.cost)
 	}
 	page := renderBenchmarkAggregateDetailDoc("task", groups)
-	for _, want := range []string{"Benchmark total:** 8 sessions", "10 reasoning tokens", "1396 total tokens", "Total model cost (credits)", "Unavailable: no declared model cost formula", "2.80s", "1.00s"} {
+	for _, want := range []string{"Benchmark total:** 8 sessions", "10 reasoning tokens", "1396 total tokens", "Total recorded model cost (USD)", "Unavailable: run has no harness estimate", "test-rate-card", "2.80s", "1.00s"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("benchmark detail page missing %q", want)
 		}

@@ -1,0 +1,471 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-2a387e2f3023707a",
+    "pair_id": "pair-19dfc07d8024a6da",
+    "task_id": "task-11-mixed-sink-api-migration",
+    "fixture_path": "testdata/bench/task_11_mixed_sink_api_migration.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "opencode",
+      "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "semedit",
+    "repeat": 3,
+    "policy": "write",
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nNormalize audit event kinds by removing surrounding whitespace and lowercasing them before persistence. Keep metrics and legacy export behavior unchanged. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nA normalized probe is control traffic, like health, for classification. It is still an event: do not filter or drop it; the configured sink must receive it with its normalized kind. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nApply normalization at the service delivery boundary immediately before handing the event to the configured sink. Keep the change scoped to that path; do not alter unrelated sink, replay, metrics, or legacy behavior. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: provide the public audit.NormalizeKind(kind string) string normalization contract in audit/normalize.go; classify normalized probe and health kinds as control and ordinary kinds as data; and ensure Dispatcher.Record delivers exactly one normalized event to its configured sink. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 216492,
+        "comparison_pair_id": "pair-19dfc07d8024a6da",
+        "diagnostic_timeout_reflection": {
+          "error": "run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+          "prompt": "The benchmark task stopped because its execution timed out. Do not use tools, edit files, or retry the task. Based only on the conversation so far, identify the last action underway, where time appears to have gone (model reasoning, tool wait, repeated verification or undo, exploration, or another cause), and the strongest evidence for that diagnosis. Clearly separate observed evidence from inference, and answer in a few concise sentences."
+        },
+        "diagnostic_tool_coverage": {
+          "complete": false,
+          "completeness_reason": "run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": null,
+          "observation_state": "partial",
+          "observed": [
+            "bash",
+            "grep",
+            "read",
+            "semantic_inspect_symbol",
+            "semantic_workspace_outline"
+          ]
+        },
+        "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3027,
+        "initial_context_tokens": 24732,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 216492,
+            "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+            "initial_load_turns": 0,
+            "internal_turns": 19,
+            "mcp_load_turns": 0,
+            "output_tokens": 6575,
+            "process_start_to_first_event_ms": 28916,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 247303,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "language": "go"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_workspace_outline",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "find . -type f -name \"*.go\" -o -type f -name \"go.mod\" | head -50"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/normalize.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/event.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/service/dispatch.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/sink.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/summary.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/event_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/summary_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/service/dispatch_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000",
+                  "pattern": "Classify"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/metrics/writer.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/legacy/export.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/metrics/writer_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/legacy/export_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/cmd/migrate/main.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/go.mod"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "language": "go",
+                  "symbol": "Record"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_inspect_symbol",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "audit/summary.go",
+                  "language": "go",
+                  "symbol": "Classify"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_inspect_symbol",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 30811,
+            "wall_clock_ms": 600007
+          }
+        ],
+        "internal_turns": 19,
+        "job_id": "job-2a387e2f3023707a",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "opencode_exit_code": -1,
+        "oracle": null,
+        "output_tokens": 6575,
+        "process_start_to_first_event_ms": 28916,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 247303,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "go_cache_initial_state": "empty",
+          "local_model_context_tokens": "212992",
+          "local_model_limits_source": "llama.cpp-props",
+          "local_model_output_tokens": "8192",
+          "mcp_metrics_file": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000.mcp-metrics.json",
+          "provider_transport": "opencode_attached_server_v1",
+          "retained_working_directory": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 3,
+        "semantic_integration_reflection": {
+          "error": "run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+          "prompt": "The benchmark task stopped because its execution timed out. For benchmark analysis only, do not use tools, edit files, or retry the task. In one sentence, say whether semedit's tools helped or hindered the work before the timeout, grounded in what actually happened. If you could not assess their value, say so.",
+          "response": "**Last action underway:** A `semedit_semsemantic_batch` call with 4 edits — inserting `NormalizeKind` in `audit/normalize.go`, adding a normalization line in `Dispatcher.Record`, adding normalization in `Classify`, and replacing the `case \"health\"` with `case \"health\", \"probe\"`.\n\n**Where time appears to have gone:** The batch's pre-flight gopls diagnostics step, which failed before any edit was applied.\n\n**Observed evidence:** The batch returned `application_state: \"unknown\"` with the error `batch diagnostics before in \"...\": check Go diagnostics with gopls: incomplete Go package coverage for \"./.scratch/go/build/2a\": package has errors but no selected Go files`.\n\n**Inference:** The gopls server was trying to analyze a build-artifact directory (`.scratch/go/build/2a`) that contains no valid Go source files, causing the pre-flight diagnostics to stall or time out before the batch could proceed. The agent had not yet retried with a narrower scope or excluded that directory."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1595,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": true,
+        "success": false,
+        "target": {
+          "harness": "opencode",
+          "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "arguments": {
+              "language": "go"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_workspace_outline",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "find . -type f -name \"*.go\" -o -type f -name \"go.mod\" | head -50"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/normalize.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/event.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/service/dispatch.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/sink.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/summary.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/event_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/audit/summary_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/service/dispatch_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000",
+              "pattern": "Classify"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/metrics/writer.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/legacy/export.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/metrics/writer_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/legacy/export_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/cmd/migrate/main.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-11-mixed-sink-api-migration_1792222658606880000/go.mod"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/dispatch.go",
+              "language": "go",
+              "symbol": "Record"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_inspect_symbol",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "audit/summary.go",
+              "language": "go",
+              "symbol": "Classify"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_inspect_symbol",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 19,
+        "tools_used": [
+          "semedit_semantic_workspace_outline",
+          "bash",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "grep",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "semedit_semantic_inspect_symbol",
+          "semedit_semantic_inspect_symbol"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 30811,
+        "variant": "small:implicit",
+        "wall_clock_ms": 600007
+      }
+    ],
+    "timestamp": "2026-10-17T07:49:40.376631Z"
+  }
+}

@@ -554,8 +554,10 @@ func renderStandardSections(sb *strings.Builder, comp *ComparisonSummary) {
 	renderSemanticToolReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 	renderSemanticBatchReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
 	renderSemanticIntegrationReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderTimeoutDiagnosticReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
 	renderSemanticBatchReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 	renderSemanticIntegrationReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+	renderTimeoutDiagnosticReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 }
 
 func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
@@ -577,8 +579,10 @@ func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
 	renderSemanticToolReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 	renderSemanticBatchReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
 	renderSemanticIntegrationReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderTimeoutDiagnosticReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
 	renderSemanticBatchReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 	renderSemanticIntegrationReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
+	renderTimeoutDiagnosticReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 }
 
 func writePrompt(sb *strings.Builder, label, prompt string) {
@@ -702,6 +706,7 @@ func renderInteractionComparisonRows(sb *strings.Builder, runs benchmarkComparis
 }
 
 func renderTokenComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatCloudCostComparisonRow(runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
 	sb.WriteString(formatMetricRowInt("Output Tokens",
 		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
 		func(r *RunResult) int { return r.OutputTokens }))
@@ -718,6 +723,24 @@ func renderTokenComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns
 		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
 		func(r *RunResult) int { return r.UncachedPromptTokens }))
 	sb.WriteString(formatCachedToUncachedRatioRow(runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
+}
+
+func formatCloudCostComparisonRow(sb, sm, lb, lm *RunResult) string {
+	formatCost := func(run *RunResult) string {
+		if run == nil || run.EstimatedCostUSD == nil {
+			return "—"
+		}
+		return fmt.Sprintf("$%.6f", *run.EstimatedCostUSD)
+	}
+	formatDelta := func(baseline, semedit *RunResult) string {
+		if baseline == nil || semedit == nil || baseline.EstimatedCostUSD == nil || semedit.EstimatedCostUSD == nil || *baseline.EstimatedCostUSD == 0 {
+			return "—"
+		}
+		change := 100 * (*semedit.EstimatedCostUSD - *baseline.EstimatedCostUSD) / *baseline.EstimatedCostUSD
+		return fmt.Sprintf("%+.1f%%", change)
+	}
+	return fmt.Sprintf("| **Estimated Cloud Token Cost (USD, list-rate equivalent)** | %s | %s | %s | %s | %s | %s |\n",
+		formatCost(sb), formatCost(sm), formatDelta(sb, sm), formatCost(lb), formatCost(lm), formatDelta(lb, lm))
 }
 
 func renderOracleComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
@@ -1257,6 +1280,21 @@ func renderSemanticIntegrationReflection(sb *strings.Builder, title string, run 
 	sb.WriteString("Agent opinion based on this run; excluded from benchmark measurements.\n\n")
 	if reflection.Response != "" {
 		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))
+	}
+	renderSemanticReflectionDetails(sb, reflection)
+}
+
+func renderTimeoutDiagnosticReflection(sb *strings.Builder, title string, run *RunResult) {
+	if run == nil || run.DiagnosticTimeoutReflection == nil {
+		return
+	}
+	reflection := run.DiagnosticTimeoutReflection
+	fmt.Fprintf(sb, "#### %s: Timeout Diagnostic Reflection\n\n", title)
+	sb.WriteString("Best-effort analysis of a timed-out run, captured outside task measurements. Provider identity and continuation errors remain recorded separately.\n\n")
+	if reflection.Response != "" {
+		sb.WriteString("<blockquote>")
+		sb.WriteString(html.EscapeString(reflection.Response))
+		sb.WriteString("</blockquote>\n\n")
 	}
 	renderSemanticReflectionDetails(sb, reflection)
 }

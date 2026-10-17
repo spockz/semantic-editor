@@ -20,7 +20,7 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 ## Benchmark Methodology & Transparency
 
 * **Reproducibility & Provenance**: Self-contained txtar archives define test scenarios. Links below resolve to commit-anchored GitHub source files for published commits, or cryptographic SHA-256 fingerprints for uncommitted local fixtures.
-* **Model Cost**: Tables report model-specific credit consumption where a target model has a declared schedule: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. Thinking tokens use the output rate. ADR-0043 defines the per-million-token credit rates.
+* **Recorded Model Cost**: Tables show the estimated_cost_usd value captured by the harness for that run, with its recorded pricing ID and rate-card date. Documentation generation never recalculates historical costs from current rates; reports without a stored estimate show cost as unavailable. The harness records the rate-card basis in each result.
 * **Multi-Level Correctness Oracle**: Four validation levels evaluate each trial:
   1. *Level 1 (Mutation Policy)*: Restricts file modifications strictly to authorized paths.
   2. *Level 2 (AST Invariants)*: Compiler AST verification of required symbols, imports, and relative declaration ordering.
@@ -644,7 +644,27 @@ func formatDocCachedToUncachedRatioRow(sb, sm, lb, lm *BenchRunResult) string {
 func formatDocCostRow(sb, sm, lb, lm *BenchRunResult) string {
 	valSB, valSM, deltaS := computeDocCostDelta(sb, sm)
 	valLB, valLM, deltaL := computeDocCostDelta(lb, lm)
-	return fmt.Sprintf("| **Cost** | %s | %s | %s | %s | %s | %s |\n", valSB, valSM, deltaS, valLB, valLM, deltaL)
+	return fmt.Sprintf("| **Recorded Cost (USD)** | %s | %s | %s | %s | %s | %s |\n| **Rate card (as recorded)** | %s | %s | — | %s | %s | — |\n| **Cost basis** | %s | %s | — | %s | %s | — |\n",
+		valSB, valSM, deltaS, valLB, valLM, deltaL,
+		formatDocCostRateCard(sb), formatDocCostRateCard(sm), formatDocCostRateCard(lb), formatDocCostRateCard(lm),
+		formatDocCostBasis(sb), formatDocCostBasis(sm), formatDocCostBasis(lb), formatDocCostBasis(lm))
+}
+
+func formatDocCostRateCard(run *BenchRunResult) string {
+	if run == nil || run.EstimatedCostUSD == nil || run.EstimatedCostPricingID == "" {
+		return "—"
+	}
+	if run.EstimatedCostRateCardAsOf == "" {
+		return run.EstimatedCostPricingID
+	}
+	return fmt.Sprintf("%s (%s)", run.EstimatedCostPricingID, run.EstimatedCostRateCardAsOf)
+}
+
+func formatDocCostBasis(run *BenchRunResult) string {
+	if run == nil || run.EstimatedCostUSD == nil || run.EstimatedCostBasis == "" {
+		return "—"
+	}
+	return run.EstimatedCostBasis
 }
 
 func formatDocMetricRowDuration(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) time.Duration) string {
@@ -763,7 +783,7 @@ func computeDocCostDelta(base, mcp *BenchRunResult) (string, string, string) {
 		if !available {
 			return 0, "—", false
 		}
-		return cost, fmt.Sprintf("%.4f", cost), true
+		return cost, formatBenchmarkCostUSD(cost), true
 	}
 	baseCost, baseText, baseAvailable := format(base)
 	mcpCost, mcpText, mcpAvailable := format(mcp)

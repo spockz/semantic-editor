@@ -248,6 +248,10 @@ type RunResult struct {
 	UncachedPromptTokens             int                      `json:"uncached_prompt_tokens"`
 	OutputTokens                     int                      `json:"output_tokens"`
 	ReasoningTokens                  int                      `json:"reasoning_tokens"`
+	EstimatedCostUSD                 *float64                 `json:"estimated_cost_usd,omitempty"`
+	EstimatedCostPricingID           string                   `json:"estimated_cost_pricing_id,omitempty"`
+	EstimatedCostRateCardAsOf        string                   `json:"estimated_cost_rate_card_as_of,omitempty"`
+	EstimatedCostBasis               string                   `json:"estimated_cost_basis,omitempty"`
 	Oracle                           *OracleResult            `json:"oracle"`
 	Prompt                           string                   `json:"prompt,omitempty"`
 	BeforeState                      string                   `json:"before_state,omitempty"`
@@ -272,6 +276,7 @@ type RunResult struct {
 	agentResponse                    string
 	processStartedAt                 time.Time
 	rawEvents                        []json.RawMessage
+	DiagnosticTimeoutReflection      *SemanticToolReflection `json:"diagnostic_timeout_reflection,omitempty"`
 }
 
 func (r *RunResult) wallClockStart(fallback time.Time) time.Time {

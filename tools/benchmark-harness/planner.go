@@ -704,14 +704,14 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 		if options.SemeditPrewarmVerify {
 			pairParts = append(pairParts, "prewarm-verify")
 		}
-		pairParts = append(pairParts, "semedit-skill=false")
+		pairParts = append(pairParts, fmt.Sprintf("semedit-skill=%t", options.SemeditSkill))
 		pairID := stablePlanID(pairParts...)
 		for offset := range conditions {
 			condition := conditions[(offset+specification.Repeat-1)%len(conditions)]
 			job := specification
 			job.PromptVariant = condition.variant
-			job.SemeditSkill = false
-			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction), "semedit-skill=false")
+			job.SemeditSkill = options.SemeditSkill && isSemeditArm(condition.arm)
+			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill))
 			job.PairID = pairID
 			job.Arm = condition.arm
 			job.MCPServerInstructions = mode
@@ -726,6 +726,7 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 			if err != nil {
 				return nil, err
 			}
+			execution.SemeditSkill = job.SemeditSkill
 			job.Execution = execution
 			jobs = append(jobs, job)
 		}
@@ -772,8 +773,7 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		pairID := ""
 		if !isControl {
 			arms = []ArmType{ArmBaseline, ArmSemedit}
-			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode)}
-			pairParts = append(pairParts, "semedit-skill=false")
+			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", options.SemeditSkill)}
 			if options.SemeditPrewarmVerify {
 				pairParts = append(pairParts, "prewarm-verify")
 			}
@@ -781,9 +781,8 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		}
 		for _, arm := range arms {
 			job := specification
-			job.SemeditSkill = false
-			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode)}
-			idParts = append(idParts, fmt.Sprintf("semedit-skill=%t", job.SemeditSkill))
+			job.SemeditSkill = options.SemeditSkill && isSemeditArm(arm)
+			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill)}
 			if arm != ArmControl {
 				idParts = append(idParts, string(policy))
 				if options.SemeditPrewarmVerify {

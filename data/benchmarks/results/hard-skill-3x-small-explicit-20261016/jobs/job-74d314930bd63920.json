@@ -1,0 +1,209 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-74d314930bd63920",
+    "pair_id": "pair-891978948d648811",
+    "task_id": "task-09-composite-refactor",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_09_composite_refactor.txtar",
+    "context": "small",
+    "target": {
+      "harness": "agy",
+      "model": "gemini-4-argon-low"
+    },
+    "arm": "baseline-diff",
+    "repeat": 2,
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nRename the Config field from Port to ListenPort and update its uses, including Addr. Addr must continue to format the configured Host and port; unrelated Port fields in other packages are outside this change.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nDefaultConfig() *Config should return a non-nil configuration with Host set to `localhost` and ListenPort set to 8080, so its Addr() is `localhost:8080` without caller initialization.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nClean up imports left unused in config/config.go while preserving Addr behavior for caller-supplied host and port values, not just the defaults.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: Config exposes ListenPort instead of Port; DefaultConfig() *Config supplies Host `localhost` and ListenPort 8080; and Addr formats the current configuration values. Remove unused imports, preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 47330,
+        "comparison_pair_id": "pair-891978948d648811",
+        "diff": "File config/config.go modified (15 lines -\u003e 19 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 47330,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2222,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 676,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 24901,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000/config/config.go\"",
+                  "toolAction": "\"Viewing config/config.go\"",
+                  "toolSummary": "\"View config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"fd -t f\"",
+                  "Cwd": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Listing workspace files\"",
+                  "toolSummary": "\"List workspace files\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AllowMultiple": "false",
+                  "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import archive/tar\"",
+                  "EndLine": "16",
+                  "Instruction": "\"Update config/config.go with ListenPort, DefaultConfig(), and clean imports\"",
+                  "ReplacementContent": "\"import \\\"fmt\\\"\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+                  "StartLine": "3",
+                  "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+                  "TargetFile": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000/config/config.go\"",
+                  "toolAction": "\"Updating config/config.go\"",
+                  "toolSummary": "\"Update config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "replace_file_content",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running Go tests\"",
+                  "toolSummary": "\"Run Go tests\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24901,
+            "wall_clock_ms": 34226
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-74d314930bd63920",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2222,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 676,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 24901,
+        "provenance": {
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "provider_transport": "agy_stream_json_v1",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-4-argon-low"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000/config/config.go\"",
+              "toolAction": "\"Viewing config/config.go\"",
+              "toolSummary": "\"View config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"fd -t f\"",
+              "Cwd": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Listing workspace files\"",
+              "toolSummary": "\"List workspace files\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AllowMultiple": "false",
+              "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import archive/tar\"",
+              "EndLine": "16",
+              "Instruction": "\"Update config/config.go with ListenPort, DefaultConfig(), and clean imports\"",
+              "ReplacementContent": "\"import \\\"fmt\\\"\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+              "StartLine": "3",
+              "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+              "TargetFile": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000/config/config.go\"",
+              "toolAction": "\"Updating config/config.go\"",
+              "toolSummary": "\"Update config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "replace_file_content",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_small_task-09-composite-refactor_1792185854702224000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running Go tests\"",
+              "toolSummary": "\"Run Go tests\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "turns": 1,
+        "uncached_prompt_tokens": 24901,
+        "variant": "small",
+        "wall_clock_ms": 36529
+      }
+    ],
+    "timestamp": "2026-10-16T21:24:52.42581Z"
+  }
+}

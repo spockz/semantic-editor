@@ -15,6 +15,17 @@ Normal operation preserves cache, temporary-directory, tool installation, enviro
 
 This decision supersedes ADR-0041's default Go state policy. It leaves canonical request roots, workspace manifest safety, and atomic file publication unchanged.
 
+Repository development Make targets share downloaded modules (`GOMODCACHE`) and
+compiled artifacts (`GOCACHE`) under the primary Git checkout's `.scratch/go`.
+Both Make entry points use the same configuration and discover the primary
+checkout through Git worktree metadata. Source exports without Git metadata use
+their own `.scratch/go`. Explicit environment or command-line cache paths take
+precedence; `GO_CACHE_ROOT` overrides the shared base. `GO_SCRATCH` selects local
+state independently. Temporary files, binaries, plugins, environment files,
+gopls state, and linter caches stay local to each worktree. Worktree removal
+must not clear shared caches. Benchmark fixture isolation remains explicit and
+unchanged; development cache sharing does not select fixture cache policy.
+
 ## Invariants
 
 * Normal CLI and MCP use do not create `.scratch/go` or replace the caller's cache paths.

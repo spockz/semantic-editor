@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -212,20 +213,11 @@ func benchmarkUncachedInputTokens(run *BenchRunResult) int {
 	return run.UncachedPromptTokens
 }
 
-type benchmarkCostRates struct {
-	input  float64
-	cached float64
-	output float64
-}
-
 func benchmarkCost(run *BenchRunResult) (float64, bool) {
-	rates, ok := benchmarkCostRatesForModel(run.Target.Model)
-	if !ok {
+	if run == nil || run.EstimatedCostUSD == nil {
 		return 0, false
 	}
-	return (float64(benchmarkUncachedInputTokens(run))*rates.input +
-		float64(run.CachedPromptTokens)*rates.cached +
-		float64(run.ReasoningTokens+run.OutputTokens)*rates.output) / 1_000_000, true
+	return *run.EstimatedCostUSD, true
 }
 
 func benchmarkRelativeCost(baseline, semedit *BenchRunResult) (float64, bool) {
@@ -235,26 +227,6 @@ func benchmarkRelativeCost(baseline, semedit *BenchRunResult) (float64, bool) {
 		return 0, false
 	}
 	return benchmarkRelativeMetric(baselineCost, semeditCost), true
-}
-
-func benchmarkCostRatesForModel(model string) (benchmarkCostRates, bool) {
-	normalized := strings.NewReplacer("_", "-", " ", "-", "/", "-").Replace(strings.ToLower(strings.TrimSpace(model)))
-	switch normalized {
-	case "gpt-6-astra":
-		return benchmarkCostRates{input: 250, cached: 25, output: 1250}, true
-	case "gpt-6-sol":
-		return benchmarkCostRates{input: 50, cached: 5, output: 250}, true
-	case "gpt-5.6-sol":
-		return benchmarkCostRates{input: 100, cached: 10, output: 500}, true
-	case "gpt-5.6-terra":
-		return benchmarkCostRates{input: 50, cached: 5, output: 300}, true
-	case "gpt-6-luna":
-		return benchmarkCostRates{input: 2.5, cached: 0.25, output: 12.5}, true
-	case "gpt-5.6-luna":
-		return benchmarkCostRates{input: 5, cached: 0.5, output: 30}, true
-	default:
-		return benchmarkCostRates{}, false
-	}
 }
 
 func benchmarkAggregateIdentity(comp *BenchComparisonSummary) string {
@@ -320,6 +292,9 @@ type benchmarkAggregateGroup struct {
 	instructions         string
 	context              string
 	arm                  string
+	costPricingID        string
+	costRateCardAsOf     string
+	costBasis            string
 	sessionCount         int
 	totalInputTokens     int
 	totalOutputTokens    int
@@ -341,23 +316,26 @@ type benchmarkArmKey struct {
 	runInstructions     string
 	interactiveMode     string
 	prompt              string
+	costPricingID       string
+	costRateCardAsOf    string
+	costBasis           string
 }
 
 func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string {
 	groups := aggregateBenchmarkMetrics(comparisons)
 	var sb strings.Builder
 	sb.WriteString("---\ntitle: \"Benchmark aggregates\"\ndescription: \"A compact overview of pooled benchmark results with links to per-benchmark distributions.\"\nicon: \"chart-bar\"\ndraft: false\nweight: 21\n---\n\n")
-	sb.WriteString("Results pool session observations across all included runs. Each benchmark page contains per-arm Median, IQR (Q3 − Q1), p90, and Max, along with session and token usage and cost availability.\n\n")
+	sb.WriteString("Results pool session observations across all included runs. Each benchmark page contains per-arm Median, IQR (Q3 − Q1), p90, and Max, along with session and token usage and harness-recorded USD cost availability. Cost aggregates remain separated by recorded pricing ID, rate-card date, and estimate basis.\n\n")
 	sb.WriteString("[Return to best-case outcomes](/docs/benchmarks/).\n\n")
 	if len(groups) == 0 {
 		sb.WriteString("> [!NOTE]\n> No publishable benchmark observations are available to aggregate.\n")
 		return sb.String()
 	}
 	totals := benchmarkAggregateUsageTotals(groups)
-	fmt.Fprintf(&sb, "**Overall:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known cost (credits) across %d priced arm groups · %d unpriced arm groups.\n\n",
+	fmt.Fprintf(&sb, "**Overall:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known recorded cost (USD) across %d priced arm groups · %d unpriced arm groups.\n\n",
 		totals.sessions, totals.inputTokens, totals.outputTokens, totals.reasoningTokens, totals.inputTokens+totals.outputTokens+totals.reasoningTokens,
-		formatBenchmarkMetric("cost", totals.cost), totals.pricedGroups, totals.unpricedGroups)
-	sb.WriteString("| Benchmark | Sessions | Arm/context groups | Input tokens | Output tokens | Total tokens | Known cost (credits) | Unpriced groups |\n| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		formatBenchmarkAggregateCost(totals), totals.pricedGroups, totals.unpricedGroups)
+	sb.WriteString("| Benchmark | Sessions | Arm/context groups | Input tokens | Output tokens | Total tokens | Known recorded cost (USD) | Unpriced groups |\n| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 	byTask := make(map[string][]benchmarkAggregateGroup)
 	tasks := make([]string, 0)
 	for _, group := range groups {
@@ -373,7 +351,7 @@ func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string 
 		id := benchmarkAggregatePageID(task)
 		fmt.Fprintf(&sb, "| [%s](/docs/benchmarks/aggregates/tasks/%s/) | %d | %d | %d | %d | %d | %s | %d |\n",
 			task, id, taskTotals.sessions, len(taskGroups), taskTotals.inputTokens, taskTotals.outputTokens,
-			taskTotals.inputTokens+taskTotals.outputTokens+taskTotals.reasoningTokens, formatBenchmarkMetric("cost", taskTotals.cost), taskTotals.unpricedGroups)
+			taskTotals.inputTokens+taskTotals.outputTokens+taskTotals.reasoningTokens, formatBenchmarkAggregateCost(taskTotals), taskTotals.unpricedGroups)
 	}
 	return sb.String()
 }
@@ -431,14 +409,17 @@ func renderBenchmarkAggregateDetailDoc(task string, groups []benchmarkAggregateG
 		sb.WriteString("> [!NOTE]\n> No publishable benchmark observations are available to aggregate.\n")
 		return sb.String()
 	}
-	fmt.Fprintf(&sb, "Results pool underlying session observations across all included runs. Arm identity is based on experimental configuration; run provenance and observed metrics do not define an arm. Legacy `semedit` observations are labeled `%s` (default); `%s` appears only when a run records that arm. Numeric summaries use linearly interpolated quantiles over sorted observations: Median (p50), IQR (Q3 − Q1), p90, and Max. Model-specific cost uses declared per-million-token rates. Unknown cost formulas are marked unavailable and excluded from known-cost totals.\n\n", benchmarkAggregateArmSemeditImplicit, benchmarkAggregateArmSemeditExplicit)
+	fmt.Fprintf(&sb, "Results pool underlying session observations across all included runs. Arm identity is based on experimental configuration; run provenance and observed metrics do not define an arm. Legacy `semedit` observations are labeled `%s` (default); `%s` appears only when a run records that arm. Numeric summaries use linearly interpolated quantiles over sorted observations: Median (p50), IQR (Q3 − Q1), p90, and Max. Costs use the harness-recorded USD estimates and are never recalculated from current rates. Results are grouped by pricing ID, rate-card date, and estimate basis. Runs without a stored estimate are marked unavailable and excluded from known-cost totals.\n\n", benchmarkAggregateArmSemeditImplicit, benchmarkAggregateArmSemeditExplicit)
 	totals := benchmarkAggregateUsageTotals(groups)
-	fmt.Fprintf(&sb, "**Benchmark total:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known cost (credits) across %d priced arm groups · %d unpriced arm groups.\n\n",
+	fmt.Fprintf(&sb, "**Benchmark total:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known recorded cost (USD) across %d priced arm groups · %d unpriced arm groups.\n\n",
 		totals.sessions, totals.inputTokens, totals.outputTokens, totals.reasoningTokens, totals.inputTokens+totals.outputTokens+totals.reasoningTokens,
-		formatBenchmarkMetric("cost", totals.cost), totals.pricedGroups, totals.unpricedGroups)
+		formatBenchmarkAggregateCost(totals), totals.pricedGroups, totals.unpricedGroups)
 	for _, group := range groups {
 		fmt.Fprintf(&sb, "## %s · %s · %s · Arm: %s\n\n", group.target, group.context, group.prompt, benchmarkAggregateArmLabel(group.arm))
 		fmt.Fprintf(&sb, "MCP server instructions: %s · Semedit restriction: %s\n\n", group.instructions, group.restriction)
+		if group.costPricingID != "" {
+			fmt.Fprintf(&sb, "Cost rate card: `%s` (as of %s). %s\n\n", group.costPricingID, group.costRateCardAsOf, group.costBasis)
+		}
 		sb.WriteString("| Measure | N | Median / pass rate | IQR | p90 | Max | Total usage / cost |\n| :--- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 		fmt.Fprintf(&sb, "| Sessions | %d | — | — | — | — | %d |\n", group.sessionCount, group.sessionCount)
 		fmt.Fprintf(&sb, "| Input tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalInputTokens)
@@ -446,9 +427,9 @@ func renderBenchmarkAggregateDetailDoc(task string, groups []benchmarkAggregateG
 		fmt.Fprintf(&sb, "| Reasoning tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalReasoningTokens)
 		fmt.Fprintf(&sb, "| Total tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalInputTokens+group.totalOutputTokens+group.totalReasoningTokens)
 		if group.costKnown {
-			fmt.Fprintf(&sb, "| Total model cost (credits) | %d | — | — | — | — | %s |\n", group.sessionCount, formatBenchmarkMetric("cost", group.totalCost))
+			fmt.Fprintf(&sb, "| Total recorded model cost (USD) | %d | — | — | — | — | %s |\n", group.sessionCount, formatBenchmarkMetric("cost", group.totalCost))
 		} else {
-			fmt.Fprintf(&sb, "| Total model cost (credits) | %d | — | — | — | — | Unavailable: no declared model cost formula |\n", group.sessionCount)
+			fmt.Fprintf(&sb, "| Total recorded model cost (USD) | %d | — | — | — | — | Unavailable: run has no harness estimate |\n", group.sessionCount)
 		}
 		for _, metric := range benchmarkMetrics() {
 			summary := group.metrics[metric.name]
@@ -493,6 +474,13 @@ type benchmarkAggregateUsage struct {
 	cost            float64
 	pricedGroups    int
 	unpricedGroups  int
+}
+
+func formatBenchmarkAggregateCost(usage benchmarkAggregateUsage) string {
+	if usage.pricedGroups == 0 {
+		return "—"
+	}
+	return formatBenchmarkMetric("cost", usage.cost)
 }
 
 func benchmarkAggregateUsageTotals(groups []benchmarkAggregateGroup) benchmarkAggregateUsage {
@@ -589,7 +577,9 @@ func addBenchmarkMetricRun(groups map[benchmarkArmKey]*benchmarkAggregateGroup, 
 		group = &benchmarkAggregateGroup{
 			task: comparison.TaskID, target: config.target.String(), prompt: config.prompt,
 			instructions: config.instructions, context: context.label(), arm: arm,
-			metrics: make(map[string]*benchmarkMetricSummary), restriction: config.restriction,
+			costPricingID: run.EstimatedCostPricingID, costRateCardAsOf: run.EstimatedCostRateCardAsOf,
+			costBasis: run.EstimatedCostBasis,
+			metrics:   make(map[string]*benchmarkMetricSummary), restriction: config.restriction,
 			costKnown: true,
 		}
 		groups[config.key] = group
@@ -659,7 +649,7 @@ func benchmarkMetrics() []benchmarkMetric {
 		integer("Output tokens", func(run *BenchRunResult) int { return run.OutputTokens }),
 		integer("Reasoning tokens", func(run *BenchRunResult) int { return run.ReasoningTokens }),
 		{name: "Cache-adjusted token units", unit: "tokens", value: func(run *BenchRunResult) (float64, bool) { return cacheAdjustedTokenUnits(run), true }},
-		{name: "Cost", unit: "cost", value: benchmarkCost},
+		{name: "Recorded cost (USD)", unit: "cost", value: benchmarkCost},
 		optionalDuration("Oracle duration", func(run *BenchRunResult) *time.Duration {
 			if run.Oracle == nil {
 				return nil
@@ -686,10 +676,14 @@ func formatBenchmarkMetric(unit string, value float64) string {
 	case "binary":
 		return fmt.Sprintf("%.2f", value)
 	case "cost":
-		return fmt.Sprintf("%.4f", value)
+		return formatBenchmarkCostUSD(value)
 	default:
 		return fmt.Sprintf("%.2f", value)
 	}
+}
+
+func formatBenchmarkCostUSD(value float64) string {
+	return "$" + strconv.FormatFloat(value, 'f', -1, 64)
 }
 
 func benchmarkArmPromptConfiguration(comparison *BenchComparisonSummary, context benchmarkPairContext, arm string) string {
@@ -762,6 +756,8 @@ func resolveBenchmarkAggregateRunConfig(comparison *BenchComparisonSummary, cont
 			promptConfiguration: promptConfiguration, context: context, arm: arm, variant: run.Variant,
 			runInstructions: displayMCPServerInstructions(instructions, legacyInstructions),
 			interactiveMode: run.InteractiveMode, prompt: effectivePrompt,
+			costPricingID: run.EstimatedCostPricingID, costRateCardAsOf: run.EstimatedCostRateCardAsOf,
+			costBasis: run.EstimatedCostBasis,
 		},
 		target: target, prompt: promptVariant,
 		instructions: displayMCPServerInstructions(instructions, legacyInstructions),

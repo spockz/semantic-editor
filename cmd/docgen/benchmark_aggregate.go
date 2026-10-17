@@ -23,7 +23,7 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/persp
   <div class="benchmark-browser-toolbar">
     <button id="benchmark-browser-fullscreen" type="button" aria-pressed="false">Full screen</button>
   </div>
-  <p>The browser groups results by restriction policy, target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
+  <p>The browser groups results by restriction policy, target, context, and arm. Cost is the harness-recorded USD estimate for each run, grouped by its recorded rate card; documentation generation does not reprice old runs. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
   <div class="benchmark-browser-filters">
     <label>Requirement met
       <select id="benchmark-browser-oracle-filter">
@@ -462,7 +462,7 @@ func splitBenchmarkComparisonArm(comparison, base map[string]json.RawMessage, ar
 	if err := flattenBenchmarkRunFields(run, arm.field, row); err != nil {
 		return nil, false, err
 	}
-	if err := normalizeBenchmarkComparisonArm(raw, comparison["target"], row, arm, legacyDurations); err != nil {
+	if err := normalizeBenchmarkComparisonArm(raw, row, arm, legacyDurations); err != nil {
 		return nil, false, err
 	}
 	return row, true, nil
@@ -480,9 +480,9 @@ func flattenBenchmarkRunFields(run map[string]json.RawMessage, arm string, row m
 	return nil
 }
 
-func normalizeBenchmarkComparisonArm(raw, target json.RawMessage, row map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) error {
-	if err := addBenchmarkBrowserCost(raw, target, row); err != nil {
-		return fmt.Errorf("calculate %s result cost: %w", arm.field, err)
+func normalizeBenchmarkComparisonArm(raw json.RawMessage, row map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) error {
+	if err := addBenchmarkBrowserCost(raw, row); err != nil {
+		return fmt.Errorf("read %s recorded result cost: %w", arm.field, err)
 	}
 	for key, value := range map[string]string{"context_variant": arm.context, "arm": arm.arm} {
 		encoded, err := json.Marshal(value)
@@ -544,36 +544,21 @@ func addBenchmarkBrowserSemanticToolPass(row map[string]json.RawMessage) error {
 	return nil
 }
 
-func addBenchmarkBrowserCost(runData, fallbackTarget json.RawMessage, row map[string]json.RawMessage) error {
+func addBenchmarkBrowserCost(runData json.RawMessage, row map[string]json.RawMessage) error {
 	var run BenchRunResult
 	if err := json.Unmarshal(runData, &run); err != nil {
-		return fmt.Errorf("decode run for cost: %w", err)
+		return fmt.Errorf("decode run for recorded cost: %w", err)
 	}
-	if run.Target.Model == "" && len(fallbackTarget) > 0 {
-		if err := json.Unmarshal(fallbackTarget, &run.Target); err != nil {
-			return fmt.Errorf("decode target for cost: %w", err)
-		}
+	cost, available := benchmarkCost(&run)
+	if !available {
+		row["cost"] = json.RawMessage("null")
+		return nil
 	}
-	var runFields map[string]json.RawMessage
-	if err := json.Unmarshal(runData, &runFields); err != nil {
-		return fmt.Errorf("decode token fields for cost: %w", err)
+	encoded, err := json.Marshal(cost)
+	if err != nil {
+		return fmt.Errorf("encode recorded cost: %w", err)
 	}
-	for _, key := range []string{"prompt_tokens", "uncached_prompt_tokens", "cached_prompt_tokens", "output_tokens", "reasoning_tokens"} {
-		if _, ok := runFields[key]; ok {
-			cost, available := benchmarkCost(&run)
-			if !available {
-				row["cost"] = json.RawMessage("null")
-				return nil
-			}
-			encoded, err := json.Marshal(cost)
-			if err != nil {
-				return fmt.Errorf("encode cost: %w", err)
-			}
-			row["cost"] = encoded
-			return nil
-		}
-	}
-	row["cost"] = json.RawMessage("null")
+	row["cost"] = encoded
 	return nil
 }
 
@@ -720,7 +705,7 @@ func loadBenchmarkBrowserResult(resultsDir, path, relativePath string, data []by
 			return nil, fmt.Errorf("decode benchmark %s records in %s: %w", recordType, path, err)
 		}
 	}
-	return loadBenchmarkBrowserEntries(entries, report, recordType, runID, path, relativePath, legacyDurations)
+	return loadBenchmarkBrowserEntries(entries, recordType, runID, path, relativePath, legacyDurations)
 }
 
 func benchmarkBrowserLegacyDurations(report map[string]json.RawMessage, path string) (bool, error) {
@@ -735,10 +720,10 @@ func benchmarkBrowserLegacyDurations(report map[string]json.RawMessage, path str
 	return version == 0, nil
 }
 
-func loadBenchmarkBrowserEntries(entries []json.RawMessage, report map[string]json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
+func loadBenchmarkBrowserEntries(entries []json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
 	var rows []map[string]json.RawMessage
 	for _, entry := range entries {
-		row, err := loadBenchmarkBrowserEntry(entry, report, recordType, runID, path, relativePath, legacyDurations)
+		row, err := loadBenchmarkBrowserEntry(entry, recordType, runID, path, relativePath, legacyDurations)
 		if err != nil {
 			return nil, err
 		}
@@ -747,7 +732,7 @@ func loadBenchmarkBrowserEntries(entries []json.RawMessage, report map[string]js
 	return rows, nil
 }
 
-func loadBenchmarkBrowserEntry(entry json.RawMessage, report map[string]json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
+func loadBenchmarkBrowserEntry(entry json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
 	var sourceRow map[string]json.RawMessage
 	if err := json.Unmarshal(entry, &sourceRow); err != nil {
 		return nil, fmt.Errorf("decode benchmark %s in %s: %w", recordType, path, err)
@@ -779,7 +764,7 @@ func loadBenchmarkBrowserEntry(entry json.RawMessage, report map[string]json.Raw
 	if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
 		return nil, fmt.Errorf("derive semantic tool pass in %s: %w", path, err)
 	}
-	if err := addBenchmarkBrowserCost(entry, report["target"], row); err != nil {
+	if err := addBenchmarkBrowserCost(entry, row); err != nil {
 		return nil, fmt.Errorf("calculate benchmark cost in %s: %w", path, err)
 	}
 	if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
@@ -926,8 +911,8 @@ func benchmarkBrowserSummaryDimensions(rows []map[string]json.RawMessage) []stri
 			}
 		}
 	}
-	dimensions := make([]string, 0, 6+len(targetDimensions))
-	dimensions = append(dimensions, "task_id", "semedit_arm_restrict", "context_variant", "arm", "prompt_variant", "mcp_server_instructions")
+	dimensions := make([]string, 0, 9+len(targetDimensions))
+	dimensions = append(dimensions, "task_id", "semedit_arm_restrict", "context_variant", "arm", "prompt_variant", "mcp_server_instructions", "estimated_cost_pricing_id", "estimated_cost_rate_card_as_of", "estimated_cost_basis")
 	for dimension := range targetDimensions {
 		dimensions = append(dimensions, dimension)
 	}
@@ -1083,7 +1068,7 @@ func scopedBenchmarkBrowserShortcode() string {
 	shortcode := strings.Replace(benchmarkBrowserShortcode, `<div class="benchmark-browser">`, `<div class="benchmark-browser" data-data-url="{{ if .Get "run" }}{{ printf "data/benchmarks/runs/%s.json" (.Get "run") | relURL }}{{ else }}{{ "data/benchmarks.json" | relURL }}{{ end }}">`, 1)
 	shortcode = strings.Replace(shortcode, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
 	shortcode = strings.ReplaceAll(shortcode, " settings>", ">")
-	shortcode = strings.Replace(shortcode, "The browser groups results by restriction policy, target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.", "Rows are pre-aggregated by task, target, prompt variant, MCP-instruction mode, context, arm, and restriction. Numeric values show median (p50), IQR, p90, maximum, and sample count. Boolean checks show pass counts and success rates. Filters apply to these summary groups; per-run observations remain available on their run pages.", 1)
+	shortcode = strings.Replace(shortcode, "The browser groups results by restriction policy, target, context, and arm. Cost is the harness-recorded USD estimate for each run, grouped by its recorded rate card; documentation generation does not reprice old runs. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.", "Rows are pre-aggregated by task, target, prompt variant, MCP-instruction mode, context, arm, restriction, and recorded cost rate card. Cost is the harness-recorded USD estimate; historical runs are never repriced. Numeric values show median (p50), IQR, p90, maximum, and sample count. Boolean checks show pass counts and success rates. Filters apply to these summary groups; per-run observations remain available on their run pages.", 1)
 	shortcode = strings.Replace(shortcode, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant", "arm"],`, `group_by: [],`, 1)
 	shortcode = strings.Replace(shortcode, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant"],`, `group_by: [],`, 1)
 	shortcode = strings.ReplaceAll(shortcode, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"],`, `columns: [...new Set(rows.flatMap(Object.keys))],`)

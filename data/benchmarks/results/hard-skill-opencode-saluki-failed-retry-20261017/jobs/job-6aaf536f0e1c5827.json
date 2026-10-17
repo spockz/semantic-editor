@@ -1,0 +1,470 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-6aaf536f0e1c5827",
+    "pair_id": "pair-5a7348b5583ca12b",
+    "task_id": "task-12-request-identity-migration",
+    "fixture_path": "testdata/bench/task_12_request_identity_migration.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "opencode",
+      "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "semedit",
+    "repeat": 2,
+    "policy": "write",
+    "resolved_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "package request\n\nimport (\n\t\"errors\"\n\t\"strings\"\n)\n\ntype Request struct {\n\tID      string\n\tKind    string\n\tPayload []byte\n}\n\nfunc (r Request) Validate() error {\n\tif r.ID == \"\" {\n\t\treturn errors.New(\"invalid request\")\n\t}\n\treturn nil\n}\n\nfunc Normalize(kind string) string {\n\tkind = strings.TrimSpace(kind)\n\tkind = strings.ToLower(kind)\n\treturn kind\n}\n\nfunc FindByID(requests []Request, id string) (Request, bool) {\n\tfor _, r := range requests {\n\t\tif r.ID == id {\n\t\t\treturn r, true\n\t\t}\n\t}\n\treturn Request{}, false\n}",
+        "cached_prompt_tokens": 224854,
+        "comparison_pair_id": "pair-5a7348b5583ca12b",
+        "diagnostic_timeout_reflection": {
+          "error": "run OpenCode: signal: killed\ncontext deadline exceeded",
+          "prompt": "The benchmark task stopped because its execution timed out. Do not use tools, edit files, or retry the task. Based only on the conversation so far, identify the last action underway, where time appears to have gone (model reasoning, tool wait, repeated verification or undo, exploration, or another cause), and the strongest evidence for that diagnosis. Clearly separate observed evidence from inference, and answer in a few concise sentences."
+        },
+        "diagnostic_tool_coverage": {
+          "complete": false,
+          "completeness_reason": "run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+          "expected": [
+            "semantic_find_references",
+            "semantic_insert_declaration",
+            "semantic_insert_function",
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_rename",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": null,
+          "observation_state": "partial",
+          "observed": [
+            "bash",
+            "read",
+            "semantic_workspace_outline",
+            "skill"
+          ]
+        },
+        "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3333,
+        "initial_context_tokens": 24812,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 224854,
+            "error": "opencode execution: run OpenCode: signal: killed\ncontext deadline exceeded\nOpenCode stream lacks complete terminal token usage",
+            "initial_load_turns": 1,
+            "internal_turns": 20,
+            "mcp_load_turns": 0,
+            "output_tokens": 1599,
+            "process_start_to_first_event_ms": 28900,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 260997,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "name": "semedit"
+                },
+                "functional_status": "succeeded",
+                "name": "skill",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {},
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_workspace_outline",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "find . -name \"*.go\" -not -path \"./.git/*\" | sort"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/request/request.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/request/request_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/correlation/identities.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/gateway/handler.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/gateway/handler_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/notifications/notifier.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/queue/queue.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/reporting/report.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/audit.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/response.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/response_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/review/review.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/review/review_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/scheduler/jobs.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/storage/requests.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/storage/requests_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/go.mod"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 36143,
+            "wall_clock_ms": 600021
+          }
+        ],
+        "internal_turns": 20,
+        "job_id": "job-6aaf536f0e1c5827",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "opencode_exit_code": -1,
+        "oracle": null,
+        "output_tokens": 1599,
+        "process_start_to_first_event_ms": 28900,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 260997,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "go_cache_initial_state": "empty",
+          "local_model_context_tokens": "212992",
+          "local_model_limits_source": "llama.cpp-props",
+          "local_model_output_tokens": "8192",
+          "mcp_metrics_file": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000.mcp-metrics.json",
+          "provider_transport": "opencode_attached_server_v1",
+          "retained_working_directory": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 2,
+        "semantic_integration_reflection": {
+          "error": "run OpenCode: signal: killed\ncontext deadline exceeded",
+          "prompt": "The benchmark task stopped because its execution timed out. For benchmark analysis only, do not use tools, edit files, or retry the task. In one sentence, say whether semedit's tools helped or hindered the work before the timeout, grounded in what actually happened. If you could not assess their value, say so."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 2021,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": true,
+        "success": false,
+        "target": {
+          "harness": "opencode",
+          "model": "amdbeast/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "task-12-request-identity-migration",
+        "tool_calls": [
+          {
+            "arguments": {
+              "name": "semedit"
+            },
+            "functional_status": "succeeded",
+            "name": "skill",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {},
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_workspace_outline",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "find . -name \"*.go\" -not -path \"./.git/*\" | sort"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/request/request.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/request/request_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/correlation/identities.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/gateway/handler.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/gateway/handler_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/notifications/notifier.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/queue/queue.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/reporting/report.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/audit.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/response.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/response/response_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/review/review.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/review/review_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/scheduler/jobs.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/storage/requests.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/storage/requests_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-implicit_task-12-request-identity-migration_1792225083727089000/go.mod"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 20,
+        "tools_used": [
+          "skill",
+          "semedit_semantic_workspace_outline",
+          "bash",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read",
+          "read"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 36143,
+        "variant": "small:implicit",
+        "wall_clock_ms": 600021
+      }
+    ],
+    "timestamp": "2026-10-17T08:30:05.996537Z"
+  }
+}
