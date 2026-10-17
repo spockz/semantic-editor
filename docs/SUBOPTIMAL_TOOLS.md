@@ -5271,3 +5271,11 @@ standalone RAM script suite passed without elevated privileges; Linux test-binar
 cross-compilation also passed. ME-0075 records the shell-only fixture edit.
 No additional semantic call was made. This last fixture/log change requires a
 fresh stable make check and a complete harness rerun before publication.
+
+## 2026-10-17: RAM benchmark worktree archival refused as task primary checkout
+
+* Tool: `mcp__codex_app__archive_worktree`.
+* Target: the exact attached worktree identity `/Users/alessandro/.codex-workspaces/worktrees/ios-53c9bc6a-f78e-49a6-8157-8dcdb23a6482/semantic-editor`, after verified fast-forward into local main at `a1b6fe93d9ab84690b97cb443a1818f624f5b7f9`.
+* Observed failure: `The task's primary checkout cannot be removed.` Git identifies this checkout as a linked worktree and list_artifacts exposes it as a managed worktree attachment; the archival tool nevertheless applies its primary-checkout restriction. Its classification reason is unknown.
+* Workaround: preserve the worktree registration and chat, with no shell deletion or alternate-root bypass. Durable results are committed on main; ignored audit logs and the pinned repository clone were preserved under main's `.scratch/session-wrap-up/01a1484b-ab0e-7a32-9f75-8aa4a7456bba/`. Only the worktree-local module cache was cleared successfully; the shared SSD module cache remains at the same path and inode.
+* Root cause: application-level checkout ownership protection rejected removal. No destructive retry is authorized by the wrap-up skill; cleanup needs an application ownership correction or an explicit narrower instruction to keep the checkout.
