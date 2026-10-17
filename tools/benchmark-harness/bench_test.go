@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/mcp"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 )
@@ -636,6 +637,50 @@ func TestSemeditVerifyWarmupUsesEmptyFixtureLocalCaches(t *testing.T) {
 	}
 	if _, err := runSemeditVerifyWarmup(t.Context(), workDir, "main.go", binary); err == nil {
 		t.Fatal("warmup accepted a non-empty module cache")
+	}
+}
+
+func TestSemeditVerifyWarmupAllowsPopulatedPersistentModuleCache(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "fixture")
+	moduleCache := filepath.Join(root, "persistent-modules")
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(moduleCache, "cache", "download", "example.com", "dependency", "@v"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	metadata := filepath.Join(moduleCache, "cache", "download", "example.com", "dependency", "@v", "v1.0.0.mod")
+	if err := os.WriteFile(metadata, []byte("module example.com/dependency\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte("module example.com/warmup\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package warmup\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SEMEDIT_TEST_WORKDIR", workDir)
+	t.Setenv("SEMEDIT_TEST_MODULE_CACHE", moduleCache)
+	binary := filepath.Join(root, "fake-semedit")
+	script := "#!/bin/sh\n" +
+		"test \"$1\" = verify && test \"$3\" = main.go && test \"$6\" = --check-only || exit 9\n" +
+		"test \"$GOMODCACHE\" = \"$SEMEDIT_TEST_MODULE_CACHE\" || exit 10\n" +
+		"test -f \"$GOMODCACHE/cache/download/example.com/dependency/@v/v1.0.0.mod\" || exit 11\n" +
+		"test \"$GOCACHE\" = \"$SEMEDIT_TEST_WORKDIR/.scratch/go/build\" || exit 12\n" +
+		"test \"$GOPROXY\" = off && test \"$GOSUMDB\" = off && test \"$GOTOOLCHAIN\" = local || exit 13\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx := gocache.WithModuleCache(t.Context(), moduleCache)
+	if _, err := runSemeditVerifyWarmup(ctx, workDir, "main.go", binary); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, ".scratch", "go", "mod")); !os.IsNotExist(err) {
+		t.Fatalf("warmup copied or created fixture module cache: %v", err)
+	}
+	if _, err := os.Stat(metadata); err != nil {
+		t.Fatalf("persistent module cache changed: %v", err)
 	}
 }
 

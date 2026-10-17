@@ -251,6 +251,22 @@ func TestBenchmarkMakeTargetsForwardResumeFlag(t *testing.T) {
 	}
 }
 
+func TestBenchmarkMakeTargetsForwardRAMRootAndModuleCache(t *testing.T) {
+	for _, target := range []string{"bench", "bench-all"} {
+		args := []string{"-n", "-f", "Makefile", target, "BENCH_RAM_ROOT=/mnt/benchmark-ram", "BENCH_MODCACHE=/ssd/go-mod"}
+		// #nosec G204 -- dry-run repository benchmark Make targets with controlled values.
+		output, err := exec.Command("make", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("make %s: %v\n%s", target, err, output)
+		}
+		for _, argument := range []string{`--ram-fixture-root "/mnt/benchmark-ram"`, `--module-cache "/ssd/go-mod"`} {
+			if !strings.Contains(string(output), argument) {
+				t.Errorf("%s did not forward %s:\n%s", target, argument, output)
+			}
+		}
+	}
+}
+
 func TestCLIControlSharesSchedulerAndRetainsFailure(t *testing.T) {
 	trial := runCLITrial(t, []string{"--target=control"}, false)
 	if trial.Err == nil {

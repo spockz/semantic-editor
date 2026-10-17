@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/sourcefiles"
 )
 
@@ -118,6 +119,11 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 }
 
 func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (result *RunResult, executeErr error) {
+	ctx, err := prepareAgentStorageContext(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
 	task, target, arm, variant := execution.Task, execution.Target, execution.Arm, execution.Variant
 	if task == nil {
 		return nil, fmt.Errorf("execute agent: task is nil")
@@ -127,16 +133,14 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		return nil, selectErr
 	}
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
-	workDir := filepath.Join(r.baseScratchDir, runID)
-	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
-	if err := os.MkdirAll(workDir, 0o750); err != nil {
-		return nil, fmt.Errorf("create work dir: %w", err)
+	workDir, err := createBenchmarkWorkspace(r.fixtureRoot, runID)
+	if err != nil {
+		return nil, err
 	}
-	session, sessionErr := newAgentSession(selectedAdapter, r.baseScratchDir, runID, workDir)
+	session, sessionErr := newAgentSession(selectedAdapter, r.baseScratchDir, r.fixtureRoot, runID, workDir)
 	if sessionErr != nil {
 		// #nosec G703 -- cleanup isolated workspace when session initialization fails.
-		removeErr := os.RemoveAll(workDir)
-		return nil, errors.Join(sessionErr, removeErr)
+		return nil, errors.Join(sessionErr, os.RemoveAll(workDir))
 	}
 	session.execution = execution
 	defer func() {
@@ -203,6 +207,11 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return agentWorkspaceSetup{}, fmt.Errorf("extract task fixture: %w", err)
 	}
+	if runner.moduleCache != "" {
+		if err := prepareSharedGoDependencies(ctx, task, workDir); err != nil {
+			return agentWorkspaceSetup{}, err
+		}
+	}
 	if session.execution.SemeditSkill {
 		if err := installSemeditSkill(workDir, runner.baseScratchDir); err != nil {
 			return agentWorkspaceSetup{}, fmt.Errorf("install semedit benchmark skill: %w", err)
@@ -213,14 +222,20 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 	}
 
 	setup := agentWorkspaceSetup{}
-	if isSemeditArm(arm) && runner.semeditPrewarmVerify && task.Metadata.Oracle.AST.File != "" {
-		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")
-		var err error
-		setup.prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
-		if err != nil {
-			return agentWorkspaceSetup{}, err
+	if isSemeditArm(arm) && runner.semeditPrewarmVerify {
+		file, targetErr := fixtureGoWarmupFile(ctx, task, workDir)
+		if targetErr != nil {
+			return agentWorkspaceSetup{}, targetErr
 		}
-		setup.prewarmApplied = true
+		if file != "" {
+			binaryPath := filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")
+			var warmupErr error
+			setup.prewarmDuration, warmupErr = runSemeditVerifyWarmup(ctx, workDir, file, binaryPath)
+			if warmupErr != nil {
+				return agentWorkspaceSetup{}, warmupErr
+			}
+			setup.prewarmApplied = true
+		}
 	}
 	if err := prepareFixtureGoDependencies(ctx, workDir); err != nil {
 		return agentWorkspaceSetup{}, err
@@ -305,6 +320,9 @@ func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, re
 	result.Prompt = execution.Prompt
 	ensureProvenance(result)
 	result.Provenance["fixture_dependency_preparation"] = "go-list-readonly-deps-test"
+	if result.Provenance["module_cache"] != "" {
+		result.Provenance["module_cache_preparation"] = "go-mod-download-all-before-offline-execution"
+	}
 	result.Provenance["session_transcript"] = session.transcriptPath
 	if transport := providerContinuationTransport(execution.Target); transport != "" {
 		result.Provenance["provider_transport"] = transport
@@ -703,4 +721,14 @@ func shouldRequestTimeoutReflections(taskCtx, parentCtx context.Context, session
 		return false
 	}
 	return errors.Is(taskCtx.Err(), context.DeadlineExceeded) || errors.Is(session.executionErr, context.DeadlineExceeded)
+}
+
+func prepareAgentStorageContext(ctx context.Context, runner *Runner) (context.Context, error) {
+	if err := runner.validateFixtureRoot(); err != nil {
+		return nil, err
+	}
+	if runner.moduleCache != "" {
+		ctx = gocache.WithModuleCache(ctx, runner.moduleCache)
+	}
+	return ctx, nil
 }

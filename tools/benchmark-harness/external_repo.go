@@ -162,9 +162,12 @@ func (r *Runner) ExecutePatchReplay(ctx context.Context, task *Task, target Targ
 		return nil, fmt.Errorf("execute patch replay: external repository and fix patch are required")
 	}
 	runID := fmt.Sprintf("run_patch_replay_%s_%d", safePathFragment(task.Metadata.TaskID), time.Now().UnixNano())
-	workDir := filepath.Join(r.baseScratchDir, runID)
-	if err := os.MkdirAll(workDir, 0o750); err != nil {
-		return nil, fmt.Errorf("create patch replay workspace: %w", err)
+	if err := r.validateFixtureRoot(); err != nil {
+		return nil, err
+	}
+	workDir, workspaceErr := createBenchmarkWorkspace(r.fixtureRoot, runID)
+	if workspaceErr != nil {
+		return nil, fmt.Errorf("create patch replay workspace: %w", workspaceErr)
 	}
 	defer func() {
 		_ = os.RemoveAll(workDir)

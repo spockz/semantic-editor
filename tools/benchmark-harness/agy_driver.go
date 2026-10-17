@@ -181,6 +181,10 @@ func completeAgyTranscriptCalls(step agyTranscriptStep, result *RunResult, state
 }
 
 func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {
+	return writeAgyMCPConfigForRunner(&Runner{}, workDir, repositoryRoot, arm, mode, env)
+}
+
+func writeAgyMCPConfigForRunner(runner *Runner, workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {
 	configDir := filepath.Join(workDir, ".agents")
 	if err := prepareRuntimeLayout(workDir, []string{".agents"}, nil); err != nil {
 		return err
@@ -193,11 +197,10 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 		return fmt.Errorf("inspect Agy MCP config path: %w", err)
 	}
 
-	expectedRoot, err := canonicalFixtureRoot(workDir)
+	args, err := runner.mcpGoArguments(workDir)
 	if err != nil {
-		return fmt.Errorf("resolve Agy MCP expected root: %w", err)
+		return fmt.Errorf("prepare Agy MCP arguments: %w", err)
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", expectedRoot, "--go-base-dir", filepath.Join(expectedRoot, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	disabled := arm == ArmBaseline
 	if !disabled {
 		switch mode {

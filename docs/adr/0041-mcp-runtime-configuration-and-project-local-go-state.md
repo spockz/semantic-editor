@@ -64,7 +64,11 @@ semedit jobs with a Go oracle target. An explicit false value disables it, and
 fixtures without a Go target skip it. The treatment runs the promoted semedit
 `verify --check-only` CLI on the extracted Go fixture before starting the
 semedit agent. It uses the same fixture-local Go environment as the Codex
-process and refuses a non-empty initial build or module cache. The preflight
+process and refuses a non-empty initial build cache. Without a separately
+configured module cache it also requires an empty initial module cache.
+[ADR-0074](0074-ram-backed-benchmark-workspaces-and-persistent-module-cache.md)
+permits direct use of an explicit populated SSD module cache offline and forwards
+its path through MCP `--go-module-cache` independently of `--go-base-dir`. The preflight
 runs in a separate process; it may populate disk caches but does not retain a
 `gopls` process. Fixture setup stays outside agent wall time; preflight duration is recorded
 separately. Agent wall time begins after successful Codex process start and
@@ -87,8 +91,9 @@ error if that validation fails.
 The server carries an explicit base directory through each request context.
 In isolated mode, semedit-launched Go subprocesses, including `gopls`, `go get`,
 and `go mod tidy`, receive a controlled environment: `GOENV`, `GOCACHE`,
-`GOMODCACHE`, `GOTMPDIR`, `GOBIN`, and `GOPATH` all resolve below that base
-directory. `GOWORK=off` and managed `GOFLAGS` prevent inherited workspace or
+`GOMODCACHE`, `GOTMPDIR`, `GOBIN`, and `GOPATH` resolve below that base
+directory, except an explicitly selected independent module cache under
+ADR-0074. `GOWORK=off` and managed `GOFLAGS` prevent inherited workspace or
 overlay configuration from changing the fixture's build. Ordinary module
 operations retain `-mod=readonly`; explicit dependency operations may write
 module files. Normal inherited mode preserves workspace selection and unrelated

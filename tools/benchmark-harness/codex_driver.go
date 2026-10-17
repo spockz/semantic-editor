@@ -429,11 +429,10 @@ func (r *Runner) codexMCPBinaryOverride() string {
 }
 
 func (r *Runner) codexMCPServerInstructionsOverride(workDir string) (string, error) {
-	root, err := canonicalFixtureRoot(workDir)
+	args, err := r.mcpGoArguments(workDir)
 	if err != nil {
 		return "", err
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 		args = append(args, "--instructions", "")

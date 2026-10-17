@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"text/tabwriter"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/gocache"
 )
 
 func main() {
@@ -267,6 +269,17 @@ func runPlannedCLI() int {
 	if cli.List {
 		return listBenchmarks(cli.Plan.BenchDir)
 	}
+	if storageErr := validateDurableBenchmarkStorage(cli.Plan); storageErr != nil {
+		fmt.Fprintf(os.Stderr, "benchmark storage: %v\n", storageErr)
+		return 1
+	}
+	if cli.Plan.RAMFixtureRoot != "" {
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithFixtureRoot(cli.Plan.RAMFixtureRoot), WithModuleCache(cli.Plan.ModuleCache))
+		if fixtureErr := runner.validateFixtureRoot(); fixtureErr != nil {
+			fmt.Fprintf(os.Stderr, "benchmark storage: %v\n", fixtureErr)
+			return 1
+		}
+	}
 	if cli.ExtractTo != "" || cli.EvalDir != "" {
 		return runFixtureUtility(cli)
 	}
@@ -324,6 +337,8 @@ type benchmarkCLIFlags struct {
 	mcpRaw              string
 	policyRaw           string
 	provenance          ProvenanceSet
+	ramFixtureRoot      string
+	moduleCache         string
 }
 
 func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
@@ -402,6 +417,8 @@ func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
 	fs.StringVar(&input.mcpRaw, "mcp-server-instructions", "prescriptive", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
 	fs.StringVar(&input.policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
 	fs.BoolVar(&input.settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", true, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
+	fs.StringVar(&input.ramFixtureRoot, "ram-fixture-root", "", "Mounted tmpfs root for disposable fixture workspaces")
+	fs.StringVar(&input.moduleCache, "module-cache", "", "Persistent SSD Go module cache for offline benchmark fixtures")
 	fs.Var(&input.provenance, "provenance", "Technical execution provenance key=value (repeatable)")
 	fs.Var(&input.provenance, "classifier", "Deprecated alias for provenance")
 	fs.BoolVar(&input.listMode, "list", false, "List benchmark fixtures and prompt variants")
@@ -439,6 +456,20 @@ func applyBenchmarkCLIPlan(settings *benchmarkCLIOptions, input benchmarkCLIFlag
 	settings.Plan.MCPServerInstructions = mcpModes
 	settings.Plan.SemeditArmRestriction = policy
 	settings.Plan.Provenance = input.provenance.Clone()
+	settings.Plan.RAMFixtureRoot = input.ramFixtureRoot
+	settings.Plan.ModuleCache = input.moduleCache
+	if settings.Plan.RAMFixtureRoot != "" || settings.Plan.ModuleCache != "" {
+		if settings.Plan.Provenance == nil {
+			settings.Plan.Provenance = make(ProvenanceSet)
+		}
+		storage := "disk"
+		if settings.Plan.RAMFixtureRoot != "" {
+			storage = "tmpfs"
+		}
+		settings.Plan.Provenance["fixture_storage"] = storage
+		settings.Plan.Provenance["module_cache"] = settings.Plan.ModuleCache
+		settings.Plan.Provenance["module_cache_network"] = "offline"
+	}
 }
 
 func validateBenchmarkCLI(input benchmarkCLIValidation) ([]Target, error) {
@@ -493,7 +524,11 @@ func runFixtureUtility(cli benchmarkCLIOptions) int {
 		}
 		return 0
 	}
-	if err := evaluateDir(fixturePath, cli.EvalDir, []string{"api/server.go"}); err != nil {
+	ctx := context.Background()
+	if cli.Plan.ModuleCache != "" {
+		ctx = gocache.WithModuleCache(ctx, cli.Plan.ModuleCache)
+	}
+	if err := evaluateDir(ctx, fixturePath, cli.EvalDir, []string{"api/server.go"}); err != nil {
 		fmt.Fprintf(os.Stderr, "evaluate error: %v\n", err)
 		return 1
 	}
@@ -538,7 +573,7 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 		}
 	}()
 	freshOutcomes, progressErr := ExecutePlanWithCompletion(ctx, pending, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
-		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance), WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(modelLimits))
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithFixtureRoot(plan.Options.RAMFixtureRoot), WithModuleCache(plan.Options.ModuleCache), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance), WithOpenCodeRelayURL(relayURL), WithOpenCodeModelLimits(modelLimits))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}

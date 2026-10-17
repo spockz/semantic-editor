@@ -50,6 +50,23 @@ read-only vetted Go module cache. A preseed source is runner configuration,
 never implicit host-cache reuse. Until a preseed mechanism is configured, each
 fixture uses an empty local Go state.
 
+[ADR-0074](0074-ram-backed-benchmark-workspaces-and-persistent-module-cache.md)
+adds an explicit persistent module-cache selection accessed directly on SSD,
+without copying it into each disposable workspace. RAM-mode jobs start with
+empty independent build caches. Before agent timing, setup populates the
+selected module cache with `go mod download all` using declared versions in a
+private manifest copy, then validates visible and private dependencies offline.
+All arms receive the same module preparation; measured execution reuses that
+cache offline. Setup proxy settings and its populated-cache policy are distinct
+from measured offline access. Semedit prewarming chooses a visible Go target
+independently of AST oracle assertions and warms only that job's RAM caches.
+Storage mode, module-cache preparation policy, and prewarm remain technical
+provenance. Compare paired arms under the same policy; do not silently treat
+historical cold-module observations as equivalent to populated-cache runs.
+Resume fingerprints include a preparation-policy identity so a partial run from
+the earlier cache-only or AST-gated warmup policy cannot silently mix with newly
+prepared jobs. Existing result artifacts retain their original provenance.
+
 Before starting a Codex session, the harness writes a benchmark-owned,
 fixture-local `AGENTS.override.md`. It defines the fixture as the complete
 workspace while allowing any documentation the fixture supplies. It prohibits

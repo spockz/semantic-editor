@@ -73,6 +73,8 @@ type PlanOptions struct {
 	MCPServerInstructions []MCPServerInstructionMode
 	SemeditArmRestriction SemeditArmRestriction
 	SemeditPrewarmVerify  bool
+	RAMFixtureRoot        string
+	ModuleCache           string
 	Provenance            ProvenanceSet
 }
 

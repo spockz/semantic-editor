@@ -26,7 +26,11 @@ recovery guidance to restore a protected file if an earlier turn changed it.
 This exposes a task constraint, not the oracle's observed result. The oracle
 enforces mutation policy, structural postconditions,
 clean compilation, and behavioral verification. Hidden acceptance tests are
-stored outside the extracted fixture and copied only after the agent exits.
+stored outside the agent-visible fixture. Before provider launch, shared-module
+setup may install them in a disposable private copy to download their pinned
+dependencies and prove offline access. That copy is removed before launch;
+the original fixture manifests remain unchanged. Evaluation installs hidden
+tests into its own copy after the agent exits.
 The copy path is root-scoped so an agent-created symlink cannot redirect a
 hidden test outside the benchmark workspace.
 
@@ -54,6 +58,15 @@ boundary, handle control traffic, preserve other sink protocols, and work
 across small and large variants without revealing a symbol-by-symbol plan.
 
 ## Invariants
+
+The optional storage boundary in
+[ADR-0074](0074-ram-backed-benchmark-workspaces-and-persistent-module-cache.md)
+places the complete disposable fixture on a validated native tmpfs. Persistent
+repository caches remain on SSD and are materialized into each job. The selected
+SSD module cache is accessed directly; each job owns independent build,
+temporary, gopls, and agent state. Durable transcripts, checkpoints, and reports
+remain outside the disposable root. Cleanup removes only owned job directories
+after publishing required evidence, never the mountpoint or shared modules.
 
 - Every runnable task has a non-empty txtar prompt variant.
 - The model cannot inspect or alter hidden acceptance tests before execution

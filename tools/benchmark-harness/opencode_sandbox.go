@@ -63,8 +63,8 @@ func (r *Runner) openCodeSandboxProfile(workDir, openCodePath, modelURL string) 
 	if resolvedPath, resolveErr := filepath.EvalSymlinks(semeditPath); resolveErr == nil {
 		semeditPath = resolvedPath
 	}
-	profilePath := filepath.Join(r.baseScratchDir, ".opencode-sandboxes", filepath.Base(fixtureRoot)+".sb")
-	mkdirErr := prepareRuntimeLayout(r.baseScratchDir, []string{".opencode-sandboxes"}, nil)
+	profilePath := filepath.Join(fixtureRoot, ".scratch", "opencode", "seatbelt.sb")
+	mkdirErr := prepareRuntimeLayout(fixtureRoot, []string{filepath.Join(".scratch", "opencode")}, nil)
 	if mkdirErr != nil {
 		return "", "", fmt.Errorf("create OpenCode sandbox profile directory: %w", mkdirErr)
 	}
@@ -72,7 +72,10 @@ func (r *Runner) openCodeSandboxProfile(workDir, openCodePath, modelURL string) 
 	if profileErr != nil {
 		return "", "", profileErr
 	}
-	writeErr := prepareRuntimeLayout(r.baseScratchDir, nil, map[string][]byte{filepath.Join(".opencode-sandboxes", filepath.Base(profilePath)): []byte(profile)})
+	if r.moduleCache != "" {
+		profile += fmt.Sprintf("(allow file-read* (subpath %s))\n", strconv.Quote(r.moduleCache))
+	}
+	writeErr := prepareRuntimeLayout(fixtureRoot, nil, map[string][]byte{filepath.Join(".scratch", "opencode", "seatbelt.sb"): []byte(profile)})
 	if writeErr != nil {
 		return "", "", fmt.Errorf("write OpenCode Seatbelt profile: %w", writeErr)
 	}
@@ -200,7 +203,7 @@ func (r *Runner) openCodeSessionSandboxProfile(workDir, openCodePath, modelURL, 
 	if err != nil {
 		return "", "", err
 	}
-	if err := prepareRuntimeLayout(r.baseScratchDir, nil, map[string][]byte{filepath.Join(".opencode-sandboxes", filepath.Base(profilePath)): profile}); err != nil {
+	if err := prepareRuntimeLayout(workDir, nil, map[string][]byte{filepath.Join(".scratch", "opencode", "seatbelt.sb"): profile}); err != nil {
 		return "", "", fmt.Errorf("write OpenCode loopback server permission: %w", err)
 	}
 	return sandboxPath, profilePath, nil

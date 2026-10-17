@@ -638,6 +638,45 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	return res, nil
 }
 
+// Populate shared modules using private acceptance manifests, then prove offline dependency access.
+func prepareSharedGoDependencies(ctx context.Context, task *Task, workDir string) (retErr error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+	if _, err := os.Stat(filepath.Join(workDir, "go.mod")); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("inspect fixture module: %w", err)
+	}
+	evalDir, cleanup, err := copyWorkspaceForOracle(workDir)
+	if err != nil {
+		return fmt.Errorf("prepare private oracle workspace: %w", err)
+	}
+	defer func() { retErr = errors.Join(retErr, cleanup()) }()
+	if prepareErr := prepareOracleTests(ctx, task, evalDir); prepareErr != nil {
+		return fmt.Errorf("prepare private oracle tests: %w", prepareErr)
+	}
+	if downloadErr := downloadSharedGoModules(ctx, evalDir); downloadErr != nil {
+		return downloadErr
+	}
+	env, err := oracleGoEnvironment(ctx, evalDir)
+	if err != nil {
+		return fmt.Errorf("prepare private oracle Go environment: %w", err)
+	}
+	if err := preflightSharedModuleCache(ctx, evalDir, env); err != nil {
+		return fmt.Errorf("preflight private oracle dependencies: %w", err)
+	}
+	cmd := exec.CommandContext(ctx, "go", "list", "-mod=readonly", "-deps", "-test", "./...")
+	cmd.Dir = evalDir
+	cmd.Env = env
+	if output, err := cmd.CombinedOutput(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("preflight private oracle dependencies: %w", ctx.Err())
+		}
+		return fmt.Errorf("preflight private oracle dependencies: %w: %s", err, boundedDiagnostic(output, 2048))
+	}
+	return nil
+}
+
 type oracleFailure struct {
 	failed  bool
 	stage   string
@@ -704,14 +743,21 @@ func runOracleGoCommand(ctx context.Context, workDir, operation string, args ...
 	default:
 		return nil, fmt.Errorf("unsupported oracle Go command %q", operation)
 	}
-	env, err := fixtureGoEnvironment(ctx, workDir)
+	env, err := oracleGoEnvironment(ctx, workDir)
 	if err != nil {
 		return nil, fmt.Errorf("prepare oracle Go environment: %w", err)
 	}
 	command.Dir = workDir
-	env = append(env, "PWD="+workDir, "CGO_ENABLED=0")
 	command.Env = env
 	return command.CombinedOutput()
+}
+
+func oracleGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
+	env, err := fixtureGoEnvironment(ctx, workDir)
+	if err != nil {
+		return nil, err
+	}
+	return replaceEnvironment(env, map[string]string{"PWD": workDir, "CGO_ENABLED": "0"}), nil
 }
 
 func copyWorkspaceForOracle(workDir string) (string, func() error, error) {

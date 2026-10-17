@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-func evaluateDir(fixturePath, targetDir string, modifiedFiles []string) error {
+func evaluateDir(ctx context.Context, fixturePath, targetDir string, modifiedFiles []string) error {
 	data, err := os.ReadFile(filepath.Clean(fixturePath))
 	if err != nil {
 		return fmt.Errorf("read fixture: %w", err)
@@ -16,7 +16,7 @@ func evaluateDir(fixturePath, targetDir string, modifiedFiles []string) error {
 	if err != nil {
 		return fmt.Errorf("parse task: %w", err)
 	}
-	res, err := Evaluate(context.Background(), task, targetDir, modifiedFiles)
+	res, err := Evaluate(ctx, task, targetDir, modifiedFiles)
 	if err != nil {
 		return fmt.Errorf("evaluate: %w", err)
 	}

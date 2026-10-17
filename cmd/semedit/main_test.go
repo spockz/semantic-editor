@@ -28,6 +28,17 @@ var fakeLSPBuild sync.Once
 var errFakeLSPBuild error
 var fakeBashLSPPath string
 var fakeMakeLSPPath string
+
+func TestMCPCommandExposesIndependentGoModuleCacheFlag(t *testing.T) {
+	command, _, err := newRootCmd(t.TempDir()).Find([]string{"mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command.Flags().Lookup("go-module-cache") == nil {
+		t.Fatal("MCP command does not expose --go-module-cache")
+	}
+}
+
 var repositoryRoot = func() string {
 	_, filename, _, ok := runtime.Caller(0)
 	if !ok {

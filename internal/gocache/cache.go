@@ -23,6 +23,8 @@ const moduleCacheEnvironmentKey = "GOMODCACHE"
 
 type baseDirContextKey struct{}
 
+type moduleCacheContextKey struct{}
+
 type environmentCacheContextKey struct{}
 
 type environmentCache struct {
@@ -46,6 +48,17 @@ func WithBaseDir(ctx context.Context, baseDir string) context.Context {
 	return context.WithValue(ctx, baseDirContextKey{}, strings.TrimSpace(baseDir))
 }
 
+// WithModuleCache selects an explicit module cache independently of other Go state.
+func WithModuleCache(ctx context.Context, moduleCache string) context.Context {
+	return context.WithValue(ctx, moduleCacheContextKey{}, strings.TrimSpace(moduleCache))
+}
+
+// HasModuleCache reports whether the request selected an explicit module cache.
+func HasModuleCache(ctx context.Context) bool {
+	moduleCache, _ := ctx.Value(moduleCacheContextKey{}).(string)
+	return strings.TrimSpace(moduleCache) != ""
+}
+
 // HasBaseDir reports whether a nonblank isolated Go state base was selected.
 func HasBaseDir(ctx context.Context) bool {
 	baseDir, _ := ctx.Value(baseDirContextKey{}).(string)
@@ -59,6 +72,10 @@ func CanUseProcessRuntimeDirectories(ctx context.Context) bool {
 	}
 	seed, _ := ctx.Value(moduleCacheSeedKey{}).(string)
 	if strings.TrimSpace(seed) != "" {
+		return false
+	}
+	moduleCache, _ := ctx.Value(moduleCacheContextKey{}).(string)
+	if strings.TrimSpace(moduleCache) != "" {
 		return false
 	}
 	required := map[string]bool{
@@ -138,15 +155,22 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		return nil, baseDirErr
 	}
 	seed, _ := ctx.Value(moduleCacheSeedKey{}).(string)
+	explicitModuleCache, _ := ctx.Value(moduleCacheContextKey{}).(string)
+	if explicitModuleCache != "" && seed != "" {
+		return nil, fmt.Errorf("explicit Go module cache conflicts with offline module cache seed")
+	}
 	if seed != "" && baseDir == "" {
 		return nil, fmt.Errorf("offline Go module cache seed requires an explicit Go isolation base directory")
 	}
 	if baseDir == "" {
-		return inheritedEnvironment(ctx, workDir)
+		return inheritedEnvironment(ctx, workDir, explicitModuleCache)
 	}
 
 	cacheDir := filepath.Join(baseDir, "build")
-	moduleCacheDir := filepath.Join(baseDir, "mod")
+	moduleCacheDir, err := selectedModuleCacheDir(baseDir, explicitModuleCache)
+	if err != nil {
+		return nil, err
+	}
 	tempDir := filepath.Join(baseDir, "tmp")
 	binDir := filepath.Join(baseDir, "bin")
 	goplsCacheDir := filepath.Join(baseDir, "gopls")
@@ -205,7 +229,7 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 	), nil
 }
 
-func inheritedEnvironment(ctx context.Context, workDir string) ([]string, error) {
+func inheritedEnvironment(ctx context.Context, workDir, explicitModuleCache string) ([]string, error) {
 	settings, err := effectiveGoSettings(ctx, workDir)
 	if err != nil {
 		return nil, err
@@ -215,6 +239,13 @@ func inheritedEnvironment(ctx context.Context, workDir string) ([]string, error)
 		goFlags = appendGoFlag(goFlags, "-mod=readonly")
 	}
 	env := setEnvironmentValue(os.Environ(), "GOFLAGS", goFlags)
+	if explicitModuleCache != "" {
+		moduleCache, resolveErr := resolveModuleCache(explicitModuleCache)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		env = setEnvironmentValue(env, moduleCacheEnvironmentKey, moduleCache)
+	}
 	for _, key := range []string{"GOCACHE", moduleCacheEnvironmentKey, "GOPATH", "GOTMPDIR"} {
 		if value, exists := environmentValue(env, key); exists && value != "" {
 			continue
@@ -228,6 +259,24 @@ func inheritedEnvironment(ctx context.Context, workDir string) ([]string, error)
 		return nil, err
 	}
 	return setEnvironmentValue(env, "SEMEDIT_GOENV_CONFIG_ID", goEnvIdentity), nil
+}
+
+func resolveModuleCache(moduleCache string) (string, error) {
+	resolved, err := filepath.Abs(moduleCache)
+	if err != nil {
+		return "", fmt.Errorf("resolve Go module cache directory: %w", err)
+	}
+	if err := verifyStateDirectory(resolved); err != nil {
+		return "", fmt.Errorf("prepare Go module cache: %w", err)
+	}
+	return resolved, nil
+}
+
+func selectedModuleCacheDir(baseDir, explicitModuleCache string) (string, error) {
+	if explicitModuleCache == "" {
+		return filepath.Join(baseDir, "mod"), nil
+	}
+	return resolveModuleCache(explicitModuleCache)
 }
 
 func effectiveGoSettings(ctx context.Context, workDir string) (map[string]string, error) {

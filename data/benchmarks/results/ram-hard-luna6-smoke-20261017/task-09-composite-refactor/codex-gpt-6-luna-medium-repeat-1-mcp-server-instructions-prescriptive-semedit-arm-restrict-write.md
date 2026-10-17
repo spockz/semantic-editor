@@ -1,0 +1,472 @@
+# Empirical Benchmark Report: Vanilla LLM vs. Semedit MCP
+
+<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+* **Date**: 2026-10-17 09:58:35 CEST
+
+## Test case: `task-09-composite-refactor`
+
+### Target: `codex/gpt-6-luna/medium (repeat 1)`
+
+#### Configuration: explicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Run Provenance**: `fixture_dependency_preparation=go-list-readonly-deps-test,fixture_storage=tmpfs,module_cache=/Users/alessandro/.codex-workspaces/worktrees/ios-53c9bc6a-f78e-49a6-8157-8dcdb23a6482/semantic-editor/.scratch/go/mod,module_cache_network=offline,provider_transport=codex_app_server_v2`
+
+* **Fixture**: [testdata/bench/task_09_composite_refactor.txtar](https://github.com/spockz/semantic-editor/blob/bfcdd5ea10ca60e6edb295d274e686d5ea68cb90/testdata/bench/task_09_composite_refactor.txtar)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package config
+
+import (
+	"archive/tar"
+	"fmt"
+)
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | Semedit Explicit (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 44.83s | 78.71s | <span class="benchmark-delta-negative">+75.6%</span> | — | — | — |
+| **Process Start → First Event** | 0.20s | 0.06s | — | — | — | — |
+| **First Event → First Tool Call** | 4.19s | 3.28s | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 5 | 5 | 0% | — | — | — |
+| **Internal Tool Cycles** | 10 | 35 | <span class="benchmark-delta-negative">+250.0%</span> | — | — | — |
+| **Initial Load / Discovery Turns** | 7 | 3 | <span class="benchmark-delta-positive">-57.1%</span> | — | — | — |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | — | — | — |
+| **Total Tool Invocations** | 10 | 35 | <span class="benchmark-delta-negative">+250.0%</span> | — | — | — |
+| **Output Tokens** | 1983 | 5927 | <span class="benchmark-delta-negative">+198.9%</span> | — | — | — |
+| **Reasoning / Thinking Tokens** | 395 | 2451 | <span class="benchmark-delta-negative">+520.5%</span> | — | — | — |
+| **Total Input Tokens** | 271008 | 957045 | <span class="benchmark-delta-negative">+253.1%</span> | — | — | — |
+| **Cached Input Tokens** | 225024 | 909312 | <span class="benchmark-delta-positive">+304.1%</span> | — | — | — |
+| **Uncached Input Tokens** | 45984 | 47733 | <span class="benchmark-delta-negative">+3.8%</span> | — | — | — |
+| **Cached vs Uncached Token Ratio** | 4.89:1 | 19.05:1 | <span class="benchmark-delta-positive">+289.3%</span> | — | — | — |
+| **Oracle L1: Mutation Policy** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L2: AST Invariants** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L3: Clean Build** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L4: Verification Test** | ❌ FAIL | ❌ FAIL | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ✅ YES | — | — | — | — |
+
+##### Baseline vs Semedit Explicit in Small Context
+* **Vanilla Edit**: File config/config.go modified (15 lines -> 21 lines)
+* **MCP Edit**: File config/config.go modified (15 lines -> 14 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,240p&#39; config/config.go &amp;&amp; \
+rg &#39;\\.Port\\b|Port:&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;pwd &amp;&amp; \
+rg --files -g &#39;AGENTS.md&#39; -g &#39;PROJECT_BRIEF.md&#39; -g &#39;config/config.go&#39; -g &#39;&#34;&#39;!go.mod&#39;&#34;&#39; -g &#39;&#34;&#39;!go.sum&#39;&#34;&#39;&#34;</code></pre></td></tr>
+<tr><td>2</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg --files -g &#39;AGENTS.md&#39; -g &#39;PROJECT_BRIEF.md&#39; -g &#39;*.go&#39;&#34;</code></pre></td></tr>
+<tr><td>3</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;git status --short &amp;&amp; \
+git diff -- config/config.go go.mod go.sum &amp;&amp; \
+rg &#39;Config\\s*\\{|\\.Port\\b|\\bPort\\s+int&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Port&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>4</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;pwd; ls -la; sed -n &#39;1,180p&#39; config/config.go; rg &#39;Config\\s*\\{|\\.Port\\b|\\bPort\\s+int&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>5</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go; cat go.mod&#34;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go&#34;</code></pre></td></tr>
+<tr><td>6</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go&#34;</code></pre></td><td><code>semedit/semantic_workspace_outline</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;path&#34;: &#34;config&#34;
+}</code></pre></td></tr>
+<tr><td>7</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # internal/msan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # unicode/utf8 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/asan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # math/bits compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # unicode compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/goexperiment compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34;<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,140p&#39; config/config.go; git status --short; git diff -- go.mod go.sum; go test ./...&#34;</code></pre></td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Batch child results are intermediate and do not provide final continuation targets. Critical result (JSON): {&#34;diagnostic_report&#34;:{&#34;status&#34;:&#34;unavailable&#34;,&#34;reason&#34;:&#34;No completed final batch diagnostic inventory was captured.&#34;},&#34;result&#34;:{&#34;status&#34;:&#34;error&#34;,&#34;results&#34;:[{&#34;status&#34;:&#34;error&#34;,&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;edit 1 params: unknown parameter \&#34;position\&#34; for \&#34;semantic_insert_function\&#34;; supported keys are [access, access_modifier, auto-organize-imports, auto_organize_imports, bash-bin, bash_bin, f<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_rename&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;,
+        &#34;symbol&#34;: &#34;Config.Port&#34;,
+        &#34;to&#34;: &#34;ListenPort&#34;
+      }
+    },
+    {
+      &#34;tool&#34;: &#34;semantic_insert_function&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;,
+        &#34;source&#34;: &#34;func DefaultConfig() *Config { return &amp;Config{Host: \&#34;localhost\&#34;, ListenPort: 8080} }&#34;,
+        &#34;position&#34;: &#34;public_end&#34;
+      }
+    },
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>8</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go version; go env GOROOT GOTOOLCHAIN GOCACHE; rg --files&#39;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go&#34;</code></pre></td></tr>
+<tr><td>9</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><code>semedit/semantic_rename</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Port&#34;,
+  &#34;to&#34;: &#34;ListenPort&#34;
+}</code></pre></td></tr>
+<tr><td>10</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # math/bits compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/unsafeheader compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/runtime/pprof/label compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # cmp compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/trace/tracev2 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/coverage/rtcov compile: version &#34;go1.27.2&#34; does not m<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go test ./...&#39;</code></pre></td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;batch execution error: batch diagnostics before in \&#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000\&#34;: check Go diagnostics with gopls: incomplete Go package coverage for \&#34;./.scratch/go/build/92\&#34;: package has errors but no selected Go files&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_insert_function&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;,
+        &#34;source&#34;: &#34;func DefaultConfig() *Config { return &amp;Config{Host: \&#34;localhost\&#34;, ListenPort: 8080} }&#34;,
+        &#34;placement&#34;: &#34;public_end&#34;
+      }
+    },
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>11</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go&#34;</code></pre></td></tr>
+<tr><td>12</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.ListenPort&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>13</td><td>—</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;git status --short -- go.mod go.sum &amp;&amp; \
+git diff -- go.mod go.sum&#39;</code></pre></td></tr>
+<tr><td>14</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>15</td><td>—</td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;batch execution error: batch diagnostics before in \&#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000\&#34;: check Go diagnostics with gopls: incomplete Go package coverage for \&#34;./.scratch/go/build/92\&#34;: package has errors but no selected Go files&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_insert_function&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;,
+        &#34;source&#34;: &#34;func DefaultConfig() *Config { return &amp;Config{Host: \&#34;localhost\&#34;, ListenPort: 8080} }&#34;,
+        &#34;placement&#34;: &#34;public_end&#34;
+      }
+    },
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>16</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,100p&#39; config/config.go &amp;&amp; \
+rg -n &#39;Config\\.Port|\\.Port|ListenPort|func \\(c \\*Config\\) Addr&#39; --glob &#39;*.go&#39; --glob &#39;&#34;&#39;!**/*_test.go&#39;&#34;&#39;&#34;</code></pre></td></tr>
+<tr><td>17</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.ListenPort&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>18</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>19</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;resolve Go lookup snapshot: resolve DefaultConfig in config/config.go: symbol not found&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;DefaultConfig&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>20</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;rg --files .scratch/go/build&#39;</code></pre></td></tr>
+<tr><td>21</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;rg --files .scratch/go/build/92&#39;</code></pre></td></tr>
+<tr><td>22</td><td>—</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td></tr>
+<tr><td>23</td><td>—</td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;batch execution error: batch diagnostics before in \&#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000\&#34;: check Go diagnostics with gopls: incomplete Go package coverage for \&#34;./.scratch/go/build/92\&#34;: package has errors but no selected Go files&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>24</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,100p&#39; config/config.go&#34;</code></pre></td></tr>
+<tr><td>25</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.ListenPort&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>26</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>27</td><td>—</td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;batch execution error: batch diagnostics before in \&#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000\&#34;: check Go diagnostics with gopls: incomplete Go package coverage for \&#34;./.scratch/go/build/92\&#34;: package has errors but no selected Go files&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>28</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,100p&#39; config/config.go&#34;</code></pre></td></tr>
+<tr><td>29</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.ListenPort&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>30</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>31</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;DefaultConfig&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>32</td><td>—</td><td><code>semedit/semantic_batch</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;batch execution error: batch diagnostics before in \&#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000\&#34;: check Go diagnostics with gopls: incomplete Go package coverage for \&#34;./.scratch/go/build/92\&#34;: package has errors but no selected Go files&#34;}<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit-explicit_small-explicit_task-09-composite-refactor_1792223834014726000&#34;,
+  &#34;edits&#34;: [
+    {
+      &#34;tool&#34;: &#34;semantic_organize_imports&#34;,
+      &#34;params&#34;: {
+        &#34;file&#34;: &#34;config/config.go&#34;
+      }
+    }
+  ]
+}</code></pre></td></tr>
+<tr><td>33</td><td>—</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # internal/byteorder compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/unsafeheader compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/godebugs compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/msan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/trace/tracev2 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/goos compile: version &#34;go1.27.2&#34; does not mat<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go test ./...&#39;</code></pre></td></tr>
+<tr><td>34</td><td>—</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # internal/byteorder compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/asan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/runtime/pprof/label compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/goos compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/godebugs compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # math/bits compile: version &#34;go1.27.2&#34; does not match go <pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;GOCACHE=/tmp/codex-config-test-gocache go test ./...&#39;</code></pre></td></tr>
+<tr><td>35</td><td>—</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go version &amp;&amp; \
+go env GOROOT GOTOOLCHAIN GOCACHE&#39;</code></pre></td></tr>
+</tbody>
+</table>
+
+#### Configuration: implicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Run Provenance**: `fixture_dependency_preparation=go-list-readonly-deps-test,fixture_storage=tmpfs,module_cache=/Users/alessandro/.codex-workspaces/worktrees/ios-53c9bc6a-f78e-49a6-8157-8dcdb23a6482/semantic-editor/.scratch/go/mod,module_cache_network=offline,provider_transport=codex_app_server_v2`
+
+* **Fixture**: [testdata/bench/task_09_composite_refactor.txtar](https://github.com/spockz/semantic-editor/blob/bfcdd5ea10ca60e6edb295d274e686d5ea68cb90/testdata/bench/task_09_composite_refactor.txtar)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+**Semedit MCP Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package config
+
+import (
+	"archive/tar"
+	"fmt"
+)
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | MCP (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 44.83s | 52.14s | <span class="benchmark-delta-negative">+16.3%</span> | — | — | — |
+| **Process Start → First Event** | 0.20s | 0.05s | — | — | — | — |
+| **First Event → First Tool Call** | 4.19s | 5.75s | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 5 | 5 | 0% | — | — | — |
+| **Internal Tool Cycles** | 10 | 15 | <span class="benchmark-delta-negative">+50.0%</span> | — | — | — |
+| **Initial Load / Discovery Turns** | 7 | 2 | <span class="benchmark-delta-positive">-71.4%</span> | — | — | — |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | — | — | — |
+| **Total Tool Invocations** | 10 | 15 | <span class="benchmark-delta-negative">+50.0%</span> | — | — | — |
+| **Output Tokens** | 1983 | 2302 | <span class="benchmark-delta-negative">+16.1%</span> | — | — | — |
+| **Reasoning / Thinking Tokens** | 395 | 442 | <span class="benchmark-delta-negative">+11.9%</span> | — | — | — |
+| **Total Input Tokens** | 271008 | 796179 | <span class="benchmark-delta-negative">+193.8%</span> | — | — | — |
+| **Cached Input Tokens** | 225024 | 750336 | <span class="benchmark-delta-positive">+233.4%</span> | — | — | — |
+| **Uncached Input Tokens** | 45984 | 45843 | <span class="benchmark-delta-positive">-0.3%</span> | — | — | — |
+| **Cached vs Uncached Token Ratio** | 4.89:1 | 16.37:1 | <span class="benchmark-delta-positive">+234.5%</span> | — | — | — |
+| **Oracle L1: Mutation Policy** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L2: AST Invariants** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L3: Clean Build** | ✅ PASS | ✅ PASS | — | — | — | — |
+| **Oracle L4: Verification Test** | ❌ FAIL | ❌ FAIL | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ✅ YES | — | — | — | — |
+
+##### Baseline vs Semedit Agentic in Small Context
+* **Vanilla Edit**: File config/config.go modified (15 lines -> 21 lines)
+* **MCP Edit**: File config/config.go modified (15 lines -> 18 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,240p&#39; config/config.go &amp;&amp; \
+rg &#39;\\.Port\\b|Port:&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><code>semedit/semantic_workspace_outline</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>2</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><code>semedit/semantic_outline</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;path&#34;: &#34;config&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>3</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;git status --short &amp;&amp; \
+git diff -- config/config.go go.mod go.sum &amp;&amp; \
+rg &#39;Config\\s*\\{|\\.Port\\b|\\bPort\\s+int&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config&#34;
+}</code></pre></td></tr>
+<tr><td>4</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;pwd; ls -la; sed -n &#39;1,180p&#39; config/config.go; rg &#39;Config\\s*\\{|\\.Port\\b|\\bPort\\s+int&#39; --glob &#39;*.go&#39; .&#34;</code></pre></td><td><code>semedit/semantic_rename</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;symbol&#34;: &#34;Config.Port&#34;,
+  &#34;to&#34;: &#34;ListenPort&#34;
+}</code></pre></td></tr>
+<tr><td>5</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go; cat go.mod&#34;</code></pre></td><td><code>semedit/semantic_insert_construct</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span>): Critical result (JSON): {&#34;application_state&#34;:&#34;unknown&#34;,&#34;error&#34;:&#34;unknown param \&#34;body\&#34;; supported keys are [access, access_modifier, anchor, auto-organize-imports, auto_organize_imports, bash-bin, bash_bin, construct-path, construct_path, discriminator, expected-revision, expected_revision, file, ghc-bin, ghc-version, ghc_bin, ghc_version, group, haskell-standalone, hls-bin, hls-version, hls_bin, hls_version, import-maven, import_maven, in-declaration, in-function, in-type, in_declaration, in_function, in_t<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;construct&#34;: &#34;function&#34;,
+  &#34;name&#34;: &#34;DefaultConfig&#34;,
+  &#34;signature&#34;: &#34;func DefaultConfig() *Config&#34;,
+  &#34;body&#34;: &#34;return &amp;Config{Host: \&#34;localhost\&#34;, ListenPort: 8080}&#34;
+}</code></pre></td></tr>
+<tr><td>6</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,120p&#39; config/config.go&#34;</code></pre></td><td><code>semedit/semantic_insert_construct</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;kind&#34;: &#34;function&#34;,
+  &#34;placement&#34;: &#34;file_end&#34;,
+  &#34;source&#34;: &#34;func DefaultConfig() *Config {\n\treturn &amp;Config{Host: \&#34;localhost\&#34;, ListenPort: 8080}\n}&#34;
+}</code></pre></td></tr>
+<tr><td>7</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # internal/msan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # unicode/utf8 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/asan compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # math/bits compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # unicode compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/goexperiment compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34;<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,140p&#39; config/config.go; git status --short; git diff -- go.mod go.sum; go test ./...&#34;</code></pre></td><td><code>semedit/semantic_verify</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;path&#34;: &#34;config/config.go&#34;,
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;check_only&#34;: true
+}</code></pre></td></tr>
+<tr><td>8</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go version; go env GOROOT GOTOOLCHAIN GOCACHE; rg --files&#39;</code></pre></td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;git status --short &amp;&amp; \
+git diff -- go.mod go.sum &amp;&amp; \
+git diff -- config/config.go&#39;</code></pre></td></tr>
+<tr><td>9</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><code>semedit/semantic_outline</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;path&#34;: &#34;config&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>10</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # math/bits compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/unsafeheader compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/runtime/pprof/label compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # cmp compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/trace/tracev2 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/coverage/rtcov compile: version &#34;go1.27.2&#34; does not m<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go test ./...&#39;</code></pre></td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>11</td><td>—</td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>12</td><td>—</td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;DefaultConfig&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>13</td><td>—</td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;symbol&#34;: &#34;Config.Addr&#34;,
+  &#34;language&#34;: &#34;go&#34;
+}</code></pre></td></tr>
+<tr><td>14</td><td>—</td><td><code>semedit/semantic_verify</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;workspace_root&#34;: &#34;/Volumes/semedit-bench-ram/run_codex_semedit_small-implicit_task-09-composite-refactor_1792223778935068000&#34;,
+  &#34;file&#34;: &#34;config/config.go&#34;,
+  &#34;language&#34;: &#34;go&#34;,
+  &#34;check_only&#34;: true
+}</code></pre></td></tr>
+<tr><td>15</td><td>—</td><td><span role="img" aria-label="Transport failed" title="Transport failed">✗</span> <span role="img" aria-label="Functional unknown" title="Functional unknown">?</span>: # internal/trace/tracev2 compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/goos compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # cmp compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/runtime/pprof/label compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/unsafeheader compile: version &#34;go1.27.2&#34; does not match go tool version &#34;go1.27.1&#34; # internal/profilerecord compile: version &#34;go1.27.2&#34; does no<pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;go test ./...&#39;</code></pre></td></tr>
+</tbody>
+</table>
+

@@ -663,7 +663,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 
 func (s *Server) prepareBatchStageContext(ctx context.Context, configuration serverConfiguration, request *parsedBatchToolRequest) (context.Context, *Server, error) {
 	ctx = gocache.WithModuleCacheSeed(
-		gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root)),
+		gocache.WithModuleCache(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root)), configuration.goModuleCache),
 		configuration.goModuleCacheSeed,
 	)
 	if request.request.SkipHooks {
@@ -907,7 +907,7 @@ func (s *Server) executeBatchForConfiguration(ctx context.Context, configuration
 	}
 	requestServer := requestViewFromConfiguration(configuration, canonicalRoot, trustWorkspace)
 	ctx = gocache.WithModuleCacheSeed(
-		gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, canonicalRoot)),
+		gocache.WithModuleCache(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, canonicalRoot)), configuration.goModuleCache),
 		configuration.goModuleCacheSeed,
 	)
 	return requestServer.executeBatchWithContext(ctx, preparedEdits, autoOrganizeImports)

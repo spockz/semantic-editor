@@ -8,12 +8,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/pipeline"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/spockz/semantic-editor/internal/pipeline"
 )
 
 type jobCheckpoint struct {
@@ -65,6 +66,9 @@ type resumeFingerprintOptions struct {
 	SemeditPrewarmVerify  bool
 	MCPServerInstructions []MCPServerInstructionMode
 	Provenance            ProvenanceSet
+	RAMFixtureRoot        string
+	ModuleCache           string
+	PreparationPolicy     string
 }
 
 type runManifest struct {
@@ -121,10 +125,13 @@ func buildRunManifest(plan *BenchmarkPlan) (runManifest, error) {
 			SemeditPrewarmVerify:  plan.Options.SemeditPrewarmVerify,
 			MCPServerInstructions: plan.Options.MCPServerInstructions,
 			Provenance:            plan.Options.Provenance,
+			RAMFixtureRoot:        plan.Options.RAMFixtureRoot,
+			ModuleCache:           plan.Options.ModuleCache,
 		},
 		Exclusions: plan.Exclusions,
 		Jobs:       fingerprintJobs,
 	}
+	input.Options.PreparationPolicy = "shared-module-download-visible-go-prewarm-v1"
 	data, err := json.Marshal(input)
 	if err != nil {
 		return runManifest{}, fmt.Errorf("marshal resume plan fingerprint: %w", err)

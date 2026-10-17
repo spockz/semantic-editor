@@ -10,6 +10,34 @@ import (
 	"testing"
 )
 
+func TestAgentSessionSeparatesPersistentEvidenceFromFixtureCleanup(t *testing.T) {
+	persistentDir := t.TempDir()
+	fixtureDir := t.TempDir()
+	workDir := filepath.Join(fixtureDir, "run-1")
+	if err := os.Mkdir(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	session, err := newAgentSession(&behavioralSessionProvider{}, persistentDir, fixtureDir, "split-root", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := session.runTurn(t.Context(), Target{}, "task", "task", &RunResult{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.close(); err != nil {
+		t.Fatalf("close split-root session: %v", err)
+	}
+	if _, err := os.Stat(session.transcriptPath); err != nil {
+		t.Fatalf("persistent transcript was not retained: %v", err)
+	}
+	if _, err := os.Stat(workDir); !os.IsNotExist(err) {
+		t.Fatalf("fixture work directory survived cleanup: %v", err)
+	}
+	if _, err := os.Stat(fixtureDir); err != nil {
+		t.Fatalf("fixture root was removed with its session: %v", err)
+	}
+}
+
 func TestAgentSessionCloseRemovesReadonlyCacheWithoutFollowingSymlinks(t *testing.T) {
 	root := t.TempDir()
 	workDir := filepath.Join(root, "workspace")
@@ -32,7 +60,7 @@ func TestAgentSessionCloseRemovesReadonlyCacheWithoutFollowingSymlinks(t *testin
 	if err := os.Symlink(outsideDir, link); err != nil {
 		t.Fatal(err)
 	}
-	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "readonly-cache", workDir)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, root, "readonly-cache", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}
@@ -78,7 +106,7 @@ func TestAgentSessionCloseRetainsReadonlyWorkspace(t *testing.T) {
 	if err := os.Chmod(readonlyDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "retained-readonly", workDir)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, root, "retained-readonly", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}

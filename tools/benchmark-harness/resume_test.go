@@ -174,3 +174,26 @@ func legacyCodingTransportFingerprint(t *testing.T, plan *BenchmarkPlan) string 
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:])
 }
+
+func TestResumeRejectsEarlierPreparationPolicy(t *testing.T) {
+	root := t.TempDir()
+	fixture := filepath.Join(root, "task.txtar")
+	writeTestFile(t, fixture, "task fixture")
+	plan := &BenchmarkPlan{Jobs: []Job{{ID: "job", FixturePath: fixture}}, Options: PlanOptions{OutDir: root, RunID: "preparation-policy"}}
+	runDir, err := prepareBenchmarkRunDir(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := buildRunManifest(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Fingerprint = legacyCodingTransportFingerprint(t, plan)
+	if err := saveRunManifest(runDir, manifest); err != nil {
+		t.Fatal(err)
+	}
+	plan.Options.Resume = true
+	if _, err := prepareBenchmarkRunDir(plan); err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("earlier preparation-policy resume error = %v, want incompatibility", err)
+	}
+}

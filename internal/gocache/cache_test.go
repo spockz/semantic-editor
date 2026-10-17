@@ -123,6 +123,76 @@ func TestEnvironmentKeepsGoplsCacheBelowSelectedBase(t *testing.T) {
 	}
 }
 
+func TestEnvironmentUsesExplicitModuleCacheIndependentlyOfManagedBase(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "managed")
+	moduleCache := filepath.Join(t.TempDir(), "persistent-modules")
+	ctx := gocache.WithModuleCache(gocache.WithBaseDir(t.Context(), baseDir), moduleCache)
+	environment, err := gocache.Environment(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{}
+	for _, entry := range environment {
+		key, value, ok := strings.Cut(entry, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+	if values["GOMODCACHE"] != moduleCache {
+		t.Errorf("GOMODCACHE = %q, want explicit module cache %q", values["GOMODCACHE"], moduleCache)
+	}
+	for key, want := range map[string]string{
+		"GOCACHE":    filepath.Join(baseDir, "build"),
+		"GOTMPDIR":   filepath.Join(baseDir, "tmp"),
+		"GOPLSCACHE": filepath.Join(baseDir, "gopls"),
+		"GOBIN":      filepath.Join(baseDir, "bin"),
+	} {
+		if values[key] != want {
+			t.Errorf("%s = %q, want %q", key, values[key], want)
+		}
+	}
+	if _, err := os.Stat(moduleCache); err != nil {
+		t.Fatalf("explicit module cache was not prepared: %v", err)
+	}
+}
+
+func TestEnvironmentUsesExplicitModuleCacheWithInheritedGoState(t *testing.T) {
+	moduleCache := filepath.Join(t.TempDir(), "persistent-modules")
+	bin := t.TempDir()
+	goCommand := filepath.Join(bin, "go")
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"GOFLAGS\":\"\",\"GOCACHE\":\"cache\",\"GOMODCACHE\":\"modules\",\"GOPATH\":\"path\",\"GOTMPDIR\":\"tmp\"}'\n"
+	if err := os.WriteFile(goCommand, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("GOENV", "off")
+	t.Setenv("GOMODCACHE", filepath.Join(t.TempDir(), "ambient-modules"))
+	ctx := gocache.WithModuleCache(t.Context(), moduleCache)
+	environment, err := gocache.Environment(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, "GOMODCACHE="); ok {
+			if value != moduleCache {
+				t.Fatalf("GOMODCACHE = %q, want explicit module cache %q", value, moduleCache)
+			}
+			return
+		}
+	}
+	t.Fatal("Go subprocess environment omitted GOMODCACHE")
+}
+
+func TestEnvironmentRejectsModuleCacheSeedWithExplicitModuleCache(t *testing.T) {
+	ctx := gocache.WithModuleCacheSeed(
+		gocache.WithModuleCache(gocache.WithBaseDir(t.Context(), t.TempDir()), t.TempDir()),
+		t.TempDir(),
+	)
+	if _, err := gocache.Environment(ctx, t.TempDir()); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("Environment error = %v, want explicit-cache/seed conflict", err)
+	}
+}
+
 func TestEnvironmentSeedsOfflineModuleCacheIntoManagedState(t *testing.T) {
 	seed := filepath.Join(t.TempDir(), "seed")
 	source := filepath.Join(seed, "cache", "download", "fixture.test", "dependency", "@v", "v1.0.0.mod")

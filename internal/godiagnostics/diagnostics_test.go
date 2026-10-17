@@ -972,3 +972,41 @@ func assertPublishedOverlaySync(t *testing.T, harness publishedOverlayHarness, s
 type publishedOverlayShared struct {
 	buffer *sourcebuf.Buffer
 }
+
+func TestAffectedPackagePatternsExcludeProjectLocalBuildCache(t *testing.T) {
+	for _, location := range []string{"inside", "outside"} {
+		t.Run(location, func(t *testing.T) {
+			fixture := newCacheInputFixture(t, map[string]string{
+				"value.go":             "package sample\n\nfunc Value() int { return 1 }\n",
+				"value_test.go":        "package sample\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) { if Value() != 1 { t.Fatal(\"value\") } }\n",
+				"consumer/consumer.go": "package consumer\n\nimport sample \"example.com/cacheinputs\"\n\nfunc Value() int { return sample.Value() }\n",
+			})
+			base := t.TempDir()
+			if location == "inside" {
+				base = filepath.Join(fixture.root, ".scratch", "go")
+			}
+			ctx := gocache.WithBaseDir(godiagnostics.WithSessionManager(t.Context(), fixture.manager), base)
+			environment, err := gocache.Environment(ctx, fixture.root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			diagnostics, err := fixture.manager.CheckDetailed(ctx, fixture.root, fixture.executable, environment)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertManagedDiagnostic(t, diagnostics, "")
+			patterns, err := godiagnostics.AffectedPackagePatternsWithContext(ctx, fixture.root, []string{"value.go"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Join(patterns, ","); got != "./.,./consumer" {
+				t.Fatalf("affected package patterns = %q, want source packages ./.,./consumer", got)
+			}
+			diagnostics, err = godiagnostics.CheckDetailedWithPatternsWithContext(ctx, fixture.root, fixture.executable, environment, patterns)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertManagedDiagnostic(t, diagnostics, "")
+		})
+	}
+}

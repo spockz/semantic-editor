@@ -56,6 +56,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	var liveReload bool
 	var instructions string
 	var goBaseDir string
+	var goModuleCache string
 	var goModuleCacheSeed string
 	var expectedRoot string
 	var enabledLanguages string
@@ -66,7 +67,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithToolProfile(toolProfile), mcp.WithToolVariants(exposeToolVariants), mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithGoModuleCacheSeed(goModuleCacheSeed), mcp.WithExpectedRoot(expectedRoot), mcp.WithEnabledLanguages(enabledLanguages), mcp.WithMetricsFile(metricsFile))
+			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithToolProfile(toolProfile), mcp.WithToolVariants(exposeToolVariants), mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithGoModuleCache(goModuleCache), mcp.WithGoModuleCacheSeed(goModuleCacheSeed), mcp.WithExpectedRoot(expectedRoot), mcp.WithEnabledLanguages(enabledLanguages), mcp.WithMetricsFile(metricsFile))
 			if err := srv.Serve(cmd.Context(), os.Stdin); err != nil {
 				fmt.Fprintf(os.Stderr, "mcp server error: %v\\n", err)
 				return cli.ErrCommandFailed
@@ -80,6 +81,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	cmd.Flags().BoolVar(&liveReload, "live-reload", false, "Enable in-place live-reload and dynamic tool schema discovery")
 	cmd.Flags().StringVar(&instructions, "instructions", mcp.PrescriptiveInstructions, "Server-wide MCP instructions returned during initialization; empty disables guidance")
 	cmd.Flags().StringVar(&goBaseDir, "go-base-dir", "", "Opt in to isolated Go subprocess state below this directory; default uses the user's Go environment")
+	cmd.Flags().StringVar(&goModuleCache, "go-module-cache", "", "Use this Go module cache independently of other Go subprocess state")
 	cmd.Flags().StringVar(&goModuleCacheSeed, "go-module-cache-seed", "", "Read-only Go module cache copied into the isolated state when GOPROXY=off; requires --go-base-dir; limited to 200,000 files and 2 GiB")
 	cmd.Flags().StringVar(&expectedRoot, "expected-root", "", "Require the client-selected workspace root to match this canonical root")
 	cmd.Flags().StringVar(&enabledLanguages, "enabled-languages", "", "Comma-separated language allowlist for MCP tools (go,rust,java,scala,haskell,kotlin,bash,make)")

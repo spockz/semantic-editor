@@ -728,11 +728,11 @@ func packagePatternsForPackages(root string, selected diagnosticsScope, affected
 		}
 		localFiles := 0
 		for _, path := range pkg.GoFiles {
+			if IsSyntheticTestRunnerFile(pkg, path, selected.buildCache) {
+				continue
+			}
 			directory := filepath.Dir(path)
 			if !pathutil.PathWithin(root, directory) {
-				if IsSyntheticTestRunnerFile(pkg, path, selected.buildCache) {
-					continue
-				}
 				return nil, false
 			}
 			relative, err := filepath.Rel(root, directory)

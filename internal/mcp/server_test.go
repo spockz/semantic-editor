@@ -1095,8 +1095,9 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 func TestMCPServerInitializeCreatesOnlyExplicitGoBaseDir(t *testing.T) {
 	root := t.TempDir()
 	baseDir := filepath.Join(t.TempDir(), "isolated-go-state")
+	moduleCache := filepath.Join(t.TempDir(), "persistent-modules")
 	var out bytes.Buffer
-	srv := mcptest.NewServer(t, "full", "", &out, mcp.WithGoBaseDir(baseDir))
+	srv := mcptest.NewServer(t, "full", "", &out, mcp.WithGoBaseDir(baseDir), mcp.WithGoModuleCache(moduleCache))
 	params, err := json.Marshal(map[string]any{"rootUri": "file://" + root})
 	if err != nil {
 		t.Fatal(err)
@@ -1106,6 +1107,12 @@ func TestMCPServerInitializeCreatesOnlyExplicitGoBaseDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, "build")); err != nil {
 		t.Errorf("explicit Go isolation cache was not created: %v", err)
+	}
+	if _, err := os.Stat(moduleCache); err != nil {
+		t.Errorf("explicit Go module cache was not created: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "mod")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("explicit module cache created a second managed module cache: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(root, ".scratch", "go")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("explicit external isolation created workspace-local state: %v", err)

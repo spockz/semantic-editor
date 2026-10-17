@@ -1,0 +1,49 @@
+# Retained batch diagnostics must not treat generated Go test runners in project-local caches as source packages.
+env GOPROXY=off
+env GOSUMDB=off
+stdin requests.json
+exec semedit mcp --go-base-dir $WORK/.scratch/go
+stdout '"id":2,"result":.*"isError":false'
+stdout '"id":3,"result":.*"isError":false'
+! stdout '"isError":true'
+exists .scratch/go/build
+cmp value.go want/value.go.txt
+cmp value_test.go want/value_test.go.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/projectcache
+
+go 1.23
+-- value.go --
+package sample
+
+func Value() int { return 1 }
+-- value_test.go --
+package sample
+
+import "testing"
+
+func TestValue(t *testing.T) {
+	if Value() != 1 {
+		t.Fatal("value")
+	}
+}
+-- want/value.go.txt --
+package sample
+
+func Answer() int { return 1 }
+-- want/value_test.go.txt --
+package sample
+
+import "testing"
+
+func TestValue(t *testing.T) {
+	if Answer() != 1 {
+		t.Fatal("value")
+	}
+}
+-- requests.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true,"skip_hooks":true,"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Value","to":"Answer","language":"go"}}],"trust_workspace":true}}}

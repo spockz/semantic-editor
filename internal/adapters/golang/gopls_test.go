@@ -84,6 +84,7 @@ func TestGoRenameProtocolHelper(t *testing.T) {
 	if os.Getenv("SEMEDIT_GO_RENAME_HELPER") != "1" {
 		return
 	}
+	recordGoRenameModuleCache()
 	reader := lsp.NewFrameReader(os.Stdin, 0)
 	writer := lsp.NewFrameWriter(os.Stdout, 0)
 	methods := make([]string, 0)
@@ -134,6 +135,16 @@ func TestGoRenameProtocolHelper(t *testing.T) {
 		if writeErr := writer.WriteMessage(messageData); writeErr != nil {
 			os.Exit(1)
 		}
+	}
+}
+
+func recordGoRenameModuleCache() {
+	path := os.Getenv("SEMEDIT_GO_RENAME_CACHE_LOG")
+	if path == "" {
+		return
+	}
+	if err := atomicfile.WriteAtomic(path, []byte(os.Getenv("GOMODCACHE"))); err != nil {
+		os.Exit(1)
 	}
 }
 
@@ -444,6 +455,7 @@ func TestBufferedRenamePublicationNotifications(t *testing.T) {
 
 type bufferedRenameFixture struct {
 	root, target, log, wrapper string
+	moduleCache, cacheLog      string
 	source                     []byte
 	ctx, diskCtx               context.Context
 	buffer                     *sourcebuf.Buffer
@@ -478,11 +490,13 @@ func createBufferedRenameFixture(t *testing.T) bufferedRenameFixture {
 	if err := os.MkdirAll(filepath.Dir(log), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for key, value := range map[string]string{"SEMEDIT_GO_RENAME_HELPER": "1", "SEMEDIT_GO_RENAME_TEST_BIN": binary, "SEMEDIT_GO_RENAME_LOG": log} {
+	moduleCache := filepath.Join(root, "persistent-modules")
+	cacheLog := filepath.Join(root, ".scratch", "gopls-module-cache")
+	for key, value := range map[string]string{"SEMEDIT_GO_RENAME_HELPER": "1", "SEMEDIT_GO_RENAME_TEST_BIN": binary, "SEMEDIT_GO_RENAME_LOG": log, "SEMEDIT_GO_RENAME_CACHE_LOG": cacheLog} {
 		t.Setenv(key, value)
 	}
 	t.Setenv("SEMEDIT_GO_RENAME_EDIT", `{"documentChanges":[{"textDocument":{"uri":"`+pathutil.FileURI(target)+`","version":1},"edits":[{"range":{"start":{"line":2,"character":5},"end":{"line":2,"character":10}},"newText":"Renamed"}]}]}`)
-	cacheCtx := gocache.WithBaseDir(t.Context(), filepath.Join(root, ".scratch", "go"))
+	cacheCtx := gocache.WithModuleCache(gocache.WithBaseDir(t.Context(), filepath.Join(root, ".scratch", "go")), moduleCache)
 	environment, environmentErr := gocache.Environment(cacheCtx, root)
 	if environmentErr != nil {
 		t.Fatal(environmentErr)
@@ -504,7 +518,14 @@ func createBufferedRenameFixture(t *testing.T) bufferedRenameFixture {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fixture := bufferedRenameFixture{root: root, target: target, log: log, wrapper: wrapper, source: source, ctx: ctx, diskCtx: diskCtx, buffer: buffer, environment: environment}
+	actualModuleCache, err := os.ReadFile(cacheLog)
+	if err != nil {
+		t.Fatalf("read gopls module cache: %v", err)
+	}
+	if string(actualModuleCache) != moduleCache {
+		t.Fatalf("gopls GOMODCACHE = %q, want %q", actualModuleCache, moduleCache)
+	}
+	fixture := bufferedRenameFixture{root: root, target: target, log: log, wrapper: wrapper, moduleCache: moduleCache, cacheLog: cacheLog, source: source, ctx: ctx, diskCtx: diskCtx, buffer: buffer, environment: environment}
 	fixture.barrier(t)
 	return fixture
 }

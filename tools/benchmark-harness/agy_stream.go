@@ -85,7 +85,7 @@ func prepareAgyMCPConfig(ctx context.Context, runner *Runner, workDir string, ar
 	if err != nil {
 		return "", "", nil, nil, fmt.Errorf("prepare Agy Go environment: %w", err)
 	}
-	err = writeAgyMCPConfig(absWorkDir, repositoryRoot, arm, runner.mcpServerInstructionsMode, env)
+	err = writeAgyMCPConfigForRunner(runner, absWorkDir, repositoryRoot, arm, runner.mcpServerInstructionsMode, env)
 	if err != nil {
 		return "", "", nil, nil, fmt.Errorf("configure Agy MCP server: %w", err)
 	}

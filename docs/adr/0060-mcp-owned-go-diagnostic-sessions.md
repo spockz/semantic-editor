@@ -292,6 +292,10 @@ improvement for any other backend.
   packages. Changed packages and their complete reverse dependency closure are
   refreshed; uncertain coverage falls back to a full capture. Explicit verification
   remains full. Batch scope selection uses the same retained dependency graph.
+- Generated Go test-main files under the configured build cache never contribute
+  source-package patterns, even when that cache lives inside the workspace.
+  Real test files and reverse dependencies remain covered; other packages with
+  errors and no selected source files remain explicit coverage failures.
 - Import-only discovery refresh preserves diagnostics only under an equal
   diagnostic boundary and identical source/module membership. All changed source
   digests participate in refresh, including concurrent edits outside the tool target.

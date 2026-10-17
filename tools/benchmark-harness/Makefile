@@ -20,6 +20,14 @@ BENCH_RUN_STAMP := $(shell date -u '+%Y%m%dT%H%M%SZ')
 RUN_ID ?= run-$(BENCH_RUN_STAMP)
 RESUME ?= false
 SEMEDIT_SKILL ?= false
+BENCH_RAM_SIZE ?= auto
+BENCH_RAM_ARGS ?=
+BENCH_RAM_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+BENCH_RAM_DEFAULT = $(if $(filter darwin,$(BENCH_RAM_PLATFORM)),/Volumes/semedit-bench-ram,$(if $(filter linux,$(BENCH_RAM_PLATFORM)),$(shell if [ -d "/run/user/$$(id -u)" ]; then printf '/run/user/%s/semedit-bench-ram' "$$(id -u)"; else printf /mnt/semedit-bench-ram; fi)))
+# A managed marker selects RAM; the harness still verifies tmpfs and fails closed.
+BENCH_RAM_ROOT ?= $(if $(wildcard $(BENCH_RAM_DEFAULT)/.semedit-benchmark-ram),$(BENCH_RAM_DEFAULT))
+BENCH_MODCACHE ?= $(if $(BENCH_RAM_ROOT),$(GOMODCACHE))
+BENCH_RAM_SCRIPT = $(REPO_ROOT)/tools/benchmark-harness/scripts/benchmark-ram-$(if $(filter darwin,$(BENCH_RAM_PLATFORM)),macos,linux).sh
 
 TARGET ?= codex/gpt-5.6-luna/medium
 VARIANTS ?= small,large
@@ -60,6 +68,10 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make bench-smoke-hard"
 	@echo "  make bench-full-hard REPEATS=10"
 	@echo "  make bench-smoke-swe"
+	@echo "  make bench-ram-estimate CONCURRENCY=2"
+	@echo "  make bench-ram-mount BENCH_RAM_SIZE=auto CONCURRENCY=2"
+	@echo "  make bench-smoke-swe BENCH_RAM_ROOT=/Volumes/semedit-bench-ram BENCH_MODCACHE=$(GOMODCACHE)"
+	@echo "  Managed RAM mounts at the platform default are selected automatically; BENCH_RAM_ROOT= selects SSD fixtures"
 	@echo "  make bench-full-swe REPEATS=10"
 	@echo "  make bench-smoke-saluki"
 	@echo "  make bench-full-saluki REPEATS=10"
@@ -75,6 +87,19 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make docgen"
 
 .PHONY: list-benchmarks bench-list
+.PHONY: bench-ram-estimate bench-ram-mount bench-ram-status bench-ram-unmount
+bench-ram-estimate: ## Estimate disposable benchmark capacity and memory headroom
+	"$(BENCH_RAM_SCRIPT)" estimate --repo-root "$(REPO_ROOT)" --concurrency "$(CONCURRENCY)" $(BENCH_RAM_ARGS)
+
+bench-ram-mount: ## Mount a reusable native tmpfs after capacity validation
+	"$(BENCH_RAM_SCRIPT)" mount --repo-root "$(REPO_ROOT)" --concurrency "$(CONCURRENCY)" --size "$(BENCH_RAM_SIZE)" $(if $(BENCH_RAM_ROOT),--mountpoint "$(BENCH_RAM_ROOT)") $(BENCH_RAM_ARGS)
+
+bench-ram-status: ## Show native tmpfs capacity and consumption
+	"$(BENCH_RAM_SCRIPT)" status $(if $(BENCH_RAM_ROOT),--mountpoint "$(BENCH_RAM_ROOT)") $(BENCH_RAM_ARGS)
+
+bench-ram-unmount: ## Safely unmount the idle benchmark volume
+	"$(BENCH_RAM_SCRIPT)" unmount $(if $(BENCH_RAM_ROOT),--mountpoint "$(BENCH_RAM_ROOT)") $(BENCH_RAM_ARGS)
+
 list-benchmarks: bench-go-env ## List all available benchmark tasks and prompt variants
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness --list --dir "$(BENCH_DIR)"
 
@@ -107,6 +132,8 @@ bench-all: bench-go-env ## Run all benchmarks in small and large context with al
 		--concurrency "$(CONCURRENCY)" \
 		--repeats "$(REPEATS)" \
 		--timeout "$(TIMEOUT)" \
+		$(if $(BENCH_RAM_ROOT),--ram-fixture-root "$(BENCH_RAM_ROOT)") \
+		$(if $(BENCH_MODCACHE),--module-cache "$(BENCH_MODCACHE)") \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
 		--semedit-skill="$(SEMEDIT_SKILL)" \
@@ -136,6 +163,8 @@ bench bench-smoke-hard bench-full-hard bench-smoke-swe bench-full-swe bench-smok
 		--concurrency "$(CONCURRENCY)" \
 		--repeats "$(REPEATS)" \
 		--timeout "$(TIMEOUT)" \
+		$(if $(BENCH_RAM_ROOT),--ram-fixture-root "$(BENCH_RAM_ROOT)") \
+		$(if $(BENCH_MODCACHE),--module-cache "$(BENCH_MODCACHE)") \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
 		--semedit-skill="$(SEMEDIT_SKILL)" \

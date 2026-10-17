@@ -26,6 +26,12 @@ gopls state, and linter caches stay local to each worktree. Worktree removal
 must not clear shared caches. Benchmark fixture isolation remains explicit and
 unchanged; development cache sharing does not select fixture cache policy.
 
+[ADR-0074](0074-ram-backed-benchmark-workspaces-and-persistent-module-cache.md)
+adds an explicit independent module-cache selection for benchmark isolation.
+`--go-module-cache` preserves that SSD cache alongside a disposable RAM Go base;
+ordinary callers without the option retain this decision's behavior. This direct
+selection does not seed or copy the cache.
+
 ## Invariants
 
 * Normal CLI and MCP use do not create `.scratch/go` or replace the caller's cache paths.

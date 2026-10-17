@@ -25,7 +25,7 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &behavioralSessionProvider{}
-	session, sessionErr := newAgentSession(provider, root, "session-test", workDir)
+	session, sessionErr := newAgentSession(provider, root, root, "session-test", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}
@@ -78,7 +78,7 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workDir, ".scratch"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "metrics-session", workDir)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, root, "metrics-session", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}
@@ -508,7 +508,7 @@ func TestAgentSessionReportsTranscriptWriteFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &behavioralSessionProvider{}
-	session, err := newAgentSession(provider, root, "session-write-failure", workDir)
+	session, err := newAgentSession(provider, root, root, "session-write-failure", workDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -806,7 +806,7 @@ func TestWorkspacePrewarmIsIndependentOfHarness(t *testing.T) {
 				t.Fatal(err)
 			}
 			task.Metadata.Oracle.AST.File = "main.go"
-			session, err := newAgentSession(&behavioralSessionProvider{}, scratch, "warmup", workDir)
+			session, err := newAgentSession(&behavioralSessionProvider{}, scratch, scratch, "warmup", workDir)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -951,7 +951,7 @@ func TestTimeoutReflectionsResumeFailedProviderSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &behavioralSessionProvider{firstErr: context.DeadlineExceeded}
-	session, err := newAgentSession(provider, root, "timeout-reflection", workDir)
+	session, err := newAgentSession(provider, root, root, "timeout-reflection", workDir)
 	if err != nil {
 		t.Fatal(err)
 	}

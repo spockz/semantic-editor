@@ -49,6 +49,7 @@ type Server struct {
 	liveReload            bool
 	instructions          string
 	goBaseDir             string
+	goModuleCache         string
 	goModuleCacheSeed     string
 	explicitGoBaseDir     bool
 	workspaceTrust        backend.WorkspaceTrust
@@ -91,6 +92,7 @@ type serverConfiguration struct {
 	liveReload            bool
 	instructions          string
 	goBaseDir             string
+	goModuleCache         string
 	goModuleCacheSeed     string
 	explicitGoBaseDir     bool
 	workspaceTrust        backend.WorkspaceTrust
@@ -170,6 +172,11 @@ func WithGoBaseDir(baseDir string) Option {
 			s.explicitGoBaseDir = true
 		}
 	}
+}
+
+// WithGoModuleCache selects a module cache independently of other Go state.
+func WithGoModuleCache(moduleCache string) Option {
+	return func(s *Server) { s.goModuleCache = strings.TrimSpace(moduleCache) }
 }
 
 // WithGoModuleCacheSeed selects an offline module cache copied into managed Go state.
@@ -420,8 +427,8 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 	}
 	initGoBaseDir := s.goBaseDir
 
-	if s.explicitGoBaseDir || s.goModuleCacheSeed != "" {
-		initCtx := gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, initGoBaseDir), s.goModuleCacheSeed)
+	if s.explicitGoBaseDir || s.goModuleCacheSeed != "" || s.goModuleCache != "" {
+		initCtx := gocache.WithModuleCacheSeed(gocache.WithModuleCache(gocache.WithBaseDir(ctx, initGoBaseDir), s.goModuleCache), s.goModuleCacheSeed)
 		if _, cacheErr := gocache.Environment(initCtx, actualRoot); cacheErr != nil {
 			return nil, fmt.Errorf("prepare MCP Go base directory: %w", cacheErr)
 		}
@@ -1437,7 +1444,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	observer := requestMutationObserver(requestServer, raw)
 	ctx = operation.WithMutationObserver(ctx, observer)
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(requestRoot))
-	ctx = gocache.WithModuleCacheSeed(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, requestRoot)), configuration.goModuleCacheSeed)
+	ctx = gocache.WithModuleCacheSeed(gocache.WithModuleCache(gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, requestRoot)), configuration.goModuleCache), configuration.goModuleCacheSeed)
 	finishArguments()
 	if err := requestServer.validateLanguageAllowed(entry, raw); err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
@@ -2347,6 +2354,7 @@ func (s *Server) configurationSnapshot() serverConfiguration {
 		liveReload:            s.liveReload,
 		instructions:          s.instructions,
 		goBaseDir:             s.goBaseDir,
+		goModuleCache:         s.goModuleCache,
 		goModuleCacheSeed:     s.goModuleCacheSeed,
 		explicitGoBaseDir:     s.explicitGoBaseDir,
 		workspaceTrust:        s.workspaceTrust,
@@ -2446,6 +2454,7 @@ func requestViewFromConfiguration(configuration serverConfiguration, root string
 		liveReload:            configuration.liveReload,
 		workspaceTrust:        CanonicalTrust(workspaceRoot, trusted),
 		goBaseDir:             selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, workspaceRoot),
+		goModuleCache:         configuration.goModuleCache,
 		goModuleCacheSeed:     configuration.goModuleCacheSeed,
 		explicitGoBaseDir:     configuration.explicitGoBaseDir,
 		enabledLanguages:      slices.Clone(configuration.enabledLanguages),

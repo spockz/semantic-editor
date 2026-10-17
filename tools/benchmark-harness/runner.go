@@ -14,6 +14,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/adapters/golang"
 	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/symbol"
 )
@@ -303,6 +304,10 @@ func elapsedTaskTime(start time.Time) time.Duration {
 // Runner coordinates execution across evaluation arms and benchmarks.
 type Runner struct {
 	baseScratchDir                string
+	fixtureRoot                   string
+	ramFixtureRootConfigured      bool
+	moduleCache                   string
+	configurationErr              error
 	mcpServerInstructionsMode     MCPServerInstructionMode
 	semeditArmRestriction         SemeditArmRestriction
 	semeditPrewarmVerify          bool
@@ -328,6 +333,19 @@ func WithSemeditPrewarmVerify(enabled bool) RunnerOption {
 	return func(r *Runner) { r.semeditPrewarmVerify = enabled }
 }
 
+// WithFixtureRoot puts disposable fixture workspaces on a caller-selected filesystem.
+func WithFixtureRoot(root string) RunnerOption {
+	return func(r *Runner) {
+		r.fixtureRoot = root
+		r.ramFixtureRootConfigured = root != ""
+	}
+}
+
+// WithModuleCache selects the persistent, read-only-offline module cache shared by fixtures.
+func WithModuleCache(path string) RunnerOption {
+	return func(r *Runner) { r.moduleCache = path }
+}
+
 // WithProvenance attaches immutable execution provenance to every benchmark result.
 func WithProvenance(provenance ProvenanceSet) RunnerOption {
 	return func(r *Runner) { r.provenance = provenance.Clone() }
@@ -337,9 +355,11 @@ func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	if scratchDir == "" {
 		scratchDir = filepath.Join(".scratch", "benchmarks")
 	}
-	if abs, err := filepath.Abs(scratchDir); err == nil {
-		scratchDir = abs
+	abs, err := filepath.Abs(scratchDir)
+	if err != nil {
+		return &Runner{configurationErr: fmt.Errorf("resolve persistent scratch directory: %w", err)}
 	}
+	scratchDir = abs
 	runner := &Runner{
 		baseScratchDir:            scratchDir,
 		mcpServerInstructionsMode: MCPServerInstructionsPrescriptive,
@@ -348,7 +368,86 @@ func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	for _, option := range options {
 		option(runner)
 	}
+	if runner.fixtureRoot == "" {
+		runner.fixtureRoot = runner.baseScratchDir
+	} else if absoluteRoot, err := filepath.Abs(runner.fixtureRoot); err != nil {
+		runner.configurationErr = fmt.Errorf("resolve RAM fixture root: %w", err)
+	} else {
+		runner.fixtureRoot = absoluteRoot
+	}
+	if runner.moduleCache != "" {
+		if absoluteCache, err := filepath.Abs(runner.moduleCache); err != nil {
+			runner.configurationErr = fmt.Errorf("resolve persistent module cache: %w", err)
+		} else {
+			canonicalCache, resolveErr := filepath.EvalSymlinks(absoluteCache)
+			if resolveErr != nil {
+				runner.configurationErr = fmt.Errorf("canonicalize persistent module cache: %w", resolveErr)
+			} else {
+				runner.moduleCache = canonicalCache
+			}
+		}
+	}
 	return runner
+}
+
+func (r *Runner) mcpGoArguments(workDir string) ([]string, error) {
+	root, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve MCP fixture workspace: %w", err)
+	}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
+	if r.moduleCache != "" {
+		args = append(args, "--go-module-cache", r.moduleCache)
+	}
+	return args, nil
+}
+
+func (r *Runner) validateFixtureRoot() error {
+	if r.configurationErr != nil {
+		return r.configurationErr
+	}
+	if r.moduleCache != "" {
+		if err := validateDurableStoragePath("persistent module cache", r.moduleCache, true); err != nil {
+			return err
+		}
+	}
+	if !r.ramFixtureRootConfigured {
+		return nil
+	}
+	if r.moduleCache == "" {
+		return fmt.Errorf("RAM fixture root requires a persistent module cache")
+	}
+	if err := validateDurableStoragePath("persistent benchmark scratch", r.baseScratchDir, true); err != nil {
+		return err
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(r.fixtureRoot)
+	if err != nil {
+		return fmt.Errorf("canonicalize RAM fixture root: %w", err)
+	}
+	info, err := os.Stat(canonicalRoot)
+	if err != nil {
+		return fmt.Errorf("inspect RAM fixture root: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("RAM fixture root %q is not a directory", r.fixtureRoot)
+	}
+	if r.moduleCache != "" {
+		canonicalCache, cacheErr := filepath.EvalSymlinks(r.moduleCache)
+		if cacheErr != nil {
+			return fmt.Errorf("canonicalize persistent module cache: %w", cacheErr)
+		}
+		relativeCache, relErr := filepath.Rel(canonicalRoot, canonicalCache)
+		if relErr != nil {
+			return fmt.Errorf("compare RAM fixture root with module cache: %w", relErr)
+		}
+		if relativeCache == "." || (relativeCache != ".." && !strings.HasPrefix(relativeCache, ".."+string(filepath.Separator))) {
+			return fmt.Errorf("persistent module cache %q is inside RAM fixture root", canonicalCache)
+		}
+	}
+	if err := validateTmpfsMount(canonicalRoot); err != nil {
+		return fmt.Errorf("RAM fixture root %q must be mounted tmpfs: %w", canonicalRoot, err)
+	}
+	return nil
 }
 
 func (r *Runner) provenanceFor() ProvenanceSet {
@@ -366,13 +465,17 @@ func (r *Runner) ExecuteControlVariant(ctx context.Context, task *Task, variant 
 
 // ExecuteControl runs a benchmark task using deterministic semedit operations directly.
 func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, error) {
+	if err := r.validateFixtureRoot(); err != nil {
+		return nil, err
+	}
+	if r.moduleCache != "" {
+		ctx = gocache.WithModuleCache(ctx, r.moduleCache)
+	}
 	start := time.Now()
 	runID := fmt.Sprintf("run_control_%s_%d", task.Metadata.TaskID, time.Now().UnixNano())
-	workDir := filepath.Join(r.baseScratchDir, runID)
-
-	// #nosec G703,G301 -- creating isolated run scratch directory
-	if err := os.MkdirAll(workDir, 0o750); err != nil {
-		return nil, fmt.Errorf("create work dir: %w", err)
+	workDir, workspaceErr := createBenchmarkWorkspace(r.fixtureRoot, runID)
+	if workspaceErr != nil {
+		return nil, workspaceErr
 	}
 	defer func() {
 		// #nosec G703 -- cleanup of isolated run scratch directory

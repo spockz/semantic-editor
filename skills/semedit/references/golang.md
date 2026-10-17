@@ -37,6 +37,14 @@ When scripting semedit harness setup from a Go project, use `--json` with `insta
 
 Normal semantic operations inherit `GOENV`, `GOMODCACHE`, `GOCACHE`, `GOPATH`, `GOWORK`, temporary-directory settings, and gopls cache settings. They reuse the user's existing Go state and workspace configuration. Module files remain read-only for ordinary operations; use the explicit dependency operation when changing dependencies. MCP `--go-base-dir` enables isolated state intentionally, and benchmark fixtures opt into it. Do not configure `.scratch/go` caches for ordinary projects merely to use semedit.
 
+Benchmark RAM fixtures can combine `mcp --go-base-dir <fixture>/.scratch/go`
+with `--go-module-cache <persistent-ssd-cache>`. The latter selects modules
+directly, without cache copying; build and gopls state stay private to the
+fixture. Set benchmark dependency access offline and prepopulate required
+modules before timing. Missing dependencies must fail setup. A populated module
+cache is compatible with prewarming an empty job build cache. This runtime
+configuration does not authorize dependency edits or workspace-manifest changes.
+
 ## Target suggestions
 
 When a supported Go `lookup`, `rename`, `inspect_symbol`, `find_references`, `replace_body`,

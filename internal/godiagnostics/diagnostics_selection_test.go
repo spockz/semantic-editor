@@ -16,13 +16,22 @@ import (
 func TestSelectPackageFilesRejectsErrorsWithoutGoFiles(t *testing.T) {
 	root := t.TempDir()
 	healthy := filepath.Join(root, "healthy.go")
-	loaded := []*packages.Package{
-		{ID: "healthy", GoFiles: []string{healthy}},
-		{ID: "orphan", Errors: []packages.Error{{Msg: "build constraints exclude all Go files"}}},
-	}
-	_, _, err := selectPackageFiles(root, loaded)
-	if err == nil || !strings.Contains(err.Error(), "incomplete Go package coverage") {
-		t.Fatalf("selectPackageFiles() error = %v, want incomplete package coverage", err)
+	for _, id := range []string{"orphan", "./.scratch/go/build/92"} {
+		for _, policy := range []struct {
+			name     string
+			explicit bool
+		}{{"implicit", false}, {"explicit", true}} {
+			t.Run(policy.name+"/"+id, func(t *testing.T) {
+				loaded := []*packages.Package{
+					{ID: "healthy", GoFiles: []string{healthy}},
+					{ID: id, Errors: []packages.Error{{Msg: "build constraints exclude all Go files"}}},
+				}
+				_, _, err := selectPackageFilesWithPolicy(root, loaded, filepath.Join(root, ".scratch", "go", "build"), policy.explicit)
+				if err == nil || !strings.Contains(err.Error(), "incomplete Go package coverage") {
+					t.Fatalf("package coverage error = %v, want incomplete package coverage", err)
+				}
+			})
+		}
 	}
 }
 

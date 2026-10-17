@@ -437,22 +437,22 @@ func benchmarkMCPMetricsPath(workDir string) string {
 	return filepath.Join(workDir, ".scratch", "mcp-metrics.json")
 }
 
-func newAgentSession(adapter providerAdapter, baseDir, runID, workDir string) (*agentSession, error) {
-	transcriptDir := filepath.Join(baseDir, "transcripts")
+func newAgentSession(adapter providerAdapter, persistentDir, fixtureDir, runID, workDir string) (*agentSession, error) {
+	transcriptDir := filepath.Join(persistentDir, "transcripts")
 	if err := os.MkdirAll(transcriptDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create session transcript directory: %w", err)
 	}
 	transcriptPath := filepath.Join(transcriptDir, runID+".json")
-	workspaceRelativePath, err := filepath.Rel(baseDir, workDir)
+	workspaceRelativePath, err := filepath.Rel(fixtureDir, workDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve session workspace relative path: %w", err)
 	}
 	if workspaceRelativePath == "." || workspaceRelativePath == ".." || strings.HasPrefix(workspaceRelativePath, ".."+string(filepath.Separator)) {
-		return nil, fmt.Errorf("session workspace %q is outside scratch directory %q", workDir, baseDir)
+		return nil, fmt.Errorf("session workspace %q is outside fixture root %q", workDir, fixtureDir)
 	}
-	scratchRoot, err := os.OpenRoot(baseDir)
+	scratchRoot, err := os.OpenRoot(fixtureDir)
 	if err != nil {
-		return nil, fmt.Errorf("open benchmark scratch root: %w", err)
+		return nil, fmt.Errorf("open fixture root: %w", err)
 	}
 	workspaceRoot, err := scratchRoot.OpenRoot(filepath.ToSlash(workspaceRelativePath))
 	if err != nil {

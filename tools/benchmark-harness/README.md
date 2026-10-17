@@ -378,7 +378,7 @@ Results record `provider_transport` as `codex_app_server_v2`, `agy_stream_json_v
 
 ## Measurement and policy boundaries
 
-Fixture extraction, directory preparation, provider configuration, and semedit verify prewarm finish before the shared workspace snapshot and agent wall time. The verify prewarm is enabled by default for semedit jobs on every harness with a Go oracle target; `--semedit-prewarm-verify=false` disables it. Each treated job starts with empty fixture-local Go build and module caches, runs `semedit-next verify --check-only` in that workspace, and records its duration separately. Fixtures without a Go target skip prewarm. The agent then uses the populated disk caches. Its MCP server starts fresh and lazily starts gopls on the first diagnostic scan or rename, then reuses that session across tool calls. Rename uses that same process; all AST refactorings synchronize retained buffers, including edits inside a batch. The CLI prewarm does not retain a live server for the agent. Every agent task clock starts immediately after its first provider process launches successfully and runs continuously through all task turns and oracle checks. A launch failure records zero agent wall time. Provider configuration and the semedit prewarm are outside that interval for both arms. Diagnostic reflection remains outside task wall time.
+Fixture extraction, directory preparation, provider configuration, shared-module preparation, and semedit verify prewarm finish before the shared workspace snapshot and agent wall time. The verify prewarm is enabled by default for semedit jobs on every harness; `--semedit-prewarm-verify=false` disables it. It selects a fixture-local Go AST assertion file when present, otherwise a visible build-selected Go file from `go list -find -json ./...`. Go SWE tasks need no AST assertion to prewarm. Target discovery uses a disposable build cache, validates path containment, and skips fixtures without a Go target. Each treated job starts with an empty fixture-local Go build cache, runs `semedit-next verify --check-only` in that workspace, and records its duration separately. The default mode also starts with an empty module cache; an explicit persistent module cache is populated during setup and accessed directly. The agent then reuses its job's prepared caches. Its MCP server starts fresh and lazily starts gopls on the first diagnostic scan or rename, then reuses that session across tool calls. Rename uses that same process; all AST refactorings synchronize retained buffers, including edits inside a batch. The CLI prewarm does not retain a live server for the agent. Every agent task clock starts immediately after its first provider process launches successfully and runs continuously through all task turns and oracle checks. A launch failure records zero agent wall time. Provider configuration and the semedit prewarm are outside that interval for both arms. Diagnostic reflection remains outside task wall time.
 
 The measured lifecycle is initial task answer, oracle evaluation, and declared corrective follow-ups with oracle evaluation after each. Follow-ups stop on success or terminal failure. A staged fixture instead runs every declared checkpoint in one workspace and provider session, evaluating its stage oracle after each turn. A failed checkpoint remains a failed overall result even when later stages pass. The printed plan includes every resolved staged prompt. Staged turns are excluded from corrective-attempt publication statistics. Hidden oracle output never becomes agent steering.
 
@@ -564,7 +564,172 @@ The user-approved `data/benchmarks/go.mod` boundary prevents native Go package d
 
 Normal semedit CLI and MCP use inherit the user's Go environment. The benchmark runner explicitly creates each fixture's `.scratch/go` state and starts its MCP server with `--go-base-dir` selecting that state. Fixture builds, coding processes, verification, and oracle commands share those managed paths rather than writing to the host's Go caches. This policy belongs to benchmark preparation, not ordinary tool installation; see [ADR-0070](../../docs/adr/0070-opt-in-go-runtime-isolation.md).
 
-## Verification and related decisions
+## RAM-backed benchmark workspaces
+
+[ADR-0074](../../docs/adr/0074-ram-backed-benchmark-workspaces-and-persistent-module-cache.md)
+separates disposable fixtures from persistent benchmark storage. `Runner` keeps
+pinned repository caches and transcripts under SSD scratch. The optional
+`--ram-fixture-root` selects an existing native tmpfs; validation failure stops
+the run. `--module-cache` selects an SSD cache populated during setup and accessed directly,
+without copying it into fixtures. Each job retains independent build, temporary,
+gopls, binary, and agent runtime directories beneath its RAM workspace. Reports,
+checkpoints, manifests, and transcripts stay on SSD and survive fixture cleanup.
+Normal project build configuration is unchanged. Benchmark Make targets detect
+the management marker at the platform's default mountpoint and select that RAM
+root automatically, retaining `GOMODCACHE` on SSD. The harness still verifies
+actual tmpfs and fails explicitly if a selected volume is incompatible or gone.
+Use `BENCH_RAM_ROOT=` to explicitly select SSD fixtures, or set a custom
+`BENCH_RAM_ROOT` and `BENCH_MODCACHE`. Without a managed volume, Make retains
+ordinary SSD fixture behavior. Direct CLI invocations require explicit flags.
+
+| Responsibility | Implementation |
+| :--- | :--- |
+| Native filesystem checks and persistent output validation | `tmpfs_linux.go`, `tmpfs_darwin.go`, `ram_storage_paths.go`; unsupported platforms fail explicitly in `tmpfs_other.go`. |
+| Exclusive job directories and split cleanup/evidence roots | `run_workspace.go`, `runner.go`, `driver.go`, and `session.go`. |
+| Independent module selection, setup downloads, and offline validation | `internal/gocache`, `workspace.go`, and `oracle.go`; provider adapters forward the selection to MCP. |
+| macOS tmpfs executable signature-cache workaround | `toolexec.go`, selected by the fixture environment only for native Darwin tmpfs. |
+| Capacity/memory estimates and privileged mount lifecycle | `scripts/benchmark-ram-size.sh`, `benchmark-ram-memory.sh`, `benchmark-ram-common.sh`, and the platform wrappers. |
+
+The harness does not mount volumes or run sudo. Use the native platform wrapper:
+
+```sh
+# macOS: estimate first, then create a reusable case-sensitive native tmpfs.
+./tools/benchmark-harness/scripts/benchmark-ram-macos.sh estimate --concurrency 2
+./tools/benchmark-harness/scripts/benchmark-ram-macos.sh mount --size auto --concurrency 2
+make bench-smoke-swe \
+  BENCH_RAM_ROOT=/Volumes/semedit-bench-ram \
+  BENCH_MODCACHE="$PWD/.scratch/go/mod"
+./tools/benchmark-harness/scripts/benchmark-ram-macos.sh status
+# Stop all benchmark processes before explicit teardown.
+./tools/benchmark-harness/scripts/benchmark-ram-macos.sh unmount
+```
+
+On Linux substitute `benchmark-ram-linux.sh`; select a location outside the
+repository with `--mountpoint`. Both wrappers accept `--dry-run`, `--size`,
+`--concurrency`, `--safety-factor`, and `--repo-root`. The latter selects the
+checkout containing existing samples, independently of the mount location.
+Make exposes `bench-ram-estimate`, `bench-ram-mount`, `bench-ram-status`, and
+`bench-ram-unmount`. Set `BENCH_RAM_SIZE`, `BENCH_RAM_ROOT`, and
+`BENCH_RAM_ARGS=--dry-run` as needed. No benchmark target unmounts automatically.
+
+On macOS, freshly linked Go executables on tmpfs can be killed at startup even
+when `codesign --verify` succeeds. The native smoke test reproduced stale
+signature state after memory-mapped linker writes; copying the same bytes to a
+fresh inode on the same RAM volume restored execution. This is independent of
+available volume capacity. Darwin tmpfs fixtures use a Go tool-execution hook
+to atomically republish successful linker outputs with identical bytes and
+permissions. Linux and SSD fixtures keep their existing toolchain behavior.
+See [RQ-0072](../../docs/research/RQ-0072-benchmark-ram-storage-measurement.md)
+for the retained failure and validation evidence.
+
+The unprivileged script suite runs under `make bench-test`. With a native RAM
+volume already mounted, enable the optional executable integration tests with:
+
+```sh
+SEMEDIT_TEST_TMPFS_ROOT=/Volumes/semedit-bench-ram make bench-test
+```
+
+These tests check linker output identity, permissions, error propagation, and
+repeated Go test/run/build execution, including a wrapper path containing spaces.
+They create and remove only their own temporary directories on the volume.
+
+The full SWE warmup integration additionally requires a cached grpc-go checkout,
+the installed Go toolchain, gopls on `PATH`, and a built `bin/semedit-next`.
+It runs setup and real verification without launching a model:
+
+```sh
+SEMEDIT_TEST_TMPFS_ROOT=/Volumes/semedit-bench-ram \
+SEMEDIT_TEST_SWE_MODCACHE="$PWD/.scratch/go/mod" \
+  go test -tags=tmpfs_integration ./tools/benchmark-harness \
+    -run '^TestSWEWorkspaceWarmupOnTmpfs$' -v -count=1
+```
+
+The optional `tmpfs_integration` tag keeps this provisioned-machine test separate
+from ordinary CI. It checks that the actual SWE fixture prewarms without an AST
+assertion, both RAM caches receive entries, and no private module cache appears.
+
+`benchmark-ram-size.sh` shares the sizing calculation across platforms. It
+measures representative individual workspaces, including disposable caches,
+and uses the largest sample times concurrency times the safety factor, plus
+fixed overhead, rounded upward. It reports typical usage separately. Persistent
+modules, durable results/transcripts, and aggregate repository-cache storage are
+excluded; cached source contributes only the per-job materialization estimate.
+Historical job sizes are never summed. Symlinks are not followed outside samples.
+Measurements are snapshots: temporary compiler files and private oracle copies
+already removed from a retained job cannot be reconstructed. Account for those
+peaks with representative samples and a larger safety factor where needed.
+Missing samples make automatic sizing uncertain. A manual `--size` must be
+justified from a comparable workload and pass the same memory check; it is not
+an assurance that the job will fit. Re-measure after larger workloads and inspect
+both byte and inode availability with `df -k` and `df -i`.
+
+Memory validation measures current availability separately from disk usage,
+reserves execution headroom, and considers Linux cgroup limits. A tmpfs size is
+a ceiling, not committed RAM. Unsafe requests are refused rather than silently
+shrunk. Reduce concurrency, free memory, or review a smaller manual limit.
+tmpfs can still write to SSD through swapping under memory pressure. Linux
+no-swap support is kernel-dependent and must be explicitly requested; macOS has
+no equivalent guarantee. Linux `--no-swap` adds `noswap` and fails if the kernel
+rejects it. The default memory reserve is the greater of 2 GiB or 25% of current
+available memory, plus 512 MiB per concurrent job. Override the minimum with
+`BENCHMARK_RAM_MIN_FREE_BYTES` only after accounting for agents, compilers,
+language servers, and other applications. Native tmpfs avoids disposable SSD filesystem writes,
+but does not guarantee lower kernel CPU. Space or inode exhaustion is a visible
+failure and can leave an owned partial workspace requiring cleanup after all
+processes exit. Never remove the mountpoint or module cache as job cleanup.
+
+Install the required Go toolchain before benchmarking. With `--module-cache`,
+setup runs `go mod download all` into the selected SSD cache before timing,
+including private acceptance-test dependencies declared in the oracle manifest.
+It uses a temporary oracle copy, preserving visible fixture manifests and keeping
+acceptance files hidden. The process environment's `GOPROXY`, `GOSUMDB`, and
+private-module settings control downloads; host values saved with `go env -w`
+are not implicitly imported into the isolated fixture environment. Versions and
+checksums required by visible packages must already belong to the fixture.
+Download errors fail setup. Go's native locks coordinate concurrent downloads.
+After population, extraction-completion checks and dependency resolution run
+offline. Measured agents, MCP/gopls, and oracle commands retain `GOPROXY=off`,
+`GONOPROXY=none`, `GOSUMDB=off`, and `GOTOOLCHAIN=local`, including for modules
+matched by inherited private-module settings. Set `GOPROXY=off GOSUMDB=off` when
+launching the harness to disable both module downloads and checksum-database
+lookups during setup; pre-existing cached ZIP archives
+may still be extracted in that setup phase. No modules are copied into RAM.
+Use the same populated-cache policy for paired SSD and RAM runs.
+Record storage policy, module-cache preparation, concurrency, and prewarm in
+provenance; historical cold-module runs are a different runtime condition.
+
+### Comparing SSD writes
+
+Use identical fixtures, pinned revisions, binary, arms, concurrency, and module
+cache for both storage modes. Run at least three alternating SSD/RAM pairs with
+distinct run IDs, retain the result JSON and raw platform counters on SSD, and
+exclude unrelated machine activity. Keep the build cache empty per independent
+job in both modes and leave the persistent modules populated for both modes.
+
+On Linux, capture `/proc/diskstats` before and after each command; the change in
+sectors written (field 10 for the selected physical device) times 512 is the
+device byte count. Avoid double-counting partitions and their parent device.
+On macOS, capture `iostat -Id disk0` before and after each command for cumulative
+transfer totals; these combine reads and writes. For a write-specific comparison,
+use `ioreg -r -c IOBlockStorageDriver -l` and retain the `Bytes (Write)` counters
+for the same physical device, or collect a privileged Instruments File Activity
+trace. Check device identity rather than assuming the internal SSD is `disk0`.
+Counters are system-wide, so these measurements require a quiet host and include
+swap writes. File sizes and logical process writes do not measure physical SSD
+writes. Report missing permissions/counters explicitly; do not claim a measured
+reduction from the storage architecture alone.
+
+[RQ-0072](../../docs/research/RQ-0072-benchmark-ram-storage-measurement.md)
+records the initial disk inspection, incomplete source-only estimates, and the
+host-authentication limitation preventing an actual paired measurement.
+
+Privilege-free script checks run with
+`bash tools/benchmark-harness/scripts/test-benchmark-ram.sh`. Actual mount
+integration is optional: perform the documented mount/status/unmount workflow
+on each platform, verify `tmpfs` and permissions, and run a small benchmark before
+attempting a full concurrent suite.
+
+## Verification commands
 
 Follow the repository workflow: run `make check` before targeted verification and again before completion. Focused commands, after that prerequisite, are:
 

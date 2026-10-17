@@ -20,7 +20,7 @@ func TestAgentSessionRejectsChangedOriginalThread(t *testing.T) {
 	if err := os.Mkdir(workDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	session, sessionErr := newAgentSession(&continuitySessionProvider{}, root, "identity", workDir)
+	session, sessionErr := newAgentSession(&continuitySessionProvider{}, root, root, "identity", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}
@@ -77,7 +77,7 @@ func TestAgentSessionClosesProviderBeforeRetainingMCPMetrics(t *testing.T) {
 		closed = true
 		return nil
 	}}
-	session, sessionErr := newAgentSession(provider, root, "close-order", workDir)
+	session, sessionErr := newAgentSession(provider, root, root, "close-order", workDir)
 	if sessionErr != nil {
 		t.Fatal(sessionErr)
 	}
@@ -196,7 +196,7 @@ func runSessionIdentityCase(t *testing.T, harness string, testCase sessionIdenti
 		t.Fatal(err)
 	}
 	provider := &sessionIdentityProvider{ids: testCase.ids}
-	session, err := newAgentSession(provider, root, "identity", workDir)
+	session, err := newAgentSession(provider, root, root, "identity", workDir)
 	if err != nil {
 		t.Fatal(err)
 	}

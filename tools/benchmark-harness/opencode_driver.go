@@ -332,11 +332,10 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 }
 
 func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
-	root, err := canonicalFixtureRoot(workDir)
+	args, err := r.mcpGoArguments(workDir)
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 		args = append(args, "--instructions", "")
