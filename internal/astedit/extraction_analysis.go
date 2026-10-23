@@ -5,6 +5,9 @@ package astedit
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/token"
+	"go/types"
 	"maps"
 	"os"
 	"path/filepath"
@@ -98,6 +101,28 @@ func loadExtractionPackages(ctx context.Context, dir string, overlay map[string]
 		}
 		return loaded, nil
 	}
+}
+
+func typedExtractionFile(loaded []*packages.Package, filePath string) (*packages.Package, *token.FileSet, *ast.File, *types.Info, error) {
+	absolute, err := filepath.Abs(filePath)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("resolve typed extraction file %q: %w", filePath, err)
+	}
+	for _, pkg := range loaded {
+		if pkg.Fset == nil || pkg.TypesInfo == nil {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			path, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+			if err != nil {
+				return nil, nil, nil, nil, fmt.Errorf("resolve typed extraction syntax path: %w", err)
+			}
+			if filepath.Clean(path) == filepath.Clean(absolute) {
+				return pkg, pkg.Fset, file, pkg.TypesInfo, nil
+			}
+		}
+	}
+	return nil, nil, nil, nil, fmt.Errorf("typed extraction package did not include %s", filePath)
 }
 
 func runBufferedFile(ctx context.Context, file string, edit func(context.Context) error) error {

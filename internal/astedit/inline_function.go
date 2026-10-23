@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 
@@ -25,11 +26,12 @@ import (
 
 // InlineFunctionOptions identifies one caller-owned direct call and its captured revision.
 type InlineFunctionOptions struct {
-	CallerFile     string
-	InFunction     string
-	Discriminator  string
-	CallerRevision string
-	CalleeRevision string
+	CallerFile        string
+	InFunction        string
+	Discriminator     string
+	OccurrenceIndices []int
+	CallerRevision    string
+	CalleeRevision    string
 }
 
 // SemanticEditPlan contains one validated source change and the bytes used to plan it.
@@ -50,16 +52,24 @@ type inlineFunctionPaths struct {
 	callerPath string
 }
 
-// PlanInlineFunctionOverlay resolves and plans one direct zero-argument literal-return call from the current Go overlay.
+// PlanInlineFunctionOverlay resolves and plans selected direct calls from the current Go overlay.
 func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, calleeSymbol string, opts InlineFunctionOptions) (SemanticEditPlan, error) {
-	if !token.IsIdentifier(calleeSymbol) || opts.InFunction == "" || opts.Discriminator == "" {
-		return SemanticEditPlan{}, fmt.Errorf("inline function requires a simple callee name, caller function, and exact call-site discriminator")
+	target, err := parseInlineCalleeTarget(calleeSymbol)
+	if err != nil {
+		return SemanticEditPlan{}, fmt.Errorf("inline callable target: %w", err)
+	}
+	if opts.InFunction == "" || opts.Discriminator == "" {
+		return SemanticEditPlan{}, fmt.Errorf("inline callable requires an unqualified function or receiver-qualified method, caller function, and exact call-site discriminator")
+	}
+	if len(opts.OccurrenceIndices) > 0 && opts.CallerRevision == "" {
+		return SemanticEditPlan{}, fmt.Errorf("call_site.expected_revision is required with occurrence_indices")
 	}
 	paths, err := resolveInlineFunctionPaths(workspaceRoot, calleeFile, opts.CallerFile)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	readSet, packagesInScope, pkg, err := captureInlinePackage(ctx, paths.moduleRoot, paths.calleePath, paths.callerPath, calleeSymbol, opts)
+
+	readSet, packagesInScope, pkg, err := captureInlinePackage(ctx, paths.moduleRoot, paths.calleePath, paths.callerPath, target.name, opts)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
@@ -71,32 +81,35 @@ func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, c
 	if calleeAST == nil || callerAST == nil {
 		return SemanticEditPlan{}, fmt.Errorf("inline function requires active caller and callee declarations")
 	}
-	callee, calleeObject := findInlineCallee(pkg, calleeAST, paths.calleePath, calleeSymbol)
+	callee, calleeObject := findInlineCallee(pkg, calleeAST, paths.calleePath, target)
 	if callee == nil || calleeObject == nil {
-		return SemanticEditPlan{}, fmt.Errorf("inline callee %q is not a free function declared in %s", calleeSymbol, calleeFile)
+		return SemanticEditPlan{}, fmt.Errorf("inline callee %q is not one uniquely identified callable declared in %s", calleeSymbol, calleeFile)
 	}
 	owner, err := findInlineOwner(callerAST, opts.InFunction)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	call, start, end, err := findInlineCall(pkg, callerSource, owner, calleeObject, opts.Discriminator)
+	candidates, err := findInlineCallCandidates(pkg, callerSource, owner, opts.Discriminator)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	literalResult, err := validateInlineLiteralCallee(callee, calleeObject, call)
+	selected, err := selectInlineFunctionCalls(candidates, opts.OccurrenceIndices, pkg, calleeObject)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	replacement := literalResult.typeName + "(" + literalResult.literalText + ")"
-	after := make([]byte, 0, len(callerSource)+len(replacement)-(end-start))
-	after = append(after, callerSource[:start]...)
-	after = append(after, replacement...)
-	after = append(after, callerSource[end:]...)
+	replacements, err := planInlineCallReplacements(pkg, owner, callee, calleeObject, calleeSymbol, selected)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
+	after, err := applyInlineCallReplacements(callerSource, replacements)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
 	if _, parseErr := parser.ParseFile(token.NewFileSet(), paths.callerPath, after, parser.ParseComments|parser.AllErrors); parseErr != nil {
 		return SemanticEditPlan{}, fmt.Errorf("parse inlined caller: %w", parseErr)
 	}
 	change := sourcebuf.Change{Path: paths.callerPath, Before: bytes.Clone(callerSource), After: after}
-	if validationErr := validateInlineReplacement(ctx, paths.moduleRoot, paths.callerPath, paths.calleePath, calleeSymbol, opts.InFunction, literalResult, start, replacement, after); validationErr != nil {
+	if validationErr := validateInlineReplacements(ctx, paths.moduleRoot, paths.callerPath, paths.calleePath, calleeSymbol, opts.InFunction, replacements, after); validationErr != nil {
 		return SemanticEditPlan{}, validationErr
 	}
 	readSet, err = completeRefactorReadSet(ctx, paths.moduleRoot, readSet, packagesInScope)
@@ -107,6 +120,28 @@ func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, c
 		return SemanticEditPlan{}, err
 	}
 	return SemanticEditPlan{Change: change, ReadSet: readSet, Diff: UnifiedDiff(paths.callerPath, string(callerSource), string(after))}, nil
+}
+
+type inlineCallContext uint8
+
+const (
+	inlineCallUnsupported inlineCallContext = iota
+	inlineCallReturn
+	inlineCallAssignment
+)
+
+type inlineCallCandidate struct {
+	call    *ast.CallExpr
+	start   int
+	end     int
+	context inlineCallContext
+}
+
+type inlineCallReplacement struct {
+	start   int
+	end     int
+	text    string
+	literal inlineLiteralResult
 }
 
 func resolveInlineFunctionPaths(workspaceRoot, calleeFile, callerFile string) (inlineFunctionPaths, error) {
@@ -138,13 +173,31 @@ func resolveInlineFunctionPaths(workspaceRoot, calleeFile, callerFile string) (i
 	return inlineFunctionPaths{moduleRoot: moduleRoot, calleePath: calleePath, callerPath: callerPath}, nil
 }
 
-func validateInlineLiteralCallee(callee *ast.FuncDecl, calleeObject *types.Func, call *ast.CallExpr) (inlineLiteralResult, error) {
+func validateInlineLiteralCallee(pkg *packages.Package, owner *ast.FuncDecl, callee *ast.FuncDecl, calleeObject *types.Func, call *ast.CallExpr) (inlineLiteralResult, error) {
+	if callee.Body == nil {
+		return inlineLiteralResult{}, fmt.Errorf("inline callee declaration has no body")
+	}
 	if len(call.Args) != 0 {
 		return inlineLiteralResult{}, fmt.Errorf("inline function currently supports only zero-argument calls")
 	}
 	signature, ok := calleeObject.Type().(*types.Signature)
-	if !ok || signature.Recv() != nil || signature.TypeParams() != nil && signature.TypeParams().Len() != 0 || signature.Variadic() || signature.Params().Len() != 0 || signature.Results().Len() != 1 {
-		return inlineLiteralResult{}, fmt.Errorf("inline callee must be a non-generic free function with no arguments and exactly one result")
+	if !ok || signature.TypeParams() != nil && signature.TypeParams().Len() != 0 || signature.Variadic() || signature.Params().Len() != 0 || signature.Results().Len() != 1 {
+		return inlineLiteralResult{}, fmt.Errorf("inline callee must be a non-generic function or method with no arguments and exactly one result")
+	}
+	if signature.Recv() == nil {
+		if _, isIdentifier := call.Fun.(*ast.Ident); !isIdentifier {
+			return inlineLiteralResult{}, fmt.Errorf("free-function inline calls must use a direct identifier")
+		}
+	} else {
+		if signature.RecvTypeParams() != nil && signature.RecvTypeParams().Len() != 0 {
+			return inlineLiteralResult{}, fmt.Errorf("inline methods on generic receiver types are unsupported")
+		}
+		if len(callee.Type.Results.List) != 1 || len(callee.Type.Results.List[0].Names) != 0 {
+			return inlineLiteralResult{}, fmt.Errorf("inline methods require one unnamed result")
+		}
+		if !inlineCallTargets(pkg, owner, call, calleeObject) {
+			return inlineLiteralResult{}, fmt.Errorf("inline method call requires a direct caller-parameter receiver, no receiver indirection, and a single-statement owner")
+		}
 	}
 	if len(callee.Body.List) != 1 {
 		return inlineLiteralResult{}, fmt.Errorf("inline callee body must contain one direct return statement")
@@ -170,7 +223,7 @@ func validateInlineLiteralCallee(callee *ast.FuncDecl, calleeObject *types.Func,
 	return inlineLiteralResult{typeName: resultName, literalText: literal.Value}, nil
 }
 
-func validateInlineReplacement(ctx context.Context, moduleRoot, callerPath, calleePath, calleeSymbol, ownerName string, literal inlineLiteralResult, start int, replacement string, after []byte) error {
+func validateInlineReplacements(ctx context.Context, moduleRoot, callerPath, calleePath, calleeSymbol, ownerName string, replacements []inlineCallReplacement, after []byte) error {
 	postPackages, err := typecheckMoveOverlay(ctx, moduleRoot, map[string][]byte{callerPath: after})
 	if err != nil {
 		return fmt.Errorf("inline function type preflight: %w", err)
@@ -179,22 +232,34 @@ func validateInlineReplacement(ctx context.Context, moduleRoot, callerPath, call
 	if postPkg == nil {
 		return fmt.Errorf("inline caller disappeared during type preflight")
 	}
-	postCallee, postCalleeObject := findInlineCallee(postPkg, syntaxForMoveFile(postPkg, calleePath), calleePath, calleeSymbol)
+	target, err := parseInlineCalleeTarget(calleeSymbol)
+	if err != nil {
+		return err
+	}
+	postCallee, postCalleeObject := findInlineCallee(postPkg, syntaxForMoveFile(postPkg, calleePath), calleePath, target)
 	postOwner, ownerErr := findInlineOwner(syntaxForMoveFile(postPkg, callerPath), ownerName)
 	if postCallee == nil || postCalleeObject == nil || ownerErr != nil {
 		return fmt.Errorf("inline target identity did not survive type preflight")
 	}
-	postCall, err := findInlineCast(postPkg, postOwner, literal.typeName, literal.literalText, start, start+len(replacement))
-	if err != nil {
-		return fmt.Errorf("inlined conversion does not preserve the callee result type: %w", err)
-	}
 	postSignature, postOK := postCalleeObject.Type().(*types.Signature)
-	if !postOK || postSignature == nil || postSignature.Results() == nil || postSignature.Results().Len() != 1 || postCall == nil || postPkg.TypesInfo == nil {
+	if !postOK || postSignature == nil || postSignature.Results() == nil || postSignature.Results().Len() != 1 || postPkg.TypesInfo == nil {
 		return fmt.Errorf("inlined conversion does not preserve the callee result type")
 	}
-	postCallType := postPkg.TypesInfo.TypeOf(postCall)
-	if postCallType == nil || !types.Identical(postCallType, types.Unalias(postSignature.Results().At(0).Type())) {
-		return fmt.Errorf("inlined conversion does not preserve the callee result type")
+	resultType := types.Unalias(postSignature.Results().At(0).Type())
+	slices.SortFunc(replacements, func(left, right inlineCallReplacement) int { return left.start - right.start })
+	shift := 0
+	for _, replacement := range replacements {
+		start := replacement.start + shift
+		end := start + len(replacement.text)
+		postCall, findErr := findInlineCastAt(postPkg, postOwner, replacement.literal.typeName, replacement.literal.literalText, start, end)
+		if findErr != nil {
+			return fmt.Errorf("inlined conversion does not preserve the callee result type: %w", findErr)
+		}
+		postCallType := postPkg.TypesInfo.TypeOf(postCall)
+		if postCallType == nil || !types.Identical(postCallType, resultType) {
+			return fmt.Errorf("inlined conversion does not preserve the callee result type")
+		}
+		shift += len(replacement.text) - (replacement.end - replacement.start)
 	}
 	return nil
 }
@@ -248,10 +313,28 @@ func captureInlinePackage(ctx context.Context, moduleRoot, calleePath, callerPat
 	return readSet, pkgs, pkg, nil
 }
 
-func findInlineCallee(pkg *packages.Package, file *ast.File, path, name string) (*ast.FuncDecl, *types.Func) {
+type inlineCalleeTarget struct {
+	receiver string
+	name     string
+}
+
+func parseInlineCalleeTarget(symbol string) (inlineCalleeTarget, error) {
+	if token.IsIdentifier(symbol) {
+		return inlineCalleeTarget{name: symbol}, nil
+	}
+	parts := strings.Split(symbol, ".")
+	if len(parts) != 2 || !token.IsIdentifier(parts[0]) || !token.IsIdentifier(parts[1]) {
+		return inlineCalleeTarget{}, fmt.Errorf("callee symbol must be a function name or receiver-qualified method such as Type.Method")
+	}
+	return inlineCalleeTarget{receiver: parts[0], name: parts[1]}, nil
+}
+
+func findInlineCallee(pkg *packages.Package, file *ast.File, path string, target inlineCalleeTarget) (*ast.FuncDecl, *types.Func) {
+	var foundDecl *ast.FuncDecl
+	var foundObject *types.Func
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Recv != nil || function.Name.Name != name {
+		if !ok || function.Name.Name != target.name || (function.Recv == nil) != (target.receiver == "") {
 			continue
 		}
 		if filepath.Clean(pkg.Fset.Position(function.Pos()).Filename) != filepath.Clean(path) {
@@ -261,9 +344,30 @@ func findInlineCallee(pkg *packages.Package, file *ast.File, path, name string) 
 		if !ok {
 			return nil, nil
 		}
-		return function, object
+		if target.receiver != "" {
+			if !inlineReceiverMatches(object, target.receiver) {
+				continue
+			}
+		}
+		if foundDecl != nil {
+			return nil, nil
+		}
+		foundDecl, foundObject = function, object
 	}
-	return nil, nil
+	return foundDecl, foundObject
+}
+
+func inlineReceiverMatches(object *types.Func, receiverName string) bool {
+	signature, ok := object.Type().(*types.Signature)
+	if !ok || signature.Recv() == nil {
+		return false
+	}
+	receiverType := types.Unalias(signature.Recv().Type())
+	if pointer, isPointer := receiverType.(*types.Pointer); isPointer {
+		receiverType = types.Unalias(pointer.Elem())
+	}
+	named, ok := receiverType.(*types.Named)
+	return ok && named.Obj().Name() == receiverName
 }
 
 func findInlineOwner(file *ast.File, name string) (*ast.FuncDecl, error) {
@@ -284,69 +388,208 @@ func findInlineOwner(file *ast.File, name string) (*ast.FuncDecl, error) {
 	return found, nil
 }
 
-func findInlineCall(pkg *packages.Package, source []byte, owner *ast.FuncDecl, callee *types.Func, discriminator string) (*ast.CallExpr, int, int, error) {
-	var selected *ast.CallExpr
-	var start, end, exactCount int
+func findInlineCallCandidates(pkg *packages.Package, source []byte, owner *ast.FuncDecl, discriminator string) ([]inlineCallCandidate, error) {
+	contexts := map[*ast.CallExpr]inlineCallContext{}
 	for _, statement := range owner.Body.List {
-		returned, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(returned.Results) != 1 {
-			continue
+		switch typed := statement.(type) {
+		case *ast.ReturnStmt:
+			if len(typed.Results) == 1 {
+				if call, ok := typed.Results[0].(*ast.CallExpr); ok {
+					contexts[call] = inlineCallReturn
+				}
+			}
+		case *ast.AssignStmt:
+			if (typed.Tok == token.DEFINE || typed.Tok == token.ASSIGN) && len(typed.Lhs) == 1 && len(typed.Rhs) == 1 {
+				if call, ok := typed.Rhs[0].(*ast.CallExpr); ok {
+					contexts[call] = inlineCallAssignment
+				}
+			}
 		}
-		call, ok := returned.Results[0].(*ast.CallExpr)
-		if !ok {
-			continue
-		}
-		identifier, ok := call.Fun.(*ast.Ident)
-		if !ok {
-			continue
-		}
-		if pkg.TypesInfo.Uses[identifier] != callee {
-			continue
-		}
-		callStart := pkg.Fset.Position(call.Pos()).Offset
-		callEnd := pkg.Fset.Position(call.End()).Offset
-		if callStart < 0 || callEnd > len(source) || string(source[callStart:callEnd]) != discriminator {
-			continue
-		}
-		exactCount++
-		selected, start, end = call, callStart, callEnd
 	}
-	if exactCount != 1 {
-		return nil, 0, 0, fmt.Errorf("call_site.discriminator must select exactly one direct return call resolved to %s", callee.Name())
+	candidates := make([]inlineCallCandidate, 0)
+	ast.Inspect(owner.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		start, end := pkg.Fset.Position(call.Pos()).Offset, pkg.Fset.Position(call.End()).Offset
+		if start < 0 || end > len(source) || string(source[start:end]) != discriminator {
+			return true
+		}
+		candidates = append(candidates, inlineCallCandidate{call: call, start: start, end: end, context: contexts[call]})
+		return true
+	})
+	slices.SortFunc(candidates, func(left, right inlineCallCandidate) int { return left.start - right.start })
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("call_site.discriminator does not match a call expression in the selected owner")
 	}
-	return selected, start, end, nil
+	return candidates, nil
 }
 
-func findInlineCast(pkg *packages.Package, owner *ast.FuncDecl, typeName, literal string, start, end int) (*ast.CallExpr, error) {
+func selectInlineCallCandidates(candidates []inlineCallCandidate, indices []int) ([]inlineCallCandidate, error) {
+	if len(indices) == 0 {
+		return nil, fmt.Errorf("occurrence_indices is required to select multiple exact call occurrences")
+	}
+	selected := make([]inlineCallCandidate, 0, len(indices))
+	previous := -1
+	for _, index := range indices {
+		if index < 0 || index <= previous {
+			return nil, fmt.Errorf("occurrence_indices must contain unique, strictly increasing nonnegative indices")
+		}
+		if index >= len(candidates) {
+			return nil, fmt.Errorf("occurrence_indices contains out-of-range index %d for %d exact call occurrences", index, len(candidates))
+		}
+		selected = append(selected, candidates[index])
+		previous = index
+	}
+	return selected, nil
+}
+
+func selectInlineReturnCandidate(candidates []inlineCallCandidate, pkg *packages.Package, callee *types.Func) ([]inlineCallCandidate, error) {
+	var selected []inlineCallCandidate
+	for _, candidate := range candidates {
+		if candidate.context != inlineCallReturn || !inlineCallResolvesTo(pkg, candidate.call, callee) {
+			continue
+		}
+		selected = append(selected, candidate)
+	}
+	if len(selected) > 1 {
+		return nil, fmt.Errorf("call_site.discriminator selects multiple direct return calls; it must select exactly one direct return call")
+	}
+	if len(selected) == 0 {
+		return nil, fmt.Errorf("call_site.discriminator must select exactly one direct return call resolved to %s", callee.Name())
+	}
+	return selected, nil
+}
+
+func applyInlineCallReplacements(source []byte, replacements []inlineCallReplacement) ([]byte, error) {
+	ordered := slices.Clone(replacements)
+	slices.SortFunc(ordered, func(left, right inlineCallReplacement) int { return left.start - right.start })
+	for index, replacement := range ordered {
+		if replacement.start < 0 || replacement.end > len(source) || replacement.start >= replacement.end {
+			return nil, fmt.Errorf("selected call has an invalid source span")
+		}
+		if index > 0 && ordered[index-1].end > replacement.start {
+			return nil, fmt.Errorf("selected call spans overlap")
+		}
+	}
+	result := bytes.Clone(source)
+	for _, replacement := range slices.Backward(ordered) {
+
+		next := make([]byte, 0, len(result)+len(replacement.text)-(replacement.end-replacement.start))
+		next = append(next, result[:replacement.start]...)
+		next = append(next, replacement.text...)
+		next = append(next, result[replacement.end:]...)
+		result = next
+	}
+	return result, nil
+}
+
+func hasInlineCommentOverlap(pkg *packages.Package, call *ast.CallExpr) bool {
+	start, end := pkg.Fset.Position(call.Pos()).Offset, pkg.Fset.Position(call.End()).Offset
+	filename := filepath.Clean(pkg.Fset.PositionFor(call.Pos(), false).Filename)
+	for _, group := range pkg.Syntax {
+		if filepath.Clean(pkg.Fset.PositionFor(group.Pos(), false).Filename) != filename {
+			continue
+		}
+		for _, comment := range group.Comments {
+			commentStart, commentEnd := pkg.Fset.Position(comment.Pos()).Offset, pkg.Fset.Position(comment.End()).Offset
+			if commentStart < end && start < commentEnd {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inlineCallResolvesTo(pkg *packages.Package, call *ast.CallExpr, callee *types.Func) bool {
+	if identifier, ok := call.Fun.(*ast.Ident); ok {
+		return pkg.TypesInfo.Uses[identifier] == callee
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	selection := pkg.TypesInfo.Selections[selector]
+	return selection != nil && selection.Kind() == types.MethodVal && selection.Obj() == callee
+}
+
+func inlineCallTargets(pkg *packages.Package, owner *ast.FuncDecl, call *ast.CallExpr, callee *types.Func) bool {
+	if !inlineCallResolvesTo(pkg, call, callee) {
+		return false
+	}
+	signature, ok := callee.Type().(*types.Signature)
+	if !ok {
+		return false
+	}
+	if signature.Recv() == nil {
+		_, isIdentifier := call.Fun.(*ast.Ident)
+		return isIdentifier
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	selection := pkg.TypesInfo.Selections[selector]
+	if selection == nil || len(selection.Index()) != 1 {
+		return false
+	}
+	// Selection.Indirect is unreliable for some MethodVal selections, so compare the actual receiver types.
+	if !types.Identical(types.Unalias(selection.Recv()), types.Unalias(signature.Recv().Type())) {
+		return false
+	}
+	receiver, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	variable, ok := pkg.TypesInfo.Uses[receiver].(*types.Var)
+	if !ok || !inlineOwnerParameter(pkg, owner, variable) || len(owner.Body.List) != 1 {
+		return false
+	}
+	return true
+}
+
+func inlineOwnerParameter(pkg *packages.Package, owner *ast.FuncDecl, target *types.Var) bool {
+	if owner == nil || owner.Type == nil || owner.Type.Params == nil {
+		return false
+	}
+	for _, field := range owner.Type.Params.List {
+		for _, name := range field.Names {
+			if pkg.TypesInfo.Defs[name] == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func findInlineCastAt(pkg *packages.Package, owner *ast.FuncDecl, typeName, literal string, start, end int) (*ast.CallExpr, error) {
 	if owner == nil {
 		return nil, fmt.Errorf("inline owner is missing after preflight")
 	}
 	var found *ast.CallExpr
-	for _, statement := range owner.Body.List {
-		returned, ok := statement.(*ast.ReturnStmt)
-		if !ok || len(returned.Results) != 1 {
-			continue
-		}
-		call, ok := returned.Results[0].(*ast.CallExpr)
+	ast.Inspect(owner.Body, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
 		if !ok || len(call.Args) != 1 || !pkg.TypesInfo.Types[call.Fun].IsType() {
-			continue
+			return true
 		}
 		if pkg.Fset.Position(call.Pos()).Offset != start || pkg.Fset.Position(call.End()).Offset != end {
-			continue
+			return true
 		}
 		identifier, ok := call.Fun.(*ast.Ident)
 		if !ok || identifier.Name != typeName {
-			continue
+			return true
 		}
 		argument, ok := call.Args[0].(*ast.BasicLit)
 		if !ok || argument.Value != literal {
-			continue
+			return true
 		}
 		if found != nil {
-			return nil, fmt.Errorf("inlined result cast is ambiguous")
+			return false
 		}
 		found = call
-	}
+		return true
+	})
 	if found == nil {
 		return nil, fmt.Errorf("inlined result cast is missing")
 	}
@@ -511,4 +754,46 @@ func ApplySemanticEdit(ctx context.Context, plan SemanticEditPlan) error {
 func revisionOf(source []byte) string {
 	digest := sha256.Sum256(source)
 	return hex.EncodeToString(digest[:])
+}
+
+func selectInlineFunctionCalls(candidates []inlineCallCandidate, indices []int, pkg *packages.Package, callee *types.Func) ([]inlineCallCandidate, error) {
+	if len(indices) == 0 {
+		return selectInlineReturnCandidate(candidates, pkg, callee)
+	}
+	selected, err := selectInlineCallCandidates(candidates, indices)
+	if err != nil {
+		return nil, err
+	}
+	signature, ok := callee.Type().(*types.Signature)
+	if !ok || signature.Recv() != nil {
+		return nil, fmt.Errorf("occurrence_indices supports free functions only")
+	}
+	if len(selected) < 2 {
+		return nil, fmt.Errorf("occurrence_indices must select at least two call sites")
+	}
+	return selected, nil
+}
+
+func planInlineCallReplacements(pkg *packages.Package, owner, callee *ast.FuncDecl, calleeObject *types.Func, calleeSymbol string, selected []inlineCallCandidate) ([]inlineCallReplacement, error) {
+	replacements := make([]inlineCallReplacement, 0, len(selected))
+	for _, candidate := range selected {
+		if candidate.context == inlineCallUnsupported {
+			return nil, fmt.Errorf("selected call is not a supported top-level return or single-target assignment RHS")
+		}
+		if !inlineCallResolvesTo(pkg, candidate.call, calleeObject) {
+			return nil, fmt.Errorf("selected call does not resolve to callee %q", calleeSymbol)
+		}
+		if calleeObject.Type().(*types.Signature).Recv() != nil && candidate.context != inlineCallReturn {
+			return nil, fmt.Errorf("inline method calls support direct return expressions only")
+		}
+		literalResult, err := validateInlineLiteralCallee(pkg, owner, callee, calleeObject, candidate.call)
+		if err != nil {
+			return nil, err
+		}
+		if hasInlineCommentOverlap(pkg, candidate.call) {
+			return nil, fmt.Errorf("selected call overlaps a comment or directive")
+		}
+		replacements = append(replacements, inlineCallReplacement{start: candidate.start, end: candidate.end, text: literalResult.typeName + "(" + literalResult.literalText + ")", literal: literalResult})
+	}
+	return replacements, nil
 }

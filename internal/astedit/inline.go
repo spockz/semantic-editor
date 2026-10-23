@@ -18,9 +18,12 @@ import (
 	"github.com/spockz/semantic-editor/internal/symbol"
 )
 
-// InlineVariable inlines one local literal binding at its immediate use site.
+// InlineVariable inlines one supported local binding at a proven direct use.
 func InlineVariable(ctx context.Context, filePath, function, name string) (string, error) {
-	cleanPath := filepath.Clean(filePath)
+	cleanPath, err := sourcebuf.CanonicalPath(ctx, filePath)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize inline file path: %w", err)
+	}
 	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
 	if err != nil {
 		return "", err
@@ -70,7 +73,7 @@ func planInlineVariable(ctx context.Context, cleanPath, function, name string, o
 		return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: explicitly typed declarations require preserving their declared type", name)
 	}
 	if target.value == nil || !literalExpression(target.value) {
-		return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: initializer must be a literal expression", name)
+		return planInlineImmediateReturnVariable(ctx, cleanPath, function, name, content, ownedBuffer, standalone)
 	}
 	if !target.constant {
 		typeName, ok := defaultTypeName(target.value)
@@ -89,7 +92,7 @@ func planInlineVariable(ctx context.Context, cleanPath, function, name string, o
 	if err != nil {
 		return inlineVariableEdit{}, err
 	}
-	formatted, err := inlineSource(content, fset, fileNode, target, positions, name)
+	formatted, err := inlineSource(content, fset, fileNode, target, positions, name, false)
 	if err != nil {
 		return inlineVariableEdit{}, err
 	}
@@ -107,20 +110,10 @@ func publishInlineVariable(ctx context.Context, edit inlineVariableEdit) (string
 	if validationErr := validateExtractionCandidate(ctx, edit.path, edit.after); validationErr != nil {
 		return "", fmt.Errorf("validate inlined package: %w", validationErr)
 	}
-	buffer := sourcebuf.FromContext(ctx)
-	if applyErr := buffer.Apply(ctx, []sourcebuf.Change{{Path: edit.path, Before: edit.before, After: edit.after}}); applyErr != nil {
-		return "", fmt.Errorf("apply inlined source after compiler preflight: %w", applyErr)
-	}
-	current, err = sourcebuf.ReadFile(ctx, edit.path)
-	if err != nil {
-		return "", fmt.Errorf("read inlined file: %w", err)
-	}
-	if edit.standalone {
-		if err := edit.owned.Flush(ctx); err != nil {
-			return "", fmt.Errorf("publish inlined source: %w", err)
-		}
-	}
-	return UnifiedDiff(edit.path, string(edit.before), string(current)), nil
+	return publishPreparedSource(ctx, sourcePublication{
+		path: edit.path, diffPath: edit.path, before: edit.before, after: edit.after,
+		ownedBuffer: edit.owned, standalone: edit.standalone, operation: "inline variable",
+	})
 }
 
 type inlineTarget struct {
@@ -240,11 +233,39 @@ func (collector *inlineTargetCollector) walkNestedStatementBlocks(stmt ast.Stmt,
 
 func inlineUsePositions(fn *ast.FuncDecl, target inlineTarget, name string) ([]token.Pos, error) {
 	if target.index+1 >= len(target.block.List) {
-		return nil, fmt.Errorf("cannot inline %q: declaration has no immediate following statement", name)
+		return nil, fmt.Errorf("cannot inline %q: declaration has no following statement", name)
 	}
-	positions, direct := directExpressionUses(target.block.List[target.index+1], name)
-	if !direct || len(positions) == 0 {
-		return nil, fmt.Errorf("cannot inline %q: uses must be direct arguments of one call or direct return values in the next statement", name)
+	var positions []token.Pos
+	crossedBoundary := false
+	for _, statement := range target.block.List[target.index+1:] {
+		controlFlow := false
+		switch statement.(type) {
+		case *ast.BlockStmt, *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt, *ast.BranchStmt, *ast.GoStmt, *ast.DeferStmt, *ast.LabeledStmt, *ast.ReturnStmt:
+			controlFlow = true
+		}
+		var referencesName bool
+		ast.Inspect(statement, func(node ast.Node) bool {
+			if identifier, ok := node.(*ast.Ident); ok && identifier.Name == name {
+				referencesName = true
+				return false
+			}
+			return !referencesName
+		})
+		if referencesName {
+			statementPositions, direct := directExpressionUses(statement, name)
+			if !direct {
+				return nil, fmt.Errorf("cannot inline %q: uses must be direct arguments of calls or direct return values in the same block", name)
+			}
+			_, isReturn := statement.(*ast.ReturnStmt)
+			if crossedBoundary || controlFlow && !isReturn {
+				return nil, fmt.Errorf("cannot inline %q: a control-flow boundary separates the declaration and its use", name)
+			}
+			positions = append(positions, statementPositions...)
+		}
+		crossedBoundary = crossedBoundary || controlFlow
+	}
+	if len(positions) == 0 {
+		return nil, fmt.Errorf("cannot inline %q: no direct call argument or return use exists after the declaration in the same block", name)
 	}
 	identifiers := 0
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
@@ -329,7 +350,7 @@ func identifiersContainName(identifiers []*ast.Ident, name string) bool {
 	return false
 }
 
-func inlineSource(content []byte, fset *token.FileSet, fileNode *ast.File, target inlineTarget, positions []token.Pos, name string) ([]byte, error) {
+func inlineSource(content []byte, fset *token.FileSet, fileNode *ast.File, target inlineTarget, positions []token.Pos, name string, preserveExpressionBytes bool) ([]byte, error) {
 	start, end, err := standaloneStatementRange(content, fset, target.stmt, fileNode.Comments)
 	if err != nil {
 		return nil, fmt.Errorf("cannot inline %q: %w", name, err)
@@ -360,14 +381,17 @@ func inlineSource(content []byte, fset *token.FileSet, fileNode *ast.File, targe
 		updated = append(updated[:item.start], append(item.text, updated[item.end:]...)...)
 	}
 	updated = append(updated[:start], updated[end:]...)
-	formatted, err := format.Source(updated)
-	if err != nil {
+	candidate := updated
+	if !preserveExpressionBytes {
+		candidate, err = format.Source(updated)
+		if err != nil {
+			return nil, &SyntaxError{File: fset.Position(target.stmt.Pos()).Filename, Cause: err, Err: ErrSyntax}
+		}
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), fset.Position(target.stmt.Pos()).Filename, candidate, parser.ParseComments|parser.AllErrors); err != nil {
 		return nil, &SyntaxError{File: fset.Position(target.stmt.Pos()).Filename, Cause: err, Err: ErrSyntax}
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), fset.Position(target.stmt.Pos()).Filename, formatted, parser.ParseComments|parser.AllErrors); err != nil {
-		return nil, &SyntaxError{File: fset.Position(target.stmt.Pos()).Filename, Cause: err, Err: ErrSyntax}
-	}
-	return formatted, nil
+	return candidate, nil
 }
 
 func literalExpression(expr ast.Expr) bool {
@@ -412,7 +436,7 @@ func directExpressionUses(stmt ast.Stmt, name string) ([]token.Pos, bool) {
 func inlineValueText(content []byte, fset *token.FileSet, expr ast.Expr, constant bool) (string, error) {
 	start, end := fset.Position(expr.Pos()).Offset, fset.Position(expr.End()).Offset
 	text := strings.TrimSpace(string(content[start:end]))
-	if constant {
+	if constant || !literalExpression(expr) {
 		return text, nil
 	}
 	typeName, ok := defaultTypeName(expr)
@@ -493,7 +517,8 @@ func standaloneStatementRange(content []byte, fset *token.FileSet, stmt ast.Stmt
 		for _, comment := range group.List {
 			commentStart := fset.Position(comment.Pos()).Offset
 			commentEnd := fset.Position(comment.End()).Offset
-			previousText := content[commentEnd:start]
+			previousStart := min(commentEnd, start)
+			previousText := content[previousStart:start]
 			previousLineCount := strings.Count(string(previousText), "\n")
 			attachedBefore := commentEnd < start && strings.TrimSpace(string(previousText)) == "" && previousLineCount <= 1
 			if attachedBefore || (commentStart < start && commentEnd > lineStart) || (commentStart >= end && commentStart < lineEnd) {

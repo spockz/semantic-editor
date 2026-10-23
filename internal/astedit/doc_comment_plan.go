@@ -233,10 +233,23 @@ func containsDirectiveGroup(group *ast.CommentGroup) bool {
 	}
 	for _, comment := range group.List {
 		text := strings.TrimSpace(comment.Text)
-		text = strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(text, "//"), "/*"))
-		for _, prefix := range []string{"go:", "+build", "line ", "export ", "#cgo"} {
-			if strings.HasPrefix(text, prefix) {
-				return true
+		lines := []string{text}
+		if after, ok := strings.CutPrefix(text, "//"); ok {
+			lines = []string{strings.TrimSpace(after)}
+		} else if after, ok := strings.CutPrefix(text, "/*"); ok {
+			body := strings.TrimSuffix(after, "*/")
+			lines = strings.Split(body, "\n")
+		}
+		for _, line := range lines {
+			line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "*"))
+			line = strings.TrimSpace(strings.TrimPrefix(line, "//"))
+			for _, prefix := range []string{
+				"go:", "+build", "line ", "line\t", "export ", "extern ", "#cgo",
+				"nolint", "lint:", "staticcheck", "#nosec", "noinspection", "gocritic:",
+			} {
+				if strings.HasPrefix(line, prefix) {
+					return true
+				}
 			}
 		}
 	}

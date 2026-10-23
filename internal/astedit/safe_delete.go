@@ -26,10 +26,33 @@ func classifySafeDeleteTarget(file *ast.File, selected ast.Node) (safeDeleteTarg
 		return classifySafeDeleteFunction(node)
 	case *ast.ValueSpec:
 		return classifySafeDeleteValue(file, node)
+	case *ast.TypeSpec:
+		if node.Name == nil || ast.IsExported(node.Name.Name) {
+			return safeDeleteTarget{}, "safe_delete supports only unexported standalone declarations"
+		}
+		if node.TypeParams != nil {
+			return safeDeleteTarget{}, "safe_delete refuses generic types"
+		}
+		for _, declaration := range file.Decls {
+			group, ok := declaration.(*ast.GenDecl)
+			if !ok || group.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range group.Specs {
+				if spec != node {
+					continue
+				}
+				if group.Lparen.IsValid() || len(group.Specs) != 1 {
+					return safeDeleteTarget{}, "safe_delete refuses grouped type declarations"
+				}
+				return safeDeleteTarget{name: node.Name.Name, kind: "type", pos: node.Name.Pos(), end: node.End()}, ""
+			}
+		}
+		return safeDeleteTarget{}, "safe_delete requires a standalone type declaration"
 	case ast.Spec:
 		return safeDeleteTarget{}, "safe_delete supports only standalone declarations"
 	default:
-		return safeDeleteTarget{}, "safe_delete supports only unexported standalone constants, variables, and free functions"
+		return safeDeleteTarget{}, "safe_delete supports only unexported standalone constants, variables, functions, and type declarations"
 	}
 }
 
@@ -146,6 +169,17 @@ func safeDeleteFunctionDefinition(info *types.Info, function *ast.FuncDecl, targ
 }
 
 func safeDeleteGroupDefinition(pkg *packages.Package, group *ast.GenDecl, target safeDeleteTarget) safeDeleteDefinitionResult {
+	if target.kind == "type" {
+		if group.Tok != token.TYPE || group.Lparen.IsValid() || len(group.Specs) != 1 {
+			return safeDeleteDefinitionResult{}
+		}
+		typeSpec, ok := group.Specs[0].(*ast.TypeSpec)
+		if !ok || typeSpec.Name.Name != target.name {
+			return safeDeleteDefinitionResult{}
+		}
+		typeName, _ := pkg.TypesInfo.Defs[typeSpec.Name].(*types.TypeName)
+		return safeDeleteDefinitionResult{object: typeName, matched: true}
+	}
 	if target.kind != "value" && target.kind != "constant" {
 		return safeDeleteDefinitionResult{}
 	}
@@ -253,11 +287,11 @@ func safeDeleteVariableInitializer(pkg *packages.Package, declaration *ast.GenDe
 	if declaration.Tok != token.VAR || declaration.Lparen.IsValid() || len(declaration.Specs) != 1 || len(value.Names) != 1 || ast.IsExported(variable.Name()) {
 		return false
 	}
+	if len(value.Values) == 0 {
+		return value.Type != nil
+	}
 	if _, ok := types.Unalias(variable.Type()).Underlying().(*types.Basic); !ok {
 		return false
-	}
-	if len(value.Values) == 0 {
-		return true
 	}
 	if len(value.Values) != 1 {
 		return false
@@ -413,9 +447,24 @@ func verifySafeDeleteTargetWithImportPolicy(ctx context.Context, root, targetPat
 	if definition.object == nil {
 		return "target is not present in an active, successfully type-checked package", nil
 	}
-	if target.kind == "function" {
+	switch target.kind {
+	case "function":
 		if _, ok := definition.object.(*types.Func); !ok {
 			return "target does not resolve to a free function", nil
+		}
+	case "type":
+		typeName, ok := definition.object.(*types.TypeName)
+		if !ok {
+			return "target does not resolve to a Go type", nil
+		}
+		if !typeName.IsAlias() {
+			named, ok := typeName.Type().(*types.Named)
+			if !ok {
+				return "target does not resolve to a defined Go type", nil
+			}
+			if safeDeleteTypeHasMethods(named) {
+				return "safe_delete requires empty value and pointer method sets", nil
+			}
 		}
 	}
 	if safeDeleteHasReference(pkgs, root, targetPath, target, definition.object, definition.packagePath) {
@@ -425,4 +474,8 @@ func verifySafeDeleteTargetWithImportPolicy(ctx context.Context, root, targetPat
 		return problem, nil
 	}
 	return "", nil
+}
+
+func safeDeleteTypeHasMethods(named *types.Named) bool {
+	return types.NewMethodSet(named).Len() != 0 || types.NewMethodSet(types.NewPointer(named)).Len() != 0
 }

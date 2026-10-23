@@ -34,7 +34,7 @@ func TestInlineVariableRejectsUnsafeCasesWithoutWriting(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"side effect":           "value := call()\nprintln(value)\n",
-		"intervening statement": "value := 42\nprintln(1)\nprintln(value)\n",
+		"control-flow boundary": "value := 42\nif true { println(1) }\nprintln(value)\n",
 		"reassignment":          "value := 42\nvalue = 7\nprintln(value)\n",
 		"shadowing":             "value := 42\n{ value := 7; println(value) }\nprintln(value)\n",
 		"unsupported use":       "value := 42\nprintln(value + 1)\n",
@@ -153,5 +153,45 @@ func TestInlineVariableRejectsParameterShadowing(t *testing.T) {
 	}
 	if string(got) != before {
 		t.Fatalf("refusal changed source\nwant:\n%s\ngot:\n%s", before, got)
+	}
+}
+
+func TestInlineVariableLaterCallsAndReturnInSameBlock(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "inline.go")
+	before := "package p\nfunc f() int {\n\tvalue := 42\n\tprintln(1)\n\tprintln(value)\n\treturn value\n}\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InlineVariable(context.Background(), path, "f", "value"); err != nil {
+		t.Fatalf("InlineVariable: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "package p\n\nfunc f() int {\n\tprintln(1)\n\tprintln(int(42))\n\treturn int(42)\n}\n"
+	if string(got) != want {
+		t.Fatalf("source mismatch\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestInlineVariablePreservesUnrelatedFollowingComment(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "inline.go")
+	before := "package p\nfunc f() {\n\tvalue := 42\n\tprintln(value)\n\t// unrelated comment\n\tprintln(\"done\")\n}\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := InlineVariable(context.Background(), path, "f", "value"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "package p\n\nfunc f() {\n\tprintln(int(42))\n\t// unrelated comment\n\tprintln(\"done\")\n}\n"
+	if string(got) != want {
+		t.Fatalf("inline changed unexpected source\nwant:\n%s\ngot:\n%s", want, got)
 	}
 }

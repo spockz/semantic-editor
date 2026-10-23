@@ -58,7 +58,7 @@ func (GoBackend) SupportedConstructs(operation backend.Operation) []backend.Cons
 
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationInspectConstruct, backend.OperationOutline, backend.OperationFindReferences)
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationInspectConstruct, backend.OperationOutline, backend.OperationFindReferences, backend.OperationExtractVariable, backend.OperationExtractFunction)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Go backend.
@@ -92,40 +92,40 @@ func goCapabilityOperations() map[string]backend.OpCapability {
 
 func goExtractionCapabilities() map[string]backend.OpCapability {
 	return map[string]backend.OpCapability{
-		"extract_function": {
+		"refactor_extract_callable": {
 			Supported:   true,
-			Description: "Extracts contiguous direct calls, optionally with one leading short declaration whose distinct live-out values have validated supported result types; rejects effectful or unsupported results, address-taken values, closures, recover, uncertain receiver dispatch, other local flow, control flow, composite literals, generic or variadic owners, and comments.",
-			CLICommand:  "semedit extract-function --file <path> --symbol <helper> --in-function <owner> --kind <function|method> --start-line <line> --end-line <line>",
-			MCPTool:     "semantic_extract_function",
+			Description: ("Extracts a supported contiguous region of direct calls, simple := or = assignments, or one complete typed scalar if/else into a helper. Typed read/write flow derives live-in parameters and live-out results, including pre-existing locals, mixed declarations and assignments, and nameable Go result types while preserving assignment evaluation and first-write result order. Callable range extraction also accepts direct local or parameter map/slice identifiers, two-index slice expressions, and three-index full-slice expressions rooted in local or parameter slices when explicit bounds are pure compiler-resolved integers; it preserves the original range expression and exact base value. In one expression-switch case/default body, it also accepts one direct simple = assignment to a pre-existing owner local or named parameter (never the receiver) when that value is read after the switch; the helper returns the assigned value and the call writes it back at the same clause location. Other case statements, nested cases, type-switch/select clauses, and cross-case ranges refuse. Ordinary comments move with the selected source only when every comment in the owner body lies wholly inside the selected statement range; directives and comments outside that range refuse. Address-taken or closure-captured values, recover, uncertain receiver dispatch, unsupported statements, other control flow, composite literals, and generic or variadic owners also refuse."),
+			CLICommand:  "semedit refactor-extract-callable --file <path> --symbol <helper> --in-function <owner> --kind <function|method> --start-line <line> --end-line <line>",
+			MCPTool:     "refactor_extract_callable",
 		},
-		"extract_constant": {
+		"refactor_extract_value": {
 			Supported:   true,
-			Description: "Extracts one exact resolved compile-time basic constant expression from a Go function to a package constant; refuses iota, local constant dependencies, unsupported types or syntax, comments, collisions, duplicate matches, and stale selected-file revisions.",
-			CLICommand:  "semedit extract-constant --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--expected-revision <sha256>]",
-			MCPTool:     "semantic_extract_constant",
+			Description: "kind=variable extracts exact side-effect-free typed arguments from a direct identifier call statement, or the RHS of one simple assignment to a named identifier in a direct or nested statement block, including a short declaration with one target and one value or a one-spec local var declaration with one named target and one initializer, or one whole expression in a direct or nested return with exactly one explicit owner result slot. The result slot may be unnamed or have one nonblank name; the original return still assigns named results before defers run. Multiple result slots, blank or multiply named result fields, naked returns, and untyped-only expressions refuse. A nested local stays immediately before its assignment, declaration, or return in that statement's existing block; function-literal bodies are not candidates. Grouped var declarations and multi-name or multi-value var specs refuse. When multiple assignment, declaration, or return statements match, select one with construct_path and its matching expected_revision. In one selected call, all repeated matches may share one local only when the expression uses stable scalar owner inputs and compile-time constants, every occurrence retains the same resolved type, and its inputs are not address-escaped explicitly or through an implicit pointer-receiver method selection, or closure-captured. Return extraction preserves the expression's inferred type and evaluates immediately before that return. Call siblings must satisfy the compiler-backed evaluation-order whitelist; assignment extraction rejects compound or tuple assignments, multi-name short declarations, and non-identifier targets. kind=constant extracts one exact resolved compile-time basic constant expression into a package constant. kind=field is unsupported. Each supported kind refuses unsupported syntax, collisions, comments, ambiguous selections, and stale selectors; variable extraction also refuses callable shadowing, unresolved imports, nested calls, and unsupported contexts.",
+			CLICommand:  "semedit refactor-extract-value --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--construct-path <path> --expected-revision <sha256>]",
+			MCPTool:     "refactor_extract_value",
 		},
-		"extract_variable": {
+		"refactor_encapsulate_field": {
 			Supported:   true,
-			Description: "Extracts one exact side-effect-free typed first argument from a direct identifier call statement into a preceding local while preserving later argument order; a supplied construct_path requires the matching selected-file expected_revision. It refuses callable shadowing, unresolved imports, comments, constant-only or unsupported types, nested calls, and unsupported contexts.",
-			CLICommand:  "semedit extract-variable --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--construct-path <path> --expected-revision <sha256>]",
-			MCPTool:     "semantic_extract_variable",
+			Description: "Generates private pointer-receiver accessors for one private non-generic struct field and rewrites every typed direct read and standalone assignment proved safe across active package and test variants. Refuses inactive or generated package sources, embedding, interface method-set collisions, positional literals, unsupported references, and evaluation-order-sensitive expressions.",
+			CLICommand:  "semedit refactor-encapsulate-field --file <path> --symbol <Type.Field> --getter <name> --setter <name> [--destination-file <path>]",
+			MCPTool:     "refactor_encapsulate_field",
 		},
-		"inline_variable": {
+		"refactor_inline_value": {
 			Supported:   true,
-			Description: "Inlines one local literal into all proven direct uses in the immediately following statement; refuses computed or explicitly typed initializers, intervening statements, shadowing, extra references, unsupported use shapes, and comments. Call inlining is unsupported.",
-			CLICommand:  "semedit inline-variable --file <path> --symbol <name> --in-function <owner>",
-			MCPTool:     "semantic_inline_variable",
+			Description: ("Inlines a basic-literal local at proven direct call-argument or return uses later in the same lexical block before control flow. For a pure scalar computed initializer, it also supports the complete expression at its sole immediate direct return, the sole argument of an immediate direct call to a declared function or builtin, the complete RHS of the immediately following one-target simple assignment to a distinct existing variable under ADR-0113, the complete RHS of the immediately following single-name short declaration under ADR-0114, or the complete RHS of the immediately following single-name, single-value local var declaration under ADR-0119. Candidate checks preserve resolved input bindings and types. Also inlines one keyed scalar-only same-package nongeneric named struct literal at its sole immediate direct return after compiler-resolved binding and type checks. Other computed shapes, explicit types, unsupported struct fields or values, extra references, and comments in the moved or removed region refuse. Callable inlining is exposed separately as refactor_inline_callable."),
+			CLICommand:  "semedit refactor-inline-value --file <path> --symbol <name> --in-function <owner>",
+			MCPTool:     "refactor_inline_value",
 		},
 	}
 }
 
 func goEditCapabilities() map[string]backend.OpCapability {
 	return map[string]backend.OpCapability{
-		"rename": {
+		"refactor_rename": {
 			Supported:    true,
 			Description:  "Compiler-backed symbol renaming across identifiers, struct fields, methods, interfaces, and packages with automatic import tidying.",
-			CLICommand:   "semedit rename --file <path> --symbol <sym> --to <name>",
-			MCPTool:      "semantic_rename",
+			CLICommand:   "semedit refactor-rename --file <path> --symbol <sym> --to <name>",
+			MCPTool:      "refactor_rename",
 			PlacementKey: false,
 		},
 		"insert_func": {

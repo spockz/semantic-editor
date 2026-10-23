@@ -33,26 +33,35 @@ const (
 
 // ExtractOptions describes a deliberately bounded extraction contract.
 type ExtractOptions struct {
-	Kind      ExtractKind
-	StartLine int
-	EndLine   int
+	Kind             ExtractKind
+	StartLine        int
+	EndLine          int
+	ConstructPath    string
+	EndConstructPath string
+	ExpectedRevision string
 }
 
 type extractionOutput struct {
-	name     string
-	typeName string
+	name                string
+	typeName            string
+	typeValue           types.Type
+	newBinding          bool
+	existingInCallScope bool
 }
 
 type extractionInput struct {
-	ctx         context.Context
-	cleanPath   string
-	ownedBuffer *sourcebuf.Buffer
-	standalone  bool
-	content     []byte
-	fset        *token.FileSet
-	file        *ast.File
-	target      *ast.FuncDecl
-	selected    []ast.Stmt
+	ctx             context.Context
+	cleanPath       string
+	ownedBuffer     *sourcebuf.Buffer
+	standalone      bool
+	content         []byte
+	fset            *token.FileSet
+	file            *ast.File
+	typesInfo       *types.Info
+	target          *ast.FuncDecl
+	selected        []ast.Stmt
+	selectionBlock  *ast.BlockStmt
+	selectionSwitch *ast.SwitchStmt
 }
 
 type extractionCandidate struct {
@@ -60,8 +69,9 @@ type extractionCandidate struct {
 	declaration string
 }
 
-// ExtractFunction moves consecutive top-level call statements, optionally
-// preceded by one supported local declaration, into a helper.
+// ExtractFunction moves a contiguous region of supported statements from one
+// lexical block into a helper at the same execution point, deriving its
+// signature from resolved Go bindings.
 func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts ExtractOptions) (string, error) {
 	input, candidate, err := prepareFunctionExtraction(ctx, filePath, owner, helper, opts)
 	if err != nil {
@@ -74,7 +84,25 @@ func validateExtractRequest(helper string, opts ExtractOptions) error {
 	if opts.Kind != ExtractKindFunction && opts.Kind != ExtractMethod {
 		return fmt.Errorf("unsupported extraction kind %q", opts.Kind)
 	}
-	if opts.StartLine <= 0 || opts.EndLine < opts.StartLine {
+	switch {
+	case opts.ConstructPath != "":
+		if opts.ExpectedRevision == "" {
+			return fmt.Errorf("expected_revision is required with construct_path")
+		}
+		if opts.StartLine != 0 || opts.EndLine != 0 {
+			return fmt.Errorf("construct_path selection cannot include line selectors")
+		}
+		if err := validateExtractStatementPath(opts.ConstructPath); err != nil {
+			return err
+		}
+		if opts.EndConstructPath != "" {
+			if err := validateExtractStatementPath(opts.EndConstructPath); err != nil {
+				return err
+			}
+		}
+	case opts.EndConstructPath != "":
+		return fmt.Errorf("end_construct_path requires construct_path")
+	case opts.StartLine <= 0 || opts.EndLine < opts.StartLine:
 		return fmt.Errorf("start_line and end_line must describe a positive ordered line range")
 	}
 	if !token.IsIdentifier(helper) || token.Lookup(helper).IsKeyword() || helper == "_" {
@@ -97,6 +125,9 @@ func loadExtractionInput(ctx context.Context, filePath, owner string, opts Extra
 	if err != nil {
 		return extractionInput{}, fmt.Errorf("read extraction target: %w", err)
 	}
+	if opts.ExpectedRevision != "" && opts.ExpectedRevision != goReadRevision(input.content) {
+		return extractionInput{}, fmt.Errorf("expected_revision does not match the extraction source revision")
+	}
 	recv, name, err := symbol.ParseIdentifier(owner)
 	if err != nil {
 		return extractionInput{}, fmt.Errorf("parse in_function selector: %w", err)
@@ -106,21 +137,45 @@ func loadExtractionInput(ctx context.Context, filePath, owner string, opts Extra
 	if err != nil {
 		return extractionInput{}, &SyntaxError{File: input.cleanPath, Pos: extractSyntaxPosition(input.fset, err), Cause: err, Err: ErrSyntax}
 	}
+	loaded, err := loadExtractionPackages(input.ctx, filepath.Dir(input.cleanPath), map[string][]byte{input.cleanPath: input.content}, extractionLoadOptions{
+		tests: strings.HasSuffix(filepath.Base(input.cleanPath), "_test.go"), typeInfo: true,
+	})
+	if err != nil {
+		return extractionInput{}, fmt.Errorf("load typed extraction input: %w", err)
+	}
+	_, input.fset, input.file, input.typesInfo, err = typedExtractionFile(loaded, input.cleanPath)
+	if err != nil {
+		return extractionInput{}, err
+	}
 	input.target = findExtractOwner(input.file, name, recv)
 	if input.target == nil {
 		return extractionInput{}, &symbol.SymbolError{Op: "extract_function", File: input.cleanPath, Symbol: owner, Err: symbol.ErrNotFound}
 	}
-	if ownerErr := validateExtractOwner(input.file, input.target, owner, opts.Kind); ownerErr != nil {
+	if ownerErr := validateExtractOwner(input.target, owner, opts.Kind); ownerErr != nil {
 		return extractionInput{}, ownerErr
 	}
-	input.selected, err = selectExtractStatements(input.fset, input.target.Body, owner, opts)
+	input.selected, input.selectionBlock, err = selectExtractStatements(input.fset, input.target.Body, owner, opts)
 	if err != nil {
+		return extractionInput{}, err
+	}
+	if err := validateExtractSwitchAssignment(&input, owner); err != nil {
 		return extractionInput{}, err
 	}
 	return input, nil
 }
 
 func planExtraction(input extractionInput, owner, helper string, opts ExtractOptions) (extractionCandidate, error) {
+	if commentErr := validateExtractionCommentOwnership(input, owner); commentErr != nil {
+		return extractionCandidate{}, commentErr
+	}
+	if helperNameShadowedAtReplacement(input, helper, opts.Kind) {
+		return extractionCandidate{}, fmt.Errorf("cannot extract: generated call binding for %q is shadowed at the replacement site", helper)
+	}
+	if opts.Kind == ExtractMethod {
+		if methodErr := validateExtractMethodHelper(input, helper); methodErr != nil {
+			return extractionCandidate{}, methodErr
+		}
+	}
 	collides, err := helperNameExists(input.ctx, input.cleanPath, input.file.Name.Name, helper, opts.Kind, input.target)
 	if err != nil {
 		return extractionCandidate{}, err
@@ -128,38 +183,70 @@ func planExtraction(input extractionInput, owner, helper string, opts ExtractOpt
 	if collides {
 		return extractionCandidate{}, fmt.Errorf("cannot extract: package declaration %q already exists", helper)
 	}
-	outputs, err := extractOutputs(input.fset, input.target, input.selected)
+	flow, err := analyzeExtractionFlow(input, input.selected, opts.Kind)
 	if err != nil {
 		return extractionCandidate{}, fmt.Errorf("cannot extract %s: %w", owner, err)
 	}
-	if aliasErr := validateOutputAliases(input.selected, outputs, owner); aliasErr != nil {
-		return extractionCandidate{}, aliasErr
-	}
+	outputs := flow.outputs
+
 	if typeNameErr := validateOutputTypeNames(input.ctx, input.cleanPath, input.file, outputs, owner, input.content); typeNameErr != nil {
 		return extractionCandidate{}, typeNameErr
 	}
-	params, err := extractionParameters(input.fset, input.target, input.selected, opts.Kind, outputs)
-	if err != nil {
-		return extractionCandidate{}, fmt.Errorf("cannot extract %s: %w", owner, err)
+	if outputErr := validateExtractionOutputCallBindings(input, helper, outputs, opts.Kind); outputErr != nil {
+		return extractionCandidate{}, outputErr
 	}
-	if forwardedErr := validateForwardedNames(input.target, input.selected, params.names, owner); forwardedErr != nil {
+	params := flow.parameters
+	if forwardedErr := validateTypedExtractionAliases(input, input.selected, flow, owner, opts.Kind); forwardedErr != nil {
 		return extractionCandidate{}, forwardedErr
 	}
-	if scopeErr := validateExtractedScope(input.file, input.target, input.selected, params.names, outputs, owner); scopeErr != nil {
+	if scopeErr := validateTypedExtractedScope(input, input.selected, flow, owner); scopeErr != nil {
 		return extractionCandidate{}, scopeErr
 	}
 	selected := input.selected
 	selectedSource := strings.TrimSpace(string(input.content[input.fset.Position(selected[0].Pos()).Offset:input.fset.Position(selected[len(selected)-1].End()).Offset]))
+	if len(flow.locals) > 0 {
+		selectedSource = strings.Join(flow.locals, "\n") + "\n" + selectedSource
+	}
+	if len(flow.unusedLocals) > 0 {
+		selectedSource += "\n_ = " + strings.Join(flow.unusedLocals, "\n_ = ")
+	}
 	callSource := extractionCall(input.target, helper, params.names, outputs, opts.Kind)
+	if len(flow.unusedOwnerBindings) > 0 {
+		callSource += "\n_ = " + strings.Join(flow.unusedOwnerBindings, "\n_ = ")
+	}
 	declaration, err := extractionDeclaration(input.fset, input.target, helper, opts.Kind, params.declarations, outputs, selectedSource)
 	if err != nil {
 		return extractionCandidate{}, err
 	}
-	source, err := rewriteExtractedStatements(input.content, input.fset, input.target, selected, callSource, declaration, owner)
+	source, err := rewriteExtractedStatements(input.content, input.fset, input.target, input.selectionBlock, selected, callSource, declaration, owner, input.file)
 	if err != nil {
 		return extractionCandidate{}, err
 	}
 	return extractionCandidate{source: source, declaration: declaration}, nil
+}
+
+func validateExtractMethodHelper(input extractionInput, helper string) error {
+	if ast.IsExported(helper) {
+		return fmt.Errorf("cannot extract method: helper name %q must be unexported to preserve external interface satisfaction", helper)
+	}
+	receiverType := input.typesInfo.TypeOf(input.target.Recv.List[0].Type)
+	if receiverType == nil {
+		return fmt.Errorf("cannot extract method: receiver type is unresolved")
+	}
+	namedType := receiverType
+	if pointer, ok := namedType.(*types.Pointer); ok {
+		namedType = pointer.Elem()
+	}
+	named, ok := types.Unalias(namedType).(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return fmt.Errorf("cannot extract method: receiver type %s is not a named package type", receiverType)
+	}
+	for _, methodSetType := range []types.Type{receiverType, types.NewPointer(named)} {
+		if object, _, _ := types.LookupFieldOrMethod(methodSetType, true, named.Obj().Pkg(), helper); object != nil {
+			return fmt.Errorf("cannot extract: method name %q already exists in the receiver method set or as a promoted field", helper)
+		}
+	}
+	return nil
 }
 
 func publishExtraction(input extractionInput, candidate extractionCandidate, owner string) (string, error) {
@@ -174,45 +261,10 @@ func publishExtraction(input extractionInput, candidate extractionCandidate, own
 	if !bytes.Equal(current, input.content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)
 	}
-	buffer := sourcebuf.FromContext(input.ctx)
-	if applyErr := buffer.Apply(input.ctx, []sourcebuf.Change{{Path: input.cleanPath, Before: input.content, After: formatted}}); applyErr != nil {
-		return "", fmt.Errorf("apply extracted source after compiler preflight: %w", applyErr)
-	}
-	finalSource, err := sourcebuf.ReadFile(input.ctx, input.cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("read formatted extraction result: %w", err)
-	}
-	if input.standalone {
-		if err := input.ownedBuffer.Flush(input.ctx); err != nil {
-			return "", fmt.Errorf("publish extracted source: %w", err)
-		}
-	}
-	return UnifiedDiff(filepath.Base(input.cleanPath), string(input.content), string(finalSource)), nil
-}
-
-func validateOutputAliases(selected []ast.Stmt, outputs []extractionOutput, owner string) error {
-	if len(outputs) == 0 {
-		return nil
-	}
-	outputNames := make(map[string]bool, len(outputs))
-	for _, output := range outputs {
-		outputNames[output.name] = true
-	}
-	for _, stmt := range selected {
-		var addressTaken string
-		ast.Inspect(stmt, func(node ast.Node) bool {
-			unary, ok := node.(*ast.UnaryExpr)
-			if !ok || unary.Op != token.AND {
-				return true
-			}
-			addressTaken = forwardedIdent(unary.X, outputNames)
-			return addressTaken == ""
-		})
-		if addressTaken != "" {
-			return fmt.Errorf("cannot extract %s: result local %q is address-taken in the selected region", owner, addressTaken)
-		}
-	}
-	return nil
+	return publishPreparedSource(input.ctx, sourcePublication{
+		path: input.cleanPath, diffPath: filepath.Base(input.cleanPath), before: input.content, after: formatted,
+		ownedBuffer: input.ownedBuffer, standalone: input.standalone, operation: "extract function",
+	})
 }
 
 func normalizeExtractionNewlines(source []byte) []byte {
@@ -229,12 +281,17 @@ func findExtractOwner(file *ast.File, name, recv string) *ast.FuncDecl {
 	return nil
 }
 
-func validateExtractOwner(file *ast.File, target *ast.FuncDecl, owner string, kind ExtractKind) error {
+func validateExtractOwner(target *ast.FuncDecl, owner string, kind ExtractKind) error {
 	if target.Body == nil {
 		return fmt.Errorf("cannot extract from %s: function has no body", owner)
 	}
 	if target.Type.TypeParams != nil && len(target.Type.TypeParams.List) > 0 {
 		return fmt.Errorf("cannot extract from generic function %s", owner)
+	}
+	for _, parameter := range target.Type.Params.List {
+		if _, variadic := parameter.Type.(*ast.Ellipsis); variadic {
+			return fmt.Errorf("cannot extract from variadic function %s", owner)
+		}
 	}
 	if target.Type.Results != nil {
 		for _, field := range target.Type.Results.List {
@@ -247,56 +304,153 @@ func validateExtractOwner(file *ast.File, target *ast.FuncDecl, owner string, ki
 		if len(target.Recv.List) != 1 || len(target.Recv.List[0].Names) != 1 {
 			return fmt.Errorf("cannot extract from %s: receiver must have one named variable", owner)
 		}
-		switch target.Recv.List[0].Type.(type) {
-		case *ast.IndexExpr, *ast.IndexListExpr:
+		if extractionReceiverIsInstantiatedGeneric(target.Recv.List[0].Type) {
 			return fmt.Errorf("cannot extract from generic receiver method %s", owner)
 		}
 	}
 	if kind == ExtractMethod && target.Recv == nil {
 		return fmt.Errorf("cannot extract method from function %s without a receiver", owner)
 	}
-	for _, group := range file.Comments {
-		if group.Pos() > target.Body.Lbrace && group.End() < target.Body.Rbrace {
-			return fmt.Errorf("cannot extract from %s: comments inside the owner function require manual comment ownership review", owner)
+	return nil
+}
+
+func validateExtractionCommentOwnership(input extractionInput, owner string) error {
+	selectedStart := input.selected[0].Pos()
+	selectedEnd := input.selected[len(input.selected)-1].End()
+	for _, group := range input.file.Comments {
+		if group.Pos() <= input.target.Body.Lbrace || group.End() >= input.target.Body.Rbrace {
+			continue
+		}
+		if group.Pos() < selectedStart || group.End() > selectedEnd {
+			return fmt.Errorf("cannot extract %s: comments outside the selected region require manual comment ownership review", owner)
+		}
+		if containsDirectiveGroup(group) {
+			return fmt.Errorf("cannot extract %s: directive comments cannot be moved with selected statements", owner)
 		}
 	}
 	return nil
 }
 
-func selectExtractStatements(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, error) {
-	selected, err := findExtractStatementRange(fset, body, owner, opts)
+func extractionReceiverIsInstantiatedGeneric(receiver ast.Expr) bool {
+	for {
+		switch item := receiver.(type) {
+		case *ast.StarExpr:
+			receiver = item.X
+		case *ast.ParenExpr:
+			receiver = item.X
+		case *ast.IndexExpr, *ast.IndexListExpr:
+			return true
+		default:
+			return false
+		}
+	}
+}
+
+func selectExtractStatements(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, *ast.BlockStmt, error) {
+	selected, block, err := findExtractStatementRange(fset, body, owner, opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	if opts.ConstructPath != "" {
+		opts.StartLine = fset.Position(selected[0].Pos()).Line
+		opts.EndLine = fset.Position(selected[len(selected)-1].End()).Line
 	}
 	for i, stmt := range selected {
 		if err := validateExtractStatement(fset, stmt, i, len(selected), owner, opts); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	return selected, nil
+	return selected, block, nil
 }
 
-func findExtractStatementRange(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, error) {
+func findExtractStatementRange(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, *ast.BlockStmt, error) {
+	if opts.ConstructPath != "" {
+		return findExtractPathRange(body, owner, opts)
+	}
 	startIdx, endIdx := -1, -1
 	for i, stmt := range body.List {
 		pos, end := fset.Position(stmt.Pos()), fset.Position(stmt.End())
 		if pos.Line == opts.StartLine {
 			if startIdx >= 0 {
-				return nil, fmt.Errorf("start_line %d matches multiple statements in %s", opts.StartLine, owner)
+				return nil, nil, fmt.Errorf("start_line %d matches multiple statements in %s", opts.StartLine, owner)
 			}
 			startIdx = i
 		}
 		if end.Line == opts.EndLine {
 			if endIdx >= 0 {
-				return nil, fmt.Errorf("end_line %d matches multiple statements in %s", opts.EndLine, owner)
+				return nil, nil, fmt.Errorf("end_line %d matches multiple statements in %s", opts.EndLine, owner)
 			}
 			endIdx = i
 		}
 	}
 	if startIdx < 0 || endIdx < 0 || endIdx < startIdx {
-		return nil, fmt.Errorf("line range %d-%d does not select a contiguous top-level statement region in %s", opts.StartLine, opts.EndLine, owner)
+		return nil, nil, fmt.Errorf("line range %d-%d does not select a contiguous top-level statement region in %s", opts.StartLine, opts.EndLine, owner)
 	}
-	return body.List[startIdx : endIdx+1], nil
+	return body.List[startIdx : endIdx+1], body, nil
+}
+
+type extractStatementLocation struct {
+	block      *ast.BlockStmt
+	index      int
+	switchCase bool
+}
+
+func validateExtractStatementPath(path string) error {
+	for part := range strings.SplitSeq(path, ".") {
+		index, err := strconv.Atoi(part)
+		if err != nil || index < 0 || strconv.Itoa(index) != part {
+			return fmt.Errorf("construct_path %q must be a canonical numeric statement path", path)
+		}
+	}
+	return nil
+}
+
+func findExtractStatementPath(root *ast.BlockStmt, target string, caseBlocks map[*ast.CaseClause]*ast.BlockStmt) (extractStatementLocation, bool) {
+	var match extractStatementLocation
+	var found bool
+	var walkBlock func(*ast.BlockStmt, string, bool)
+	var walkStatement func(ast.Stmt, string)
+	walkBlock = func(block *ast.BlockStmt, prefix string, switchCase bool) {
+		if block == nil || found {
+			return
+		}
+		for index, stmt := range block.List {
+			path := childLoopPath(prefix, index)
+			if path == target {
+				match = extractStatementLocation{block: block, index: index, switchCase: switchCase}
+				found = true
+				return
+			}
+			if switchCase {
+				continue
+			}
+			walkStatement(stmt, path)
+			if found {
+				return
+			}
+		}
+	}
+	walkStatement = func(stmt ast.Stmt, path string) {
+		switch item := stmt.(type) {
+		case *ast.BlockStmt:
+			walkBlock(item, childLoopPath(path, 0), false)
+		case *ast.IfStmt:
+			walkBlock(item.Body, childLoopPath(path, 0), false)
+			if item.Else != nil {
+				walkStatement(item.Else, childLoopPath(path, 1))
+			}
+		case *ast.ForStmt:
+			walkBlock(item.Body, childLoopPath(path, 0), false)
+		case *ast.RangeStmt:
+			walkBlock(item.Body, childLoopPath(path, 0), false)
+		case *ast.SwitchStmt:
+			walkExtractSwitchCases(item, path, caseBlocks, walkBlock)
+		case *ast.LabeledStmt:
+			walkStatement(item.Stmt, childLoopPath(path, 0))
+		}
+	}
+	walkBlock(root, "", false)
+	return match, found
 }
 
 func validateExtractStatement(fset *token.FileSet, stmt ast.Stmt, index, count int, owner string, opts ExtractOptions) error {
@@ -306,75 +460,33 @@ func validateExtractStatement(fset *token.FileSet, stmt ast.Stmt, index, count i
 			return fmt.Errorf("cannot extract %s: selected statement on line %d is not a call expression", owner, fset.Position(stmt.Pos()).Line)
 		}
 	case *ast.AssignStmt:
-		if index != 0 || item.Tok != token.DEFINE || len(item.Lhs) == 0 || len(item.Lhs) != len(item.Rhs) {
-			return fmt.Errorf("cannot extract %s: only one leading := declaration with matching named results is supported", owner)
+		switch item.Tok {
+		case token.DEFINE, token.ASSIGN:
+			if len(item.Lhs) == 0 || len(item.Rhs) != len(item.Lhs) && len(item.Rhs) != 1 {
+				return fmt.Errorf("cannot extract %s: assignments must have matching targets and values", owner)
+			}
+		default:
+			return fmt.Errorf("cannot extract %s: only short declarations and plain assignments are supported", owner)
 		}
-		if err := validateExtractionResultNames(item.Lhs, owner); err != nil {
-			return err
+	case *ast.IfStmt:
+		if index != 0 || count != 1 {
+			return fmt.Errorf("cannot extract %s: an if/else must be selected as one complete statement", owner)
+		}
+	case *ast.ForStmt:
+		if index != 0 || count != 1 {
+			return fmt.Errorf("cannot extract %s: a counted loop must be selected as one complete statement", owner)
+		}
+	case *ast.RangeStmt:
+		if index != 0 || count != 1 {
+			return fmt.Errorf("cannot extract %s: a range loop must be selected as one complete statement", owner)
 		}
 	default:
-		return fmt.Errorf("cannot extract %s: selected statement on line %d is not a call or supported local declaration", owner, fset.Position(stmt.Pos()).Line)
+		return fmt.Errorf("cannot extract %s: selected statement on line %d is not a call, supported assignment, bounded if/else, or counted loop", owner, fset.Position(stmt.Pos()).Line)
 	}
 	if index == 0 && fset.Position(stmt.Pos()).Line != opts.StartLine || index == count-1 && fset.Position(stmt.End()).Line != opts.EndLine {
 		return fmt.Errorf("line range %d-%d must match statement boundaries exactly", opts.StartLine, opts.EndLine)
 	}
 	return nil
-}
-
-func validateExtractionResultNames(lhs []ast.Expr, owner string) error {
-	seen := make(map[string]bool, len(lhs))
-	for _, expression := range lhs {
-		ident, ok := expression.(*ast.Ident)
-		if !ok || ident.Name == "_" || seen[ident.Name] {
-			return fmt.Errorf("cannot extract %s: extraction results must be distinct named local variables", owner)
-		}
-		seen[ident.Name] = true
-	}
-	return nil
-}
-
-func validateExtractedScope(file *ast.File, target *ast.FuncDecl, selected []ast.Stmt, params []string, outputs []extractionOutput, owner string) error {
-	allowed := extractionScope(file, params)
-	locals := localBindings(target.Body)
-	for _, output := range outputs {
-		delete(locals, output.name)
-		allowed[output.name] = true
-	}
-	for _, stmt := range selected {
-		var literal bool
-		ast.Inspect(stmt, func(node ast.Node) bool {
-			if _, ok := node.(*ast.FuncLit); ok {
-				literal = true
-				return false
-			}
-			if _, ok := node.(*ast.CompositeLit); ok {
-				literal = true
-				return false
-			}
-			return !literal
-		})
-		if literal {
-			return fmt.Errorf("cannot extract %s: function literals and composite literals in the selected region are unsupported because their nested scope and keyed identifiers cannot be proven safely", owner)
-		}
-		if err := rejectShadowedNames(stmt, allowed, locals); err != nil {
-			return fmt.Errorf("cannot extract %s: %w", owner, err)
-		}
-	}
-	return nil
-}
-
-func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded []string, ownerName string) error {
-	if err := rejectSelectedRecoverCalls(selected, ownerName); err != nil {
-		return err
-	}
-	info := forwardedParameterInfo(owner, forwarded)
-	if len(info.names) == 0 {
-		return nil
-	}
-	if err := rejectAddressedOrCapturedForwarded(owner.Body, info.names, ownerName); err != nil {
-		return err
-	}
-	return rejectImplicitPointerReceivers(selected, info.names, info.types, ownerName)
 }
 
 func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
@@ -383,7 +495,7 @@ func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
 		ast.Inspect(stmt, func(node ast.Node) bool {
 			call, ok := node.(*ast.CallExpr)
 			if ok {
-				if ident, ok := call.Fun.(*ast.Ident); ok && ident.Name == "recover" {
+				if ident, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && ident.Name == "recover" {
 					recoveryCall = true
 					return false
 				}
@@ -397,129 +509,6 @@ func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
 	return nil
 }
 
-type forwardedNameInfo struct {
-	names map[string]bool
-	types map[string]ast.Expr
-}
-
-func forwardedParameterInfo(owner *ast.FuncDecl, forwarded []string) forwardedNameInfo {
-	info := forwardedNameInfo{names: make(map[string]bool, len(forwarded)), types: make(map[string]ast.Expr, len(forwarded))}
-	for _, name := range forwarded {
-		info.names[name] = true
-		if owner.Recv != nil && owner.Recv.List[0].Names[0].Name == name {
-			info.types[name] = owner.Recv.List[0].Type
-			continue
-		}
-		if owner.Type.Params != nil {
-			for _, field := range owner.Type.Params.List {
-				for _, ident := range field.Names {
-					if ident.Name == name {
-						info.types[name] = field.Type
-					}
-				}
-			}
-		}
-	}
-	return info
-}
-
-func rejectAddressedOrCapturedForwarded(body *ast.BlockStmt, forwardedSet map[string]bool, ownerName string) error {
-	var unsafe error
-	ast.Inspect(body, func(node ast.Node) bool {
-		if unsafe != nil || node == nil {
-			return false
-		}
-		switch item := node.(type) {
-		case *ast.UnaryExpr:
-			if item.Op == token.AND {
-				if name := forwardedIdent(item.X, forwardedSet); name != "" {
-					unsafe = fmt.Errorf("cannot extract %s: forwarded parameter or receiver %q is address-taken in the owner body", ownerName, name)
-					return false
-				}
-			}
-		case *ast.FuncLit:
-			var captured string
-			ast.Inspect(item.Body, func(nested ast.Node) bool {
-				ident, ok := nested.(*ast.Ident)
-				if ok && forwardedSet[ident.Name] && !parentSelectorIdent(item.Body, ident) {
-					captured = ident.Name
-					return false
-				}
-				return captured == ""
-			})
-			if captured != "" {
-				unsafe = fmt.Errorf("cannot extract %s: forwarded parameter or receiver %q may be captured by a closure in the owner body", ownerName, captured)
-				return false
-			}
-		}
-		return true
-	})
-	if unsafe != nil {
-		return unsafe
-	}
-	return nil
-}
-
-func rejectImplicitPointerReceivers(selected []ast.Stmt, forwardedSet map[string]bool, typesByName map[string]ast.Expr, ownerName string) error {
-	var unsafe error
-	for _, stmt := range selected {
-		ast.Inspect(stmt, func(node ast.Node) bool {
-			if unsafe != nil || node == nil {
-				return false
-			}
-			call, ok := node.(*ast.CallExpr)
-			if !ok {
-				return true
-			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return true
-			}
-			root := forwardedIdent(selector.X, forwardedSet)
-			if root == "" || isPointerType(typesByName[root]) {
-				return true
-			}
-			unsafe = fmt.Errorf("cannot extract %s: call %s may use an implicit pointer receiver on forwarded value %q", ownerName, selector.Sel.Name, root)
-			return false
-		})
-		if unsafe != nil {
-			return unsafe
-		}
-	}
-	return nil
-}
-
-func forwardedIdent(expr ast.Expr, forwarded map[string]bool) string {
-	switch node := expr.(type) {
-	case *ast.Ident:
-		if forwarded[node.Name] {
-			return node.Name
-		}
-	case *ast.SelectorExpr:
-		return forwardedIdent(node.X, forwarded)
-	case *ast.IndexExpr:
-		return forwardedIdent(node.X, forwarded)
-	case *ast.IndexListExpr:
-		return forwardedIdent(node.X, forwarded)
-	case *ast.ParenExpr:
-		return forwardedIdent(node.X, forwarded)
-	}
-	return ""
-}
-
-func isPointerType(expr ast.Expr) bool {
-	for {
-		switch node := expr.(type) {
-		case *ast.StarExpr:
-			return true
-		case *ast.ParenExpr:
-			expr = node.X
-		default:
-			return false
-		}
-	}
-}
-
 func extractionCall(target *ast.FuncDecl, helper string, params []string, outputs []extractionOutput, kind ExtractKind) string {
 	args := append([]string(nil), params...)
 	callName := helper
@@ -529,20 +518,230 @@ func extractionCall(target *ast.FuncDecl, helper string, params []string, output
 		args = removeString(args, receiver.Names[0].Name)
 	}
 	call := callName + "(" + strings.Join(args, ", ") + ")"
-	if len(outputs) > 0 {
-		names := make([]string, len(outputs))
-		for index, output := range outputs {
-			names[index] = output.name
-		}
-		call = strings.Join(names, ", ") + " := " + call
+	if len(outputs) == 0 {
+		return call
 	}
-	return call
+	names := make([]string, len(outputs))
+	declarations := make([]string, 0, len(outputs))
+	hasNew, hasExisting := false, false
+	for index, output := range outputs {
+		names[index] = output.name
+		if output.newBinding {
+			hasNew = true
+		} else {
+			hasExisting = true
+		}
+	}
+	operator := " = "
+	canReuseExisting := true
+	for _, output := range outputs {
+		if !output.newBinding && !output.existingInCallScope {
+			canReuseExisting = false
+		}
+	}
+	if hasNew && (!hasExisting || canReuseExisting) {
+		operator = " := "
+	} else if hasNew {
+		for _, output := range outputs {
+			if output.newBinding {
+				declarations = append(declarations, "var "+output.name+" "+output.typeName)
+			}
+		}
+	}
+	assignment := strings.Join(names, ", ") + operator + call
+	if len(declarations) == 0 {
+		return assignment
+	}
+	return strings.Join(declarations, "\n") + "\n" + assignment
 }
 
-func rewriteExtractedStatements(content []byte, fset *token.FileSet, target *ast.FuncDecl, selected []ast.Stmt, callSource, declSource, owner string) ([]byte, error) {
+func validateExtractionOutputCallBindings(input extractionInput, helper string, outputs []extractionOutput, kind ExtractKind) error {
+	hasNew, hasAncestor := false, false
+	for _, output := range outputs {
+		if output.newBinding {
+			hasNew = true
+		}
+		if !output.newBinding && !output.existingInCallScope {
+			hasAncestor = true
+		}
+	}
+	if hasNew && hasAncestor {
+		for _, output := range outputs {
+			if output.newBinding {
+				if err := validatePredeclaredExtractionOutputType(input, output.typeValue); err != nil {
+					return fmt.Errorf("cannot extract: %w", err)
+				}
+			}
+		}
+	}
+	for _, output := range outputs {
+		if output.newBinding && output.name == helper {
+			return fmt.Errorf("cannot extract: new output %q would shadow the generated helper call", output.name)
+		}
+		if output.newBinding && kind == ExtractMethod && input.target.Recv != nil && len(input.target.Recv.List[0].Names) == 1 && output.name == input.target.Recv.List[0].Names[0].Name {
+			return fmt.Errorf("cannot extract: new output %q would shadow the method receiver at the generated call", output.name)
+		}
+	}
+	return nil
+}
+
+func validatePredeclaredExtractionOutputType(input extractionInput, outputType types.Type) error {
+	functionScope := input.typesInfo.Scopes[input.target.Type]
+	if functionScope == nil {
+		return fmt.Errorf("result type binding scope is unavailable")
+	}
+	scope := functionScope.Innermost(input.selected[0].Pos())
+	if scope == nil {
+		return fmt.Errorf("result type binding scope is unavailable")
+	}
+	return validatePredeclaredExtractionType(outputType, input, scope, make(map[types.Type]bool))
+}
+
+func validatePredeclaredExtractionType(typ types.Type, input extractionInput, scope *types.Scope, seen map[types.Type]bool) error {
+	if seen[typ] {
+		return nil
+	}
+	seen[typ] = true
+	position := input.selected[0].Pos()
+	switch resolved := typ.(type) {
+	case *types.Alias:
+		if err := validatePredeclaredExtractionTypeObject(input, scope, position, resolved.Obj()); err != nil {
+			return err
+		}
+	case *types.Basic:
+		universeObject, ok := types.Universe.Lookup(resolved.Name()).(*types.TypeName)
+		if ok {
+			if err := validatePredeclaredExtractionTypeName(scope, position, universeObject); err != nil {
+				return err
+			}
+		}
+	case *types.Named:
+		if err := validatePredeclaredExtractionTypeObject(input, scope, position, resolved.Obj()); err != nil {
+			return err
+		}
+	}
+	for _, child := range predeclaredExtractionTypeChildren(typ) {
+		if err := validatePredeclaredExtractionType(child, input, scope, seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePredeclaredExtractionTypeObject(input extractionInput, scope *types.Scope, position token.Pos, expected *types.TypeName) error {
+	if expected.Pkg() == nil || expected.Pkg() == input.typesInfo.Defs[input.target.Name].Pkg() {
+		return validatePredeclaredExtractionTypeName(scope, position, expected)
+	}
+	return validatePredeclaredExtractionPackageName(input, scope, position, expected.Pkg())
+}
+
+func predeclaredExtractionTypeChildren(typ types.Type) []types.Type {
+	switch resolved := typ.(type) {
+	case *types.Alias:
+		return predeclaredExtractionTypeList(resolved.TypeArgs())
+	case *types.Named:
+		return predeclaredExtractionTypeList(resolved.TypeArgs())
+	case *types.Pointer:
+		return []types.Type{resolved.Elem()}
+	case *types.Array:
+		return []types.Type{resolved.Elem()}
+	case *types.Slice:
+		return []types.Type{resolved.Elem()}
+	case *types.Chan:
+		return []types.Type{resolved.Elem()}
+	case *types.Map:
+		return []types.Type{resolved.Key(), resolved.Elem()}
+	case *types.Struct:
+		children := make([]types.Type, 0, resolved.NumFields())
+		for field := range resolved.Fields() {
+			children = append(children, field.Type())
+		}
+		return children
+	case *types.Signature:
+		return []types.Type{resolved.Params(), resolved.Results()}
+	case *types.Tuple:
+		children := make([]types.Type, 0, resolved.Len())
+		for variable := range resolved.Variables() {
+			children = append(children, variable.Type())
+		}
+		return children
+	case *types.Interface:
+		resolved.Complete()
+		children := make([]types.Type, 0, resolved.NumMethods()+resolved.NumEmbeddeds())
+		for method := range resolved.Methods() {
+			children = append(children, method.Type())
+		}
+		for embedded := range resolved.EmbeddedTypes() {
+			children = append(children, embedded)
+		}
+		return children
+	default:
+		return nil
+	}
+}
+
+func predeclaredExtractionTypeList(list *types.TypeList) []types.Type {
+	if list == nil {
+		return nil
+	}
+	children := make([]types.Type, 0, list.Len())
+	for t := range list.Types() {
+		children = append(children, t)
+	}
+	return children
+}
+
+func validatePredeclaredExtractionTypeName(scope *types.Scope, position token.Pos, expected *types.TypeName) error {
+	_, actual := scope.LookupParent(expected.Name(), position)
+	if actual != expected {
+		return fmt.Errorf("result type %q is shadowed at the replacement site", expected.Name())
+	}
+	return nil
+}
+
+func validatePredeclaredExtractionPackageName(input extractionInput, scope *types.Scope, position token.Pos, expected *types.Package) error {
+	for _, imported := range input.file.Imports {
+		path, err := strconv.Unquote(imported.Path.Value)
+		if err != nil {
+			return fmt.Errorf("decode import path for result type package %q: %w", expected.Name(), err)
+		}
+		if path != expected.Path() {
+			continue
+		}
+		name := expected.Name()
+		if imported.Name != nil {
+			if imported.Name.Name == "." {
+				return fmt.Errorf("dot import %q prevents proving the generated result type binding", path)
+			}
+			if imported.Name.Name != "_" {
+				name = imported.Name.Name
+			}
+		}
+		var pkgName *types.PkgName
+		if imported.Name == nil {
+			pkgName, _ = input.typesInfo.Implicits[imported].(*types.PkgName)
+		} else {
+			pkgName, _ = input.typesInfo.Defs[imported.Name].(*types.PkgName)
+		}
+		if pkgName == nil {
+			return fmt.Errorf("import binding for result type package %q is unavailable", name)
+		}
+		_, actual := scope.LookupParent(name, position)
+		if actual != pkgName {
+			return fmt.Errorf("result type package name %q is shadowed at the replacement site", name)
+		}
+		return nil
+	}
+	return fmt.Errorf("result type package %q is not imported at the replacement site", expected.Name())
+}
+
+func rewriteExtractedStatements(content []byte, fset *token.FileSet, target *ast.FuncDecl, block *ast.BlockStmt, selected []ast.Stmt, callSource, declSource, owner string, file *ast.File) ([]byte, error) {
+	if err := validateSelectedExtractionBlock(block, selected); err != nil {
+		return nil, fmt.Errorf("cannot extract %s: %w", owner, err)
+	}
 	start := fset.Position(selected[0].Pos()).Offset
 	end := fset.Position(selected[len(selected)-1].End()).Offset
-	insert := fset.Position(target.End()).Offset
+	insert := normalizeInsertionOffset(fset, file, content, fset.Position(target.End()).Offset)
 	if insert < end {
 		return nil, fmt.Errorf("cannot extract %s: selected region overlaps the declaration boundary", owner)
 	}
@@ -552,91 +751,57 @@ func rewriteExtractedStatements(content []byte, fset *token.FileSet, target *ast
 	updated = append(updated, content[end:insert]...)
 	updated = append(updated, '\n', '\n')
 	updated = append(updated, declSource...)
-	updated = append(updated, content[insert:]...)
-	return updated, nil
-}
-func extractOutputs(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt) ([]extractionOutput, error) {
-	assignment, ok := selected[0].(*ast.AssignStmt)
-	if !ok {
-		return nil, nil
-	}
-	if len(assignment.Lhs) == 0 || len(assignment.Lhs) != len(assignment.Rhs) {
-		return nil, fmt.Errorf("cannot extract declaration with mismatched result expressions")
-	}
-	outputs := make([]extractionOutput, 0, len(assignment.Lhs))
-	for index, lhs := range assignment.Lhs {
-		ident, ok := lhs.(*ast.Ident)
-		if !ok || ident.Name == "_" {
-			return nil, fmt.Errorf("cannot extract: declaration results must be named local variables")
+	suffix := content[insert:]
+	if len(suffix) > 0 {
+		lineEnding := []byte("\n")
+		if bytes.HasPrefix(suffix, []byte("\r\n")) {
+			lineEnding = []byte("\r\n")
 		}
-		if localDeclarationCount(owner.Body, ident.Name) != 1 {
-			return nil, fmt.Errorf("local %q has multiple owner-scope bindings and cannot be moved safely", ident.Name)
-		}
-		if parameterHasName(owner.Type.Params, ident.Name) || owner.Recv != nil && fieldListHasName(owner.Recv, ident.Name) {
-			return nil, fmt.Errorf("local %q overlaps an owner parameter or receiver", ident.Name)
-		}
-		usedAfter := false
-		for _, later := range owner.Body.List {
-			if later.Pos() > selected[len(selected)-1].End() && statementUsesName(later, ident.Name) {
-				usedAfter = true
-				break
+		leadingLineBreaks := 0
+		for offset := 0; offset < len(suffix); {
+			switch suffix[offset] {
+			case '\n':
+				leadingLineBreaks++
+				offset++
+			case '\r':
+				if offset+1 >= len(suffix) || suffix[offset+1] != '\n' {
+					offset = len(suffix)
+					continue
+				}
+				leadingLineBreaks++
+				offset += 2
+			default:
+				offset = len(suffix)
 			}
 		}
-		if !usedAfter {
-			return nil, fmt.Errorf("local %q is not used after the selected region", ident.Name)
-		}
-		resultType, err := inferExtractType(fset, owner, assignment.Rhs[index])
-		if err != nil {
-			return nil, err
-		}
-		outputs = append(outputs, extractionOutput{name: ident.Name, typeName: resultType})
-	}
-	return outputs, nil
-}
-
-func localDeclarationCount(body *ast.BlockStmt, name string) int {
-	count := 0
-	ast.Inspect(body, func(node ast.Node) bool {
-		count += localDeclarationCountAt(node, name)
-		return true
-	})
-	return count
-}
-
-func localDeclarationCountAt(node ast.Node, name string) int {
-	switch item := node.(type) {
-	case *ast.AssignStmt:
-		if item.Tok == token.DEFINE {
-			return matchingIdentifierCount(item.Lhs, name)
-		}
-	case *ast.ValueSpec:
-		return matchingNameCount(item.Names, name)
-	case *ast.RangeStmt:
-		if item.Tok == token.DEFINE {
-			return matchingIdentifierCount([]ast.Expr{item.Key, item.Value}, name)
+		for range max(0, 2-leadingLineBreaks) {
+			updated = append(updated, lineEnding...)
 		}
 	}
-	return 0
+	updated = append(updated, suffix...)
+	return updated, nil
 }
 
-func matchingIdentifierCount(expressions []ast.Expr, name string) int {
-	count := 0
-	for _, expr := range expressions {
-		if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-			count++
+func validateSelectedExtractionBlock(block *ast.BlockStmt, selected []ast.Stmt) error {
+	if block == nil || len(selected) == 0 {
+		return fmt.Errorf("selected statements have no owning block")
+	}
+	start := -1
+	for index, stmt := range block.List {
+		if stmt == selected[0] {
+			start = index
+			break
 		}
 	}
-	return count
-}
-
-func matchingNameCount(identifiers []*ast.Ident, name string) int {
-	count := 0
-	for _, ident := range identifiers {
-		if ident.Name == name {
-			count++
+	if start < 0 || start+len(selected) > len(block.List) {
+		return fmt.Errorf("selected statements are not a contiguous range in one block")
+	}
+	for index, stmt := range selected {
+		if block.List[start+index] != stmt {
+			return fmt.Errorf("selected statements are not a contiguous range in one block")
 		}
 	}
-	return count
+	return nil
 }
 
 func parameterHasName(fields *ast.FieldList, name string) bool {
@@ -657,213 +822,26 @@ func fieldListHasName(fields *ast.FieldList, name string) bool {
 	return parameterHasName(fields, name)
 }
 
-func statementUsesName(stmt ast.Stmt, name string) bool {
-	used := false
-	ast.Inspect(stmt, func(node ast.Node) bool {
-		ident, ok := node.(*ast.Ident)
-		if ok && ident.Name == name && !parentSelectorIdent(stmt, ident) {
-			used = true
-			return false
-		}
-		return !used
-	})
-	return used
-}
-
-func inferExtractType(fset *token.FileSet, owner *ast.FuncDecl, expr ast.Expr) (string, error) {
-	switch node := expr.(type) {
-	case *ast.BasicLit:
-		switch node.Kind {
-		case token.INT:
-			return "int", nil
-		case token.FLOAT:
-			return "float64", nil
-		case token.CHAR:
-			return "rune", nil
-		case token.STRING:
-			return "string", nil
-		default:
-			return "", fmt.Errorf("literal kind %s has no supported inferred extraction type", node.Kind)
-		}
-	case *ast.Ident:
-		if node.Name == "true" || node.Name == "false" {
-			return "bool", nil
-		}
-		if owner.Type.Params != nil {
-			for _, field := range owner.Type.Params.List {
-				for _, name := range field.Names {
-					if name.Name == node.Name {
-						return nodeSource(fset, field.Type)
-					}
-				}
-			}
-		}
-	case *ast.UnaryExpr:
-		if node.Op == token.ADD || node.Op == token.SUB || node.Op == token.NOT {
-			return inferExtractType(fset, owner, node.X)
-		}
-	case *ast.ParenExpr:
-		return inferExtractType(fset, owner, node.X)
-	}
-	return "", fmt.Errorf("cannot infer a safe return type for local declaration expression %q", formatExpr(fset, expr))
-}
-
-func formatExpr(fset *token.FileSet, expr ast.Expr) string {
-	text, err := nodeSource(fset, expr)
-	if err != nil {
-		return "<unprintable>"
-	}
-	return text
-}
-
-type extractionParameterSet struct {
-	names        []string
-	declarations []string
-}
-
-func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt, kind ExtractKind, outputs []extractionOutput) (extractionParameterSet, error) {
-	used := extractionUsedNames(selected, outputs)
-	params := extractionParameterSet{}
-	if err := appendReceiverParameter(fset, owner, kind, used, &params); err != nil {
-		return extractionParameterSet{}, err
-	}
-	if err := appendFunctionParameters(fset, owner, used, &params); err != nil {
-		return extractionParameterSet{}, err
-	}
-	if kind == ExtractMethod && owner.Recv == nil {
-		return extractionParameterSet{}, fmt.Errorf("method extraction requires an owner receiver")
-	}
-	return params, nil
-}
-
-func extractionUsedNames(selected []ast.Stmt, outputs []extractionOutput) map[string]bool {
-	used := make(map[string]bool)
-	for _, stmt := range selected {
-		ast.Inspect(stmt, func(node ast.Node) bool {
-			ident, ok := node.(*ast.Ident)
-			if !ok || ident.Name == "_" || parentSelectorIdent(stmt, ident) || slices.ContainsFunc(outputs, func(output extractionOutput) bool { return output.name == ident.Name }) {
-				return true
-			}
-			used[ident.Name] = true
-			return true
-		})
-	}
-	return used
-}
-
-func appendReceiverParameter(fset *token.FileSet, owner *ast.FuncDecl, kind ExtractKind, used map[string]bool, params *extractionParameterSet) error {
-	if owner.Recv == nil {
-		return nil
-	}
-	field := owner.Recv.List[0]
-	name := field.Names[0].Name
-	if !used[name] {
-		return nil
-	}
-	params.names = append(params.names, name)
-	if kind != ExtractKindFunction {
-		return nil
-	}
-	text, err := nodeSource(fset, field.Type)
-	if err != nil {
-		return err
-	}
-	params.declarations = append(params.declarations, name+" "+text)
-	return nil
-}
-
-func appendFunctionParameters(fset *token.FileSet, owner *ast.FuncDecl, used map[string]bool, params *extractionParameterSet) error {
-	if owner.Type.Params != nil {
-		for _, field := range owner.Type.Params.List {
-			if _, ok := field.Type.(*ast.Ellipsis); ok {
-				return fmt.Errorf("variadic owner parameters are unsupported")
-			}
-			if len(field.Names) == 0 {
-				continue
-			}
-			typeText, err := nodeSource(fset, field.Type)
-			if err != nil {
-				return err
-			}
-			for _, ident := range field.Names {
-				if used[ident.Name] && !slices.Contains(params.names, ident.Name) {
-					params.declarations = append(params.declarations, ident.Name+" "+typeText)
-					params.names = append(params.names, ident.Name)
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func extractionScope(file *ast.File, params []string) map[string]bool {
-	allowed := make(map[string]bool)
-	for _, name := range params {
-		allowed[name] = true
-	}
-	for _, decl := range file.Decls {
-		switch node := decl.(type) {
-		case *ast.FuncDecl:
-			allowed[node.Name.Name] = true
-		case *ast.GenDecl:
-			for _, spec := range node.Specs {
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					allowed[item.Name.Name] = true
-				case *ast.ValueSpec:
-					for _, ident := range item.Names {
-						allowed[ident.Name] = true
-					}
-				}
-			}
-		}
-	}
-	for _, spec := range file.Imports {
-		path, err := strconv.Unquote(spec.Path.Value)
-		if err != nil {
-			continue
-		}
-		if spec.Name != nil {
-			if spec.Name.Name != "_" && spec.Name.Name != "." {
-				allowed[spec.Name.Name] = true
-			}
-		} else {
-			alias := filepath.Base(path)
-			if token.IsIdentifier(alias) {
-				allowed[alias] = true
-			}
-		}
-	}
-	for _, name := range types.Universe.Names() {
-		allowed[name] = true
-	}
-	return allowed
-}
-
 func localBindings(body *ast.BlockStmt) map[string]bool {
 	locals := make(map[string]bool)
 	ast.Inspect(body, func(node ast.Node) bool {
-		addLocalBindingsAt(node, locals)
+		switch item := node.(type) {
+		case *ast.AssignStmt:
+			if item.Tok == token.DEFINE {
+				addIdentifierBindings(item.Lhs, locals)
+			}
+		case *ast.ValueSpec:
+			for _, ident := range item.Names {
+				locals[ident.Name] = true
+			}
+		case *ast.RangeStmt:
+			if item.Tok == token.DEFINE {
+				addIdentifierBindings([]ast.Expr{item.Key, item.Value}, locals)
+			}
+		}
 		return true
 	})
 	return locals
-}
-
-func addLocalBindingsAt(node ast.Node, locals map[string]bool) {
-	switch item := node.(type) {
-	case *ast.AssignStmt:
-		if item.Tok == token.DEFINE {
-			addIdentifierBindings(item.Lhs, locals)
-		}
-	case *ast.ValueSpec:
-		for _, ident := range item.Names {
-			locals[ident.Name] = true
-		}
-	case *ast.RangeStmt:
-		if item.Tok == token.DEFINE {
-			addIdentifierBindings([]ast.Expr{item.Key, item.Value}, locals)
-		}
-	}
 }
 
 func addIdentifierBindings(expressions []ast.Expr, locals map[string]bool) {
@@ -874,27 +852,10 @@ func addIdentifierBindings(expressions []ast.Expr, locals map[string]bool) {
 	}
 }
 
-func rejectShadowedNames(stmt ast.Stmt, allowed, locals map[string]bool) error {
-	var result error
-	ast.Inspect(stmt, func(node ast.Node) bool {
-		if result != nil || node == nil {
-			return false
-		}
-		ident, ok := node.(*ast.Ident)
-		if !ok || parentSelectorIdent(stmt, ident) {
-			return true
-		}
-		if locals[ident.Name] {
-			result = fmt.Errorf("identifier %q may be shadowed by an owner-local declaration", ident.Name)
-			return false
-		}
-		if ident.Name == "_" || !allowed[ident.Name] {
-			result = fmt.Errorf("identifier %q is outside the extraction scope", ident.Name)
-			return false
-		}
-		return true
-	})
-	return result
+type extractionParameterSet struct {
+	names        []string
+	declarations []string
+	positions    map[string]token.Pos
 }
 
 func parentSelectorIdent(root ast.Node, target *ast.Ident) bool {
@@ -993,6 +954,25 @@ func helperNameExists(ctx context.Context, filePath, packageName, helper string,
 }
 
 func packageDeclaresExtractionHelper(file *ast.File, helper string, kind ExtractKind, receiver string) bool {
+	if kind == ExtractMethod {
+		collision := false
+		ast.Inspect(file, func(node ast.Node) bool {
+			iface, ok := node.(*ast.InterfaceType)
+			if !ok {
+				return true
+			}
+			for _, field := range iface.Methods.List {
+				if slices.ContainsFunc(field.Names, func(name *ast.Ident) bool { return name.Name == helper }) {
+					collision = true
+					return false
+				}
+			}
+			return true
+		})
+		if collision {
+			return true
+		}
+	}
 	for _, decl := range file.Decls {
 		if declarationMatchesExtractionHelper(decl, helper, kind, receiver) {
 			return true
@@ -1045,8 +1025,15 @@ func validateExtractionCandidate(ctx context.Context, filePath string, source []
 	}
 	cleanPath := filepath.Clean(filePath)
 	overlay[cleanPath] = bytes.Clone(source)
-	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, extractionLoadOptions{}); err != nil {
+	testFile := strings.HasSuffix(filepath.Base(cleanPath), "_test.go")
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, extractionLoadOptions{tests: true, typeInfo: true})
+	if err != nil {
 		return fmt.Errorf("validate complete extracted package: %w", err)
+	}
+	if testFile {
+		if _, _, _, _, err := typedExtractionFile(loaded, cleanPath); err != nil {
+			return fmt.Errorf("validate complete extracted test package: %w", err)
+		}
 	}
 	return nil
 }
@@ -1058,11 +1045,16 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 		overlay = make(map[string][]byte)
 	}
 	overlay[filepath.Clean(filePath)] = bytes.Clone(source)
-	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay, extractionLoadOptions{})
+	testFile := strings.HasSuffix(filepath.Base(filePath), "_test.go")
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay, extractionLoadOptions{tests: testFile, typeInfo: true})
 	if err != nil {
 		return fmt.Errorf("resolve extracted result types: %w", err)
 	}
-	if len(loaded) != 1 || loaded[0].Types == nil {
+	packageForFile, _, _, _, err := typedExtractionFile(loaded, filePath)
+	if err != nil {
+		return fmt.Errorf("resolve extracted result types: %w", err)
+	}
+	if packageForFile.Types == nil {
 		return fmt.Errorf("resolve extracted result types: package scope is ambiguous")
 	}
 	for _, output := range outputs {
@@ -1070,7 +1062,7 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 		if universeType == nil {
 			continue
 		}
-		if packageType := loaded[0].Types.Scope().Lookup(output.typeName); packageType != nil {
+		if packageType := packageForFile.Types.Scope().Lookup(output.typeName); packageType != nil {
 			return fmt.Errorf("cannot extract %s: generated result type %q is shadowed by a package declaration", owner, output.typeName)
 		}
 		for _, imported := range file.Imports {
@@ -1082,7 +1074,7 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 				if unquoteErr != nil {
 					return fmt.Errorf("read import path while checking extracted result type: %w", unquoteErr)
 				}
-				importedPackage := loaded[0].Imports[importPath]
+				importedPackage := packageForFile.Imports[importPath]
 				if importedPackage == nil || importedPackage.Name == "" {
 					return fmt.Errorf("cannot extract %s: imported package %q has no resolved package name", owner, importPath)
 				}
@@ -1095,6 +1087,167 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 				return fmt.Errorf("cannot extract %s: generated result type %q conflicts with an imported package name", owner, output.typeName)
 			}
 		}
+	}
+	return nil
+}
+
+func helperNameShadowedAtReplacement(input extractionInput, helper string, kind ExtractKind) bool {
+	if len(input.selected) == 0 || input.typesInfo == nil || input.target == nil {
+		return true
+	}
+	functionScope := input.typesInfo.Scopes[input.target.Type]
+	if functionScope == nil {
+		return true
+	}
+	replacementScope := functionScope.Innermost(input.selected[0].Pos())
+	if replacementScope == nil {
+		replacementScope = functionScope
+	}
+	switch kind {
+	case ExtractKindFunction:
+		declaringScope, object := replacementScope.LookupParent(helper, input.selected[0].Pos())
+		for scope := declaringScope; scope != nil; scope = scope.Parent() {
+			if scope == functionScope || scope == input.typesInfo.Scopes[input.file] {
+				return object != nil
+			}
+		}
+		return false
+	case ExtractMethod:
+		receiver := input.target.Recv.List[0].Names[0]
+		receiverObject := input.typesInfo.Defs[receiver]
+		declaringScope, object := replacementScope.LookupParent(receiver.Name, input.selected[0].Pos())
+		if receiverObject == nil || object != receiverObject {
+			return true
+		}
+		for scope := declaringScope; scope != nil; scope = scope.Parent() {
+			if scope == functionScope {
+				return false
+			}
+		}
+		return true
+	default:
+		return true
+	}
+}
+
+func findExtractPathRange(body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, *ast.BlockStmt, error) {
+	caseBlocks := make(map[*ast.CaseClause]*ast.BlockStmt)
+	start, found := findExtractStatementPath(body, opts.ConstructPath, caseBlocks)
+	if !found {
+		return nil, nil, fmt.Errorf("construct_path %q does not select a supported statement in %s", opts.ConstructPath, owner)
+	}
+	end := start
+	if opts.EndConstructPath != "" {
+		end, found = findExtractStatementPath(body, opts.EndConstructPath, caseBlocks)
+		if !found {
+			return nil, nil, fmt.Errorf("end_construct_path %q does not select a supported statement in %s", opts.EndConstructPath, owner)
+		}
+	}
+	if start.block != end.block {
+		return nil, nil, fmt.Errorf("construct_path range %q-%q must select statements from the same block in %s", opts.ConstructPath, opts.EndConstructPath, owner)
+	}
+	if end.index < start.index {
+		return nil, nil, fmt.Errorf("end_construct_path %q precedes construct_path %q in %s", opts.EndConstructPath, opts.ConstructPath, owner)
+	}
+	selected := start.block.List[start.index : end.index+1]
+	if start.switchCase {
+		directCalls := true
+		for _, stmt := range selected {
+			expression, ok := stmt.(*ast.ExprStmt)
+			if !ok {
+				directCalls = false
+				break
+			}
+			if _, ok := expression.X.(*ast.CallExpr); !ok {
+				directCalls = false
+				break
+			}
+		}
+		if !directCalls {
+			if len(selected) != 1 {
+				return nil, nil, fmt.Errorf("cannot extract %s: switch-case selections support direct call ranges or one existing-local assignment", owner)
+			}
+			assignment, ok := selected[0].(*ast.AssignStmt)
+			if !ok || assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+				return nil, nil, fmt.Errorf("cannot extract %s: switch-case selections support direct call ranges or one existing-local assignment", owner)
+			}
+		}
+	}
+	return selected, start.block, nil
+}
+
+func walkExtractSwitchCases(stmt *ast.SwitchStmt, path string, caseBlocks map[*ast.CaseClause]*ast.BlockStmt, walkBlock func(*ast.BlockStmt, string, bool)) {
+	for index, statement := range stmt.Body.List {
+		clause, ok := statement.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		block := caseBlocks[clause]
+		if block == nil {
+			block = &ast.BlockStmt{List: clause.Body}
+			caseBlocks[clause] = block
+		}
+		walkBlock(block, childLoopPath(path, index), true)
+	}
+}
+
+func validateExtractSwitchAssignment(input *extractionInput, owner string) error {
+	if len(input.selected) != 1 {
+		return nil
+	}
+	assignment, ok := input.selected[0].(*ast.AssignStmt)
+	if !ok {
+		return nil
+	}
+	ast.Inspect(input.target.Body, func(node ast.Node) bool {
+		switchStmt, isSwitch := node.(*ast.SwitchStmt)
+		if !isSwitch {
+			return true
+		}
+		for _, item := range switchStmt.Body.List {
+			clause, isClause := item.(*ast.CaseClause)
+			if isClause && slices.Contains(clause.Body, input.selected[0]) {
+				input.selectionSwitch = switchStmt
+				return false
+			}
+		}
+		return true
+	})
+	if input.selectionSwitch == nil {
+		return nil
+	}
+	if assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return fmt.Errorf("cannot extract %s: switch-case assignment must be a single existing-local or parameter assignment", owner)
+	}
+	target, ok := assignment.Lhs[0].(*ast.Ident)
+	if !ok {
+		return fmt.Errorf("cannot extract %s: switch-case assignment target must be an existing owner local or named parameter", owner)
+	}
+	object, ok := input.typesInfo.Uses[target].(*types.Var)
+	functionScope := input.typesInfo.Scopes[input.target.Type]
+	if !ok || object.IsField() || object.Parent() == nil || functionScope == nil || !functionScope.Contains(object.Pos()) {
+		return fmt.Errorf("cannot extract %s: switch-case assignment target must be an existing owner local or named parameter", owner)
+	}
+	if extractionReceiverObject(*input, object) {
+		return fmt.Errorf("cannot extract %s: switch-case assignment does not support the owner receiver", owner)
+	}
+	parameter := false
+	for _, field := range input.target.Type.Params.List {
+		for _, name := range field.Names {
+			if input.typesInfo.Defs[name] == object {
+				parameter = true
+				break
+			}
+		}
+		if parameter {
+			break
+		}
+	}
+	if !parameter && object.Pos() >= input.selectionSwitch.Pos() {
+		return fmt.Errorf("cannot extract %s: switch-case assignment target must be declared before the switch", owner)
+	}
+	if !extractObjectReadAfter(*input, input.selectionSwitch.End(), object) {
+		return fmt.Errorf("cannot extract %s: switch-case assignment target must be read after the switch", owner)
 	}
 	return nil
 }

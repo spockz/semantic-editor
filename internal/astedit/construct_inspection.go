@@ -32,8 +32,9 @@ func containsConstructKind(kinds []ConstructKind, kind ConstructKind) bool {
 
 // ConstructCandidateInfo describes one exact candidate and its normalized syntax.
 type ConstructCandidateInfo struct {
-	ConstructPath string `json:"construct_path"`
-	Syntax        string `json:"syntax"`
+	ConstructPath    string `json:"construct_path"`
+	EndConstructPath string `json:"end_construct_path,omitempty"`
+	Syntax           string `json:"syntax"`
 }
 
 // ConstructCandidateSet reports the current candidate list and its opaque revision.
@@ -43,6 +44,7 @@ type ConstructCandidateSet struct {
 	Discriminator     string                   `json:"discriminator,omitempty"`
 	Candidates        []ConstructCandidateInfo `json:"candidates"`
 	SelectionRevision string                   `json:"expected_selection_revision"`
+	SourceRevision    string                   `json:"-"`
 }
 
 // ConstructSelectionError carries the current matching candidate list when a nested selector fails.
@@ -172,9 +174,12 @@ func inspectConstructCandidatesFromSource(filePath string, content []byte, owner
 	if err != nil {
 		return ConstructCandidateSet{}, err
 	}
+	for index := range infos {
+		infos[index].EndConstructPath = infos[index].ConstructPath
+	}
 	return ConstructCandidateSet{
 		InFunction: canonicalOwner, Kind: kind, Discriminator: canonicalDiscriminator,
-		Candidates: infos, SelectionRevision: revision,
+		Candidates: infos, SelectionRevision: revision, SourceRevision: goReadRevision(content),
 	}, nil
 }
 

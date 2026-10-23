@@ -374,6 +374,24 @@ func prepareMoveFileSnapshot(ctx context.Context, sourcePath, destinationPath st
 	if err := validateMoveFileSnapshotPaths(ctx, state.root, state.sourcePath, state.destinationPath); err != nil {
 		return moveFileSnapshot{}, err
 	}
+	state.root, pathErr = filepath.EvalSymlinks(state.root)
+	if pathErr != nil {
+		return moveFileSnapshot{}, fmt.Errorf("canonicalize module root: %w", pathErr)
+	}
+	state.sourcePath, pathErr = sourcebuf.CanonicalPath(ctx, state.sourcePath)
+	if pathErr != nil {
+		return moveFileSnapshot{}, fmt.Errorf("canonicalize source path: %w", pathErr)
+	}
+	state.destinationPath, pathErr = sourcebuf.CanonicalPath(ctx, state.destinationPath)
+	if pathErr != nil {
+		return moveFileSnapshot{}, fmt.Errorf("canonicalize destination path: %w", pathErr)
+	}
+	if !moveWithin(state.root, state.sourcePath) || !moveWithin(state.root, state.destinationPath) {
+		return moveFileSnapshot{}, fmt.Errorf("move_file requires source and destination in the same Go module")
+	}
+	if state.sourcePath == state.destinationPath {
+		return moveFileSnapshot{}, fmt.Errorf("move_file requires distinct production Go files")
+	}
 	state.companionSource = strings.TrimSuffix(state.sourcePath, ".go") + "_test.go"
 	state.companionDestination = strings.TrimSuffix(state.destinationPath, ".go") + "_test.go"
 	if !opts.MoveMatchingTests {

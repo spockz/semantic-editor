@@ -53,6 +53,31 @@ func TestNormalizeInsertionOffsetCommentBoundaries(t *testing.T) {
 	}
 }
 
+func TestContainsDirectiveGroup(t *testing.T) {
+	tests := []struct {
+		name    string
+		comment string
+		want    bool
+	}{
+		{name: "ordinary line comment", comment: "// keep this explanation", want: false},
+		{name: "go generate", comment: "//go:generate echo $GOLINE", want: true},
+		{name: "line directive", comment: "//line generated.go:42", want: true},
+		{name: "block line directive", comment: "/*line generated.go:42*/", want: true},
+		{name: "build directive", comment: "// +build linux", want: true},
+		{name: "cgo directive", comment: "// #cgo CFLAGS: -DVALUE", want: true},
+		{name: "linter directive", comment: "//nolint:errcheck", want: true},
+		{name: "directive in block comment", comment: "/*\n * keep this note\n * //go:generate echo $GOLINE\n */", want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			file := parseCommentFixture(t, "package p\n"+test.comment+"\nfunc F() {}\n")
+			if got := containsDirectiveGroup(file.Comments[0]); got != test.want {
+				t.Fatalf("containsDirectiveGroup(%q) = %v, want %v", test.comment, got, test.want)
+			}
+		})
+	}
+}
+
 func TestInsertDeclarationKeepsFunctionDocAttached(t *testing.T) {
 	t.Parallel()
 	initial := "package p\n\n// Keep documentation.\nfunc Keep() {}\n"

@@ -24,16 +24,20 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-// ExtractConstantOptions selects one exact compile-time expression.
+// ExtractConstantOptions selects exact compile-time expressions in one owner.
 type ExtractConstantOptions struct {
-	Discriminator    string
-	ExpectedRevision string
+	Discriminator     string
+	OccurrenceIndices []int
+	ExpectedRevision  string
 }
 
 // ExtractConstant plans and applies one package-level constant extraction.
 func ExtractConstant(ctx context.Context, filePath, owner, name string, opts ExtractConstantOptions) (string, error) {
 	if opts.Discriminator == "" {
 		return "", fmt.Errorf("discriminator must contain the exact source text of one constant expression")
+	}
+	if len(opts.OccurrenceIndices) > 0 && opts.ExpectedRevision == "" {
+		return "", fmt.Errorf("expected revision is required with occurrence indices")
 	}
 	cleanPath, err := filepath.Abs(filepath.Clean(filePath))
 	if err != nil {
@@ -71,7 +75,7 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	if target == nil || target.Body == nil {
 		return "", fmt.Errorf("constant extraction owner %q was not found or has no body", owner)
 	}
-	selected, err := selectConstantExpression(inputs.fset, target.Body, content, opts.Discriminator)
+	selected, err := selectConstantExpressions(inputs.fset, target.Body, content, opts.Discriminator, opts.OccurrenceIndices)
 	if err != nil {
 		return "", err
 	}
@@ -83,10 +87,11 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	if err != nil {
 		return "", err
 	}
-	if err := publishConstantExtraction(ctx, cleanPath, content, updated, ownedBuffer, standalone); err != nil {
+	diff, err := publishConstantExtraction(ctx, cleanPath, content, updated, plan, ownedBuffer, standalone)
+	if err != nil {
 		return "", err
 	}
-	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(updated)), nil
+	return diff, nil
 }
 
 type constantPackageInputs struct {
@@ -94,6 +99,7 @@ type constantPackageInputs struct {
 	syntax *ast.File
 	info   *types.Info
 	scope  *types.Scope
+	path   string
 }
 
 func selectConstantPackageInputs(loaded []*packages.Package, targetPath string) (constantPackageInputs, error) {
@@ -110,7 +116,7 @@ func selectConstantPackageInputs(loaded []*packages.Package, targetPath string) 
 			if filepath.Clean(absolute) != targetPath || index >= len(pkg.Syntax) {
 				continue
 			}
-			selected = constantPackageInputs{fset: pkg.Fset, syntax: pkg.Syntax[index], info: pkg.TypesInfo, scope: pkg.Types.Scope()}
+			selected = constantPackageInputs{fset: pkg.Fset, syntax: pkg.Syntax[index], info: pkg.TypesInfo, scope: pkg.Types.Scope(), path: filepath.Clean(absolute)}
 			break
 		}
 	}
@@ -120,19 +126,31 @@ func selectConstantPackageInputs(loaded []*packages.Package, targetPath string) 
 	return selected, nil
 }
 
-func selectConstantExpression(fset *token.FileSet, body *ast.BlockStmt, source []byte, discriminator string) (ast.Expr, error) {
-	var selected ast.Expr
-	matches := 0
+func selectConstantExpressions(fset *token.FileSet, body *ast.BlockStmt, source []byte, discriminator string, indices []int) ([]ast.Expr, error) {
+	matches := make([]ast.Expr, 0)
 	ast.Inspect(body, func(node ast.Node) bool {
+		if _, ok := node.(*ast.FuncLit); ok {
+			return false
+		}
 		expression, ok := node.(ast.Expr)
 		if ok && matchesConstantSource(fset, source, discriminator, expression) {
-			selected = expression
-			matches++
+			matches = append(matches, expression)
 		}
 		return true
 	})
-	if matches != 1 {
-		return nil, fmt.Errorf("constant expression selection matched %d current expressions; choose exact source text that identifies one expression", matches)
+	sort.Slice(matches, func(i, j int) bool { return matches[i].Pos() < matches[j].Pos() })
+	if len(indices) == 0 {
+		if len(matches) != 1 {
+			return nil, fmt.Errorf("constant expression selection matched %d current expressions; choose exact source text that identifies one expression or supply occurrence_indices", len(matches))
+		}
+		return matches, nil
+	}
+	selected := make([]ast.Expr, 0, len(indices))
+	for _, index := range indices {
+		if index < 0 || index >= len(matches) {
+			return nil, fmt.Errorf("occurrence_indices entry %d is outside the %d exact matches", index, len(matches))
+		}
+		selected = append(selected, matches[index])
 	}
 	return selected, nil
 }
@@ -144,9 +162,16 @@ func matchesConstantSource(fset *token.FileSet, source []byte, discriminator str
 
 func constantExtractionSource(path string, source []byte, plan ConstantExtractionPlan) ([]byte, error) {
 	updated := make([]byte, 0, len(source)+len(plan.Declaration)+8)
-	updated = append(updated, source[:plan.Start]...)
-	updated = append(updated, plan.Replacement...)
-	updated = append(updated, source[plan.End:]...)
+	position := 0
+	for _, occurrence := range plan.Occurrences {
+		if occurrence.Start < position || occurrence.End <= occurrence.Start || occurrence.End > len(source) {
+			return nil, fmt.Errorf("selected constant expression ranges are inconsistent")
+		}
+		updated = append(updated, source[position:occurrence.Start]...)
+		updated = append(updated, plan.Replacement...)
+		position = occurrence.End
+	}
+	updated = append(updated, source[position:]...)
 	if len(updated) > 0 && updated[len(updated)-1] != '\n' {
 		updated = append(updated, '\n')
 	}
@@ -159,26 +184,71 @@ func constantExtractionSource(path string, source []byte, plan ConstantExtractio
 	return updated, nil
 }
 
-func publishConstantExtraction(ctx context.Context, path string, before, after []byte, ownedBuffer *sourcebuf.Buffer, standalone bool) error {
+func publishConstantExtraction(ctx context.Context, path string, before, after []byte, plan ConstantExtractionPlan, ownedBuffer *sourcebuf.Buffer, standalone bool) (string, error) {
 	validated := sourcebuf.Overlay(ctx, ".go")
 	if validated == nil {
 		validated = make(map[string][]byte)
 	}
 	validated[path] = after
-	if _, err := loadConstantPackage(ctx, filepath.Dir(path), validated); err != nil {
-		return fmt.Errorf("validate extracted constant source: %w", err)
+	loaded, err := loadConstantPackage(ctx, filepath.Dir(path), validated)
+	if err != nil {
+		return "", fmt.Errorf("validate extracted constant source: %w", err)
 	}
-	buffer := sourcebuf.FromContext(ctx)
-	if buffer == nil {
-		return fmt.Errorf("constant extraction requires a source buffer before apply")
+	if err := validateExtractedConstantReferences(loaded, path, plan); err != nil {
+		return "", fmt.Errorf("validate extracted constant references: %w", err)
 	}
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: before, After: after}}); err != nil {
-		return fmt.Errorf("apply buffered constant extraction: %w", err)
+	return publishPreparedSource(ctx, sourcePublication{
+		path:        path,
+		diffPath:    filepath.Base(path),
+		before:      before,
+		after:       after,
+		ownedBuffer: ownedBuffer,
+		standalone:  standalone,
+		operation:   "constant extraction",
+	})
+}
+
+func validateExtractedConstantReferences(loaded []*packages.Package, path string, plan ConstantExtractionPlan) error {
+	inputs, err := selectConstantPackageInputs(loaded, path)
+	if err != nil {
+		return err
 	}
-	if standalone {
-		if err := ownedBuffer.Flush(ctx); err != nil {
-			return fmt.Errorf("publish constant extraction: %w", err)
+	constant, ok := inputs.scope.Lookup(plan.Replacement).(*types.Const)
+	if !ok || !types.Identical(constant.Type(), plan.resolvedType) || constant.Val().ExactString() != plan.Value {
+		return fmt.Errorf("generated package constant does not preserve the selected type and exact value")
+	}
+	expected := make(map[int]bool, len(plan.Occurrences))
+	delta := 0
+	for _, occurrence := range plan.Occurrences {
+		start := occurrence.Start + delta
+		expected[start] = false
+		delta += len(plan.Replacement) - (occurrence.End - occurrence.Start)
+	}
+	for identifier, object := range inputs.info.Uses {
+		position := inputs.fset.PositionFor(identifier.Pos(), false)
+		if filepath.Clean(position.Filename) != inputs.path {
+			continue
 		}
+		start := position.Offset
+		if _, selected := expected[start]; !selected {
+			continue
+		}
+		constantUse, ok := object.(*types.Const)
+		typed, hasType := inputs.info.Types[identifier]
+		if identifier.Name != plan.Replacement || !ok || constantUse != constant || !hasType || !types.Identical(typed.Type, plan.resolvedType) || typed.Value == nil || typed.Value.ExactString() != plan.Value {
+			return fmt.Errorf("selected occurrence at byte %d does not resolve to the generated package constant", start)
+		}
+		expected[start] = true
+	}
+	missing := make([]int, 0)
+	for start, found := range expected {
+		if !found {
+			missing = append(missing, start)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Ints(missing)
+		return fmt.Errorf("selected occurrence at byte %d was not resolved as the generated package constant", missing[0])
 	}
 	return nil
 }

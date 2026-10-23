@@ -11,45 +11,82 @@ import (
 	"strconv"
 )
 
-// ConstantExtractionPlan carries one declaration and one exact expression replacement.
+// ConstantExtractionPlan carries one declaration and an explicit set of exact expression replacements.
 type ConstantExtractionPlan struct {
-	Declaration string
-	Replacement string
-	Start       int
-	End         int
-	Type        string
-	Value       string
+	Declaration  string
+	Replacement  string
+	Occurrences  []ConstantExpressionRange
+	Type         string
+	Value        string
+	resolvedType types.Type
+}
+
+// ConstantExpressionRange identifies one original source expression selected for replacement.
+type ConstantExpressionRange struct {
+	Start int
+	End   int
 }
 
 // PlanConstantExtraction classifies resolved constant syntax without mutating source.
-func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, info *types.Info, scope *types.Scope, expr ast.Expr, name string) (ConstantExtractionPlan, error) {
-	if err := validateConstantExtractionFacts(fset, file, info, scope, expr, name); err != nil {
+func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, info *types.Info, scope *types.Scope, expressions []ast.Expr, name string) (ConstantExtractionPlan, error) {
+	if err := validateConstantExtractionFacts(fset, file, info, scope, expressions, name); err != nil {
 		return ConstantExtractionPlan{}, err
 	}
-	owner, err := constantExpressionOwner(file, expr)
-	if err != nil {
-		return ConstantExtractionPlan{}, err
+	var owner *ast.FuncDecl
+	details := make([]constantExpressionDetails, 0, len(expressions))
+	for _, expr := range expressions {
+		currentOwner, err := constantExpressionOwner(file, expr)
+		if err != nil {
+			return ConstantExtractionPlan{}, err
+		}
+		if owner == nil {
+			owner = currentOwner
+		} else if owner != currentOwner {
+			return ConstantExtractionPlan{}, fmt.Errorf("constant extraction occurrences must belong to one function or method")
+		}
+		item, err := inspectConstantExpression(source, fset, file, info, expr)
+		if err != nil {
+			return ConstantExtractionPlan{}, err
+		}
+		if len(details) > 0 {
+			first := details[0]
+			if !types.Identical(first.resolvedType, item.resolvedType) || first.value != item.value {
+				return ConstantExtractionPlan{}, fmt.Errorf("selected constant occurrences have different resolved types or exact values")
+			}
+		}
+		details = append(details, item)
 	}
 	if scopeErr := validateConstantNameScope(file, info, scope, owner, name); scopeErr != nil {
 		return ConstantExtractionPlan{}, scopeErr
 	}
-	details, err := inspectConstantExpression(source, fset, file, info, expr)
-	if err != nil {
-		return ConstantExtractionPlan{}, err
+	first := details[0]
+	occurrences := make([]ConstantExpressionRange, 0, len(details))
+	for _, item := range details {
+		if len(occurrences) > 0 {
+			previous := occurrences[len(occurrences)-1]
+			if item.start <= previous.Start || item.start < previous.End {
+				return ConstantExtractionPlan{}, fmt.Errorf("selected constant expression occurrences must be ordered and non-overlapping")
+			}
+		}
+		occurrences = append(occurrences, ConstantExpressionRange{Start: item.start, End: item.end})
 	}
-	declaration := constantDeclaration(name, details)
 	return ConstantExtractionPlan{
-		Declaration: declaration, Replacement: name, Start: details.start, End: details.end,
-		Type: details.basicType, Value: details.value,
+		Declaration: constantDeclaration(name, first), Replacement: name, Occurrences: occurrences,
+		Type: first.basicType, Value: first.value, resolvedType: first.resolvedType,
 	}, nil
 }
 
-func validateConstantExtractionFacts(fset *token.FileSet, file *ast.File, info *types.Info, scope *types.Scope, expr ast.Expr, name string) error {
+func validateConstantExtractionFacts(fset *token.FileSet, file *ast.File, info *types.Info, scope *types.Scope, expressions []ast.Expr, name string) error {
 	if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() || name == "_" {
 		return fmt.Errorf("symbol %q is not a valid constant identifier", name)
 	}
-	if fset == nil || file == nil || info == nil || scope == nil || expr == nil {
+	if fset == nil || file == nil || info == nil || scope == nil || len(expressions) == 0 {
 		return fmt.Errorf("constant extraction requires syntax, type, and package scope facts")
+	}
+	for _, expr := range expressions {
+		if expr == nil {
+			return fmt.Errorf("constant extraction requires syntax, type, and package scope facts")
+		}
 	}
 	return nil
 }
@@ -103,12 +140,13 @@ func validateConstantNameScope(file *ast.File, info *types.Info, scope *types.Sc
 }
 
 type constantExpressionDetails struct {
-	start      int
-	end        int
-	expression string
-	basicType  string
-	typeName   string
-	value      string
+	start        int
+	end          int
+	expression   string
+	basicType    string
+	typeName     string
+	value        string
+	resolvedType types.Type
 }
 
 func inspectConstantExpression(source []byte, fset *token.FileSet, file *ast.File, info *types.Info, expr ast.Expr) (constantExpressionDetails, error) {
@@ -141,7 +179,7 @@ func inspectConstantExpression(source []byte, fset *token.FileSet, file *ast.Fil
 	}
 	return constantExpressionDetails{
 		start: start, end: end, expression: string(source[start:end]),
-		basicType: basic.Name(), typeName: typeName, value: typed.Value.ExactString(),
+		basicType: basic.Name(), typeName: typeName, value: typed.Value.ExactString(), resolvedType: typed.Type,
 	}, nil
 }
 

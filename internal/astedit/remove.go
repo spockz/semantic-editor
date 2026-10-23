@@ -39,20 +39,19 @@ type RemoveOptions struct {
 var GoRemoveConstructKinds = []ConstructKind{ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar, ConstructCase, ConstructStatementOrExpr}
 
 type safeDeleteSnapshot struct {
-	root  string
 	files map[string][32]byte
 }
 
-// SafeDeleteSnapshotError reports a source-set change after preflight and before publication.
-type SafeDeleteSnapshotError struct{ Cause error }
+// SafeDeleteInputConflictError reports a captured module source changing after preflight.
+type SafeDeleteInputConflictError struct{ Cause error }
 
-// Error describes the changed source set.
-func (e *SafeDeleteSnapshotError) Error() string {
-	return fmt.Sprintf("module source set changed during preflight: %v", e.Cause)
+// Error describes a change to a source file captured during preflight.
+func (e *SafeDeleteInputConflictError) Error() string {
+	return fmt.Sprintf("captured module source changed during preflight: %v", e.Cause)
 }
 
 // Unwrap returns the source-set change cause.
-func (e *SafeDeleteSnapshotError) Unwrap() error { return e.Cause }
+func (e *SafeDeleteInputConflictError) Unwrap() error { return e.Cause }
 
 type removeTarget struct {
 	node  ast.Node
@@ -90,14 +89,14 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 		return "", preflight.checks, "", err
 	}
 	if preflight.snapshot != nil {
-		preflight.checks = append(preflight.checks, "module_source_unchanged_before_write")
+		preflight.checks = append(preflight.checks, "captured_module_sources_unchanged_before_write")
 	}
 	var prepublish func() error
 	if preflight.snapshot != nil {
 		prepublish = func() error { return validateSafeDeleteSnapshot(ctx, preflight.snapshot) }
 	}
 	if err := publishRemovedFile(ctx, preflight.cleanPath, formatted, autoOrganizeImports, prepublish); err != nil {
-		if snapshotErr, ok := errors.AsType[*SafeDeleteSnapshotError](err); ok {
+		if snapshotErr, ok := errors.AsType[*SafeDeleteInputConflictError](err); ok {
 			return "", preflight.checks, "", snapshotErr
 		}
 		return "", preflight.checks, "", err
@@ -124,6 +123,8 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 		checks = append(checks, "constant_resource_scope_check")
 	case "value":
 		checks = append(checks, "variable_effect_scope_check")
+	case "type":
+		checks = append(checks, "type_identity_scope_check")
 	default:
 		checks = append(checks, "function_identity_scope_check")
 	}
@@ -154,7 +155,7 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 	} else if refusal != "" {
 		return nil, checks, refusal
 	}
-	return &safeDeleteSnapshot{root: root, files: scan.revisions}, checks, ""
+	return &safeDeleteSnapshot{files: scan.revisions}, checks, ""
 }
 
 func standaloneConstant(file *ast.File, selected ast.Node) (*ast.GenDecl, *ast.ValueSpec, *ast.Ident) {
@@ -382,16 +383,12 @@ func validateSafeDeleteSnapshot(ctx context.Context, snapshot *safeDeleteSnapsho
 			return fmt.Errorf("disk preimage changed: %w", err)
 		}
 	}
-	currentScan, err := scanModuleSources(ctx, snapshot.root, "", -1, "", nil)
-	if err != nil {
-		return err
-	}
-	current := currentScan.revisions
-	if len(current) != len(snapshot.files) {
-		return fmt.Errorf("go source file set changed")
-	}
 	for path, expected := range snapshot.files {
-		if actual, ok := current[path]; !ok || actual != expected {
+		content, err := sourcebuf.ReadFile(ctx, path)
+		if err != nil {
+			return fmt.Errorf("recheck module source %s: %w", path, err)
+		}
+		if actual := sha256.Sum256(content); actual != expected {
 			return fmt.Errorf("go source changed: %s", path)
 		}
 	}
@@ -698,7 +695,7 @@ func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte,
 	writeCheck := func() error {
 		if check != nil {
 			if err := check(); err != nil {
-				return &SafeDeleteSnapshotError{Cause: err}
+				return &SafeDeleteInputConflictError{Cause: err}
 			}
 		}
 		return nil

@@ -16,6 +16,16 @@ import (
 	"strings"
 )
 
+// SignatureParameterRemovalEvidence binds compiler admission to one original formal and its complete source revision.
+type SignatureParameterRemovalEvidence struct {
+	File     string
+	Revision string
+	Index    int
+	Name     string
+	Scalar   bool
+	Unused   bool
+}
+
 // SignatureSourceFile holds one explicit source snapshot for planning.
 type SignatureSourceFile struct {
 	File   string
@@ -24,9 +34,11 @@ type SignatureSourceFile struct {
 
 // SignatureCallSite identifies a proven direct call in one source snapshot.
 type SignatureCallSite struct {
-	File  string
-	Start int
-	End   int
+	File      string
+	Start     int
+	End       int
+	Revision  string
+	Arguments []SignatureArgumentEvidence
 }
 
 // SignatureCallSetProof carries the complete call inventory supplied by semantic analysis.
@@ -34,6 +46,7 @@ type SignatureCallSetProof struct {
 	Complete bool
 	Files    []SignatureSourceFile
 	Calls    []SignatureCallSite
+	Removal  *SignatureParameterRemovalEvidence
 }
 
 // SignatureParameter records the original callable parameter shape.
@@ -43,7 +56,7 @@ type SignatureParameter struct {
 	Variadic bool
 }
 
-// SignatureParameterMapping preserves an old parameter or appends one parameter.
+// SignatureParameterMapping identifies an original parameter or appends one parameter.
 type SignatureParameterMapping struct {
 	SourceIndex *int
 	Name        string
@@ -87,9 +100,12 @@ type SignaturePlannedFile struct {
 }
 
 // SignaturePlan contains every changed file produced by a pure signature planner.
-type SignaturePlan struct{ Files []SignaturePlannedFile }
+type SignaturePlan struct {
+	Files      []SignaturePlannedFile
+	Projection *SignatureProjectionProof
+}
 
-// PlanChangeSignature plans an append-only signature and its explicitly proven direct calls.
+// PlanChangeSignature plans an append or proven constant-argument permutation and its direct calls.
 func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetProof) (SignaturePlan, error) {
 	if !proof.Complete {
 		return SignaturePlan{}, fmt.Errorf("change signature: complete caller-set proof is required")
@@ -97,9 +113,23 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 	if request.File == "" || request.Symbol == "" {
 		return SignaturePlan{}, fmt.Errorf("change signature: file and symbol are required")
 	}
-	target, err := captureSignatureTarget(request, proof)
+	target, err := captureSignatureTarget(signatureTargetRequest{File: request.File, Symbol: request.Symbol, ExpectedRevision: request.ExpectedRevision, Files: proof.Files, Operation: "change signature"})
 	if err != nil {
 		return SignaturePlan{}, err
+	}
+	if len(request.Parameters) < len(target.parameters) {
+		order, removed, removalErr := signatureRemovalOrder(request, target, proof.Removal)
+		if removalErr != nil {
+			return SignaturePlan{}, removalErr
+		}
+		return planSignatureProjection(request, proof, target, order, &removed)
+	}
+	order, permutation, err := signaturePermutationOrder(request, target.parameters)
+	if err != nil {
+		return SignaturePlan{}, err
+	}
+	if permutation {
+		return planSignatureProjection(request, proof, target, order, nil)
 	}
 	added, err := validateSignatureMappings(request, target.parameters)
 	if err != nil {
@@ -124,22 +154,30 @@ type signatureTargetContext struct {
 	parameters []SignatureParameter
 }
 
-func captureSignatureTarget(request SignatureChangeRequest, proof SignatureCallSetProof) (signatureTargetContext, error) {
-	files, err := signatureSourceMap(proof.Files)
+type signatureTargetRequest struct {
+	File             string
+	Symbol           string
+	ExpectedRevision string
+	Files            []SignatureSourceFile
+	Operation        string
+}
+
+func captureSignatureTarget(request signatureTargetRequest) (signatureTargetContext, error) {
+	files, err := signatureSourceMap(request.Files)
 	if err != nil {
 		return signatureTargetContext{}, err
 	}
 	target, ok := files[request.File]
 	if !ok {
-		return signatureTargetContext{}, fmt.Errorf("change signature: target file %q is absent from the read set", request.File)
+		return signatureTargetContext{}, fmt.Errorf("%s: target file %q is absent from the explicit read set", request.Operation, request.File)
 	}
 	if request.ExpectedRevision != "" && request.ExpectedRevision != signatureRevision(target) {
-		return signatureTargetContext{}, fmt.Errorf("change signature: selected file revision is stale")
+		return signatureTargetContext{}, fmt.Errorf("%s: selected file revision is stale", request.Operation)
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, request.File, target, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return signatureTargetContext{}, fmt.Errorf("change signature: parse target file: %w", err)
+		return signatureTargetContext{}, fmt.Errorf("%s: parse target file: %w", request.Operation, err)
 	}
 	fn, err := signatureTarget(file, request.Symbol)
 	if err != nil {
@@ -252,7 +290,7 @@ func buildSignatureCallEdit(callSite SignatureCallSite, source []byte, functionN
 	if len(callExpr.Args) != parameterCount {
 		return signatureSourceEdit{}, fmt.Errorf("change signature: call in %q has %d arguments; expected %d", callSite.File, len(callExpr.Args), parameterCount)
 	}
-	if bytes.Contains(callSource, []byte("//")) || bytes.Contains(callSource, []byte("/*")) {
+	if signatureHasComments(callSource) {
 		return signatureSourceEdit{}, fmt.Errorf("change signature: calls containing comments are outside the supported scope")
 	}
 	end := callSite.End - 1
@@ -488,7 +526,8 @@ func signatureApplyEdits(source []byte, edits []signatureSourceEdit) ([]byte, er
 }
 
 func signatureBuildPlan(inputs []SignatureSourceFile, edits map[string][]signatureSourceEdit) (SignaturePlan, error) {
-	plan := SignaturePlan{Files: make([]SignaturePlannedFile, 0, len(edits))}
+	sources := make(map[string][]byte, len(inputs))
+	updatedFiles := make(map[string][]byte, len(edits))
 	for _, input := range inputs {
 		fileEdits := edits[input.File]
 		if len(fileEdits) == 0 {
@@ -501,9 +540,37 @@ func signatureBuildPlan(inputs []SignatureSourceFile, edits map[string][]signatu
 		if bytes.Equal(input.Source, after) {
 			continue
 		}
-		plan.Files = append(plan.Files, SignaturePlannedFile{File: input.File, Before: bytes.Clone(input.Source), After: after, Revision: signatureRevision(after)})
+		sources[input.File] = input.Source
+		updatedFiles[input.File] = after
 	}
-	slices.SortFunc(plan.Files, func(left, right SignaturePlannedFile) int { return strings.Compare(left.File, right.File) })
+	plan, err := signaturePlanFromSources(sources, updatedFiles)
+	if err != nil {
+		return SignaturePlan{}, err
+	}
+	for index := range plan.Files {
+		plan.Files[index].Revision = signatureRevision(plan.Files[index].After)
+	}
+	return plan, nil
+}
+
+func signaturePlanFromSources(sources, updatedFiles map[string][]byte) (SignaturePlan, error) {
+	paths := make([]string, 0, len(updatedFiles))
+	for path := range updatedFiles {
+		paths = append(paths, path)
+	}
+	slices.Sort(paths)
+	plan := SignaturePlan{Files: make([]SignaturePlannedFile, 0, len(paths))}
+	for _, path := range paths {
+		before, exists := sources[path]
+		if !exists {
+			return SignaturePlan{}, fmt.Errorf("signature plan: edited file %q is missing from the source set", path)
+		}
+		after := updatedFiles[path]
+		if bytes.Equal(before, after) {
+			continue
+		}
+		plan.Files = append(plan.Files, SignaturePlannedFile{File: path, Before: bytes.Clone(before), After: bytes.Clone(after)})
+	}
 	return plan, nil
 }
 
@@ -644,40 +711,18 @@ func validateParameterObjectRequest(request ParameterObjectRequest, proof Parame
 }
 
 type parameterObjectTarget struct {
-	files      map[string][]byte
-	source     []byte
-	fset       *token.FileSet
-	file       *ast.File
-	function   *ast.FuncDecl
-	parameters []SignatureParameter
+	signatureTargetContext
 }
 
 func captureParameterObjectTarget(request ParameterObjectRequest, proof ParameterObjectProof) (parameterObjectTarget, error) {
-	files, err := signatureSourceMap(proof.Files)
+	target, err := captureSignatureTarget(signatureTargetRequest{File: request.File, Symbol: request.Symbol, Files: proof.Files, Operation: "introduce parameter object"})
 	if err != nil {
 		return parameterObjectTarget{}, err
 	}
-	source, ok := files[request.File]
-	if !ok {
-		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: target file is absent from the explicit read set")
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, request.File, source, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: parse target file: %w", err)
-	}
-	fn, err := signatureTarget(file, request.Symbol)
-	if err != nil {
-		return parameterObjectTarget{}, err
-	}
-	parameters, err := signatureParameters(fset, fn.Type.Params)
-	if err != nil {
-		return parameterObjectTarget{}, err
-	}
-	if len(parameters) == 0 || len(parameters) != len(request.Fields) {
+	if len(target.parameters) == 0 || len(target.parameters) != len(request.Fields) {
 		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: every original parameter must map to one field")
 	}
-	return parameterObjectTarget{files: files, source: source, fset: fset, file: file, function: fn, parameters: parameters}, nil
+	return parameterObjectTarget{signatureTargetContext: target}, nil
 }
 
 type parameterObjectFields struct {

@@ -514,9 +514,42 @@ func TestRemoveSafeDeleteUnexportedStandaloneConstant(t *testing.T) {
 	if got := readGo(t, path); strings.Contains(got, "unusedLimit") {
 		t.Fatalf("constant remains after safe deletion:\n%s", got)
 	}
-	for _, check := range []string{"module_go_source_scan", "module_reference_scan_complete", "constant_resource_scope_check", "module_source_unchanged_before_write"} {
+	for _, check := range []string{"module_go_source_scan", "module_reference_scan_complete", "constant_resource_scope_check", "captured_module_sources_unchanged_before_write"} {
 		if !slices.Contains(checks, check) {
 			t.Errorf("checks_run omitted %q: %v", check, checks)
 		}
+	}
+}
+
+func TestRemoveSafeDeleteUnreferencedMethodFreeDefinedTypes(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safetype\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "types.go")
+	initial := `package sample
+type obsoleteArray [2]int
+type obsoleteSlice []string
+type obsoleteMap map[string]int
+type obsoleteChannel <-chan int
+type obsoletePointer *int
+type obsoleteFunction func(int) string
+type obsoleteInterface interface{}
+`
+	writeGo(t, path, initial)
+	for _, name := range []string{"obsoleteArray", "obsoleteSlice", "obsoleteMap", "obsoleteChannel", "obsoletePointer", "obsoleteFunction", "obsoleteInterface"} {
+		t.Run(name, func(t *testing.T) {
+			diff, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "type", Symbol: name, SafeDelete: true}, false)
+			if err != nil || refusal != "" {
+				t.Fatalf("Remove: refusal=%q err=%v", refusal, err)
+			}
+			if !strings.Contains(diff, name) {
+				t.Fatalf("removal diff omitted target %q: %q", name, diff)
+			}
+			if got := readGo(t, path); strings.Contains(got, name) {
+				t.Fatalf("type %q remains after safe deletion:\n%s", name, got)
+			}
+		})
 	}
 }

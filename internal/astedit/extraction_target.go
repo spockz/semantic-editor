@@ -37,7 +37,7 @@ func ValidateVariableExtractionTarget(ctx context.Context, filePath, owner, name
 	if err != nil {
 		return err
 	}
-	updated, err := rewriteVariableArgument(input, name, opts.Discriminator)
+	updated, err := rewriteVariableExpression(input, name, opts.Discriminator)
 	if err != nil {
 		return err
 	}
@@ -75,6 +75,9 @@ func prepareFunctionExtractionOutput(input extractionInput, candidate extraction
 }
 
 func prepareVariableExtractionOutput(input variableExtractionInput, owner, name, discriminator string, updated []byte) ([]byte, error) {
+	if err := validateVariableCandidate(input.ctx, input.cleanPath, owner, name, discriminator, input.candidate.path, input.candidate.endPath, input.content, updated); err != nil {
+		return nil, err
+	}
 	formatted, err := format.Source(updated)
 	if err != nil {
 		return nil, &SyntaxError{File: input.cleanPath, Snippet: discriminator, Cause: err, Err: ErrSyntax}
@@ -82,9 +85,6 @@ func prepareVariableExtractionOutput(input variableExtractionInput, owner, name,
 	formatted = normalizeExtractionNewlines(formatted)
 	if _, err := parser.ParseFile(token.NewFileSet(), input.cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return nil, &SyntaxError{File: input.cleanPath, Snippet: discriminator, Cause: err, Err: ErrSyntax}
-	}
-	if err := validateVariableCandidate(input.ctx, input.cleanPath, owner, name, discriminator, input.candidate.path, input.content, formatted); err != nil {
-		return nil, err
 	}
 	return formatted, nil
 }
