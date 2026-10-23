@@ -1,9 +1,18 @@
 <!-- Defines accepted symbol addressing separately from the undecided session-handle proposal. -->
-
 # ADR-0003: Symbol-Based Addressing Over File Coordinates
 
 * **Status**: Accepted
 * **Date**: 2026-09-15
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Direct short names, receiver qualification, and Go `package.Type.Method` identifiers resolve with file scoping, avoiding coordinate arithmetic and preliminary discovery lookups. ADR-0065 extends scope resolution to package directories. Stable session symbol handles remain undecided and unimplemented. |
+| description | Compilers and Language Server Protocol methods often require exact file coordinates (e.g. `path/to/file.go:42:15` or byte offsets). LLMs are notoriously poor at character counting and tracking line numbers, especially as earlier edits cause line-number drift. |
+| role | architecture |
+| scope | project |
+| area | backend |
+| languages | go |
 
 ## Context
 

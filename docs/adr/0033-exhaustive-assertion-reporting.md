@@ -1,7 +1,17 @@
 # ADR-0033: Exhaustive Assertion Reporting (Continue-on-Failure Tests)
 
-Status: Accepted
-Date: 2026-09-18
+* **Status**: Accepted
+* **Date**: 2026-09-18
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Test value assertions continue after failure unless a fatal precondition makes that unsafe. |
+| description | A test run that stops at the first failed assertion hides remaining defects and forces repeated fix-and-rerun cycles. Each cycle costs a full `go test` or txtar invocation plus fresh agent context. The repository already favors `t.Errorf` for value checks and reserves `t.Fatalf` for setup failures (see `internal/symbol/resolver_test.go`, `tools/benchmark-harness/bench_test.go`, `main_test.go`), and `make test` runs `go test` without `-failfast` so all packages report. This practice was implicit. It needs an explicit contract so new tests preserve single-run diagnostic completeness. |
+| role | process |
+| scope | tooling |
+| area | testing |
+| languages | go |
 
 ## Context
 
@@ -38,11 +48,11 @@ new tests preserve single-run diagnostic completeness.
 
 ## Invariants
 
-- A value-check failure never aborts its test function, table loop, or package run.
-- Abort-on-failure appears only at fatal preconditions where the next line
+* A value-check failure never aborts its test function, table loop, or package run.
+* Abort-on-failure appears only at fatal preconditions where the next line
   cannot execute soundly without the guarded value.
-- Table loops and subtests report each failing case with its input or name.
-- Default test entry points (`make test`, `make check`, CI) run the full
+* Table loops and subtests report each failing case with its input or name.
+* Default test entry points (`make test`, `make check`, CI) run the full
   suite to completion and report all package failures.
 
 ## Consequences

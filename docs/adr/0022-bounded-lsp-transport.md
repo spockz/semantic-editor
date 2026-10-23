@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Reusable bounded stdio JSON-RPC transport with asynchronous callbacks and no language or mutation assumptions. |
+| description | Future read-only language backends need a reusable bidirectional JSON-RPC transport. The transport must keep protocol framing and request lifecycle concerns out of language adapters while avoiding an implicit commitment to server discovery, language-specific coordinates, or source mutation. |
+| role | contract |
+| scope | project |
+| area | language-server |
+| languages | generic |
+
 ## Context
 
 Future read-only language backends need a reusable bidirectional JSON-RPC transport. The transport must keep protocol framing and request lifecycle concerns out of language adapters while avoiding an implicit commitment to server discovery, language-specific coordinates, or source mutation.

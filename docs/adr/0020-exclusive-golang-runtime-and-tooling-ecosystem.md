@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Go remains the host implementation language; explicitly qualified preinstalled server/runtime exceptions follow their backend contracts, including Java delegation under ADR-0068. No implicit installation or runtime bootstrap. |
+| description | `semedit` is designed as a deterministic, zero-token AST code transformation engine and developer tool. Maintaining a unified, lightweight, and hermetic developer environment requires strict discipline over language runtimes, package managers, and external dependencies. |
+| role | invariant |
+| scope | tooling |
+| area | build |
+| languages | go |
 
 ## Context
 

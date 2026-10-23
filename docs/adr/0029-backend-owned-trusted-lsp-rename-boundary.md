@@ -1,7 +1,17 @@
 # ADR-0029: Backend-Owned Trusted LSP Rename Boundary
 
-Status: **Accepted**  
-Date: 2026-09-17
+* **Status**: Accepted
+* **Date**: 2026-09-17
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Rename lookup, trusted LSP edit policy, mutation, and diagnostics remain owned by each backend; the service performs selection and gates only. |
+| description | Rename requests cross a language-neutral ingress service, but lookup identity, LSP protocol details, edit policy, and post-edit validation are language specific. A generic workspace-edit or changeset engine would either encode language assumptions in the service or weaken each backend's safety policy. |
+| role | contract |
+| scope | project |
+| area | language-server |
+| languages | generic |
 
 ## Context
 

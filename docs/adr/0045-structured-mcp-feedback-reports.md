@@ -1,7 +1,17 @@
 # ADR-0045: Structured MCP Feedback Reports
 
-Status: Accepted
-Date: 2026-09-25
+* **Status**: Accepted
+* **Date**: 2026-09-25
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Collect command friction in a privacy-guided draft for user review and manual issue posting; do not save or submit automatically. |
+| description | `docs/SUBOPTIMAL_TOOLS.md` records command friction, including the affected operation and context, observed behavior, manual workaround, suspected cause, and candidate fix. The current manual process does not consistently capture what the user intended, the exact command parameters, or why the result missed expectations. An agent also needs clear disclosure guidance before preparing a report that may be shared with maintainers. |
+| role | process |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 
@@ -46,17 +56,17 @@ until approved.
 
 ## Invariants
 
-- The seven core report fields are explicit and required by the MCP input
+* The seven core report fields are explicit and required by the MCP input
   schema; optional context, suspected cause, and suggested fix stay optional.
-- `parameters` preserves the command arguments as a JSON object and may be
+* `parameters` preserves the command arguments as a JSON object and may be
   empty when the command took no parameters.
-- A successful result identifies itself as a draft and conforms to an MCP
+* A successful result identifies itself as a draft and conforms to an MCP
   output schema with the standard metrics envelope.
-- The tool never persists or submits feedback and never claims that the report
+* The tool never persists or submits feedback and never claims that the report
   was submitted.
-- The returned report is a review draft for possible manual GitHub issue
+* The returned report is a review draft for possible manual GitHub issue
   submission; it does not replace this repository's dogfooding ledgers.
-- Tool guidance treats public open-source details as generally shareable while
+* Tool guidance treats public open-source details as generally shareable while
   excluding secrets and asking the user when disclosure safety is uncertain.
 
 ## Consequences

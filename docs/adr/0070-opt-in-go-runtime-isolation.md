@@ -1,7 +1,17 @@
 # ADR-0070: Opt-In Go Runtime Isolation
 
-Status: Accepted
-Date: 2026-10-14
+* **Status**: Accepted
+* **Date**: 2026-10-14
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Normal CLI/MCP inherit Go state; explicit bases and benchmark fixtures enable isolation. Development Make targets share module/build caches with the primary checkout while retaining worktree-local tools and temporary state; explicit cache overrides remain available. Benchmark isolation can independently select a persistent module cache. |
+| description | ADR-0041 introduced project-local Go state to keep sandboxed benchmark processes within their fixture. Applying that default to normal CLI and MCP use also replaced the user's caches, Go environment file, and workspace selection. New projects downloaded dependencies again and created `.scratch/go` even when the caller already had usable Go state. |
+| role | principle |
+| scope | tooling |
+| area | build |
+| languages | go |
 
 ## Context
 

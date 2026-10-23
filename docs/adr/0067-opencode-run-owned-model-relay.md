@@ -1,9 +1,18 @@
 <!-- Records why sandboxed local-model jobs share a confined transport owned by their benchmark run. -->
-
 # ADR-0067: OpenCode Run-Owned Model Relay
 
-Status: Accepted
-Date: 2026-10-11
+* **Status**: Accepted
+* **Date**: 2026-10-11
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Share one fixed-destination loopback relay per benchmark run, use OS-assigned ports, confine servers and attached clients, and close active transport at run completion. |
+| description | OpenCode local-model jobs need access to the desktop's OpenAI-compatible HTTP endpoint without allowing agents to reach arbitrary remote services. On macOS 26.6.2, Seatbelt rejects numeric hosts in `remote tcp` and `remote ip` rules: hosts must be `localhost` or `*`. A wildcard host with a selected port permits every host on that port. Alternative exact-IP predicates also fail compilation. Live probes confirmed both wildcard access and loopback confinement. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 

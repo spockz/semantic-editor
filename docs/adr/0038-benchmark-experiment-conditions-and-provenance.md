@@ -1,7 +1,17 @@
 # ADR-0038: Benchmark Experiment Conditions and Provenance
 
-Status: Accepted
-Date: 2026-09-21
+* **Status**: Accepted
+* **Date**: 2026-09-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Group deliberate treatments separately; preserve task-owned ladders, guardrails, instruction override and reflections. Shared-module downloads precede offline execution; Go warmup is independent of AST assertions and resume fingerprints reject earlier preparation policies. |
+| description | Benchmark results became difficult to compare when prompt wording, MCP server instructions, model settings, and technical runtime settings could all change without a stable distinction between experimental treatment and execution provenance. In particular, server-supplied MCP instructions are outside the user prompt, so folding them into a prompt variant would hide a meaningful intervention. Conversely, parser limits and similar diagnostics settings do not describe a product treatment and must not split comparison cells. Fixture-local Go state is necessary for sandbox correctness, but a completely cold module cache can dominate a short benchmark. Host cache reuse would make that speed dependent on mutable state outside the experiment. An interactive baseline must distinguish an agent's first-turn instruction following from its ability to recover through an intentionally supplied, reproducible sequence of additional guidance. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -23,9 +33,9 @@ reproducible sequence of additional guidance.
 
 The benchmark harness records these first-class experiment conditions:
 
-- target, including harness, model, and reasoning level;
-- task, project-size variant, prompt variant, and evaluation arm;
-- MCP server instruction mode: `none`, `descriptive`, or `prescriptive`.
+* target, including harness, model, and reasoning level;
+* task, project-size variant, prompt variant, and evaluation arm;
+* MCP server instruction mode: `none`, `descriptive`, or `prescriptive`.
 
 Prompt variants are runnable only when their txtar fixture declares a
 non-empty `prompt_variants` entry. The harness never invents a prompt from
@@ -110,31 +120,31 @@ diagnostic-only, non-measured status.
 
 ## Invariants
 
-- A comparison never merges runs with different MCP server instruction modes.
-- A comparison never splits only because technical provenance differs.
-- Baseline runs receive neither semedit MCP tools nor semedit server
+* A comparison never merges runs with different MCP server instruction modes.
+* A comparison never splits only because technical provenance differs.
+* Baseline runs receive neither semedit MCP tools nor semedit server
   instructions.
-- A task without declared non-empty prompts is reported as skipped, not run
+* A task without declared non-empty prompts is reported as skipped, not run
   with an inferred prompt.
-- Legacy result fields may be decoded for report continuity, but new results
+* Legacy result fields may be decoded for report continuity, but new results
   use `mcp_server_instructions` and `provenance`.
-- Fixture state is isolated from mutable host state. Any preseed is explicit,
+* Fixture state is isolated from mutable host state. Any preseed is explicit,
   deterministic, and recorded as technical provenance.
-- Every Codex fixture has a harness-owned `AGENTS.override.md` before session
+* Every Codex fixture has a harness-owned `AGENTS.override.md` before session
   creation. A fixture that already reserves that filename fails setup rather
   than silently weakening instruction isolation.
-- An interactive observation reuses its arm's one-shot harness session and
+* An interactive observation reuses its arm's one-shot harness session and
   workspace; it is not a second independent run.
-- Follow-up prompts are task-owned, ordered experimental input. The oracle
+* Follow-up prompts are task-owned, ordered experimental input. The oracle
   controls continuation without becoming agent-visible feedback, except for
   its declared protected-file list, which is a visible static guardrail.
-- A missing task-owned follow-up ladder skips only the interactive-baseline
+* A missing task-owned follow-up ladder skips only the interactive-baseline
   and interactive-semantic-edit observations; the harness never supplies
   generic fallback prompts.
-- A semantic-tool non-use reflection reuses the completed semantic session and
+* A semantic-tool non-use reflection reuses the completed semantic session and
   is diagnostic-only. It never changes the task workspace, oracle outcome, or
   measured task-turn aggregates.
-- A semantic batch-use reflection is requested only for an unbatched contiguous
+* A semantic batch-use reflection is requested only for an unbatched contiguous
   sequence of at least two semantic calls. It is diagnostic-only and never
   changes the task workspace, oracle outcome, or measured aggregates.
 

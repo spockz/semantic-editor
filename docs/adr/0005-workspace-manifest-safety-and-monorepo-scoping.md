@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Never modify workspace manifests without approval. Enabled-backend unions supersede the original single-language session limit; concurrent languages do not imply shared caches or cross-language refactoring proofs. |
+| description | In multi-project repositories (e.g. Go monorepos with multiple `go.mod` files, Cargo workspaces, or multi-package TypeScript setups), language servers require workspace coordination to resolve cross-project symbols. |
+| role | invariant |
+| scope | project |
+| area | backend |
+| languages | generic |
+
 ## Context
 
 In multi-project repositories (e.g. Go monorepos with multiple `go.mod` files, Cargo workspaces, or multi-package TypeScript setups), language servers require workspace coordination to resolve cross-project symbols.

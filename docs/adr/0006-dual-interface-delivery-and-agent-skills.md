@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Offer CLI and MCP interfaces paired with `SKILL.md` and progressive language reference guides; govern skill updates upon language capability expansion. |
+| description | Pair CLI and MCP interfaces with shared skills and language reference guides. |
+| role | architecture |
+| scope | project |
+| area | mcp |
+| languages | generic |
+
 ## Context
 
 Exposing an editing tool exclusively via the Model Context Protocol (MCP) or exclusively via a CLI introduces trade-offs:

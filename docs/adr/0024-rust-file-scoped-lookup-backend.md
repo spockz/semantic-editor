@@ -3,9 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
-This record defines the original lookup slice. Its lookup-only capability limit
-is superseded by selected-file rename in ADR-0030 and outline in ADR-0051.
-The trust, source scope, and disabled build-execution boundaries still apply.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Original trusted Rust lookup boundary; ADR-0030 and ADR-0051 extend rename/outline. Trust and disabled build execution remain, rather than a permanent lookup-only capability limit. |
+| description | Rust lookup needs project-aware symbol information, but this slice must remain read-only and must not turn Cargo manifests or project build scripts into an implicit execution surface. `rust-analyzer` exposes the required hierarchical document symbols through LSP and can run as a managed native process. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | rust |
 
 ## Context
 

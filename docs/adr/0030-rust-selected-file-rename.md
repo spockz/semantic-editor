@@ -1,7 +1,17 @@
 # ADR-0030: Rust Selected-File Semantic Rename
 
-Status: Accepted  
-Date: 2026-09-17
+* **Status**: Accepted
+* **Date**: 2026-09-17
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | The Rust backend restricts trusted rust-analyzer rename to one selected canonical `.rs` file with strict validated edits and atomic mutation. |
+| description | Rust rename requires an external rust-analyzer process, but workspace mutation must remain bounded and trusted. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | rust |
 
 ## Context
 
@@ -13,9 +23,9 @@ Rust supports trusted semantic rename only for the selected canonical regular `.
 
 ## Invariants
 
-- Trust is checked before process discovery or launch.
-- Foreign files, resources, annotations, malformed UTF-16 ranges, overlap, version mismatch, and stale preimages are rejected before writing.
-- Session cleanup failure after commit is not reported as rename failure.
+* Trust is checked before process discovery or launch.
+* Foreign files, resources, annotations, malformed UTF-16 ranges, overlap, version mismatch, and stale preimages are rejected before writing.
+* Session cleanup failure after commit is not reported as rename failure.
 
 ## Consequences
 

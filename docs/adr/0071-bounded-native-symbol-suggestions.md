@@ -1,9 +1,18 @@
 <!-- WHY: This ADR records the accepted safety boundary for selector suggestions and the invariants that govern their use. -->
-
 # ADR-0071: Bounded Native Symbol Suggestions
 
-Status: Accepted
-Date: 2026-10-16
+* **Status**: Accepted
+* **Date**: 2026-10-16
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Return up to three scope-bound native alternatives through shared structural preflights and language-server lookups; retain rename and invalidation identities across batch barriers and keep original errors authoritative. |
+| description | Misspelled or under-qualified symbol selectors often produce a correct native failure but no efficient next step. An approximate text match alone is unsafe: it can cross file or receiver scope, select the wrong declaration kind, or mistake a provider's index for current source truth. Suggestion providers must remain optional and must not weaken operation validation or introduce hidden workspace writes. |
+| role | contract |
+| scope | source-code |
+| area | backend |
+| languages | generic |
 
 ## Context
 

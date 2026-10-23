@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-16
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Standardize registry-derived CLI commands and flag parsing on github.com/spf13/cobra; expand registered source, body, and case payload flags from CLI stdin. |
+| description | Derive CLI commands and flags from the operation registry using Cobra. |
+| role | architecture |
+| scope | tooling |
+| area | cli |
+| languages | go |
 
 ## Context
 

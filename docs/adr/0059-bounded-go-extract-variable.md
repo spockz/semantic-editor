@@ -1,7 +1,17 @@
 # ADR-0059: Bounded Go Extract Variable
 
-* **Status**: Accepted
+* **Status**: Superseded by [ADR-0084](0084-bounded-go-variable-extraction.md)
 * **Date**: 2026-09-29
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Go extracts a bounded typed first argument with exact type/evaluation guarantees. Java expression and separate constant-extraction operations retain their own contracts. |
+| description | Extracting an expression into a local can change evaluation order, scope, type inference, comment ownership, or the binding of later identifiers. The operation needs a narrow contract that can prove the rewrite while retaining a useful common case. |
+| role | contract |
+| scope | source-code |
+| area | backend |
+| languages | go |
 
 ## Context
 

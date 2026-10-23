@@ -4,7 +4,15 @@
 * **Status**: Accepted
 * **Date**: 2026-10-03
 
-Supersedes the conflicting future-interface proposals in the previous draft. Detailed current behavior and scope are described in ADR-0046; this record settles the public naming, capability, and catalog contract.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Generic lifecycle plus workspace outline, signature change, function extraction, and doc-comment tools in the default base catalog; specialized variants remain filterable and CLI/batch dispatch remains independent of discovery. |
+| description | The registry had separate structure and statement insertion operations, alongside declaration replacement and control-flow replacement. Their overlap enlarged the MCP catalog and left kind support inconsistently described. The handover decision consolidates them under a generic construct lifecycle while retaining focused specialized operations where they provide a distinct scope, such as function-body replacement. |
+| role | architecture |
+| scope | source-code |
+| area | backend |
+| languages | generic |
 
 ## Context
 

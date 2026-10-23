@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Canonical registered semantic names guide routing without inventing repair capabilities. Bundled feedback follows backend scope, validated reuse, deferred stages, and compact report pointers rather than mandatory full diagnostic payloads. |
+| description | Agent harnesses (including Antigravity, Claude Code, and Cursor) route tasks using planner heuristics that match user intent against tool names and schema descriptions. |
+| role | contract |
+| scope | project |
+| area | mcp |
+| languages | generic |
+
 ## Context
 
 Agent harnesses (including Antigravity, Claude Code, and Cursor) route tasks using planner heuristics that match user intent against tool names and schema descriptions.

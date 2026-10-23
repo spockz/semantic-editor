@@ -4,6 +4,16 @@
 * **Status**: Accepted
 * **Date**: 2026-10-08
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Accept directory scopes, kind synonyms including element vocabulary, outer block braces, plain-text headers, and casing-derived visibility; normalize before validation and advertise canonical kinds and strict continuation schemas. |
+| description | Accept varied agent input while returning canonical output and continuations. |
+| role | principle |
+| scope | project |
+| area | mcp |
+| languages | generic |
+
 ## Context
 
 Semantic editing tools are designed to separate model reasoning from AST manipulation. In practice, LLM callers exhibit varied formatting habits, use natural language synonyms, and provide coarse scopes:

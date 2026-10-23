@@ -3,11 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
-This record preserves the initial lookup slice. Its capability exclusions,
-disabled Maven import, and overload restrictions are superseded by ADR-0031,
-ADR-0035 through ADR-0037, ADR-0051, and ADR-0068. Current Java behavior uses the
-trusted persistent JDT LS/CST pipeline in ADR-0068; lookup still requires valid
-scope and explicit tool trust and never authorizes build commands by itself.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Original trusted JDT LS lookup slice; later rename, Maven, read, and ADR-0068 delegation decisions supersede its capability/import/overload exclusions. |
+| description | Java symbol lookup needs JDT LS project indexing, but the lookup slice must remain read-only and must not turn Maven or Gradle configuration into an execution surface. JDT LS is a user-installed external tool and requires an explicit trust boundary and a supported Java runtime. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | java |
 
 ## Context
 

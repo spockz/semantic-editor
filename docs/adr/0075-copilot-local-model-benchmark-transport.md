@@ -1,14 +1,18 @@
 <!-- Records Copilot's persistent benchmark transport and local-model evidence boundary. -->
+# ADR-0075: Copilot Cloud and Local Model Benchmark Transport
 
-# ADR-0074: Copilot Cloud and Local Model Benchmark Transport
+* **Status**: Accepted
+* **Date**: 2026-10-17
 
-## Status
-
-Accepted
-
-## Date
-
-2026-10-17
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Keep one Copilot ACP process per task; explicitly select hosted routing or local Chat Completions, isolate credentials and MCP state, and require complete usage and tool evidence. |
+| description | The benchmark needs to compare the same locally served model across coding harnesses. Saluki is exposed by llama.cpp. The installed Copilot CLI supports OpenAI Chat Completions for custom providers, which avoids the Responses namespace-conversion incompatibility observed with Codex. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 

@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | A language-neutral registry/service gates implemented operation-specific capabilities. Later Rust, read, and Java extensions supersede the initial lookup-only slice without moving lifecycle policy into transport. |
+| description | CLI and MCP previously called Go symbol resolution, gopls rename, and diagnostics directly. That made language selection and operation support ingress concerns, and left no stable place for a second backend. The first foundation slice needs a bounded extension point without migrating Go AST mutations or inventing a generic changeset engine. |
+| role | architecture |
+| scope | project |
+| area | backend |
+| languages | generic |
+
 ## Context
 
 CLI and MCP previously called Go symbol resolution, gopls rename, and diagnostics directly. That made language selection and operation support ingress concerns, and left no stable place for a second backend. The first foundation slice needs a bounded extension point without migrating Go AST mutations or inventing a generic changeset engine.

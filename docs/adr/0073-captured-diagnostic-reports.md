@@ -1,13 +1,18 @@
 <!-- Defines captured diagnostic evidence ownership so file-move callers can inspect details without repeating compiler or language-server analysis. -->
 # ADR-0073: Captured Diagnostic Reports
 
-## Status
+* **Status**: Accepted
+* **Date**: 2026-10-16
 
-Accepted.
-
-## Date
-
-2026-10-16
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Serve captured diagnostic counts and immutable filtered pages without reanalysis; preserve scoped status distinctions, compact actionable text, and structured bulk evidence. |
+| description | File relocation can affect many callers and test variants. MCP text needs to retain publication outcomes, changed paths, refusals, and valid continuations without repeating the complete diff or diagnostic inventory. Reading evidence must not trigger another verification or shift pages after later edits. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 

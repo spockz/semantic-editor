@@ -2,7 +2,16 @@
 
 * **Status**: Accepted
 * **Date**: 2026-09-15
-* **Last Updated**: 2026-09-27
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Shared core supports planned LSP ingress without claiming implemented cross-domain refactoring. Publication remains per-file atomic; diagnostic aggregation requires synchronized client buffers and explicit coverage. |
+| description | Refactoring in modern projects often spans multiple file types (e.g. updating a function definition in `.go` and updating references in `.md` documentation). |
+| role | architecture |
+| scope | project |
+| area | backend |
+| languages | generic |
 
 ## Context
 

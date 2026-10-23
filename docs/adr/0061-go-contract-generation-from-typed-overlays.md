@@ -4,6 +4,16 @@
 * **Status**: Accepted
 * **Date**: 2026-10-01
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Go contract generation uses exact typed overlays, test preflight, bounded local replacements, and evidence-bound receipts; Java generation remains separately governed by ADR-0068. |
+| description | The Go `semantic_extract_interface` and `semantic_implement_contract` tools derive declarations from exact Go method identities and signatures. Reconstructing declarations from model-authored signature text can lose variadic markers, result names, import identity, or the distinction between pointer and value method sets. These tools also run inside buffered batches, where disk-only package analysis would ignore earlier unsaved changes and could publish outputs based on stale compiler facts. |
+| role | contract |
+| scope | source-code |
+| area | backend |
+| languages | go |
+
 ## Context
 
 The Go `semantic_extract_interface` and `semantic_implement_contract` tools derive declarations from exact Go method identities and signatures. Reconstructing declarations from model-authored signature text can lose variadic markers, result names, import identity, or the distinction between pointer and value method sets. These tools also run inside buffered batches, where disk-only package analysis would ignore earlier unsaved changes and could publish outputs based on stale compiler facts.

@@ -1,9 +1,18 @@
 <!-- Defines benchmark storage ownership independently of ordinary project builds. -->
-
 # ADR-0074: RAM-Backed Benchmark Workspaces and Persistent Module Cache
 
-Status: Accepted
-Date: 2026-10-17
+* **Status**: Accepted
+* **Date**: 2026-10-17
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Make detects managed tmpfs; setup populates SSD modules with configured proxy/checksum settings before offline execution, disables private-module bypass, and discovers warmup targets without AST assertions. Per-job RAM caches remain isolated. Darwin linker inode refresh preserves execution; sizing uses concurrent workspace peaks and memory headroom. |
+| description | Extracting repositories, compiling Go, running gopls and agents, and deleting their disposable state causes substantial macOS filesystem churn and SSD writes. Ordinary `/tmp` and APFS scratch directories do not provide a RAM storage contract. Copying a populated module cache into every fixture magnifies the problem without improving experiment isolation. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | go |
 
 ## Context
 

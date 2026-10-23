@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-16
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve code-derived generation while adopting Hugo and Hextra for navigation, repository links, theme toggling, and standard code-copy controls. |
+| description | The documentation site was emitted as standalone HTML by `cmd/docgen` and uploaded directly from `dist/docs` by the GitHub Pages workflow. The generator correctly derives executable examples from `testdata/scripts/*.txtar`, but the custom HTML presentation did not provide the standard copy controls users expect for code blocks. |
+| role | architecture |
+| scope | documentation |
+| area | generic |
+| languages | generic |
+
 ## Context
 
 The documentation site was emitted as standalone HTML by `cmd/docgen` and uploaded directly from `dist/docs` by the GitHub Pages workflow. The generator correctly derives executable examples from `testdata/scripts/*.txtar`, but the custom HTML presentation did not provide the standard copy controls users expect for code blocks.

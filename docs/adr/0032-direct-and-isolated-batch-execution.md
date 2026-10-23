@@ -1,7 +1,17 @@
 # ADR-0032: Direct Batch Execution and Deferred Workspace Views
 
-Status: Accepted
-Date: 2026-09-30
+* **Status**: Accepted
+* **Date**: 2026-09-30
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Lazy preimages bind actual reads/writes and captured trees; staged receipts describe working views. Captured-file changes conflict, but unrelated new files need not block publication. Go, Java, Rust, and Scala share owned-versus-caller-owned buffer publication while retaining backend-specific protocol proofs. Publication is atomic per file, diagnostic step links are candidates, and validated Go captures may reuse findings. |
+| description | Semantic batches may combine language-server edits, formatters, compilers, and other command-line tools. Callers prefer direct low-latency mutation and accept a partially applied batch when later validation reports diagnostics. |
+| role | architecture |
+| scope | project |
+| area | mcp |
+| languages | generic |
 
 ## Context
 
@@ -103,7 +113,7 @@ Choose buffering according to the required preparation and publication boundary:
 none. Construction and write authorization resolve roots without enumerating
 or reading source trees. Reads and writes capture their selected preimages;
 explicit analysis observations may capture a wider selected package/module tree.
-This lifecycle is shared by Go and Java without fixed source extensions.
+This lifecycle is shared by Go, Java, Rust, and Scala without fixed source extensions. Language-specific protocol edit capture, validation, and diagnostics remain backend-owned. `sourcebuf.ApplyAndPublish` is the single-file changeset path: an owned standalone buffer publishes after applying the validated change, while a caller-owned batch buffer stays staged for its owner to publish.
 Caller-owned buffers remain authoritative and are never flushed by a child.
 Preparation failure discards the failed operation's changes while preserving
 successful earlier batch edits. New-file scaffolding may use a single atomic
@@ -279,53 +289,56 @@ operating-system sandbox.
 
 ## Invariants
 
-- Lazy source preimages and checked publication are language-neutral. Diagnostic
+* Lazy source preimages and checked publication are language-neutral. Diagnostic
   cache coverage is backend-owned: Go's import-aware reverse-package refresh
   (ADR-0060) does not change Java's normalization, push-diagnostic, or save
   lifecycle (ADR-0068), and does not establish equivalent caches for other LSPs.
 
-- No second approval, authenticated receipt, or client-supplied patch exists.
-- The MCP startup toggle gates batch discovery and calls without changing
+* No second approval, authenticated receipt, or client-supplied patch exists.
+* The MCP startup toggle gates batch discovery and calls without changing
   registered operation behavior, CLI availability, or retained staging.
-- Batch guidance appears in MCP descriptions and schemas only when batching is
+* Batch guidance appears in MCP descriptions and schemas only when batching is
   enabled; a disabled catalog contains no batch-specific guidance.
-- Direct mode reports applied operations and the resulting diff; it does not
+* Direct mode reports applied operations and the resulting diff; it does not
   promise rollback or crash recovery.
-- Buffered Go edits share one working revision with gopls; save and watcher
+* Buffered Go edits share one working revision with gopls; save and watcher
   notifications follow actual disk publication. Unpublished bytes synchronize
   only before dependent LSP queries; AST-only steps defer synchronization.
-- LSP synchronization follows backend semantics. Java retains pre-publication
+* LSP synchronization follows backend semantics. Java retains pre-publication
   changes for normalization and push verification, followed by post-publication
   saves. Push-diagnostic backends must not inherit gopls's suppression policy.
-- Staging, coupled batch segments, and multi-file AST/CST preflight retain buffers.
+* Staging, coupled batch segments, and multi-file AST/CST preflight retain buffers.
   Standalone single-file pipelines use target-scoped preparation and checked
   atomic publication; Java retains its normalization buffer. Neither buffer
   construction nor write authorization captures a full workspace implicitly.
-- A batch child and its standalone tool counterpart use the same registered
+* A batch child and its standalone tool counterpart use the same registered
   parser, handler, finalizer, and output projectors. Their only operation-context
   difference is whether they receive a fresh request buffer or the batch's
   shared working buffer. Buffer publication and staging drop/abort remain
   lifecycle responsibilities outside the child operation implementation.
-- Lazy preimages cover every semantic read and write and explicitly observed
-  package tree. Membership changes and exact-content conflicts remain failures;
-  reducing unrelated scans cannot weaken pre-publication validation.
-- A successful batch or committed stage has exactly one pre-edit and one
+* Lazy preimages cover every semantic read and write and explicitly observed
+  package tree. Operations recheck captured file preimages before publication,
+  but a new file or caller added after discovery need not block publication and
+  may remain outside the migration. Captured-file changes still conflict;
+  reducing unrelated scans may leave some workspace work undiscovered, but
+  cannot weaken validation of files the operation actually read or wrote.
+* A successful batch or committed stage has exactly one pre-edit and one
   final post-processing diagnostic capture for its reported delta. Eligible Go
   captures may reuse revision- and coverage-validated findings under ADR-0060;
   two logical captures do not mandate two fresh full-workspace analyses. Go
   children defer formatting, imports, and diagnostic captures. Backend-required
   in-buffer checks and normalization, such as Java's JDT LS pipeline, may run
   before publication; they do not replace the final reported diagnostic state.
-- Syntactic and structural AST validation errors fail fast immediately at the
+* Syntactic and structural AST validation errors fail fast immediately at the
   individual tool invocation site; they are never deferred to commit.
-- `semantic_commit` supplies candidate step IDs for relevant changed paths when
+* `semantic_commit` supplies candidate step IDs for relevant changed paths when
   available. These links do not prove causality; dependent-file diagnostics may
   have no candidate step.
-- The successful batch response carries the final diagnostic delta. A failed
+* The successful batch response carries the final diagnostic delta. A failed
   batch does not claim a final diagnostic state it did not capture.
-- A higher-level controller may provide a private working copy, but
+* A higher-level controller may provide a private working copy, but
   semantic-editor makes no isolation or security claim about it.
-- `semedit` does not manage copy creation, tool confinement, diff publication,
+* `semedit` does not manage copy creation, tool confinement, diff publication,
   rollback, or workspace cleanup for a controller-owned copy.
 
 ## Consequences
@@ -333,14 +346,14 @@ operating-system sandbox.
 Direct batches and state-journaled staging together solve both scripted
 orchestration and model-ergonomic interactive refactoring:
 
-- **Turn and Token Efficiency**: Eliminates redundant intermediate verification
+* **Turn and Token Efficiency**: Eliminates redundant intermediate verification
   passes and prevents quadratic prompt-history re-reading.
-- **Model Alignment**: Enables agents to use their natural, un-nested native tool
+* **Model Alignment**: Enables agents to use their natural, un-nested native tool
   schemas without incurring JSON serialization overhead or losing logit-constrained
   grammar validation.
-- **Clear Failure Diagnosis**: Combines instant feedback on syntax mistakes with
+* **Clear Failure Diagnosis**: Combines instant feedback on syntax mistakes with
   exact step attribution on downstream compiler diagnostics.
-- **Bounded Diagnostic Cost**: Keeps compiler verification overhead bounded to
+* **Bounded Diagnostic Cost**: Keeps compiler verification overhead bounded to
   $O(1)$ diagnostic captures regardless of edit count.
 
 ## Deferred Design Record
@@ -355,17 +368,17 @@ editing the live tree.
 Prior art confirms that this is an orchestration-layer problem with
 platform-specific trade-offs:
 
-- Apple documents APFS copy-on-write clones through `clonefile` and
+* Apple documents APFS copy-on-write clones through `clonefile` and
   `copyfile`; the [APFS tools and APIs guide](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/ToolsandAPIs/ToolsandAPIs.html)
   describes the platform primitive.
-- [cow](https://github.com/joeinnes/cow) is one external workspace manager. It
+* [cow](https://github.com/joeinnes/cow) is one external workspace manager. It
   exposes a separate MCP that creates APFS CoW copies, runs commands there, and
   extracts a branch or patch. It is evidence that an agent-level controller can
   own this lifecycle, not a dependency or recommendation for semantic-editor.
-- [Git worktrees](https://git-scm.com/docs/git-worktree) are a portable
+* [Git worktrees](https://git-scm.com/docs/git-worktree) are a portable
   repository-oriented alternative, with their own checkout and untracked-file
   trade-offs.
-- [Bubblewrap](https://manpages.debian.org/unstable/bubblewrap/bwrap.1.en.html)
+* [Bubblewrap](https://manpages.debian.org/unstable/bubblewrap/bwrap.1.en.html)
   is a Linux-specific process-isolation mechanism. It is relevant only if a
   future requirement is operating-system confinement; a private working copy
   alone is not a security boundary.

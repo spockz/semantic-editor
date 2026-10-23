@@ -1,14 +1,18 @@
 <!-- Defines durable measurement boundaries so post-task interrogation cannot change benchmark work results. -->
-
 # ADR-0076: Work and Diagnostic Measurement Boundaries
 
-## Status
+* **Status**: Accepted
+* **Date**: 2026-10-17
 
-Accepted
-
-## Date
-
-2026-10-17
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Share one adapter-wrapping lifecycle with bound session identity, typed phases, and isolated follow-up results; retain per-turn measurements separately, freeze task MCP evidence before diagnostics, and preserve accepted work when diagnostic subprocesses fail. |
+| description | Diagnostic questions continue the original coding session after task completion. Work totals already exclude these questions, but normalized diagnostic counters were discarded. Late MCP records were classified by wall-clock timestamps, and a diagnostic process exit could invalidate an already accepted work result. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | go |
 
 ## Context
 

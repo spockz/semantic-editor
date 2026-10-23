@@ -1,13 +1,18 @@
 <!-- Records the bounded file-move proof so callers can distinguish closed declaration relocation from general package or resource migration. -->
 # ADR-0072: Go File Declaration Set Moves
 
-## Status
+* **Status**: Accepted
+* **Date**: 2026-10-16
 
-Accepted.
-
-## Date
-
-2026-10-16
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Move a closed production-file declaration set and dependency-closed matching tests as one typed overlay; preserve source shells, checked publication, actionable refusals, and retained Go sessions. |
+| description | Moving declarations individually can reject a valid final package split. A private helper may need to move with its caller, and a type must retain its methods. Intermediate revisions can contain unresolved references or import cycles even when the complete candidate is valid. Filename matching alone does not establish that tests can change package or working directory safely. |
+| role | contract |
+| scope | source-code |
+| area | backend |
+| languages | go |
 
 ## Context
 

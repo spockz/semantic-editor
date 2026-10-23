@@ -1,9 +1,17 @@
 # ADR-0041: MCP Runtime Configuration and Project-Local Go State
 
-Status: Accepted
-Date: 2026-09-21
+* **Status**: Accepted
+* **Date**: 2026-09-21
 
-The default Go isolation policy below is superseded by [ADR-0070](0070-opt-in-go-runtime-isolation.md). Normal CLI and MCP use inherit the user's Go state; benchmark fixtures and explicit `--go-base-dir` configurations retain isolation. Workspace-root selection and the other runtime invariants remain in force.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Resolve contained canonical per-request workspace roots and keep paths, continuations, and trust/session scope under the effective root. Initialization defaults to prescriptive guidance; explicit empty instructions disable it. Ordinary module state is read-only; explicit dependency changes and offline private cache seeding remain controlled exceptions. Default Go isolation is superseded by ADR-0070. |
+| description | MCP clients can launch `semedit` from a benchmark fixture while configuration often lives outside that fixture. Relative executable paths therefore resolve unreliably, and inherited global Go caches can be unreadable or unwritable in sandboxed sessions. A Makefile environment fixes only its own shell recipes; it does not configure Go subprocesses launched later by an MCP server. The same issue affects Codex agent shells: a fixture sandbox may read a host Go cache but cannot safely update it, while inherited `GOWORK` or `GOFLAGS` can redirect work outside the fixture. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | go |
 
 ## Context
 
@@ -108,25 +116,25 @@ process must not expose those transient files in workspace snapshots.
 
 ## Invariants
 
-- MCP configuration names an absolute executable, not a fixture-relative
+* MCP configuration names an absolute executable, not a fixture-relative
   binary path.
-- Detect languages and verification signals during initialization after resolving
+* Detect languages and verification signals during initialization after resolving
   the workspace root and base directories, even when launch CWD differs.
-- Discovery and dispatch share an immutable active-language snapshot for each
+* Discovery and dispatch share an immutable active-language snapshot for each
   canonical effective root. Source-file changes do not implicitly change the
   session's language policy; reinitialization or reload refreshes it.
-- A benchmark semantic arm supplies complete MCP command registration rather
+* A benchmark semantic arm supplies complete MCP command registration rather
   than relying on configuration inherited from the fixture directory.
-- Server instructions are a server configuration input, not a task-prompt
+* Server instructions are a server configuration input, not a task-prompt
   rewrite.
-- Default initialization guidance is prescriptive; explicit empty guidance
+* Default initialization guidance is prescriptive; explicit empty guidance
   remains distinct from an omitted override.
-- Isolated MCP startup fails before tool use when its selected Go state directory is inaccessible.
-- Go subprocess state follows the selected request context: inherited by default,
+* Isolated MCP startup fails before tool use when its selected Go state directory is inaccessible.
+* Go subprocess state follows the selected request context: inherited by default,
   managed only with an explicit isolation base. Resolution failures remain errors.
-- Codex benchmark shells and semedit MCP children use the same fixture-local
+* Codex benchmark shells and semedit MCP children use the same fixture-local
   Go state; inherited `GOWORK` and `GOFLAGS` never select files outside it.
-- No project workspace manifest is created or modified to establish Go state.
+* No project workspace manifest is created or modified to establish Go state.
 
 ## Consequences
 

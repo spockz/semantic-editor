@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-16
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Standard exported sentinel errors, structured record structs with Unwrap(), and mandatory token.Position location invariants. |
+| description | Standardize structured Go errors with stable sentinels and source locations. |
+| role | invariant |
+| scope | source-code |
+| area | backend |
+| languages | go |
 
 ## Context
 

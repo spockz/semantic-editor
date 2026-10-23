@@ -1,7 +1,17 @@
 # ADR-0040: Benchmark Fixture and Oracle Isolation
 
-Status: Accepted
-Date: 2026-09-21
+* **Status**: Accepted
+* **Date**: 2026-09-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Visible prompts may state file protections. Shared-module setup downloads private test dependencies in a disposable oracle copy, removed before launch without changing visible manifests. Go test options remain bounded; corrections retain evidence and no-op fixtures can require unchanged workspaces. |
+| description | Small single-edit tasks stopped discriminating between direct file editing and semantic operations as agents became reliable at one-shot changes. A useful benchmark must expose related, non-uniform code across a compiling project without revealing the implementation plan or allowing an agent to modify the acceptance test that proves the result. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -75,21 +85,21 @@ temporary, gopls, and agent state. Durable transcripts, checkpoints, and reports
 remain outside the disposable root. Cleanup removes only owned job directories
 after publishing required evidence, never the mountpoint or shared modules.
 
-- Every runnable task has a non-empty txtar prompt variant.
-- The model cannot inspect or alter hidden acceptance tests before execution
+* Every runnable task has a non-empty txtar prompt variant.
+* The model cannot inspect or alter hidden acceptance tests before execution
   completes.
-- The prompt may state fixture-declared protected files, but never reveals an
+* The prompt may state fixture-declared protected files, but never reveals an
   oracle result, a failed condition, or hidden-test output.
-- Visible tests may represent existing behavior but must not be a solution
+* Visible tests may represent existing behavior but must not be a solution
   checklist.
-- The oracle rejects disallowed mutation, validates semantic postconditions,
+* The oracle rejects disallowed mutation, validates semantic postconditions,
   and runs build and hidden behavioral checks independently.
-- External Multi-SWE-Bench evaluation applies the pinned base, private test
+* External Multi-SWE-Bench evaluation applies the pinned base, private test
   patch, and candidate patch in that order; test files remain protected in
   model runs.
-- Small and large variants preserve the same task contract while changing the
+* Small and large variants preserve the same task contract while changing the
   amount of related code an agent must navigate.
-- Acceptance fixture corrections preserve assertions and record original and
+* Acceptance fixture corrections preserve assertions and record original and
   corrected artifacts. Historical results retain their original fixture identity.
 
 ## Consequences

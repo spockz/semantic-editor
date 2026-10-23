@@ -1,9 +1,18 @@
 <!-- Explains the structured-output contract and client presentation boundary for MCP tools. -->
-
 # ADR-0042: MCP Structured Tool Output Schemas
 
-Status: Accepted
-Date: 2026-09-22
+* **Status**: Accepted
+* **Date**: 2026-09-22
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Advertise typed output schemas; give every tool actionable compact text while retaining canonical full structured results and exact next-step guards. |
+| description | MCP tools exposed input schemas but did not advertise output schemas, and successful tool calls exposed timing data without placing their formatted result in `structuredContent`. This left clients unable to discover or safely consume machine-readable success results. The MCP structured-output facility is defined by the `2025-06-18` protocol revision, while the server previously advertised `2024-11-05`. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 
@@ -131,10 +140,10 @@ This leaves registry dispatch error semantics unchanged.
 
 The shared envelope uses mutually exclusive `oneOf` branches:
 
-- A native result requires the operation's typed `result` and forbids a
+* A native result requires the operation's typed `result` and forbids a
   top-level `error`.
-- A generic error requires `error` and `application_state` and forbids `result`.
-- A known error requires `error`, `application_state`, and a `result` validated
+* A generic error requires `error` and `application_state` and forbids `result`.
+* A known error requires `error`, `application_state`, and a `result` validated
   against the registered error schema.
 
 The outer MCP `isError` flag identifies execution failure; it is not part of
@@ -175,29 +184,29 @@ envelope extraction or separately declared informational metadata mode.
 
 ## Invariants
 
-- Every tool returned by `tools/list`, including injected-registry tools,
+* Every tool returned by `tools/list`, including injected-registry tools,
   `semantic_batch`, and opt-in `semantic_reload`, has an `outputSchema`.
-- Every captured tool result, successful or failed, is validated against its
+* Every captured tool result, successful or failed, is validated against its
   advertised output schema in the MCP protocol tests. Deliberate failures cover
   every tool in the actual full catalog; protocol failures are checked separately.
-- Every native direct or batch outcome includes the schema-required
+* Every native direct or batch outcome includes the schema-required
   `structuredContent.result`; every tool's `content` retains the actionable
   outcome and next-step guards without repeating the full result.
-- Full serialized structured JSON in text follows MCP's SHOULD recommendation.
+* Full serialized structured JSON in text follows MCP's SHOULD recommendation.
   A compact essential projection is a bounded compatibility tradeoff, not
   equivalent protocol guidance compliance. Client presentation and model
   visibility remain client-controlled.
-- Source, inventory, page, diff, read-set, log, metric-record, and feedback
+* Source, inventory, page, diff, read-set, log, metric-record, and feedback
   artifact payloads appear once in structured fields. Text identifies those
   fields and cursors, and no absolute cap truncates essential guards.
-- Error projections are validated against their paired advertised schema.
+* Error projections are validated against their paired advertised schema.
   Generic errors cannot carry an undeclared result, and native outcomes cannot
   carry a top-level error. Error state does not produce live continuation guards.
-- Batch `diagnostic_delta` is advertised and returned only when execution
+* Batch `diagnostic_delta` is advertised and returned only when execution
   reaches the final diagnostic capture.
-- Output schemas do not over-constrain arbitrary telemetry phase names,
+* Output schemas do not over-constrain arbitrary telemetry phase names,
   diagnostic strings, or future envelope fields.
-- Reload sends its success response and structured result before invoking the
+* Reload sends its success response and structured result before invoking the
   platform-specific re-execution path.
 
 ## Consequences

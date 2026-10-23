@@ -4,6 +4,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-25
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Trusted source-isolated lookup/outline for Bash and Make, plus Make symbol inspection. Bash alone has matching-receipt diagnostics; script execution and construct mutations remain unavailable. |
+| description | The source detector already recognizes `.sh`, `.bash`, Makefile variants, and `.mk`, but no registered backend served these files. Probes of bash-language-server 5.8.0 and make-ls v0.1.22 established bounded selected-document symbol responses. The Bash server also published explicit diagnostics for the opened URI; make-ls did not publish diagnostics during the bounded observation. Both servers are external executables and therefore cross the workspace trust boundary. |
+| role | architecture |
+| scope | source-code |
+| area | backend |
+| languages | bash, makefile |
+
 ## Context
 
 The source detector already recognizes `.sh`, `.bash`, Makefile variants, and `.mk`, but no registered backend served these files. Probes of bash-language-server 5.8.0 and make-ls v0.1.22 established bounded selected-document symbol responses. The Bash server also published explicit diagnostics for the opened URI; make-ls did not publish diagnostics during the bounded observation. Both servers are external executables and therefore cross the workspace trust boundary.

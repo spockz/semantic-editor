@@ -1,12 +1,17 @@
 # ADR-0060: MCP-Owned Go LSP Sessions
 
-## Status
+* **Status**: Accepted
+* **Date**: 2026-09-30
 
-Accepted.
-
-## Date
-
-2026-09-30
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Retain gopls across source edits and abort; restart on executable or incompatible configuration changes. Preserve exact-digest reuse, validated seeding, and Go-only pull/save policy. Exclude generated test runners from source-package patterns for both external and project-local build caches while retaining strict source coverage. |
+| description | Go verification uses gopls `textDocument/diagnostic` pull requests. Starting and stopping a server for every scan adds process initialization and shutdown to every tool response. A copied eight-file rename fixture measured about 1.2 seconds per fresh verification, with about 1 second in the shutdown response. MCP already provides a persistent process associated with one agent workspace. |
+| role | contract |
+| scope | tooling |
+| area | language-server |
+| languages | go |
 
 ## Context
 
@@ -264,19 +269,19 @@ external edits present. Standard LSP message names alone do not establish those
 properties. Go's measured reduction in pull count does not establish a latency
 improvement for any other backend.
 
-- Sessions belong to one MCP instance and are never shared between agent threads.
-- Selected diagnostic coverage stays independent of session/module coverage.
-- Every package graph consumer uses the current canonical scope and complete
+* Sessions belong to one MCP instance and are never shared between agent threads.
+* Selected diagnostic coverage stays independent of session/module coverage.
+* Every package graph consumer uses the current canonical scope and complete
   effective environment key; a matching filesystem fingerprint cannot bypass
   environment validation.
-- Input membership validation includes newly added compiler-recognized non-Go
+* Input membership validation includes newly added compiler-recognized non-Go
   files. Tracking only previously discovered auxiliary files is insufficient.
-- Every retained editable buffer is synchronized before a dependent diagnostic
+* Every retained editable buffer is synchronized before a dependent diagnostic
   or rename request; watcher debounce alone is not a completion receipt.
-- AST-only buffered children defer synchronization until a dependent query or
+* AST-only buffered children defer synchronization until a dependent query or
   publication. Replay and query boundaries must synchronize the current buffer,
   including after dropping an earlier staged step.
-- Rename requires existing regular canonical Go files within the enclosing module,
+* Rename requires existing regular canonical Go files within the enclosing module,
   exact open-document versions, valid UTF-16 ranges, non-overlapping edits, and
   unchanged analysis preimages. Bind the full resolver input snapshot and selected
   declaration identity before requesting rename. Recheck each output's canonical
@@ -284,29 +289,29 @@ improvement for any other backend.
   before its atomic publication. All outputs are
   validated before any publication;
   partial I/O publication remains an explicit error without rollback.
-- Rename advertises versioned document edits and UTF-16 positions, without resource
+* Rename advertises versioned document edits and UTF-16 positions, without resource
   operations, edit annotations, or server-initiated mutation support.
-- Ordinary Go source content and membership changes reuse the process. Incompatible
+* Ordinary Go source content and membership changes reuse the process. Incompatible
   configuration changes restart it before returning diagnostics for the new state.
-- Automatic diagnostic captures may reuse revision-validated findings for unaffected
+* Automatic diagnostic captures may reuse revision-validated findings for unaffected
   packages. Changed packages and their complete reverse dependency closure are
   refreshed; uncertain coverage falls back to a full capture. Explicit verification
   remains full. Batch scope selection uses the same retained dependency graph.
-- Generated Go test-main files under the configured build cache never contribute
+* Generated Go test-main files under the configured build cache never contribute
   source-package patterns, even when that cache lives inside the workspace.
   Real test files and reverse dependencies remain covered; other packages with
   errors and no selected source files remain explicit coverage failures.
-- Import-only discovery refresh preserves diagnostics only under an equal
+* Import-only discovery refresh preserves diagnostics only under an equal
   diagnostic boundary and identical source/module membership. All changed source
   digests participate in refresh, including concurrent edits outside the tool target.
-- A zero-write optimistic source conflict preserves the session for fresh
+* A zero-write optimistic source conflict preserves the session for fresh
   synchronization and one bounded rename replan. Partial publication is explicit.
-- Missing, malformed, unsupported, canceled, and incomplete diagnostic reports
+* Missing, malformed, unsupported, canceled, and incomplete diagnostic reports
   remain explicit failures, distinct from clean reports.
-- Required subprocesses use the selected inherited or explicitly isolated Go
+* Required subprocesses use the selected inherited or explicitly isolated Go
   state boundary under ADR-0070;
   session reuse does not create or modify workspace manifests.
-- MCP tool timings remain recoverable through the persisted metrics file defined
+* MCP tool timings remain recoverable through the persisted metrics file defined
   in ADR-0052. Process shutdown at MCP exit is outside an individual tool response.
 
 ## Consequences

@@ -1,9 +1,18 @@
 <!-- This decision records why the public Go module and executable use their canonical package paths. -->
-
 # ADR-0069: Canonical Go Module and CLI Package
 
-Status: Accepted
-Date: 2026-10-14
+* **Status**: Accepted
+* **Date**: 2026-10-14
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Use `github.com/spockz/semantic-editor` as the root module and `cmd/semedit` as the sole CLI executable package; exclude retained benchmark results from install archives using a nested module. |
+| description | The repository's Go module used the local-only path `semedit`, and its root `main` package prevented installing the public executable through the repository's canonical GitHub path. Internal imports, development builds, and CLI tests were coupled to that layout. |
+| role | architecture |
+| scope | tooling |
+| area | build |
+| languages | go |
 
 ## Context
 

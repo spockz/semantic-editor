@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Generic insertion resolves direct statement anchors; repeated direct matches require reported candidate paths and matching source revisions, and expressions do not participate in insertion selection. |
+| description | Insertion intent spans top-level declarations, fields, switch cases, and statements anchored inside a function. Separate public tools for each syntax kind increase the catalog without changing the core operation: add one validated construct at a selected location. Agents also need deterministic ambiguity reporting when a selector matches more than one node. |
+| role | principle |
+| scope | source-code |
+| area | backend |
+| languages | go |
+
 ## Context
 
 Insertion intent spans top-level declarations, fields, switch cases, and statements anchored inside a function. Separate public tools for each syntax kind increase the catalog without changing the core operation: add one validated construct at a selected location. Agents also need deterministic ambiguity reporting when a selector matches more than one node.

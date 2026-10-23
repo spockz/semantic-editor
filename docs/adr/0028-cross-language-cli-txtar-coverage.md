@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Public operations use CLI-driven txtar contract tests, with comparable coverage for each implemented language-operation pair. |
+| description | The repository's txtar scripts execute the public `semedit` CLI against isolated workspaces and assert observable output and filesystem results. They provide a stronger cross-language contract than backend unit tests, which may inject fake language-server, compiler, or tool transports. As language backends gain equivalent operations, testing only their internal adapters permits ingress, flag, workspace-selection, and capability-advertisement drift. |
+| role | invariant |
+| scope | tooling |
+| area | testing |
+| languages | generic |
+
 ## Context
 
 The repository's txtar scripts execute the public `semedit` CLI against isolated workspaces and assert observable output and filesystem results. They provide a stronger cross-language contract than backend unit tests, which may inject fake language-server, compiler, or tool transports. As language backends gain equivalent operations, testing only their internal adapters permits ingress, flag, workspace-selection, and capability-advertisement drift.

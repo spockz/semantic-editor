@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | LLMs emit semantic intents; local host tools execute syntax transformations. |
+| description | Replace model-authored text patches with semantic intents executed by local syntax-aware tools. |
+| role | first-principle |
+| scope | project |
+| area | backend |
+| languages | generic |
+
 ## Context
 
 Coding agents typically emit raw text diffs or full-file rewrites. This approach suffers from:

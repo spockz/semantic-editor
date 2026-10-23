@@ -1,7 +1,17 @@
 # ADR-0052: Opt-In MCP Timing Metrics
 
-Status: Accepted
-Date: 2026-09-26
+* **Status**: Accepted
+* **Date**: 2026-09-26
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Remove timing payloads from ordinary MCP results; retain bounded recent measurements behind `semantic_metrics` and optionally persist full benchmark timing evidence. |
+| description | MCP responses included request phase timings and server startup timings on every semantic call. Repeated telemetry enlarged ordinary results and competed with task content for model attention. Users still need those measurements for diagnosis and benchmark analysis. |
+| role | process |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 
@@ -41,12 +51,12 @@ calls are not individually truncated. Zero milliseconds can still have a
 nonzero count. Errors and cancellations contribute attempted-call timing;
 these phase counters do not distinguish successful calls from failures.
 
-- Standard semantic and batch output schemas require only `structuredContent.result`; they do not advertise request or startup timing fields.
-- Timed successes and errors enter the in-memory history with their tool name. The history remains bounded to 100 records and is safe for concurrent access.
-- `semantic_metrics` is available in full and mutations-only profiles and does not add its own timing record.
-- Startup timing stays attached to the first timed semantic call and can be read from that call's history record.
-- The in-memory history is scoped to one running MCP server process and is discarded when that process exits. File persistence is opt-in, preserves all records, and reports read, decode, or write failures as server errors.
-- Benchmark evidence excludes diagnostic reflection calls from the retained task metrics file.
+* Standard semantic and batch output schemas require only `structuredContent.result`; they do not advertise request or startup timing fields.
+* Timed successes and errors enter the in-memory history with their tool name. The history remains bounded to 100 records and is safe for concurrent access.
+* `semantic_metrics` is available in full and mutations-only profiles and does not add its own timing record.
+* Startup timing stays attached to the first timed semantic call and can be read from that call's history record.
+* The in-memory history is scoped to one running MCP server process and is discarded when that process exits. File persistence is opt-in, preserves all records, and reports read, decode, or write failures as server errors.
+* Benchmark evidence excludes diagnostic reflection calls from the retained task metrics file.
 
 ## Consequences
 

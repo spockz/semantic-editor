@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Haskell exposes explicitly standalone, trusted, read-only `.hs` lookup through one managed UTF-16 HLS session; project markers and all other operations remain unavailable. |
+| description | Haskell Language Server (HLS) can provide hierarchical document symbols, but its normal cradle discovery may read project configuration and invoke build tooling. This slice must keep Haskell lookup explicitly standalone and read-only. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | haskell |
+
 ## Context
 
 Haskell Language Server (HLS) can provide hierarchical document symbols, but its normal cradle discovery may read project configuration and invoke build tooling. This slice must keep Haskell lookup explicitly standalone and read-only.

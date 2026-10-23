@@ -1,10 +1,18 @@
 <!-- Defines provider-independent benchmark execution and the boundaries adapters must implement. -->
-
 # ADR-0050: Benchmark Planning, Sessions, and Arm Policy
 
-Status: Accepted
-Date: 2026-09-26
-Amended: 2026-10-17
+* **Status**: Accepted
+* **Date**: 2026-09-26
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Coordinate benchmark arms through persistent sessions, shared task orchestration, provider-owned adapters, and durable evidence. |
+| description | The benchmark harness had separate single-run and matrix execution paths. Fixture expansion could silently omit failures or apply a large-context overlay to archives with only one supported context. Provider selection was repeated across task turns and diagnostic reflections. Fixed semantic-arm steering also combined source-inspection and modification restrictions without recording the choice as an experimental condition. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -380,40 +388,40 @@ signal-cancelled jobs remain pending and can run on resume.
 
 ## Invariants
 
-- Planning errors prevent all backend execution; intentional exclusions remain
+* Planning errors prevent all backend execution; intentional exclusions remain
   distinct from errors and empty plans are reported explicitly.
-- The printed plan and execution consume the same jobs and resolved prompts.
-- Unsupported contexts are never relabelled or populated with generic overlays.
-- Every planned job has exactly one terminal result and advances progress.
-- Per-job checkpoints use atomic writes; a resume with a mismatched plan fails before dispatch.
-- Resume never repeats a saved terminal task failure and never treats signal cancellation as completed work.
-- Agent pairs share experiment conditions but only semedit receives policy steering.
-- Different policies, including historical unspecified policy, never merge silently.
-- New runtime defaults do not reinterpret historical instruction conditions.
-- Explicit `none` disables server-wide guidance even when MCP startup defaults
+* The printed plan and execution consume the same jobs and resolved prompts.
+* Unsupported contexts are never relabelled or populated with generic overlays.
+* Every planned job has exactly one terminal result and advances progress.
+* Per-job checkpoints use atomic writes; a resume with a mismatched plan fails before dispatch.
+* Resume never repeats a saved terminal task failure and never treats signal cancellation as completed work.
+* Agent pairs share experiment conditions but only semedit receives policy steering.
+* Different policies, including historical unspecified policy, never merge silently.
+* New runtime defaults do not reinterpret historical instruction conditions.
+* Explicit `none` disables server-wide guidance even when MCP startup defaults
   to prescriptive guidance.
-- Follow-ups reuse the task session and workspace and never receive hidden oracle output.
-- Every coding harness retains the original live session and MCP connection.
+* Follow-ups reuse the task session and workspace and never receive hidden oracle output.
+* Every coding harness retains the original live session and MCP connection.
   A fresh backend process with the same saved identity does not satisfy continuity.
-- Missing or changed continuation identities fail explicitly, and failed
+* Missing or changed continuation identities fail explicitly, and failed
   sessions cannot dispatch another turn or silently create a replacement.
-- Provider cleanup precedes MCP evidence retention and workspace deletion.
-- Every adapter implements required lifecycle operations and has one capability
+* Provider cleanup precedes MCP evidence retention and workspace deletion.
+* Every adapter implements required lifecycle operations and has one capability
   descriptor; global policy does not branch independently on harness names.
-- Session configuration and adapter observations are separate contracts.
-- Initial and follow-up invocations use distinct shared command constructors
+* Session configuration and adapter observations are separate contracts.
+* Initial and follow-up invocations use distinct shared command constructors
   and one common invocation representation; provider-specific translation
   stays in each adapter.
-- Follow-up invocation requires the original provider session identity.
-- Native process launch remains measured when subsequent initialization fails.
-- Work reductions preserve measurements first observed during follow-up work.
-- Diagnostic extension is global and uses one structurally excluded collection.
-- Wrapped or joined process exits cannot hide genuine cleanup failures.
-- Diagnostic questioning never changes measured task aggregates.
-- Analysis exports read only explicitly selected reports or direct job
+* Follow-up invocation requires the original provider session identity.
+* Native process launch remains measured when subsequent initialization fails.
+* Work reductions preserve measurements first observed during follow-up work.
+* Diagnostic extension is global and uses one structurally excluded collection.
+* Wrapped or joined process exits cannot hide genuine cleanup failures.
+* Diagnostic questioning never changes measured task aggregates.
+* Analysis exports read only explicitly selected reports or direct job
   checkpoints. Transcript, raw adapter events, adapter stages, and MCP metrics
   remain opt-in sidecars; missing or incomplete observations stay explicit.
-- Interactive Codex chat export is opt-in through an explicitly selected
+* Interactive Codex chat export is opt-in through an explicitly selected
   Codex home. It reads only regular `.jsonl` and `.jsonl.zst` files beneath
   `sessions/` and `archived_sessions/`, streams records, and omits developer
   instructions and private assistant phases while retaining user messages,
@@ -428,21 +436,21 @@ signal-cancelled jobs remain pending and can run on resume.
   `--since` accepts an inclusive RFC3339 timestamp and filters benchmark
   reports/checkpoints by report time and Codex records by event time; records
   without a timestamp are excluded when a cutoff is active.
-- Benchmark improvement proposals must cite the prompt, tool arguments and
+* Benchmark improvement proposals must cite the prompt, tool arguments and
   outcomes, response/next-turn evidence when available, final diff, oracle
   result, and agent feedback. Capability gaps remain hypotheses until evidence
   distinguishes them from tool-selection or parameter mistakes.
-- Evaluate tooling changes by rerunning the same task and experiment conditions;
+* Evaluate tooling changes by rerunning the same task and experiment conditions;
   compare correctness, failed calls, interaction counts, latency, token use, and
   recorded cost before retaining a change.
-- Cloud token estimates use explicit rate-card metadata and never imply actual
+* Cloud token estimates use explicit rate-card metadata and never imply actual
   invoice charges; unavailable token usage remains unavailable rather than zero.
-- Transcript failures remain explicit; missing telemetry is not measured zero.
-- Explicit recipes must pass the oracle when executed through semedit. Git fix
+* Transcript failures remain explicit; missing telemetry is not measured zero.
+* Explicit recipes must pass the oracle when executed through semedit. Git fix
   replay cannot substitute for recipe validation or measured execution.
-- Explicit wall time includes provider overhead; tool timing measures semedit
+* Explicit wall time includes provider overhead; tool timing measures semedit
   execution. A known efficient recipe does not prove a global time minimum.
-- External repository arms share a pinned base commit; acceptance patches remain
+* External repository arms share a pinned base commit; acceptance patches remain
   outside the issue prompt and test patches stay outside the agent workspace.
 
 The explicit analysis exporter produces a bounded evidence package for this

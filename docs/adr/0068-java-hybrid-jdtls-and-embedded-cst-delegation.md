@@ -1,8 +1,18 @@
 <!-- WHY: Records the architectural decision to achieve Java parity with Go via persistent JDT LS delegation, embedded pure-Go Tree-sitter CST range resolution, and dependencyManagement-aware Maven POM mutations. -->
-# Architecture Decision Record (ADR) 0068: Hybrid Java Delegation via Persistent JDT LS and Embedded Pure-Go CST Locator
+# ADR-0068: Hybrid Java Delegation via Persistent JDT LS and Embedded Pure-Go CST Locator
 
 * **Status**: Accepted
 * **Date**: 2026-10-13
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Persistent JDT LS owns supported Java semantics, pre-flush normalization, push diagnostics, and post-write saves. Shared lazy preimages do not imply Go diagnostic caching or complete cross-language parity; trusted Maven/POM boundaries remain. |
+| description | Java capability expansion must preserve a pure-Go host while delegating Java semantics to JDT LS and limiting trust and source edits to verified boundaries. |
+| role | architecture |
+| scope | source-code |
+| area | backend |
+| languages | java |
 
 ## Context
 

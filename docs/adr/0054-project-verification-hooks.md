@@ -1,15 +1,21 @@
 # ADR-0054: Project Verification Hooks
 
-## Status
+* **Status**: Accepted
+* **Date**: 2026-09-27
 
-Accepted. The version-1 configuration and verification coordinator implement
-this contract; supported LSP actions remain backend-specific.
-
-## Date
-
-2026-09-27
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Select source-driven configured LSP verification with explicit coverage and signal-driven filesystem checks, with explicit `.semedit.yaml` overrides; detect after MCP workspace initialization and check after disk publication; version-1 hooks enforce scope-aware trust, stage normalization, and retain LSP/check results. Verification freezes affected modules/packages and preserves published-with-diagnostics outcomes; hook skipping retains language checks. |
+| description | Project verification must honor repository-owned tooling while bounding hook trust and scope and combining hook results with language-server diagnostics. |
+| role | process |
+| scope | tooling |
+| area | build |
+| languages | generic |
 
 ## Context
+
+Implementation status: The version-1 configuration and verification coordinator implement
 
 Projects already own formatter, linter, ordering, and test policy through their
 build tools and language-server configuration. RQ-0028 documents existing
@@ -146,29 +152,29 @@ the verification integration.
 
 ## Invariants
 
-- Resolve one configuration from the selected project root. Do not merge parent
+* Resolve one configuration from the selected project root. Do not merge parent
   repository configuration implicitly. Reject unknown fields and unsupported
   versions instead of silently ignoring them.
-- Configuration expresses project policy but cannot grant itself workspace
+* Configuration expresses project policy but cannot grant itself workspace
   trust or override the execution environment's permissions. Every applicable
   command hook, including detected golangci checks, requires workspace trust.
   Disabled hooks and hooks outside the selected scope do not require it.
-- Preserve configured order. Stop on failure; report completed hooks, changed
+* Preserve configured order. Stop on failure; report completed hooks, changed
   files, and partial results. Missing executables, unsupported actions, and
   timeouts are failures, not successful no-ops.
-- A supported code action with no applicable edit may be a successful no-op;
+* A supported code action with no applicable edit may be a successful no-op;
   unsupported capabilities and ambiguous matches must remain distinguishable.
-- Shell edits must be synchronized with active language-server documents before
+* Shell edits must be synchronized with active language-server documents before
   a dependent LSP hook runs. Validate LSP edit scope and document versions and
   commit client-applied edits atomically.
-- Run external normalization in a staged project copy. Validate all changed
+* Run external normalization in a staged project copy. Validate all changed
   paths before publishing files with ADR-0010 atomic writes. Reject deletions,
   manifest changes, symlinks, special files, and writes outside the requested
   scope. Report any files already published if publication subsequently fails.
   Check hooks run on the committed project and must be non-mutating.
-- Hook results identify the effective configuration, selected scope, execution
+* Hook results identify the effective configuration, selected scope, execution
   outcome, and bounded output. Cancellation and timeouts cover the hook chain.
-- Tools must already be available through project setup. Verification does not
+* Tools must already be available through project setup. Verification does not
   silently install tools or mutate workspace manifests.
 
 ## Consequences

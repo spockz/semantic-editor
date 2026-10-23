@@ -1,15 +1,17 @@
 # ADR-0031: Java Selected-File Semantic Rename
 
-Status: Accepted  
-Date: 2026-09-17
+* **Status**: Accepted
+* **Date**: 2026-09-17
 
-This record preserves the initial selected-file rename slice. ADR-0068
-supersedes its single-file edit restriction, rejection of all resource edits,
-omitted normalization/diagnostics, and close-after-commit lifecycle. Current
-Java rename retains a warm JDT LS session, validates workspace-scoped edits,
-and permits the bounded standalone `RenameFile` case. Trust, UTF-16 validation,
-preimage checks, atomic publication, and honest post-publication outcomes remain
-required. The decisions and invariants below describe the original slice.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Original single-file rename contract; ADR-0068 supersedes edit scope and close-after-commit with warm workspace rename and bounded RenameFile. Trust, validated edits, and honest atomic-publication outcomes remain. |
+| description | Java rename uses an external JDT LS process and must remain bounded by the request's explicit workspace trust and selected source file. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | java |
 
 ## Context
 
@@ -27,11 +29,11 @@ diagnostics are not invoked.
 
 ## Invariants
 
-- Trust is checked before JDT LS discovery, JVM validation, or process launch.
-- Foreign files, resources, annotations, malformed UTF-16 ranges, version
+* Trust is checked before JDT LS discovery, JVM validation, or process launch.
+* Foreign files, resources, annotations, malformed UTF-16 ranges, version
   mismatches, stale preimages, multi-file edits, and overlap are rejected before
   writing.
-- The managed session is closed and reset after a successful commit. A close
+* The managed session is closed and reset after a successful commit. A close
   failure after the atomic write does not turn the committed rename into a
   reported failure.
 

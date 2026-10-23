@@ -1,7 +1,17 @@
-# Architecture Decision Record (ADR) 0044: Benchmark Experiment Dimensions and Result Semantics
+# ADR-0044: Benchmark Experiment Dimensions and Result Semantics
 
-Status: Accepted
-Date: 2026-10-06
+* **Status**: Accepted
+* **Date**: 2026-10-06
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Codify the 7-axis task complexity framework on a 5-dot scale, pre-wall-clock CoW monorepo hydration, and deterministic strategy evaluation. |
+| description | The harness adds benchmark choices as named variants, which can hide what a run actually changes and encourage broad matrix expansion. The harness already has meaningful task and prompt variants, evaluation arms, Model Context Protocol (MCP) instruction modes, and technical provenance. ADR-0038 defines which conditions distinguish comparisons, and ADR-0043 defines aggregation and publication behavior. A more explicit experiment model must preserve those established distinctions. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -74,25 +84,25 @@ validate a versioned schema alongside implementation.
 
 ## Invariants
 
-- A run retains all measurements and supporting observations currently
+* A run retains all measurements and supporting observations currently
   published in per-run and aggregate tables, including raw values needed to
   reproduce derived metrics; new report fields do not silently replace them.
-- A run records its test identity, all resolved experimental conditions, and
+* A run records its test identity, all resolved experimental conditions, and
   relevant execution metadata.
-- Only explicitly selected conditions vary between runs; known dimensions do
+* Only explicitly selected conditions vary between runs; known dimensions do
   not imply a Cartesian product. Repetitions of one resolved configuration are
   separate observations and do not require a hypothesis.
-- Comparison grouping and best-case selection retain ADR-0038 and ADR-0043
+* Comparison grouping and best-case selection retain ADR-0038 and ADR-0043
   behavior, including task, target, prompt variant, MCP instruction mode,
   context variant, and arm distinctions. Technical provenance does not split
   aggregates.
-- Task correctness, expected-strategy evaluation, tool outcomes, and efficiency
+* Task correctness, expected-strategy evaluation, tool outcomes, and efficiency
   remain separate result fields; none substitutes for another.
-- Capability evaluation uses the labels captured with the run, so later tool
+* Capability evaluation uses the labels captured with the run, so later tool
   catalog changes cannot reinterpret an old trace.
-- Chain matching is deterministic and does not constrain task success unless an
+* Chain matching is deterministic and does not constrain task success unless an
   experiment explicitly makes it part of its success criteria.
-- Large monorepo fixture workspaces (e.g. Multi-SWE-bench Go) are hydrated via
+* Large monorepo fixture workspaces (e.g. Multi-SWE-bench Go) are hydrated via
   local Copy-on-Write cloning (`cp -Rc` / reflink) from pre-cached shallow clones
   in `.scratch/cache/repos/` strictly outside measured agent wall-clock time.
 

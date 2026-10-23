@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-16
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Retains body, scaffold, case, and batch capabilities; case insertion is also available through generic construct insertion, with catalog profile filtering. |
+| description | Prior to this decision, `semedit` provided AST insertion tools (`semantic_insert_declaration`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_decl`), symbol coordinate lookup (`resolve_symbol_location`), symbol renaming (`semantic_rename`), and import management (`semantic_organize_imports`). |
+| role | architecture |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 

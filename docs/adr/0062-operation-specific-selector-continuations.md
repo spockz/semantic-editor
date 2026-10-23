@@ -4,6 +4,16 @@
 * **Status**: Accepted
 * **Date**: 2026-10-02
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Generic element insertion emits closed records with canonical kind=element after final-source liveness checks; buffered children omit live selectors, and no symbol target is invented. |
+| description | Some structural operations edit an element selected inside a declaration but do not target a symbol. Encoding the holder as `symbol` would violate ADR-0055's target/selector distinction, while widening the generic symbol continuation would conflate unrelated result shapes. |
+| role | contract |
+| scope | project |
+| area | mcp |
+| languages | generic |
+
 ## Context
 
 Some structural operations edit an element selected inside a declaration but do

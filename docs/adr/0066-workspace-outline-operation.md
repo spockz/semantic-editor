@@ -1,8 +1,18 @@
 <!-- WHY: Records the architectural decision to introduce workspace_outline for repository package orientation and multi-module discovery. -->
-# Architecture Decision Record (ADR) 0066: Workspace Outline and Multi-Module Discovery
+# ADR-0066: Workspace Outline and Multi-Module Discovery
 
 * **Status**: Accepted
 * **Date**: 2026-10-10
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Go/Java orientation preserves source/manifests and exact module scope. Benchmark artifacts are pruned before discovery, snapshots, verification copies, formatting, and native Go traversal; documentation reads bounded published-result paths. |
+| description | Provide bounded package and module orientation before declaration-level inspection. |
+| role | architecture |
+| scope | tooling |
+| area | backend |
+| languages | go, java |
 
 ## Context
 

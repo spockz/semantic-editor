@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-25
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Insert/replace/remove use per-operation kinds; keyed Go map and struct literal elements use insert_construct(kind=element) with exact selectors and typed overlay validation. Movement remains explicit. |
+| description | Whole-function body replacement is unnecessarily broad for localized edits, while declaration insertion must refuse collisions rather than emit duplicate names. The public API also needs a stable construct lifecycle across declaration and nested syntax operations. |
+| role | contract |
+| scope | source-code |
+| area | backend |
+| languages | go |
+
 ## Context
 
 Whole-function body replacement is unnecessarily broad for localized edits, while declaration insertion must refuse collisions rather than emit duplicate names. The public API also needs a stable construct lifecycle across declaration and nested syntax operations.

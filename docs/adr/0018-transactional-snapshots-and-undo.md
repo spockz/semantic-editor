@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Content-addressed storage journal, preflight conflict checking, atomic restore, and explicit diagnostic availability without git stash pollution. |
+| description | Refactoring operations orchestrated by AI agents or developers frequently require experimentation across multiple files. Under ADR-0004 (Staged Execution & Diagnostic Reporting), the engine deliberately avoids automatic rollback on compiler errors, permitting multi-step refactorings that temporarily break code. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | generic |
 
 ## Context
 

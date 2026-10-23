@@ -1,13 +1,17 @@
 # ADR-0035: Explicit Maven Import Boundary for Java
 
-Status: Accepted
-Date: 2026-09-20
+* **Status**: Accepted
+* **Date**: 2026-09-20
 
-ADR-0068 supersedes the explicit-opt-in default below: Maven import defaults on
-for trusted Java workspaces containing a POM. Explicit reactor membership,
-disabled Gradle import, and scratch-owned JDT/M2E state remain required. The
-no-Maven-command rule applies to JDT LS import, not the separately requested
-fixed compile/test operations in ADR-0037.
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | ADR-0068 supersedes import opt-in with a trusted-POM default. Explicit reactor membership, disabled Gradle/autobuild, and scratch state remain; import does not authorize separate Maven commands. |
+| description | Java support needs Maven-reactor-aware workspace scope and a path to JDT LS project import. Build-tool execution remains outside the semantic editor boundary, and Gradle import must not be enabled as a side effect. |
+| role | contract |
+| scope | tooling |
+| area | build |
+| languages | java |
 
 ## Context
 
@@ -19,11 +23,11 @@ Java workspace discovery may ascend from a module only when an ancestor POM expl
 
 ## Invariants
 
-- Workspace trust is request-scoped and required before JDT LS starts.
-- Reactor scope is proven by explicit `<modules>` membership; parent inheritance alone is insufficient.
-- Maven import is opt-in; Gradle import and autobuild remain disabled.
-- JDT/M2E metadata is not generated at the project root.
-- No Maven, Maven Wrapper, or Gradle process is executed.
+* Workspace trust is request-scoped and required before JDT LS starts.
+* Reactor scope is proven by explicit `<modules>` membership; parent inheritance alone is insufficient.
+* Maven import is opt-in; Gradle import and autobuild remain disabled.
+* JDT/M2E metadata is not generated at the project root.
+* No Maven, Maven Wrapper, or Gradle process is executed.
 
 ## Consequences
 

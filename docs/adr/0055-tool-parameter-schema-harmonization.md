@@ -1,9 +1,18 @@
 <!-- Defines consistent tool argument names and copyable provenance for continuation values. -->
-
 # ADR-0055: Tool Parameter Schema Harmonization and Continuation Contracts
 
 * **Status**: Accepted
 * **Date**: 2026-09-28
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve field–parameter isomorphism through typed projected contracts, finalized receipts, and same-record element selectors without invented symbol targets; omit live buffered continuations. ADR-0065 keeps schemas and outputs canonical. Canonical typed outputs cover all operations, with native stage companions indexed separately from ordinary result continuations; stage drop exposes remaining named step selectors as `result.steps[].step_id`. |
+| description | The MCP tool surface has accumulated naming divergences across input parameters and result fields as tools were added independently. These divergences force the model to reassemble or rename values between tool calls, adding inference steps that the engine has already resolved. They also make the tool surface inconsistent from the model's perspective, reducing routing precision and increasing context consumption. |
+| role | contract |
+| scope | project |
+| area | mcp |
+| languages | generic |
 
 ## Context
 

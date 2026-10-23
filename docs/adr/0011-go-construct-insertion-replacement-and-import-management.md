@@ -1,7 +1,17 @@
-# ADR-0011: Top-Level Declaration Insertion and Automated Import Management
+# ADR-0011: Go Construct Insertion, Replacement, and Import Management
 
 * **Status**: Accepted
 * **Date**: 2026-09-16
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Generic construct insertion validates supported kinds and fails closed on collisions; replacement updates whole declarations, while scaffold-file overwrite remains separate. |
+| description | Go construct edits need parser-validated structure, collision-safe placement, and import cleanup chained to the same mutation; file lifecycle overwrite remains a separate operation. |
+| role | architecture |
+| scope | source-code |
+| area | backend |
+| languages | go |
 
 ## Context
 

@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve checked atomic writes and current working revisions; synchronize and verify through backend-owned receipts. Timestamps and external watcher delays do not prove freshness or completion; buffered results do not imply disk publication. |
+| description | When `semedit` operates in an agent environment, it coexists with direct file modifications (`write_to_file`) and external read-only language servers (e.g., `agent-lsp`, `gopls mcp`). |
+| role | invariant |
+| scope | project |
+| area | backend |
+| languages | generic |
+
 ## Context
 
 When `semedit` operates in an agent environment, it coexists with direct file modifications (`write_to_file`) and external read-only language servers (e.g., `agent-lsp`, `gopls mcp`).

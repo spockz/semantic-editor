@@ -2,7 +2,16 @@
 
 * **Status**: Accepted
 * **Date**: 2026-09-15
-* **Clarified**: 2026-10-06
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Clarified 2026-10-06: typed operation-language requirements and exact broken-code bitmaps govern published tolerance; try supported normalization and allow independent edits instead of requiring a blanket CST fallback. |
+| description | Agents routinely edit code that has syntax, import, dependency, or type errors. Language servers can retain partial syntax and symbol information in that state, but each operation needs different facts. A source outline, import cleanup, local AST edit, and cross-package refactoring do not share one compilation precondition. Document symbols can be available while a semantic rename lacks sufficient binding information. |
+| role | architecture |
+| scope | project |
+| area | backend |
+| languages | generic |
 
 ## Context
 

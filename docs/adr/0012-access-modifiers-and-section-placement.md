@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-16
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Universal access modifier enum, backend capability declarations, and strict section partitioning. |
+| description | Define shared access modifiers and section placement across supported language backends. |
+| role | contract |
+| scope | project |
+| area | backend |
+| languages | generic |
 
 ## Context
 

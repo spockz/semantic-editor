@@ -1,9 +1,18 @@
 <!-- Defines evidence validity so provider telemetry cannot silently become successful zero measurements. -->
-
 # ADR-0039: Benchmark Result Validity and Tool Telemetry
 
-Status: Accepted
-Date: 2026-09-21
+* **Status**: Accepted
+* **Date**: 2026-09-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Normalize ordered tool outcomes and startup boundaries, serialize versioned durations in milliseconds, publish oracle-evaluated comparisons, and collect documentation failures while consistently publishing valid reports. |
+| description | Agent harness transcripts use different event shapes. Codex emits `mcp_tool_call`, while other targets can emit `tool_call`, function-call, or command events. A list of tool names alone cannot distinguish discovery from a completed transport request or a tool action that ran and then failed. Partial harness failures were also reaching generated documentation as if they were valid experimental observations. |
+| role | contract |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -65,18 +74,18 @@ present a task-level tool list as evidence for every underlying run.
 
 ## Invariants
 
-- Tool-call order is preserved from the target transcript.
-- Transport and functional failure are represented separately and neither is
+* Tool-call order is preserved from the target transcript.
+* Transport and functional failure are represented separately and neither is
   silently converted into success.
-- Semantic-tool availability claims identify the canonical server or semantic
+* Semantic-tool availability claims identify the canonical server or semantic
   tool identity rather than a display label alone.
-- Documentation excludes incomplete harness records before aggregation.
-- Invalid saved reports cannot prevent valid sibling reports from being generated, and
+* Documentation excludes incomplete harness records before aggregation.
+* Invalid saved reports cannot prevent valid sibling reports from being generated, and
   partial generation cannot be reported as success.
-- Published tool-call tables are qualified by their run variant and arm.
-- Missing structured MCP response content remains an unavailable observation, not a measured
+* Published tool-call tables are qualified by their run variant and arm.
+* Missing structured MCP response content remains an unavailable observation, not a measured
   zero-duration startup boundary.
-- Versioned report duration values and their `*_ms` JSON field names use the same milliseconds
+* Versioned report duration values and their `*_ms` JSON field names use the same milliseconds
   unit; legacy unversioned reports retain their historical nanosecond interpretation.
 
 ## Consequences

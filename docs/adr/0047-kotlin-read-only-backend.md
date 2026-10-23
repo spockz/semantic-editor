@@ -4,7 +4,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-25
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Trusted `.kt`/`.kts` lookup and selected-file diagnostics use source-only scratch workspaces, fresh bounded server sessions, and explicit matching diagnostic receipts; Kotlin mutations remain unavailable. |
+| description | The language-neutral operation registry needs a Kotlin path for selected-file symbol lookup and bounded diagnostics. Kotlin tooling can resolve project classpaths by running classpath scripts or Maven/Gradle, so starting a language server against the caller's project before explicit trust would cross the external-tool boundary. The selected preinstalled `fwcd/kotlin-language-server` also publishes diagnostics without a document version, making a quiet server indistinguishable from a clean file unless the client requires an explicit report. |
+| role | contract |
+| scope | source-code |
+| area | language-server |
+| languages | kotlin |
 
 ## Context
 

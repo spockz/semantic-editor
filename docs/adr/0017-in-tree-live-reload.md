@@ -3,7 +3,15 @@
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
----
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | In-place stdio re-exec via `syscall.Exec` and `notifications/tools/list_changed` for self-modification dogfooding, gated by `--live-reload`. |
+| description | Enable opt-in in-tree MCP reload for dogfooding new semantic tools. |
+| role | contract |
+| scope | tooling |
+| area | mcp |
+| languages | go |
 
 ## Context
 

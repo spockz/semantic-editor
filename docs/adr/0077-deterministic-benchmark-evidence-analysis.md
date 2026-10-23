@@ -1,5 +1,4 @@
 <!-- Defines which benchmark observations the harness derives mechanically and where agent interpretation remains necessary. -->
-
 # ADR-0077: Deterministic Benchmark Evidence Analysis
 
 ## Status
@@ -9,6 +8,16 @@ Accepted
 ## Date
 
 2026-10-19
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Derive trace-linked cohort, failure, repeat, next-action, reflection, and transcript-timed per-tool latency observations from explicitly selected exports; keep timing coverage visible, heuristics non-authoritative, and benchmark conditions fixed through the improvement loop. |
+| description | Benchmark exports and Codex transcripts preserve tool calls, outcomes, turns, reflections, measured results, and experiment conditions. An operator must otherwise inspect these records manually to find repeated failures, parameter rejections, follow-up actions, or differences between matched runs. The broader goal is a repeatable improvement loop: collect comparable evidence, identify a candidate tooling change, implement it, rerun the same benchmark conditions, and retain or reject the change based on correctness and measured outcomes. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Goals
 

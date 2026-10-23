@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Backend-neutral deltas require current, coverage-valid findings. Exact full Go captures may seed incremental baselines; metadata errors require full coverage and server-state recovery. Explicit verification stays full; intermediate edits remain applied. Refactorings protect their observed and touched files without locking the workspace against unrelated concurrent edits. |
+| description | Initial designs proposed strictly atomic transactions with automatic rollback whenever an edit resulted in compiler errors. |
+| role | invariant |
+| scope | project |
+| area | backend |
+| languages | generic |
+
 ## Context
 
 Initial designs proposed strictly atomic transactions with automatic rollback whenever an edit resulted in compiler errors.
@@ -42,6 +52,14 @@ However, real-world refactoring is frequently a multi-step process that inherent
    retained workspace view to clear stale server-side findings without replacing
    the process (ADR-0060).
 3. **On-Demand Snapshots / Undo**: `semedit` maintains lightweight pre-edit snapshots so the user or agent can explicitly revert if desired, but **never enforces automatic rollback**.
+4. **Workspace Concurrency Boundary**: Refactoring operations do not lock the
+   workspace or require a complete inventory of concurrent edits and future
+   workspace membership. Each operation follows its own observed-file and
+   touched-file checks. An unrelated concurrent edit or newly added file/caller
+   outside that set may remain unchanged and may be missed by the refactoring;
+   this is an accepted outcome, not a reason to add workspace-wide locking or
+   transaction machinery. Callers that require a coordinated whole-workspace
+   migration must provide that coordination externally.
 
 ## Invariants
 
@@ -62,11 +80,16 @@ However, real-world refactoring is frequently a multi-step process that inherent
   and after its edit. Batches may share one pre-edit baseline and one final
   post-processing capture across their ordered operations as specified by
   ADR-0032.
+* Concurrent edits outside an operation's observed and touched files need not
+  be detected or incorporated. Correctness checks remain scoped to the files
+  and evidence the operation actually uses; they do not promise a serializable
+  transaction over the workspace.
 
 ## Consequences
 
-* **Positive**: Supports natural multi-step refactoring workflows while providing immediate feedback on whether compiler errors are increasing or decreasing.
+* **Positive**: Supports natural multi-step refactoring workflows while providing immediate feedback on whether compiler errors are increasing or decreasing, without imposing workspace-wide concurrency coordination.
 * **Negative**: Codebase can remain in a broken state if an agent abandons a multi-step refactoring midway. A missing or invalid baseline still requires analysis before mutation. Revision validation and conservative fallback are required to keep incremental deltas equivalent to full captures.
+* **Tradeoff**: Concurrent changes outside the operation's file/evidence set may be missed and left behind. This keeps edits scoped and avoids locking unrelated work; complete coordinated migrations need external synchronization.
 * **Cost boundary**: Two full sweeps and concurrent push/pull analysis are
   implementation costs, not diagnostic-delta requirements. Reuse and scoped
   refresh must preserve coverage and severity; suppressing ordinary background

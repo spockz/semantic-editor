@@ -1,0 +1,8 @@
+<!-- WHY: Keep detailed ADR authoring and indexing steps out of the always-loaded semedit routing skill. -->
+# ADR Search and Editing Workflow
+
+Use `semantic_search_adrs` (or `semedit search-adrs`) before making a decision that may be governed by an existing ADR. Provide decision context and optional `role`, `scope`, `area`, and open-ended `languages` filters; page with `offset` and `limit`. Search matches metadata labels and the Context, Decision, Invariants, and Consequences sections. Results include stable ADR IDs, concise metadata, and paths relative to the semedit working directory. Open a returned ADR with native file tools when its full rationale is needed.
+
+Create records with `adr new` using the repository's `.adr-dir` and `docs/adr/templates/template.md`. Every ADR must include the fixed metadata table and adjacent schema comment, followed by Context, Decision, Invariants, and Consequences. Keep metadata keys and order unchanged. ADR-0083 defines decision-role values, including `first-principle`; role, scope, and area labels remain open to new values, while language labels are open-ended. Do not use `adr link` or `adr new -s`: adr-tools only updates a `## Status` section, which this schema does not use. Edit supersession links and status with native file tools, then run `semantic_generate_adr_index` (or `semedit generate-adr-index`) to validate records and regenerate only the marked decision register. Do not edit generated register rows by hand.
+
+Use native file tools for Markdown prose and links; the probed Marksman rename did not return cross-link edits. `make lint-mermaid` validates Mermaid fences with Mermaid's parser, but does not perform structural graph edits or establish that a diagram's topology matches the intended design.

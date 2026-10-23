@@ -1,7 +1,17 @@
 # ADR-0043: Benchmark Run Aggregation and Best-Case Publication
 
-Status: Accepted
-Date: 2026-09-22
+* **Status**: Accepted
+* **Date**: 2026-09-22
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Publish per-run harness-recorded USD estimates with captured pricing metadata; never reprice historical results; aggregate by pricing ID and date; retain unavailable costs and oracle-first best-case selection. |
+| description | Repeated benchmark executions produce independent paired observations, and a single execution may cover only part of the benchmark matrix. Publishing every observation on the primary empirical page would obscure the strongest measured MCP outcome, while publishing only that outcome would hide variance and raw evidence. Cached prompt tokens are materially cheaper than uncached input, so raw token totals do not adequately describe the cost trade-off of loading additional reusable context. |
+| role | process |
+| scope | tooling |
+| area | benchmark |
+| languages | generic |
 
 ## Context
 
@@ -74,28 +84,28 @@ known-cost total.
 
 ## Invariants
 
-- A selected pair always comes from one recorded comparison and contains both
+* A selected pair always comes from one recorded comparison and contains both
   oracle-evaluated arms.
-- No non-outcome metric can override an oracle pass/fail difference.
-- A cost-based speed override requires at least a tenfold model-cost
+* No non-outcome metric can override an oracle pass/fail difference.
+* A cost-based speed override requires at least a tenfold model-cost
   improvement and equal pair outcome classes.
-- One-shot status is considered only when outcome, speed, and model cost
+* One-shot status is considered only when outcome, speed, and model cost
   remain within their stated comparison bands.
-- Aggregation never combines experimental conditions defined by ADR-0038.
-- Aggregate measurements retain arm and context identity; no cross-arm average
+* Aggregation never combines experimental conditions defined by ADR-0038.
+* Aggregate measurements retain arm and context identity; no cross-arm average
   is presented as an MCP effect.
-- A cached token contributes one tenth of an uncached token only to the
+* A cached token contributes one tenth of an uncached token only to the
   published cache-adjusted-token metric, not to raw telemetry values or
   best-case selection.
-- A reported model cost is the per-run USD estimate recorded by the harness with
+* A reported model cost is the per-run USD estimate recorded by the harness with
   its pricing metadata; docgen never recalculates it from a current rate card.
   Missing estimates remain unavailable and are never treated as zero.
-- Repeated sessions with the same experiment-defining configuration share one
+* Repeated sessions with the same experiment-defining configuration share one
   aggregate arm across runs; changes to a recorded treatment field keep arms
   separate.
-- Aggregate quantiles are recomputed from the pooled session-level values,
+* Aggregate quantiles are recomputed from the pooled session-level values,
   while session/token/cost totals sum observations across the included arms.
-- Root-level legacy result files remain publishable as the `legacy` run until
+* Root-level legacy result files remain publishable as the `legacy` run until
   all writers use explicit run identifiers.
 
 ## Consequences

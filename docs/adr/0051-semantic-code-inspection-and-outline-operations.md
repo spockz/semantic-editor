@@ -1,9 +1,18 @@
 <!-- Records semantic read operations and the typed inspection evidence they expose for follow-up edits. -->
-
 # ADR-0051: Semantic Code Inspection and Outline Operations
 
-Status: Accepted
-Date: 2026-09-26
+* **Status**: Accepted
+* **Date**: 2026-09-26
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Provide symbol inspection, body-elided outlines, typed reference discovery, and same-record inspection continuations with captured file, symbol, revision, and applicable Go owner selectors. Compact shared navigation and ambiguity rows replace bulk listings while preserving source provenance; inspection retains source and revisions. Construct selectors and package records stay distinct. |
+| description | Under read-restriction policies (such as `--semedit-arm-restrict=read/readwrite`), benchmark agents are steered toward semantic operations and prohibited from raw shell inspection. Existing semantic lookup provided point coordinates (`line`, `column`, `offset`), lacking declaration bodies, signatures, enclosing scope, and file context. Agents attempting semantic refactorings (such as replacing method bodies) refused to modify unseen code. |
+| role | architecture |
+| scope | tooling |
+| area | backend |
+| languages | generic |
 
 ## Context
 
@@ -34,30 +43,30 @@ We introduce three dedicated, zero-token read operations across the core engine,
 
 We extend cross-language parity for these read capabilities:
 
-- Generic Language Server Protocol (LSP) document symbol handling (`readlsp`) powers Java, Kotlin, Rust, and Scala outline projections.
-- Dedicated adapters provide outline projections for Makefile and Bash scripts.
-- The Go backend provides AST-native inspection, outline, and typed reference resolution.
+* Generic Language Server Protocol (LSP) document symbol handling (`readlsp`) powers Java, Kotlin, Rust, and Scala outline projections.
+* Dedicated adapters provide outline projections for Makefile and Bash scripts.
+* The Go backend provides AST-native inspection, outline, and typed reference resolution.
 
 ## Invariants
 
-- Read operations preserve workspace source and manifest bytes, their modification timestamps, and git-tracked state. Backend-owned scratch/runtime caches follow their own lifecycle; read-only semantic behavior does not promise that a language server performs zero disk I/O.
-- Ambiguous symbol queries return complete candidate sets with distinct locations rather than aborting or arbitrarily selecting a single match.
-- Hierarchical outlines omit executable statement bodies while retaining canonical signatures, doc comments, and parent-child declaration relationships.
-- Go outlines propagate the request context through source selection and parsing,
+* Read operations preserve workspace source and manifest bytes, their modification timestamps, and git-tracked state. Backend-owned scratch/runtime caches follow their own lifecycle; read-only semantic behavior does not promise that a language server performs zero disk I/O.
+* Ambiguous symbol queries return complete candidate sets with distinct locations rather than aborting or arbitrarily selecting a single match.
+* Hierarchical outlines omit executable statement bodies while retaining canonical signatures, doc comments, and parent-child declaration relationships.
+* Go outlines propagate the request context through source selection and parsing,
   honor cancellation, and read the active buffered source view. Source discovery
   shares the request's Go environment cache rather than starting an independent
   background-context environment lookup.
   Complete explicit runtime paths permit shared source filtering without a Go
   subprocess; configuration-derived paths still require effective resolution
   (ADR-0032).
-- Language backends declare read capabilities explicitly in the backend registry; unsupported combinations reject execution with structured errors.
-- Every public language-operation combination maintains executable CLI txtar contract test coverage.
+* Language backends declare read capabilities explicitly in the backend registry; unsupported combinations reject execution with structured errors.
+* Every public language-operation combination maintains executable CLI txtar contract test coverage.
 
 ## Consequences
 
-- Agents operating under read restrictions inspect and discover code structure through semantic tools without falling back to unconstrained shell commands.
-- Context window consumption remains compact due to body-elided structural outlines.
-- Language backends maintain consistent read and inspection contracts across Go, Java, Kotlin, Rust, Scala, Make, and Bash.
+* Agents operating under read restrictions inspect and discover code structure through semantic tools without falling back to unconstrained shell commands.
+* Context window consumption remains compact due to body-elided structural outlines.
+* Language backends maintain consistent read and inspection contracts across Go, Java, Kotlin, Rust, Scala, Make, and Bash.
 
 ## Restored construct inspection and canonical coordinates: 2026-10-12
 

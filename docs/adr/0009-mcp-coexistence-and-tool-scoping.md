@@ -3,6 +3,16 @@
 * **Status**: Accepted
 * **Date**: 2026-09-15
 
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Canonical semantic tool names and enabled-backend unions keep discovery separate from execution capability. Catalog profiles do not imply multi-file transactions or remove registered CLI/batch dispatch. |
+| description | Agent environments (such as Antigravity or Claude Code) may already have an LSP-backed MCP server configured (e.g. `gopls mcp` or `agent-lsp`), providing read-only navigation tools like `goToDefinition` and `findReferences`. |
+| role | architecture |
+| scope | project |
+| area | mcp |
+| languages | generic |
+
 ## Context
 
 Agent environments (such as Antigravity or Claude Code) may already have an LSP-backed MCP server configured (e.g. `gopls mcp` or `agent-lsp`), providing read-only navigation tools like `goToDefinition` and `findReferences`.
