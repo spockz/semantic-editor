@@ -12,10 +12,10 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
 	"github.com/spockz/semantic-editor/internal/lsp"
 )
 
@@ -595,11 +595,8 @@ func decodeHaskellDocumentSymbol(raw json.RawMessage, root, file string, source 
 }
 
 func validHaskellRange(r haskellRange, source []byte) bool {
-	if r.Start.Line < 0 || r.Start.Character < 0 || r.End.Line < 0 || r.End.Character < 0 {
-		return false
-	}
-	start, startErr := haskellByteOffset(source, r.Start)
-	end, endErr := haskellByteOffset(source, r.End)
+	start, startErr := readlsp.ByteOffset(source, neutralbackend.Position(r.Start))
+	end, endErr := readlsp.ByteOffset(source, neutralbackend.Position(r.End))
 	return startErr == nil && endErr == nil && start <= end
 }
 
@@ -693,52 +690,4 @@ func flattenHaskellSymbols(file string, symbols []haskellDocumentSymbol, parents
 		}
 	}
 	return result
-}
-
-func haskellByteOffset(source []byte, position haskellPosition) (int, error) {
-	if position.Line < 0 || position.Character < 0 {
-		return 0, errors.New("negative position")
-	}
-	line, start := 0, 0
-	for i, b := range source {
-		if b == '\n' {
-			if line == position.Line {
-				offset, err := haskellCharacterOffset(source[start:i], position.Character)
-				return start + offset, err
-			}
-			line++
-			start = i + 1
-		}
-	}
-	if line != position.Line {
-		return 0, errors.New("line outside source")
-	}
-	offset, err := haskellCharacterOffset(source[start:], position.Character)
-	return start + offset, err
-}
-
-func haskellCharacterOffset(line []byte, character int) (int, error) {
-	units := 0
-	for offset := 0; offset < len(line); {
-		runeValue, size := utf8.DecodeRune(line[offset:])
-		if runeValue == utf8.RuneError && size == 1 {
-			return 0, errors.New("invalid UTF-8 source")
-		}
-		runeUnits := 1
-		if runeValue > 0xffff {
-			runeUnits = 2
-		}
-		if units == character {
-			return offset, nil
-		}
-		if units < character && character < units+runeUnits {
-			return 0, errors.New("UTF-16 position splits a code point")
-		}
-		units += runeUnits
-		offset += size
-	}
-	if units == character {
-		return len(line), nil
-	}
-	return 0, errors.New("character outside source")
 }
