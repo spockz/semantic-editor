@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Product & Architecture
 * **Date**: 2026-09-17
-* **Last Updated**: 2026-10-23
+* **Last Updated**: 2026-10-24
 
 ---
 
@@ -143,6 +143,10 @@ ADR-0090 now permits exported standalone aliases with structural RHS expressions
 6. Update this taxonomy, relevant handovers/RQs, capability metadata, skills, and accepted ADRs as each track progresses; keep all corresponding indexes synchronized in the same change. The Go, Java, and Rust guides route rare refactor constraints to on-demand references; keep common operation routing in the primary skill and precise backend refusal contracts in their language references.
 
 The previously listed composite-operation and broader safe-delete proposals remain candidate gaps, not commitments to expand every language. Go safe-delete now includes a bounded method-free scalar-type proof under ADR-0057; methods remain deferred because they can change implicit interface satisfaction. Apply RQ-0023 and RQ-0025 boundaries when a concrete Go-first use case is selected: framework-specific patterns stay in Agent Skills, and speculative workspace isolation stays with the caller/controller.
+
+### 2026-10-24 integrated consolidation checkpoint
+
+Commit `96a0e8f9` integrates the canonical refactoring surface, capability and CLI coverage updates, the Markdown/ADR metadata and search lane, and continuous ADR numbering through 0097. The Make/Bash and Haskell/Kotlin scope clarifications are committed separately. No refactoring capability was added during closeout; Go constant extraction now refuses an ignored selector, and the refusal is covered by unchanged-source txtar. The language migration gate found comparable CLI coverage for every currently advertised non-Go refactor pair; Scala remains at its existing scope, and Rust/Metals capability expansions remain separate investigations. The final elevated `make check` passed on 2026-10-24. The second Go-local sweep, final cross-language generalization/code-quality sweep, Sol review of the integrated cleanup, and Gemini final review remain outstanding.
 
 ## Pre-handover audit and ownership
 
