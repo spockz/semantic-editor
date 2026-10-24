@@ -1,0 +1,793 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-a4206b3ce5e1f286",
+    "pair_id": "pair-4ea68191443ce3cc",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "medium"
+    },
+    "arm": "semedit-agentic",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Allow callers to tune the connection retry schedule beyond its maximum delay, including the initial delay, growth factor, randomization, and minimum time allowed for a connection attempt. Preserve the existing default behavior for callers that do not opt in. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Expose these settings through a public connection-parameter value and a dial option, and ensure the selected parameters control both retry delays and the minimum connection-attempt timeout. Keep the existing backoff configuration options working for compatibility. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Add grpc.ConnectParams with BackoffBaseDelay, BackoffMultiplier, BackoffJitter, BackoffMaxDelay, and MinConnectTimeout, and wire grpc.WithConnectParams into the dial options and retry strategy. Keep defaults equivalent to the current behavior, retain the legacy WithBackoffConfig and WithBackoffMaxDelay behavior while marking those APIs deprecated, and replace fixed internal backoff configurations with internal/backoff.NewExponentialBuilder and its fluent StrategyBuilder methods. Update the backoff users in ClientConn, health checking, DNS resolution, grpclb, and xDS to use the new strategy API. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit-agentic",
+        "cached_prompt_tokens": 1990784,
+        "codex_stderr": "{\"timestamp\":\"2026-10-18T05:10:03.929867Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T05:10:03.929897Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T05:10:03.968793Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:10:03.990378Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:10:04.011701Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:10:04.036055Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n",
+        "comparison_pair_id": "pair-4ea68191443ce3cc",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "diagnostic_reflection_skipped": "task execution or oracle evaluation failed",
+        "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n}\n\nfunc (s) TestWithBackoffConfigDefault(t *testing.T) {\n\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n}\n\nfunc (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}\n\nfunc (s) TestWithBackoffMaxDelay(t *testing.T) {\n\tmd := DefaultBackoffConfig.MaxDelay / 2\n\texpected := BackoffConfig{MaxDelay: md}\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n}\n\nfunc testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\nerror: patch failed: clientconn_test.go:820\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...\nexit status 1",
+        "estimated_cost_basis": "OpenAI API Standard short-context text token list rates; reasoning tokens are included in output tokens",
+        "estimated_cost_pricing_id": "openai-api-gpt-6-luna-standard-short-context",
+        "estimated_cost_rate_card_as_of": "2026-10-17",
+        "estimated_cost_usd": 0.03323184,
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 3398,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 1990784,
+            "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n}\n\nfunc (s) TestWithBackoffConfigDefault(t *testing.T) {\n\ttestBackoffConfigSet(t, \u0026DefaultBackoffConfig)\n}\n\nfunc (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay / 2}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}\n\nfunc (s) TestWithBackoffMaxDelay(t *testing.T) {\n\tmd := DefaultBackoffConfig.MaxDelay / 2\n\texpected := BackoffConfig{MaxDelay: md}\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffMaxDelay(md))\n}\n\nfunc testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\nerror: patch failed: clientconn_test.go:820\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...",
+            "initial_load_turns": 3,
+            "internal_turns": 28,
+            "mcp_load_turns": 0,
+            "output_tokens": 9377,
+            "process_start_to_first_event_ms": 67,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 2077139,
+            "reasoning_tokens": 4757,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"type BackoffConfig|BackoffConfig|connection-backoff|backoff\"'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,115p' internal/backoff/backoff.go \u0026\u0026 sed -n '230,280p' dialoptions.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "./reflection/grpc_testing/test.pb.go:172:// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream. ./reflection/grpc_reflection_v1alpha/reflection.pb.go:794:// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream. ./credentials/alts/internal/proto/grpc_gcp/handshaker.pb.go:1011:// For semantics around ctx use and closing/ending strea",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc \"rg -n \\\"semedit|semantic\\\" . --glob '\"'!vendor/**'\"' | head -80; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md'\"",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "language": "go",
+                  "path": "",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_workspace_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '930,990p' clientconn.go; cat .git/config | head -40; git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"minConnectTimeout|WithMinConnect\" dialoptions.go clientconn.go backoff.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "backoff.go",
+                  "language": "go",
+                  "symbol": "BackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "internal/backoff/backoff.go",
+                  "language": "go",
+                  "symbol": "Exponential",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '45,75p' dialoptions.go; sed -n '220,245p' clientconn.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "auto_organize_imports": true,
+                      "file": "backoff.go",
+                      "kind": "type",
+                      "language": "go",
+                      "source": "type BackoffConfig struct {\n\t// BaseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tBaseDelay time.Duration\n\t// Multiplier is the factor applied to the backoff after each retry.\n\tMultiplier float64\n\t// Jitter provides a range to randomize backoff delays.\n\tJitter float64\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}",
+                      "symbol": "BackoffConfig",
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "auto_organize_imports": true,
+                      "file": "internal/backoff/backoff.go",
+                      "kind": "type",
+                      "language": "go",
+                      "source": "type Exponential struct {\n\t// BaseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tBaseDelay time.Duration\n\t// Multiplier is the factor applied to the backoff after each retry.\n\tMultiplier float64\n\t// Jitter provides a range to randomize backoff delays.\n\tJitter float64\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}",
+                      "symbol": "Exponential",
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "auto_organize_imports": true,
+                      "file": "internal/backoff/backoff.go",
+                      "kind": "function",
+                      "language": "go",
+                      "source": "func (bc Exponential) Backoff(retries int) time.Duration {\n\tbaseDelayValue := bc.BaseDelay\n\tif baseDelayValue \u003c= 0 {\n\t\tbaseDelayValue = baseDelay\n\t}\n\tmultiplier := bc.Multiplier\n\tif multiplier \u003c= 0 {\n\t\tmultiplier = factor\n\t}\n\tjitterValue := bc.Jitter\n\tif bc.BaseDelay == 0 \u0026\u0026 bc.Multiplier == 0 \u0026\u0026 bc.Jitter == 0 {\n\t\tjitterValue = jitter\n\t}\n\tbackoff, max := float64(baseDelayValue), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= multiplier\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + jitterValue*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+                      "symbol": "Backoff",
+                      "tool": "semantic_replace_construct"
+                    }
+                  ],
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "failure": "Batch child results are intermediate and do not provide final continuation targets. Verification failed: verify bash source \"balancer/grpclb/regenerate.sh\": workspace trust required: verify: bash: /Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000 Critical result (JSON): {\"diagnostic_report\":{\"status\":\"unavailable\",\"reason\":\"No completed final batch diagnostic inventory was captured.\"},\"result\":{\"status\":\"applied_with_diagnostics\",\"verification\":{\"fail",
+                "functional_status": "failed",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git diff --stat \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go | head -180; sed -n '25,55p' backoff.go; sed -n '255,273p' dialoptions.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '820,865p' clientconn_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "auto_organize_imports": true,
+                      "file": "backoff.go",
+                      "kind": "var",
+                      "language": "go",
+                      "source": "var DefaultBackoffConfig = BackoffConfig{\n\tBaseDelay: 1 * time.Second,\n\tMultiplier: 1.6,\n\tJitter: 0.2,\n\tMaxDelay: 120 * time.Second,\n}",
+                      "symbol": "DefaultBackoffConfig",
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "auto_organize_imports": true,
+                      "file": "dialoptions.go",
+                      "kind": "function",
+                      "language": "go",
+                      "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+                      "symbol": "WithBackoffConfig",
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "auto_organize_imports": true,
+                      "file": "dialoptions.go",
+                      "kind": "function",
+                      "language": "go",
+                      "source": "func WithBackoffMaxDelay(md time.Duration) DialOption {\n\treturn WithBackoffConfig(BackoffConfig{MaxDelay: md})\n}",
+                      "symbol": "WithBackoffMaxDelay",
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "auto_organize_imports": true,
+                      "file": "clientconn.go",
+                      "in_function": "ClientConn",
+                      "kind": "statement/expression",
+                      "language": "go",
+                      "source": "",
+                      "symbol": "",
+                      "tool": "semantic_replace_construct"
+                    }
+                  ],
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "failure": "Batch child results are intermediate and do not provide final continuation targets. Critical result (JSON): {\"diagnostic_report\":{\"status\":\"unavailable\",\"reason\":\"No completed final batch diagnostic inventory was captured.\"},\"result\":{\"status\":\"error\",\"results\":[{\"status\":\"error\",\"application_state\":\"unknown\",\"error\":\"edit 3 params: param \\\"source\\\" is required: invalid operation parameters\",\"tool\":\"semantic_replace_construct\"}],\"workspace_root\":\"/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-im",
+                "functional_status": "failed",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git diff --stat \u0026\u0026 sed -n '25,45p' backoff.go; sed -n '255,275p' dialoptions.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "backoff.go",
+                  "kind": "var",
+                  "language": "go",
+                  "source": "var DefaultBackoffConfig = BackoffConfig{\n\tBaseDelay: 1 * time.Second,\n\tMultiplier: 1.6,\n\tJitter: 0.2,\n\tMaxDelay: 120 * time.Second,\n}",
+                  "symbol": "DefaultBackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "dialoptions.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+                  "symbol": "WithBackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "dialoptions.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+                  "symbol": "WithBackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "clientconn_test.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error dialing connection: %v\", err)\n\t}\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\n\t\tBaseDelay: expected.BaseDelay,\n\t\tMultiplier: expected.Multiplier,\n\t\tJitter: expected.Jitter,\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}\n}",
+                  "symbol": "testBackoffConfigSet",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "clientconn.go",
+                  "language": "go",
+                  "symbol": "NewClient",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve NewClient in /Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000/clientconn.go: symbol not found\"}",
+                "functional_status": "failed",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "103:func Dial(target string, opts ...DialOption) (*ClientConn, error) { 123:func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *ClientConn, err error) { 342:func (csm *connectivityStateManager) updateState(state connectivity.State) { 365:func (csm *connectivityStateManager) getState() connectivity.State { 371:func (csm *connectivityStateManager) getNotifyChan() \u003c-chan struct{} { 413:func (cc *ClientConn) WaitForStateChange(ctx context.Context, sourceState connectivity.State) bool",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc \"rg -n '\"'^func '\"' clientconn.go | head -30; sed -n '230,245p' clientconn.go; rg -n '\"'^func TestWithBackoff'\"' clientconn_test.go\"",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "file": "clientconn_test.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{\n\t\tBaseDelay: 500 * time.Millisecond,\n\t\tMultiplier: 1.2,\n\t\tJitter: 0.1,\n\t\tMaxDelay: DefaultBackoffConfig.MaxDelay / 2,\n\t}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}",
+                  "symbol": "TestWithBackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "comment": "WithBackoffConfig configures the dialer to use the provided backoff\nparameters after connection failures.",
+                  "file": "dialoptions.go",
+                  "language": "go",
+                  "scope": "declaration",
+                  "symbol": "WithBackoffConfig",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_set_doc_comment",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "clientconn_test.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func (s) TestWithBackoffConfigDefault(t *testing.T) {\n\texpected := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay}\n\ttestBackoffConfigSet(t, \u0026expected)\n}",
+                  "symbol": "TestWithBackoffConfigDefault",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "internal/backoff/backoff.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func (bc Exponential) Backoff(retries int) time.Duration {\n\tbaseDelayValue := bc.BaseDelay\n\tif baseDelayValue \u003c= 0 {\n\t\tbaseDelayValue = baseDelay\n\t}\n\tmultiplier := bc.Multiplier\n\tif multiplier \u003c= 0 {\n\t\tmultiplier = factor\n\t}\n\tjitterValue := bc.Jitter\n\tif bc.BaseDelay == 0 \u0026\u0026 bc.Multiplier == 0 \u0026\u0026 bc.Jitter == 0 {\n\t\tjitterValue = jitter\n\t}\n\tif retries == 0 {\n\t\treturn baseDelayValue\n\t}\n\tbackoff, max := float64(baseDelayValue), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= multiplier\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + jitterValue*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+                  "symbol": "Backoff",
+                  "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --stat \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go clientconn_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '510,540p' dialoptions.go; rg -n 'WithBackoffConfig|BaseDelay|Multiplier|Jitter' --glob '*.go' | head -60\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 86355,
+            "wall_clock_ms": 119511
+          }
+        ],
+        "internal_turns": 28,
+        "job_id": "job-a4206b3ce5e1f286",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": null,
+        "output_tokens": 9377,
+        "process_start_to_first_event_ms": 67,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change). Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 2077139,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "mcp_metrics_file": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000.mcp-metrics.json",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "codex_app_server_v2",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000.json"
+        },
+        "reasoning_tokens": 4757,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 5354,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"type BackoffConfig|BackoffConfig|connection-backoff|backoff\"'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,115p' internal/backoff/backoff.go \u0026\u0026 sed -n '230,280p' dialoptions.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "./reflection/grpc_testing/test.pb.go:172:// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream. ./reflection/grpc_reflection_v1alpha/reflection.pb.go:794:// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream. ./credentials/alts/internal/proto/grpc_gcp/handshaker.pb.go:1011:// For semantics around ctx use and closing/ending strea",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc \"rg -n \\\"semedit|semantic\\\" . --glob '\"'!vendor/**'\"' | head -80; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md'\"",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "language": "go",
+              "path": "",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_workspace_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '930,990p' clientconn.go; cat .git/config | head -40; git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"minConnectTimeout|WithMinConnect\" dialoptions.go clientconn.go backoff.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "backoff.go",
+              "language": "go",
+              "symbol": "BackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "internal/backoff/backoff.go",
+              "language": "go",
+              "symbol": "Exponential",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '45,75p' dialoptions.go; sed -n '220,245p' clientconn.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "auto_organize_imports": true,
+                  "file": "backoff.go",
+                  "kind": "type",
+                  "language": "go",
+                  "source": "type BackoffConfig struct {\n\t// BaseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tBaseDelay time.Duration\n\t// Multiplier is the factor applied to the backoff after each retry.\n\tMultiplier float64\n\t// Jitter provides a range to randomize backoff delays.\n\tJitter float64\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}",
+                  "symbol": "BackoffConfig",
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "auto_organize_imports": true,
+                  "file": "internal/backoff/backoff.go",
+                  "kind": "type",
+                  "language": "go",
+                  "source": "type Exponential struct {\n\t// BaseDelay is the amount of time to wait before retrying after the first\n\t// failure.\n\tBaseDelay time.Duration\n\t// Multiplier is the factor applied to the backoff after each retry.\n\tMultiplier float64\n\t// Jitter provides a range to randomize backoff delays.\n\tJitter float64\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}",
+                  "symbol": "Exponential",
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "auto_organize_imports": true,
+                  "file": "internal/backoff/backoff.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func (bc Exponential) Backoff(retries int) time.Duration {\n\tbaseDelayValue := bc.BaseDelay\n\tif baseDelayValue \u003c= 0 {\n\t\tbaseDelayValue = baseDelay\n\t}\n\tmultiplier := bc.Multiplier\n\tif multiplier \u003c= 0 {\n\t\tmultiplier = factor\n\t}\n\tjitterValue := bc.Jitter\n\tif bc.BaseDelay == 0 \u0026\u0026 bc.Multiplier == 0 \u0026\u0026 bc.Jitter == 0 {\n\t\tjitterValue = jitter\n\t}\n\tbackoff, max := float64(baseDelayValue), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= multiplier\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + jitterValue*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+                  "symbol": "Backoff",
+                  "tool": "semantic_replace_construct"
+                }
+              ],
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "failure": "Batch child results are intermediate and do not provide final continuation targets. Verification failed: verify bash source \"balancer/grpclb/regenerate.sh\": workspace trust required: verify: bash: /Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000 Critical result (JSON): {\"diagnostic_report\":{\"status\":\"unavailable\",\"reason\":\"No completed final batch diagnostic inventory was captured.\"},\"result\":{\"status\":\"applied_with_diagnostics\",\"verification\":{\"fail",
+            "functional_status": "failed",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git diff --stat \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go | head -180; sed -n '25,55p' backoff.go; sed -n '255,273p' dialoptions.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '820,865p' clientconn_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "auto_organize_imports": true,
+                  "file": "backoff.go",
+                  "kind": "var",
+                  "language": "go",
+                  "source": "var DefaultBackoffConfig = BackoffConfig{\n\tBaseDelay: 1 * time.Second,\n\tMultiplier: 1.6,\n\tJitter: 0.2,\n\tMaxDelay: 120 * time.Second,\n}",
+                  "symbol": "DefaultBackoffConfig",
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "auto_organize_imports": true,
+                  "file": "dialoptions.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+                  "symbol": "WithBackoffConfig",
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "auto_organize_imports": true,
+                  "file": "dialoptions.go",
+                  "kind": "function",
+                  "language": "go",
+                  "source": "func WithBackoffMaxDelay(md time.Duration) DialOption {\n\treturn WithBackoffConfig(BackoffConfig{MaxDelay: md})\n}",
+                  "symbol": "WithBackoffMaxDelay",
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "auto_organize_imports": true,
+                  "file": "clientconn.go",
+                  "in_function": "ClientConn",
+                  "kind": "statement/expression",
+                  "language": "go",
+                  "source": "",
+                  "symbol": "",
+                  "tool": "semantic_replace_construct"
+                }
+              ],
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "failure": "Batch child results are intermediate and do not provide final continuation targets. Critical result (JSON): {\"diagnostic_report\":{\"status\":\"unavailable\",\"reason\":\"No completed final batch diagnostic inventory was captured.\"},\"result\":{\"status\":\"error\",\"results\":[{\"status\":\"error\",\"application_state\":\"unknown\",\"error\":\"edit 3 params: param \\\"source\\\" is required: invalid operation parameters\",\"tool\":\"semantic_replace_construct\"}],\"workspace_root\":\"/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-im",
+            "functional_status": "failed",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git diff --stat \u0026\u0026 sed -n '25,45p' backoff.go; sed -n '255,275p' dialoptions.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "backoff.go",
+              "kind": "var",
+              "language": "go",
+              "source": "var DefaultBackoffConfig = BackoffConfig{\n\tBaseDelay: 1 * time.Second,\n\tMultiplier: 1.6,\n\tJitter: 0.2,\n\tMaxDelay: 120 * time.Second,\n}",
+              "symbol": "DefaultBackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "dialoptions.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+              "symbol": "WithBackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "dialoptions.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.Exponential{\n\t\tBaseDelay: b.BaseDelay,\n\t\tMultiplier: b.Multiplier,\n\t\tJitter: b.Jitter,\n\t\tMaxDelay: b.MaxDelay,\n\t})\n}",
+              "symbol": "WithBackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "clientconn_test.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func testBackoffConfigSet(t *testing.T, expected *BackoffConfig, opts ...DialOption) {\n\topts = append(opts, WithInsecure())\n\tconn, err := Dial(\"passthrough:///foo:80\", opts...)\n\tif err != nil {\n\t\tt.Fatalf(\"unexpected error dialing connection: %v\", err)\n\t}\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\n\t\tBaseDelay: expected.BaseDelay,\n\t\tMultiplier: expected.Multiplier,\n\t\tJitter: expected.Jitter,\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}\n}",
+              "symbol": "testBackoffConfigSet",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "clientconn.go",
+              "language": "go",
+              "symbol": "NewClient",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve NewClient in /Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000/clientconn.go: symbol not found\"}",
+            "functional_status": "failed",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "103:func Dial(target string, opts ...DialOption) (*ClientConn, error) { 123:func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *ClientConn, err error) { 342:func (csm *connectivityStateManager) updateState(state connectivity.State) { 365:func (csm *connectivityStateManager) getState() connectivity.State { 371:func (csm *connectivityStateManager) getNotifyChan() \u003c-chan struct{} { 413:func (cc *ClientConn) WaitForStateChange(ctx context.Context, sourceState connectivity.State) bool",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc \"rg -n '\"'^func '\"' clientconn.go | head -30; sed -n '230,245p' clientconn.go; rg -n '\"'^func TestWithBackoff'\"' clientconn_test.go\"",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "file": "clientconn_test.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func (s) TestWithBackoffConfig(t *testing.T) {\n\tb := BackoffConfig{\n\t\tBaseDelay: 500 * time.Millisecond,\n\t\tMultiplier: 1.2,\n\t\tJitter: 0.1,\n\t\tMaxDelay: DefaultBackoffConfig.MaxDelay / 2,\n\t}\n\texpected := b\n\ttestBackoffConfigSet(t, \u0026expected, WithBackoffConfig(b))\n}",
+              "symbol": "TestWithBackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "comment": "WithBackoffConfig configures the dialer to use the provided backoff\nparameters after connection failures.",
+              "file": "dialoptions.go",
+              "language": "go",
+              "scope": "declaration",
+              "symbol": "WithBackoffConfig",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_set_doc_comment",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "clientconn_test.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func (s) TestWithBackoffConfigDefault(t *testing.T) {\n\texpected := BackoffConfig{MaxDelay: DefaultBackoffConfig.MaxDelay}\n\ttestBackoffConfigSet(t, \u0026expected)\n}",
+              "symbol": "TestWithBackoffConfigDefault",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "internal/backoff/backoff.go",
+              "kind": "function",
+              "language": "go",
+              "source": "func (bc Exponential) Backoff(retries int) time.Duration {\n\tbaseDelayValue := bc.BaseDelay\n\tif baseDelayValue \u003c= 0 {\n\t\tbaseDelayValue = baseDelay\n\t}\n\tmultiplier := bc.Multiplier\n\tif multiplier \u003c= 0 {\n\t\tmultiplier = factor\n\t}\n\tjitterValue := bc.Jitter\n\tif bc.BaseDelay == 0 \u0026\u0026 bc.Multiplier == 0 \u0026\u0026 bc.Jitter == 0 {\n\t\tjitterValue = jitter\n\t}\n\tif retries == 0 {\n\t\treturn baseDelayValue\n\t}\n\tbackoff, max := float64(baseDelayValue), float64(bc.MaxDelay)\n\tfor backoff \u003c max \u0026\u0026 retries \u003e 0 {\n\t\tbackoff *= multiplier\n\t\tretries--\n\t}\n\tif backoff \u003e max {\n\t\tbackoff = max\n\t}\n\tbackoff *= 1 + jitterValue*(grpcrand.Float64()*2-1)\n\tif backoff \u003c 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+              "symbol": "Backoff",
+              "workspace_root": "/Volumes/semedit-bench-ram/run_codex_semedit-agentic_small-implicit_grpc__grpc-go-2735_1792300196768082000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --stat \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go clientconn_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '510,540p' dialoptions.go; rg -n 'WithBackoffConfig|BaseDelay|Multiplier|Jitter' --glob '*.go' | head -60\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 28,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -80\"",
+          "/bin/zsh -lc 'rg -n \"type BackoffConfig|BackoffConfig|connection-backoff|backoff\"'",
+          "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,115p' internal/backoff/backoff.go \u0026\u0026 sed -n '230,280p' dialoptions.go\"",
+          "/bin/zsh -lc \"rg -n \\\"semedit|semantic\\\" . --glob '\"'!vendor/**'\"' | head -80; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md'\"",
+          "/bin/zsh -lc 'git status --short'",
+          "semantic_workspace_outline",
+          "/bin/zsh -lc \"sed -n '930,990p' clientconn.go; cat .git/config | head -40; git status --short\"",
+          "/bin/zsh -lc 'rg -n \"minConnectTimeout|WithMinConnect\" dialoptions.go clientconn.go backoff.go'",
+          "semantic_inspect_symbol",
+          "semantic_inspect_symbol",
+          "/bin/zsh -lc \"sed -n '45,75p' dialoptions.go; sed -n '220,245p' clientconn.go\"",
+          "semantic_batch",
+          "/bin/zsh -lc \"git diff --stat \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go | head -180; sed -n '25,55p' backoff.go; sed -n '255,273p' dialoptions.go\"",
+          "/bin/zsh -lc \"sed -n '820,865p' clientconn_test.go\"",
+          "semantic_batch",
+          "/bin/zsh -lc \"git diff --stat \u0026\u0026 sed -n '25,45p' backoff.go; sed -n '255,275p' dialoptions.go\"",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_inspect_symbol",
+          "/bin/zsh -lc \"rg -n '\"'^func '\"' clientconn.go | head -30; sed -n '230,245p' clientconn.go; rg -n '\"'^func TestWithBackoff'\"' clientconn_test.go\"",
+          "semantic_replace_construct",
+          "semantic_set_doc_comment",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --stat \u0026\u0026 git diff -- backoff.go dialoptions.go internal/backoff/backoff.go clientconn_test.go'",
+          "/bin/zsh -lc \"sed -n '510,540p' dialoptions.go; rg -n 'WithBackoffConfig|BaseDelay|Multiplier|Jitter' --glob '*.go' | head -60\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 86355,
+        "variant": "small:implicit",
+        "wall_clock_ms": 119511
+      }
+    ],
+    "timestamp": "2026-10-18T05:12:03.389013Z"
+  }
+}

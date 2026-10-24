@@ -1,0 +1,257 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-71dcfa8297401887",
+    "pair_id": "pair-cebde214d281ec64",
+    "task_id": "task-12-request-identity-migration",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_12_request_identity_migration.txtar",
+    "context": "small",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "before_state": "package request\n\nimport (\n\t\"errors\"\n\t\"strings\"\n)\n\ntype Request struct {\n\tID      string\n\tKind    string\n\tPayload []byte\n}\n\nfunc (r Request) Validate() error {\n\tif r.ID == \"\" {\n\t\treturn errors.New(\"invalid request\")\n\t}\n\treturn nil\n}\n\nfunc Normalize(kind string) string {\n\tkind = strings.TrimSpace(kind)\n\tkind = strings.ToLower(kind)\n\treturn kind\n}\n\nfunc FindByID(requests []Request, id string) (Request, bool) {\n\tfor _, r := range requests {\n\t\tif r.ID == id {\n\t\t\treturn r, true\n\t\t}\n\t}\n\treturn Request{}, false\n}",
+        "cached_prompt_tokens": 211072,
+        "codex_stderr": "{\"timestamp\":\"2026-10-18T14:00:03.527018Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T14:00:03.527043Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T14:00:03.559151Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T14:00:03.581355Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T14:00:03.602949Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T14:00:03.625724Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T14:00:03.795076Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T14:00:03.795092Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T14:00:23.809738Z\",\"level\":\"ERROR\",\"fields\":{\"error\":\"apply_patch verification failed: invalid hunk at line 52, Update file hunk for path '/Volumes/semedit-bench-ram/run_codex-b⟂' is empty\"},\"target\":\"codex_core::tools::router\"}\n{\"timestamp\":\"2026-10-18T14:00:25.291217Z\",\"level\":\"ERROR\",\"fields\":{\"error\":\"apply_patch verification failed: invalid patch: The last line of the patch must be '*** End Patch'\"},\"target\":\"codex_core::tools::router\"}\n",
+        "comparison_pair_id": "pair-cebde214d281ec64",
+        "diagnostic_tool_coverage": {
+          "complete": true,
+          "expected": [
+            "semantic_find_references",
+            "semantic_insert_declaration",
+            "semantic_insert_function",
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_rename",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": [
+            "semantic_find_references",
+            "semantic_insert_declaration",
+            "semantic_insert_function",
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_rename",
+            "semantic_replace_body"
+          ],
+          "observation_state": "complete",
+          "observed": [
+            "/bin/zsh -lc \"cat agents.override.md \u0026\u0026 rg -n '\\\\brequest\\\\b|\\\\.id\\\\b|errinvalid|func normalize|validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'",
+            "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'agents.md' -g 'project_brief.md' -g 'go.mod' -g '*.go' | head -100",
+            "/bin/zsh -lc \"rg --files -g 'agents*' -g 'project_brief.md' -g 'readme*' -g 'makefile' \u0026\u0026 git status --short \u0026\u0026 rg -n '\\\\brequest\\\\b|\\\\.id\\\\b|errinvalid|func normalize|validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'",
+            "/bin/zsh -lc \"rg -n '\\\\.id\\\\b|\\\\bid\\\\s+string|requestid|errinvalidrequest|normalizekind' --glob '*.go' --glob '\"'!**/*_test.go'\"' \u0026\u0026 git diff -- . 2\u003e/dev/null || true",
+            "/bin/zsh -lc \"rg -n 'request\\\\.request\\\\{|request\\\\{|\\\\.id\\\\b|id:' --glob '*.go'",
+            "/bin/zsh -lc 'cat go.mod \u0026\u0026 gofmt -w request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go \u0026\u0026 go test ./...'",
+            "/bin/zsh -lc 'cat request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go response/response.go review/review.go \u0026\u0026 cat request/request_test.go gateway/handler_test.go storage/requests_test.go'",
+            "/bin/zsh -lc 'go build ./...'",
+            "file_change"
+          ]
+        },
+        "diff": "File request/request.go modified (34 lines -\u003e 40 lines)",
+        "estimated_cost_basis": "OpenAI API Standard short-context text token list rates; reasoning tokens are included in output tokens",
+        "estimated_cost_pricing_id": "openai-api-gpt-6-luna-standard-short-context",
+        "estimated_cost_rate_card_as_of": "2026-10-17",
+        "estimated_cost_usd": 0.00608892,
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 5025,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 211072,
+            "initial_load_turns": 5,
+            "internal_turns": 9,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 4238,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 3308,
+            "process_start_to_first_event_ms": 160,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 234314,
+            "reasoning_tokens": 716,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*.go' | head -100\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "AGENTS.override.md 2026-10-18 16:00:10.751 xcodebuild[23914:28522209] DVTFilePathFSEvents: Failed to start fs event stream. 2026-10-18 16:00:10.893 xcodebuild[23914:28522207] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead. fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc \"rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' \u0026\u0026 git status --short \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go response/response.go review/review.go \u0026\u0026 cat request/request_test.go gateway/handler_test.go storage/requests_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'request\\\\.Request\\\\{|Request\\\\{|\\\\.ID\\\\b|ID:' --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "module example.com/identityservice go 1.23 # internal/goarch compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/goos compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # unicode compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/runtime/pprof/label compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # example.com/identityservice/response compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # int",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc 'cat go.mod \u0026\u0026 gofmt -w request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go \u0026\u0026 go test ./...'",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n '\\\\.ID\\\\b|\\\\bID\\\\s+string|RequestID|ErrInvalidRequest|normalizeKind' --glob '*.go' --glob '\"'!**/*_test.go'\"' \u0026\u0026 git diff -- . 2\u003e/dev/null || true\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "# internal/godebugs compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/byteorder compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/unsafeheader compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/goos compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # example.com/identityservice/response compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/profilerecord compile: version ",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc 'go build ./...'",
+                "transport_status": "failed"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 23242,
+            "wall_clock_ms": 37596
+          }
+        ],
+        "internal_turns": 9,
+        "job_id": "job-71dcfa8297401887",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 4238,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 3308,
+        "process_start_to_first_event_ms": 160,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 234314,
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-12-request-identity-migration_1792332002996876000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "codex_app_server_v2",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-12-request-identity-migration_1792332002996876000.json"
+        },
+        "reasoning_tokens": 716,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-12-request-identity-migration",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*.go' | head -100\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "AGENTS.override.md 2026-10-18 16:00:10.751 xcodebuild[23914:28522209] DVTFilePathFSEvents: Failed to start fs event stream. 2026-10-18 16:00:10.893 xcodebuild[23914:28522207] [MT] DVTDeveloperPaths: Failed to get length of DARWIN_USER_CACHE_DIR from confstr(3), error = Error Domain=NSPOSIXErrorDomain Code=5 \"Input/output error\". Using NSCachesDirectory instead. fatal: not a git repository (or any parent up to mount point /Volumes) Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc \"rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' \u0026\u0026 git status --short \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go response/response.go review/review.go \u0026\u0026 cat request/request_test.go gateway/handler_test.go storage/requests_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'request\\\\.Request\\\\{|Request\\\\{|\\\\.ID\\\\b|ID:' --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "module example.com/identityservice go 1.23 # internal/goarch compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/goos compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # unicode compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/runtime/pprof/label compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # example.com/identityservice/response compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # int",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc 'cat go.mod \u0026\u0026 gofmt -w request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go \u0026\u0026 go test ./...'",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n '\\\\.ID\\\\b|\\\\bID\\\\s+string|RequestID|ErrInvalidRequest|normalizeKind' --glob '*.go' --glob '\"'!**/*_test.go'\"' \u0026\u0026 git diff -- . 2\u003e/dev/null || true\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "# internal/godebugs compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/byteorder compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/unsafeheader compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/goos compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # example.com/identityservice/response compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/profilerecord compile: version ",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc 'go build ./...'",
+            "transport_status": "failed"
+          }
+        ],
+        "tool_count": 9,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g '*.go' | head -100\"",
+          "/bin/zsh -lc \"rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' \u0026\u0026 git status --short \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+          "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 rg -n '\\\\bRequest\\\\b|\\\\.ID\\\\b|ErrInvalid|func Normalize|Validate\\\\(' --glob '*.go' --glob '\"'!**/*_test.go'\"'\"",
+          "/bin/zsh -lc 'cat request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go response/response.go review/review.go \u0026\u0026 cat request/request_test.go gateway/handler_test.go storage/requests_test.go'",
+          "/bin/zsh -lc \"rg -n 'request\\\\.Request\\\\{|Request\\\\{|\\\\.ID\\\\b|ID:' --glob '*.go'\"",
+          "file_change",
+          "/bin/zsh -lc 'cat go.mod \u0026\u0026 gofmt -w request/request.go gateway/handler.go queue/queue.go reporting/report.go storage/requests.go notifications/notifier.go correlation/identities.go scheduler/jobs.go \u0026\u0026 go test ./...'",
+          "/bin/zsh -lc \"rg -n '\\\\.ID\\\\b|\\\\bID\\\\s+string|RequestID|ErrInvalidRequest|normalizeKind' --glob '*.go' --glob '\"'!**/*_test.go'\"' \u0026\u0026 git diff -- . 2\u003e/dev/null || true\"",
+          "/bin/zsh -lc 'go build ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 23242,
+        "variant": "small",
+        "wall_clock_ms": 41907
+      }
+    ],
+    "timestamp": "2026-10-18T14:00:45.319627Z"
+  }
+}

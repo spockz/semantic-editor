@@ -1,0 +1,262 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-34cb8f1331f875d3",
+    "pair_id": "pair-4b0e01c6a546fb6f",
+    "task_id": "grpc__grpc-go-2735",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/grpc__grpc-go-2735.txtar",
+    "context": "small",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+    "followups": [
+      "Allow callers to tune the connection retry schedule beyond its maximum delay, including the initial delay, growth factor, randomization, and minimum time allowed for a connection attempt. Preserve the existing default behavior for callers that do not opt in.",
+      "Expose these settings through a public connection-parameter value and a dial option, and ensure the selected parameters control both retry delays and the minimum connection-attempt timeout. Keep the existing backoff configuration options working for compatibility.",
+      "Add grpc.ConnectParams with BackoffBaseDelay, BackoffMultiplier, BackoffJitter, BackoffMaxDelay, and MinConnectTimeout, and wire grpc.WithConnectParams into the dial options and retry strategy. Keep defaults equivalent to the current behavior, retain the legacy WithBackoffConfig and WithBackoffMaxDelay behavior while marking those APIs deprecated, and replace fixed internal backoff configurations with internal/backoff.NewExponentialBuilder and its fluent StrategyBuilder methods. Update the backoff users in ClientConn, health checking, DNS resolution, grpclb, and xDS to use the new strategy API."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "cached_prompt_tokens": 413184,
+        "codex_stderr": "{\"timestamp\":\"2026-10-18T05:23:59.327651Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T05:23:59.327693Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T05:23:59.366362Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:23:59.389798Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:23:59.408933Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T05:23:59.438971Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n",
+        "comparison_pair_id": "pair-4b0e01c6a546fb6f",
+        "complexity": {
+          "ambiguity": 4,
+          "composition": 5,
+          "context": 5,
+          "invariants": 4,
+          "locality": 5,
+          "scale": 5,
+          "staging": 4
+        },
+        "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}\n}\n\n\nerror: patch failed: clientconn_test.go:844\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...\nexit status 1",
+        "estimated_cost_basis": "OpenAI API Standard short-context text token list rates; reasoning tokens are included in output tokens",
+        "estimated_cost_pricing_id": "openai-api-gpt-6-luna-standard-short-context",
+        "estimated_cost_rate_card_as_of": "2026-10-17",
+        "estimated_cost_usd": 0.01043504,
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4239,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 413184,
+            "error": "oracle evaluation: prepare oracle tests: apply Multi-SWE test patch: exit status 1: Checking patch clientconn_test.go...\nerror: while searching for:\n\tdefer conn.Close()\n\n\tif conn.dopts.bs == nil {\n\t\tt.Fatalf(\"backoff config not set\")\n\t}\n\n\tactual, ok := conn.dopts.bs.(backoff.Exponential)\n\tif !ok {\n\t\tt.Fatalf(\"unexpected type of backoff config: %#v\", conn.dopts.bs)\n\t}\n\n\texpectedValue := backoff.Exponential{\n\t\tMaxDelay: expected.MaxDelay,\n\t}\n\tif actual != expectedValue {\n\t\tt.Fatalf(\"unexpected backoff config on connection: %v, want %v\", actual, expected)\n\t}\n}\n\n\nerror: patch failed: clientconn_test.go:844\nerror: clientconn_test.go: patch does not apply\nChecking patch internal/backoff/backoff_test.go...",
+            "initial_load_turns": 4,
+            "internal_turns": 13,
+            "mcp_load_turns": 0,
+            "output_tokens": 6277,
+            "process_start_to_first_event_ms": 188,
+            "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+            "prompt_tokens": 444831,
+            "reasoning_tokens": 3716,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -100 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|backoff\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "/* * * Copyright 2017 gRPC authors. * * Licensed under the Apache License, Version 2.0 (the \"License\"); * you may not use this file except in compliance with the License. * You may obtain a copy of the License at * * http://www.apache.org/licenses/LICENSE-2.0 * * Unless required by applicable law or agreed to in writing, software * distributed under the License is distributed on an \"AS IS\" BASIS, * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. * See the License for the specific la",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,110p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,280p' dialoptions.go \u0026\u0026 sed -n '220,250p' clientconn.go \u0026\u0026 sed -n '810,870p' clientconn_test.go \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' .\"",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '900,1030p' clientconn.go \u0026\u0026 sed -n '1180,1220p' clientconn.go \u0026\u0026 rg -n \\\"MinConnectTimeout|ConnectTimeout|connect.*timeout|ConnectParams\\\"\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git status --short \u0026\u0026 git diff -- backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 31647,
+            "wall_clock_ms": 58685
+          }
+        ],
+        "internal_turns": 13,
+        "job_id": "job-34cb8f1331f875d3",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": null,
+        "output_tokens": 6277,
+        "process_start_to_first_event_ms": 188,
+        "prompt": "### Use case(s) - what problem will this feature solve?\r\n\r\nIn some cases we want to retry connections more aggressively compared to the default behavior (e.g. for health checkers in tests in order to detect that server is up faster).\r\n\r\n### Proposed Solution\r\n\r\nAdd tunable parameters as described in the [documentation](https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md).\r\n\r\nIt can be done by extending `grpc.BackoffConfig` struct (and therefore is not a breaking change).\r\n",
+        "prompt_tokens": 444831,
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_grpc__grpc-go-2735_1792301037671718000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "codex_app_server_v2",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_grpc__grpc-go-2735_1792301037671718000.json"
+        },
+        "reasoning_tokens": 3716,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "grpc__grpc-go-2735",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -100 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|backoff\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "/* * * Copyright 2017 gRPC authors. * * Licensed under the Apache License, Version 2.0 (the \"License\"); * you may not use this file except in compliance with the License. * You may obtain a copy of the License at * * http://www.apache.org/licenses/LICENSE-2.0 * * Unless required by applicable law or agreed to in writing, software * distributed under the License is distributed on an \"AS IS\" BASIS, * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. * See the License for the specific la",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,110p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,280p' dialoptions.go \u0026\u0026 sed -n '220,250p' clientconn.go \u0026\u0026 sed -n '810,870p' clientconn_test.go \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' .\"",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '900,1030p' clientconn.go \u0026\u0026 sed -n '1180,1220p' clientconn.go \u0026\u0026 rg -n \\\"MinConnectTimeout|ConnectTimeout|connect.*timeout|ConnectParams\\\"\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git status --short \u0026\u0026 git diff -- backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 13,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*backoff*' -g '*.go' | head -100 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"rg -n \\\"BackoffConfig|ConnectParams|backoff\\\" --glob '*.go'\"",
+          "/bin/zsh -lc \"cat backoff.go \u0026\u0026 sed -n '1,110p' internal/backoff/backoff.go \u0026\u0026 sed -n '220,280p' dialoptions.go \u0026\u0026 sed -n '220,250p' clientconn.go \u0026\u0026 sed -n '810,870p' clientconn_test.go \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' .\"",
+          "/bin/zsh -lc \"sed -n '900,1030p' clientconn.go \u0026\u0026 sed -n '1180,1220p' clientconn.go \u0026\u0026 rg -n \\\"MinConnectTimeout|ConnectTimeout|connect.*timeout|ConnectParams\\\"\"",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go \u0026\u0026 git diff --check \u0026\u0026 git diff -- backoff.go internal/backoff/backoff.go dialoptions.go clientconn.go clientconn_test.go \u0026\u0026 git status --short'",
+          "file_change",
+          "file_change",
+          "/bin/zsh -lc 'git diff --check \u0026\u0026 git diff --stat \u0026\u0026 git status --short \u0026\u0026 git diff -- backoff.go clientconn.go clientconn_test.go dialoptions.go internal/backoff/backoff.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 31647,
+        "variant": "small",
+        "wall_clock_ms": 58685
+      }
+    ],
+    "timestamp": "2026-10-18T05:24:57.413272Z"
+  }
+}

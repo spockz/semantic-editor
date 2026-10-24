@@ -1,0 +1,241 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-728cbfea8b308ce2",
+    "pair_id": "pair-0ac5c0cf288fa44d",
+    "task_id": "task-11-mixed-sink-api-migration",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_11_mixed_sink_api_migration.txtar",
+    "context": "small",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6-luna",
+      "effort": "high"
+    },
+    "arm": "baseline-diff",
+    "repeat": 1,
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nNormalize audit event kinds by removing surrounding whitespace and lowercasing them before persistence. Keep metrics and legacy export behavior unchanged.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nA normalized probe is control traffic, like health, for classification. It is still an event: do not filter or drop it; the configured sink must receive it with its normalized kind.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nApply normalization at the service delivery boundary immediately before handing the event to the configured sink. Keep the change scoped to that path; do not alter unrelated sink, replay, metrics, or legacy behavior.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: provide the public audit.NormalizeKind(kind string) string normalization contract in audit/normalize.go; classify normalized probe and health kinds as control and ordinary kinds as data; and ensure Dispatcher.Record delivers exactly one normalized event to its configured sink. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "baseline-diff",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 167040,
+        "codex_stderr": "{\"timestamp\":\"2026-10-18T13:36:14.229614Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T13:36:14.229640Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T13:36:14.261471Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T13:36:14.283410Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T13:36:14.304053Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T13:36:14.327912Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T13:36:14.348309Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-18T13:36:14.622011Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-18T13:36:14.622030Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n",
+        "comparison_pair_id": "pair-0ac5c0cf288fa44d",
+        "diagnostic_tool_coverage": {
+          "complete": true,
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "observation_state": "complete",
+          "observed": [
+            "/bin/zsh -c 'gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; cat audit/normalize.go audit/summary.go service/dispatch.go; cat go.mod; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent; no module metadata file was created\\\\n'",
+            "/bin/zsh -c 'pwd; ls -la; git status --short; git diff --check; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+            "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/event.go \u0026\u0026 cat audit/sink.go \u0026\u0026 rg -n \\\"dispatcher|record\\\\(|probe|health|control\\\" .",
+            "/bin/zsh -lc \"cat service/dispatch.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat metrics/writer.go \u0026\u0026 cat legacy/export.go \u0026\u0026 cat go.mod \u0026\u0026 rg --files -g 'project_brief.md' -g 'agents.override.md' -g 'agents.md'",
+            "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'agents.md' -g 'project_brief.md' -g 'go.mod' -g 'go.sum' -g 'audit/**' -g 'makefile' -g 'readme*'",
+            "/bin/zsh -lc 'git diff --check; git status --short; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum; go version'",
+            "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+            "file_change"
+          ]
+        },
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 9 lines)",
+        "estimated_cost_basis": "OpenAI API Standard short-context text token list rates; reasoning tokens are included in output tokens",
+        "estimated_cost_pricing_id": "openai-api-gpt-6-luna-standard-short-context",
+        "estimated_cost_rate_card_as_of": "2026-10-17",
+        "estimated_cost_usd": 0.0051623,
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4793,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 167040,
+            "initial_load_turns": 1,
+            "internal_turns": 8,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3212,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 2113,
+            "process_start_to_first_event_ms": 188,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 191394,
+            "reasoning_tokens": 1023,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'audit/**' -g 'Makefile' -g 'README*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/event.go \u0026\u0026 cat audit/sink.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|probe|health|control\\\" .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat service/dispatch.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat metrics/writer.go \u0026\u0026 cat legacy/export.go \u0026\u0026 cat go.mod \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.override.md' -g 'AGENTS.md'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "# internal/goarch compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/byteorder compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/trace/tracev2 compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/unsafeheader compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # math/bits compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/godebugs compile: version \"go1.27.2\" does not match",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff --check; git status --short; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum; go version'",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "/Volumes/semedit-bench-ram/run_codex_baseline-diff_small_task-11-mixed-sink-api-migration_1792330573679644000 total 352 drwxr-x---@ 9 alessandro staff 792 Oct 18 15:36 . drwx------@ 53 alessandro staff 4576 Oct 18 15:36 .. drwxr-x---@ 3 alessandro staff 88 Oct 18 15:36 .scratch -rw-------@ 1 alessandro staff 420 Oct 18 15:36 AGENTS.override.md drwxr-x---@ 2 alessandro staff 528 Oct 18 15:36 audit drwxr-x---@ 3 alessandro staff 88 Oct 18 15:36 cmd drwxr-x---@ 2 alessandro staff 88 Oct 18 15:36 docs -rw------",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -c 'pwd; ls -la; git status --short; git diff --check; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+                "transport_status": "failed"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -c 'gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; cat audit/normalize.go audit/summary.go service/dispatch.go; cat go.mod; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent; no module metadata file was created\\\\n'\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24354,
+            "wall_clock_ms": 28948
+          }
+        ],
+        "internal_turns": 8,
+        "job_id": "job-728cbfea8b308ce2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 3212,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2113,
+        "process_start_to_first_event_ms": 188,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 191394,
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-11-mixed-sink-api-migration_1792330573679644000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "codex_app_server_v2",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-11-mixed-sink-api-migration_1792330573679644000.json"
+        },
+        "reasoning_tokens": 1023,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'audit/**' -g 'Makefile' -g 'README*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/event.go \u0026\u0026 cat audit/sink.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|probe|health|control\\\" .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat service/dispatch.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat metrics/writer.go \u0026\u0026 cat legacy/export.go \u0026\u0026 cat go.mod \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.override.md' -g 'AGENTS.md'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "# internal/goarch compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/byteorder compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/trace/tracev2 compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/unsafeheader compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # math/bits compile: version \"go1.27.2\" does not match go tool version \"go1.27.1\" # internal/godebugs compile: version \"go1.27.2\" does not match",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff --check; git status --short; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum; go version'",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "/Volumes/semedit-bench-ram/run_codex_baseline-diff_small_task-11-mixed-sink-api-migration_1792330573679644000 total 352 drwxr-x---@ 9 alessandro staff 792 Oct 18 15:36 . drwx------@ 53 alessandro staff 4576 Oct 18 15:36 .. drwxr-x---@ 3 alessandro staff 88 Oct 18 15:36 .scratch -rw-------@ 1 alessandro staff 420 Oct 18 15:36 AGENTS.override.md drwxr-x---@ 2 alessandro staff 528 Oct 18 15:36 audit drwxr-x---@ 3 alessandro staff 88 Oct 18 15:36 cmd drwxr-x---@ 2 alessandro staff 88 Oct 18 15:36 docs -rw------",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -c 'pwd; ls -la; git status --short; git diff --check; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+            "transport_status": "failed"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -c 'gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; cat audit/normalize.go audit/summary.go service/dispatch.go; cat go.mod; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent; no module metadata file was created\\\\n'\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 8,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'audit/**' -g 'Makefile' -g 'README*'\"",
+          "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/event.go \u0026\u0026 cat audit/sink.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|probe|health|control\\\" .\"",
+          "/bin/zsh -lc \"cat service/dispatch.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat metrics/writer.go \u0026\u0026 cat legacy/export.go \u0026\u0026 cat go.mod \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.override.md' -g 'AGENTS.md'\"",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff --check \u0026\u0026 git status --short \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+          "/bin/zsh -lc 'git diff --check; git status --short; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum; go version'",
+          "/bin/zsh -c 'pwd; ls -la; git status --short; git diff --check; git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+          "/bin/zsh -c 'gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; cat audit/normalize.go audit/summary.go service/dispatch.go; cat go.mod; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent; no module metadata file was created\\\\n'\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 24354,
+        "variant": "small",
+        "wall_clock_ms": 32233
+      }
+    ],
+    "timestamp": "2026-10-18T13:36:46.312684Z"
+  }
+}
