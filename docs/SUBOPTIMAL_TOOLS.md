@@ -8467,3 +8467,55 @@ Every extracted attempt is listed separately. event is the complete recorded too
 * Observed: inspection returned `symbol not found` and suggested the actual private loader; no source was changed.
 * Workaround: inspect the exported `ReadFile` operation, which owns the buffer lookup behavior.
 * Root cause: the caller inferred an internal method name from the package API instead of inspecting the exported read path.
+
+## 2026-10-24: session wrap-up, Implement taxonomy refactoring hando
+
+* Context: thread `01a15549-1731-7541-9279-f41e77c4668d`; branch `codex/refactoring-consolidation`; checkout `/Users/alessandro/.codex/worktrees/dc11/semantic-editor`; starting HEAD `25fb95aa402df4ab95ea13ec9d53e171f65b8c0b`. The frozen transcript covers retained events from 2026-10-19T17:50:40Z through 2026-10-24T09:19:52Z. It contains 7,962 records: 3,891 direct semantic calls and 4,071 shell-command candidates. This wrap-up itself invoked no `semantic_*` or `refactor_*` tools.
+* Totals: 3,546 semantic calls have `completed` status and 345 have `failed` status; all 3,891 direct calls have a recorded result. A failed status is not, by itself, a mutation-state classification: individual results include caller selector errors, expected refusals, and verification failures. The 66 `semantic_batch` parents all have failed status; across them 175 children were requested but only 39 child outcomes were recorded. The extractor reports 61 child-correlation limitations. Do not infer unrecorded child results from parent status. Historical completeness remains unknown because deleted, unrecorded, or truncated evidence cannot be recovered. Ordinal ranges below are inclusive spans in the frozen chronological transcript; calls within a span are interleaved with other tools.
+
+| Ordinal span (count) | Tool and intent | Recorded outcome | Built-in alternative, agent-efficiency evidence, and rating | Friction or limitation |
+| :--- | :--- | :--- | :--- | :--- |
+| 7–7944 (2,086) | `semantic_inspect_symbol`; inspect Go refactoring implementation, operation contracts, tests, and related declarations | 1,993 completed; 93 failed | Beneficial for retrieving complete declarations and imports. Built-in `rg` plus bounded `sed` appeared 1,120 and 776 times respectively, often to locate a real symbol first. Efficiency is mixed: semantic views provide declaration structure, but the high volume and guessed selectors show substantial discovery churn. | Failures include nonexistent files or guessed helper names; see the dated symbol/path incidents above. |
+| 4–7953 (566) | `semantic_outline`; map package/file declarations | 513 completed; 53 failed | Beneficial where package structure mattered; `rg --files` is a smaller filename-discovery baseline but does not provide declarations. | Some failures were unsupported language/scope requests or missing workspace trust. |
+| 179–7905 (470) | `semantic_replace_construct`; bounded Go AST edits | 408 completed; 62 failed | Beneficial when a unique AST selector was available: it preserves syntactic boundaries and reports ambiguity. `apply_patch` is lighter for docs, fixtures, and narrow source repairs but does not provide the same AST guarantees. No matched workflow baseline was measured. | Wrong/missing discriminators and repeated matches caused retries; some verification failures followed edits. Read each result for application state. |
+| 1–7955 (331) | `semantic_workspace_outline`; workspace/package map | 329 completed; 2 failed | Beneficial for module and package ownership; `rg --files` cannot replace the package/module synopsis. | Two failures; no new failure pattern was identified during wrap-up. |
+| 459–7941 (203) | `semantic_insert_construct`; add bounded Go statements and clauses | 165 completed; 38 failed | Beneficial for AST-anchored insertions; native patching has lower setup cost for documentation and archive text. No matched workflow baseline was measured. | Failures include ambiguous or unsupported anchors and compound snippets; related incidents are recorded above. |
+| 38–7437 (66) | `semantic_batch`; ordered buffered edits | 0 completed; 66 failed parent status | Intended to reduce round trips and stage related edits. Efficiency is inconclusive because child-level receipts are incomplete and parent status often reflects verification. | 175 requested children but only 39 recorded outcomes; 61 child-correlation limitations. |
+| 731–7830 (54) | `semantic_lookup`; resolve symbols and targets | 37 completed; 17 failed | Useful when resolving a known symbol; `rg` is cheaper for name discovery but cannot establish semantic identity. | Many failures came from guessed names; confirm declarations through outline/search first. |
+| 557–6873 (46) | `semantic_remove_construct`; remove exact declarations or constructs | 45 completed; 1 failed | Beneficial for exact AST removal; no comparable safe built-in text deletion was measured. | One failed status; inspect its result before interpreting mutation state. |
+| 1532–7584 (39) | `semantic_rename`; semantic rename | 38 completed; 1 failed | Beneficial for reference-aware renaming compared with text replacement; correctness guarantees differ, so runtime/effort equivalence is unmeasured. | One failed status; no additional defect established. |
+| 2527–7899 (12) | `semantic_diagnostics`; inspect verification reports | 10 completed; 2 failed | Beneficial when a report existed; configured `make check` remains the local check alternative. | An unsupported workspace argument is logged above; report paging accepts report identity and pagination fields only. |
+| 2425–7577 (8) | `semantic_find_references`; inspect usages | 7 completed; 1 failed | Beneficial for semantic usage discovery; `rg` produces faster textual candidates but not resolved references. | One failed status. |
+| 1929–5015 (4) | `semantic_set_doc_comment`; update declaration comments | 0 completed; 4 failed | No benefit established in this sample; built-in patching is the practical documentation fallback. | All recorded statuses failed; this does not prove whether comment changes applied. |
+| 39–5071 (3) | `semantic_verify`; workspace verification | 0 completed; 3 failed | Verification intent was useful, but `make check` provides the authoritative local alternative. | Failures included trust or hook conditions; these are not clean verification results. |
+| 1962–2899 (2) | `semantic_change_signature`; signature changes | 0 completed; 2 failed | No successful use in the retained evidence; no equivalent successful built-in baseline was measured. | Two failed statuses; infer no additional capability claim. |
+| 7037 (1) | `semantic_move_construct`; move a declaration | 1 completed | Beneficial for the single cross-package structural move; no comparable manual baseline was measured. | Single observation. |
+
+| Calls | Semantic engine runtime | Local built-in runtime | Scope and timing source | Comparison |
+| :--- | :--- | :--- | :--- | :--- |
+| 3,891 direct semantic calls | Recorded engine duration: median 4.773 ms, p95 3,567.286 ms, maximum 45,010.043 ms. | Unavailable for equivalent workflows. The 4,071 shell-command candidates do not provide comparable start/completion timing for each search/edit/check workflow. | Local transcript extractor; retained completed MCP records. Per-call durations overlap and are not session wall time. | No runtime ratio is valid. |
+| 66 batch parents | Recorded batch engine duration: median 9,240.504 ms, p95 16,900.600 ms. | Unavailable. | Parent duration only; child timings are not recorded and child outcomes are incomplete. | Do not divide parent runtime among children or compare it with a single local command. |
+
+Per-tool engine durations (all values are milliseconds; local built-in runtime is unavailable for each row for the reasons above):
+
+| Tool | Calls | Median | p95 | Maximum |
+| :--- | ---: | ---: | ---: | ---: |
+| `semantic_inspect_symbol` | 2,086 | 3.363 | 7.148 | 116.803 |
+| `semantic_outline` | 566 | 27.280 | 107.017 | 230.961 |
+| `semantic_replace_construct` | 470 | 2,930.064 | 6,123.538 | 20,351.900 |
+| `semantic_workspace_outline` | 331 | 4.189 | 30.895 | 59.710 |
+| `semantic_insert_construct` | 203 | 1,291.211 | 4,449.823 | 26,872.488 |
+| `semantic_batch` | 66 | 9,240.504 | 16,900.600 | 45,010.043 |
+| `semantic_lookup` | 54 | 16.135 | 227.065 | 323.108 |
+| `semantic_remove_construct` | 46 | 1,118.924 | 3,825.881 | 8,745.206 |
+| `semantic_rename` | 39 | 1,192.621 | 8,690.366 | 9,065.960 |
+| `semantic_diagnostics` | 12 | 1.118 | 1.614 | 1.614 |
+| `semantic_find_references` | 8 | 1,601.761 | 2,787.326 | 2,787.326 |
+| `semantic_set_doc_comment` | 4 | 2.323 | 5.812 | 5.812 |
+| `semantic_verify` | 3 | 2,188.628 | 4,133.638 | 4,133.638 |
+| `semantic_change_signature` | 2 | 4.649 | 4.649 | 4.649 |
+| `semantic_move_construct` | 1 | 4,970.061 | 4,970.061 | 4,970.061 |
+
+* Net effect: outlines, inspection, and AST mutation provided structural guarantees on a large changing Go codebase. Agent-efficiency evidence is inconclusive: the thread contains thousands of semantic calls and similarly many built-in command candidates, with no matched replay. Frequent guessed symbol/path failures and high inspection volume show avoidable setup cost; prior incident entries above document specific repairs. Prefer `rg --files`/`rg -n` to confirm names, then semantic inspection and construct edits for structural changes. The extractor's first 20-item page emitted an oversized coverage payload; the page limit is 100, so the snapshot required 80 sequential pages. `--limit 1000` was rejected because the limit is capped at 100. This wrap-up used no semantic calls after the transcript snapshot.
+* Related incidents/manual fallbacks: earlier entries cover wrong selectors, unsupported scopes, trust requirements, and verification-hook failures. No duplicate incident was added for those events. Current-session documentation and Python transcript-extractor edits use native file tools; see the matching Manual Edits entry.
+* Verification status: the current full `make check` could not start its test suites because `.scratch` autodetection supplied an empty `BENCH_RAM_ROOT` and `/Volumes/semedit-bench-ram` was not mounted. A manual 2 GiB mount was refused by `sudo` because no interactive password/askpass was available. Markdown lint completed, but this run did not verify the final full tree. Do not treat this wrap-up as integrated until the configured RAM volume is mounted and `make check` exits 0.

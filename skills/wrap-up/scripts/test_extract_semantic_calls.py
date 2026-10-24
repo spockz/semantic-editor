@@ -168,6 +168,33 @@ class TranscriptCLI(unittest.TestCase):
         self.assertEqual(result["items"][0]["recorded_item"]["arguments"], {"symbol": "Foo", "to": "Bar"})
         self.assertFalse(result["items"][1]["result_available"])
 
+    def test_canonical_refactor_direct_and_batch_calls_are_retained(self):
+        batch_result = {"structuredContent": {"result": {"status": "ok", "results": [
+            {"status": "ok", "result": {"edit_receipt": {"status": "persisted"}}}
+        ]}}}
+        direct = {"type": "response_item", "payload": {
+            "type": "function_call", "name": "mcp__semedit__refactor_rename", "call_id": "rename",
+            "arguments": json.dumps({"symbol": "Before", "to": "After"})}}
+        output = {"type": "response_item", "payload": {
+            "type": "function_call_output", "call_id": "rename", "output": json.dumps({"result": "renamed"})}}
+        self.write([direct, output])
+
+        result = self.run_cli()
+
+        self.assertEqual(result["coverage"]["direct_semantic_calls"], 1)
+        self.assertEqual(result["items"][0]["tool"], "refactor_rename")
+        self.assertEqual(result["items"][0]["recorded_item"]["arguments"], {"symbol": "Before", "to": "After"})
+
+        batch = self.call(tool="semantic_batch", arguments={"edits": [
+            {"tool": "refactor_extract_value", "params": {"symbol": "value"}}
+        ]}, result=batch_result)
+        self.write([batch])
+
+        result = self.run_cli()
+
+        self.assertEqual([item["tool"] for item in result["items"]], ["semantic_batch"])
+        self.assertEqual(result["items"][0]["children"][0]["tool"], "refactor_extract_value")
+
 
 if __name__ == "__main__":
     unittest.main()

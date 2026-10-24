@@ -58,7 +58,7 @@ def semantic_name(name):
         return None
     for prefix in ("mcp__semedit__", "mcp__semedit.", "semedit/", "semedit-"):
         name = name.removeprefix(prefix)
-    return name if re.fullmatch(r"semantic_[a-zA-Z0-9_]+", name) else None
+    return name if re.fullmatch(r"(?:semantic|refactor)_[a-zA-Z0-9_]+", name) else None
 
 
 def batch_results(value):

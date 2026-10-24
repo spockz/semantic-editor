@@ -10,6 +10,12 @@ The objective is to categorize the underlying intent of each manual edit, identi
 
 ## Log of Manual Edits
 
+## 2026-10-24: refactoring session wrap-up and transcript coverage
+
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **ME-0088** | `skills/wrap-up/SKILL.md`, `skills/wrap-up/scripts/extract_semantic_calls.py`, `skills/wrap-up/scripts/test_extract_semantic_calls.py`, `docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md`, `docs/research/RQ-0060-go-refactoring-tool-implementation.md`, `docs/research/README.md`, and one benchmark-result JSON | Extended the transcript extractor and its tests to retain canonical `refactor_*` names alongside `semantic_*`; recorded the final taxonomy review and wrap-up assessment. | Agent workflow, transcript evidence, research records | The transcript helper and tests are Python, while the RQs/index and benchmark result are Markdown/JSON; no applicable Go semantic operation edits these formats. The wrap-up used native patching and shell/JSON inspection. | Preserve exact call/result evidence; validate helper changes with its focused unittest and the full repository check. Do not infer local-runtime savings from engine timings. |
+
 ### 2026-10-23: bounded Go computed-value inline into an if condition
 
 | ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
