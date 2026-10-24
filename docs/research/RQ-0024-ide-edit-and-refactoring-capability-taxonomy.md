@@ -137,7 +137,7 @@ ADR-0090 now permits exported standalone aliases with structural RHS expressions
 
 1. **Complete (2026-10-22):** Update this RQ and RQ-0060 with the Rust review cycle, the Go cross-package type-move review/cleanup cycle, current capability gaps, and verification evidence.
 2. **Complete (2026-10-22):** Run elevated `make check` after the Go type-move implementation, code-quality sweep, and documentation updates; it exited 0.
-3. Review the latest Gemini response to `.scratch/Gemini _review_request.md`; incorporate actionable findings and repeat review until none remain.
+3. **Complete (2026-10-24):** Review the final Gemini response; it found no actionable findings. Keep the RQ open for the documented Go and non-Go capability gaps.
 4. Preserve CLI txtar evidence and capability metadata for every advertised language-operation pair. Record additional backend-supported work only after its edit-capture and scope contracts are verified; Scala parity remains deferred.
 5. Continue the remaining Go capability audit and select the next bounded behavior from RQ-0060; keep wider Rust assists separate from the scalar promotion contract in ADR-0095.
 6. Update this taxonomy, relevant handovers/RQs, capability metadata, skills, and accepted ADRs as each track progresses; keep all corresponding indexes synchronized in the same change. The Go, Java, and Rust guides route rare refactor constraints to on-demand references; keep common operation routing in the primary skill and precise backend refusal contracts in their language references.
