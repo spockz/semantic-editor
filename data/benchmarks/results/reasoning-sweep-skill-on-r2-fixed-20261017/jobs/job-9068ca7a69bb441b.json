@@ -1,0 +1,75 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-9068ca7a69bb441b",
+    "pair_id": "pair-453faf8cd68831e0",
+    "task_id": "task-09-composite-refactor",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_09_composite_refactor.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "low"
+    },
+    "arm": "semedit",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nRename the Config field from Port to ListenPort and update its uses, including Addr. Addr must continue to format the configured Host and port; unrelated Port fields in other packages are outside this change. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nDefaultConfig() *Config should return a non-nil configuration with Host set to `localhost` and ListenPort set to 8080, so its Addr() is `localhost:8080` without caller initialization. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nClean up imports left unused in config/config.go while preserving Addr behavior for caller-supplied host and port values, not just the defaults. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: Config exposes ListenPort instead of Port; DefaultConfig() *Config supplies Host `localhost` and ListenPort 8080; and Addr formats the current configuration values. Remove unused imports, preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "cached_prompt_tokens": 0,
+        "comparison_pair_id": "pair-453faf8cd68831e0",
+        "error": "exit status 1",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "internal_turns": 0,
+        "job_id": "job-9068ca7a69bb441b",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": null,
+        "output_tokens": 0,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 0,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": true,
+        "success": false,
+        "target": {
+          "effort": "low",
+          "harness": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_count": 0,
+        "turns": 0,
+        "uncached_prompt_tokens": 0,
+        "variant": "small:implicit",
+        "wall_clock_ms": 0
+      }
+    ],
+    "timestamp": "2026-10-17T20:37:47.153926Z"
+  }
+}

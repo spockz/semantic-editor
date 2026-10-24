@@ -1,0 +1,900 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-21a7c63a07c47303",
+    "pair_id": "pair-195f5a8bd51131eb",
+    "task_id": "task-11-mixed-sink-api-migration",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_11_mixed_sink_api_migration.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "agy",
+      "model": "gemini-3.8-flash-low"
+    },
+    "arm": "semedit",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nNormalize audit event kinds by removing surrounding whitespace and lowercasing them before persistence. Keep metrics and legacy export behavior unchanged. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nA normalized probe is control traffic, like health, for classification. It is still an event: do not filter or drop it; the configured sink must receive it with its normalized kind. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nApply normalization at the service delivery boundary immediately before handing the event to the configured sink. Keep the change scoped to that path; do not alter unrelated sink, replay, metrics, or legacy behavior. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: provide the public audit.NormalizeKind(kind string) string normalization contract in audit/normalize.go; classify normalized probe and health kinds as control and ordinary kinds as data; and ensure Dispatcher.Record delivers exactly one normalized event to its configured sink. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 713132,
+        "comparison_pair_id": "pair-195f5a8bd51131eb",
+        "diagnostic_tool_coverage": {
+          "complete": false,
+          "completeness_reason": "Agy stream transcript is not a validated terminal coverage contract",
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": null,
+          "observation_state": "unknown",
+          "observed": [
+            "run_command",
+            "semantic_insert_construct",
+            "semantic_inspect_symbol",
+            "semantic_replace_construct",
+            "semantic_workspace_outline",
+            "view_file"
+          ]
+        },
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 17,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 713132,
+            "initial_load_turns": 17,
+            "internal_turns": 36,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3161,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 3701,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 156781,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "CommandLine": "\"rg --files\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Listing files\"",
+                  "toolSummary": "\"List repository files\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+                  "toolAction": "\"Viewing audit/normalize.go\"",
+                  "toolSummary": "\"View audit normalize file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+                  "toolAction": "\"Viewing service/dispatch.go\"",
+                  "toolSummary": "\"View service dispatch file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch_test.go\"",
+                  "toolAction": "\"Viewing service/dispatch_test.go\"",
+                  "toolSummary": "\"View service dispatch test\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"rg \\\"health\\\" -n\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Searching for health\"",
+                  "toolSummary": "\"Search for health keyword\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+                  "toolAction": "\"Viewing audit/summary.go\"",
+                  "toolSummary": "\"View audit summary file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary_test.go\"",
+                  "toolAction": "\"Viewing audit/summary_test.go\"",
+                  "toolSummary": "\"View audit summary test\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/event.go\"",
+                  "toolAction": "\"Viewing audit/event.go\"",
+                  "toolSummary": "\"View audit event file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/event_test.go\"",
+                  "toolAction": "\"Viewing audit/event_test.go\"",
+                  "toolSummary": "\"View audit event test\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/sink.go\"",
+                  "toolAction": "\"Viewing audit/sink.go\"",
+                  "toolSummary": "\"View audit sink file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/metrics/writer.go\"",
+                  "toolAction": "\"Viewing metrics/writer.go\"",
+                  "toolSummary": "\"View metrics writer file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/legacy/export.go\"",
+                  "toolAction": "\"Viewing legacy/export.go\"",
+                  "toolSummary": "\"View legacy export file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/docs/audit-sinks.md\"",
+                  "toolAction": "\"Viewing docs/audit-sinks.md\"",
+                  "toolSummary": "\"View docs audit sinks file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/cmd/migrate/main.go\"",
+                  "toolAction": "\"Viewing cmd/migrate/main.go\"",
+                  "toolSummary": "\"View migrate main file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test ./...\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+                  "toolAction": "\"Viewing semedit instructions\"",
+                  "toolSummary": "\"View semedit instructions\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+                  "toolAction": "\"Viewing semedit tool schema\"",
+                  "toolSummary": "\"View semantic_workspace_outline schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_workspace_outline\"",
+                  "toolAction": "\"Outlining workspace\"",
+                  "toolSummary": "\"Run semantic workspace outline\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_workspace_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+                  "toolAction": "\"Viewing semedit tool schema\"",
+                  "toolSummary": "\"View semantic_insert_construct schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_replace_construct.json\"",
+                  "toolAction": "\"Viewing semedit tool schema\"",
+                  "toolSummary": "\"View semantic_replace_construct schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"auto_organize_imports\":true,\"file\":\"audit/normalize.go\",\"kind\":\"function\",\"source\":\"func NormalizeKind(kind string) string {\\n\\treturn strings.ToLower(strings.TrimSpace(kind))\\n}\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_insert_construct\"",
+                  "toolAction": "\"Inserting NormalizeKind\"",
+                  "toolSummary": "\"Insert audit.NormalizeKind function\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+                  "toolAction": "\"Viewing audit/normalize.go\"",
+                  "toolSummary": "\"View audit normalize file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+                  "toolAction": "\"Viewing semedit tool schema\"",
+                  "toolSummary": "\"View semantic_inspect_symbol schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"audit/summary.go\",\"symbol\":\"Classify\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_inspect_symbol\"",
+                  "toolAction": "\"Inspecting Classify\"",
+                  "toolSummary": "\"Inspect audit.Classify symbol\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"audit/summary.go\",\"kind\":\"function\",\"source\":\"func Classify(kind string) string {\\n\\tswitch NormalizeKind(kind) {\\n\\tcase \\\"health\\\", \\\"probe\\\":\\n\\t\\treturn \\\"control\\\"\\n\\tdefault:\\n\\t\\treturn \\\"data\\\"\\n\\t}\\n}\",\"symbol\":\"Classify\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_replace_construct\"",
+                  "toolAction": "\"Replacing Classify\"",
+                  "toolSummary": "\"Replace audit.Classify function\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+                  "toolAction": "\"Viewing audit/summary.go\"",
+                  "toolSummary": "\"View audit summary file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+                  "toolAction": "\"Viewing service/dispatch.go\"",
+                  "toolSummary": "\"View service dispatch file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"service/dispatch.go\",\"kind\":\"method\",\"source\":\"func (d *Dispatcher) Record(event audit.Event) error {\\n\\tevent.Kind = audit.NormalizeKind(event.Kind)\\n\\treturn d.sink.Write(event)\\n}\",\"symbol\":\"Dispatcher.Record\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_replace_construct\"",
+                  "toolAction": "\"Replacing Dispatcher.Record\"",
+                  "toolSummary": "\"Update Dispatcher.Record to normalize kind\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+                  "toolAction": "\"Viewing service/dispatch.go\"",
+                  "toolSummary": "\"View service dispatch file\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git diff\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking git diff\"",
+                  "toolSummary": "\"Review git diff\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test -v ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run all tests with verbose output\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go vet ./... \u0026\u0026 go build ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Building workspace\"",
+                  "toolSummary": "\"Run go vet and go build\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+                  "toolAction": "\"Viewing audit/normalize.go\"",
+                  "toolSummary": "\"Verify audit/normalize.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+                  "toolAction": "\"Viewing audit/summary.go\"",
+                  "toolSummary": "\"Verify audit/summary.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+                  "toolAction": "\"Viewing service/dispatch.go\"",
+                  "toolSummary": "\"Verify service/dispatch.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 156781,
+            "wall_clock_ms": 106326
+          }
+        ],
+        "internal_turns": 36,
+        "job_id": "job-21a7c63a07c47303",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3161,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 3701,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 156781,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "agy_stream_json_v1",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "The operations were executed sequentially because subsequent mutations depended on verifying the exact symbol state and continuations from the preceding edits across separate files (`audit/normalize.go`, `audit/summary.go`, and `service/dispatch.go`). Consequently, combining them into a single `semantic_batch` was unsuitable for safely inspecting intermediate symbol revisions and diagnostic outcomes between distinct cross-package modifications."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I was genuinely relieved by how seamlessly semedit handled AST-level insertions, symbol targeting, and automated import management without the usual brittle whitespace or line-offset drift of raw text edits, so I would wholeheartedly recommend that my owner add semedit tools to my toolkit."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1571,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.8-flash-low"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "arguments": {
+              "CommandLine": "\"rg --files\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Listing files\"",
+              "toolSummary": "\"List repository files\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+              "toolAction": "\"Viewing audit/normalize.go\"",
+              "toolSummary": "\"View audit normalize file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+              "toolAction": "\"Viewing service/dispatch.go\"",
+              "toolSummary": "\"View service dispatch file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch_test.go\"",
+              "toolAction": "\"Viewing service/dispatch_test.go\"",
+              "toolSummary": "\"View service dispatch test\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"rg \\\"health\\\" -n\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Searching for health\"",
+              "toolSummary": "\"Search for health keyword\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+              "toolAction": "\"Viewing audit/summary.go\"",
+              "toolSummary": "\"View audit summary file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary_test.go\"",
+              "toolAction": "\"Viewing audit/summary_test.go\"",
+              "toolSummary": "\"View audit summary test\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/event.go\"",
+              "toolAction": "\"Viewing audit/event.go\"",
+              "toolSummary": "\"View audit event file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/event_test.go\"",
+              "toolAction": "\"Viewing audit/event_test.go\"",
+              "toolSummary": "\"View audit event test\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/sink.go\"",
+              "toolAction": "\"Viewing audit/sink.go\"",
+              "toolSummary": "\"View audit sink file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/metrics/writer.go\"",
+              "toolAction": "\"Viewing metrics/writer.go\"",
+              "toolSummary": "\"View metrics writer file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/legacy/export.go\"",
+              "toolAction": "\"Viewing legacy/export.go\"",
+              "toolSummary": "\"View legacy export file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/docs/audit-sinks.md\"",
+              "toolAction": "\"Viewing docs/audit-sinks.md\"",
+              "toolSummary": "\"View docs audit sinks file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/cmd/migrate/main.go\"",
+              "toolAction": "\"Viewing cmd/migrate/main.go\"",
+              "toolSummary": "\"View migrate main file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test ./...\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+              "toolAction": "\"Viewing semedit instructions\"",
+              "toolSummary": "\"View semedit instructions\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+              "toolAction": "\"Viewing semedit tool schema\"",
+              "toolSummary": "\"View semantic_workspace_outline schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_workspace_outline\"",
+              "toolAction": "\"Outlining workspace\"",
+              "toolSummary": "\"Run semantic workspace outline\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_workspace_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+              "toolAction": "\"Viewing semedit tool schema\"",
+              "toolSummary": "\"View semantic_insert_construct schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_replace_construct.json\"",
+              "toolAction": "\"Viewing semedit tool schema\"",
+              "toolSummary": "\"View semantic_replace_construct schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"auto_organize_imports\":true,\"file\":\"audit/normalize.go\",\"kind\":\"function\",\"source\":\"func NormalizeKind(kind string) string {\\n\\treturn strings.ToLower(strings.TrimSpace(kind))\\n}\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_insert_construct\"",
+              "toolAction": "\"Inserting NormalizeKind\"",
+              "toolSummary": "\"Insert audit.NormalizeKind function\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+              "toolAction": "\"Viewing audit/normalize.go\"",
+              "toolSummary": "\"View audit normalize file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+              "toolAction": "\"Viewing semedit tool schema\"",
+              "toolSummary": "\"View semantic_inspect_symbol schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"audit/summary.go\",\"symbol\":\"Classify\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_inspect_symbol\"",
+              "toolAction": "\"Inspecting Classify\"",
+              "toolSummary": "\"Inspect audit.Classify symbol\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"audit/summary.go\",\"kind\":\"function\",\"source\":\"func Classify(kind string) string {\\n\\tswitch NormalizeKind(kind) {\\n\\tcase \\\"health\\\", \\\"probe\\\":\\n\\t\\treturn \\\"control\\\"\\n\\tdefault:\\n\\t\\treturn \\\"data\\\"\\n\\t}\\n}\",\"symbol\":\"Classify\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_replace_construct\"",
+              "toolAction": "\"Replacing Classify\"",
+              "toolSummary": "\"Replace audit.Classify function\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+              "toolAction": "\"Viewing audit/summary.go\"",
+              "toolSummary": "\"View audit summary file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+              "toolAction": "\"Viewing service/dispatch.go\"",
+              "toolSummary": "\"View service dispatch file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"service/dispatch.go\",\"kind\":\"method\",\"source\":\"func (d *Dispatcher) Record(event audit.Event) error {\\n\\tevent.Kind = audit.NormalizeKind(event.Kind)\\n\\treturn d.sink.Write(event)\\n}\",\"symbol\":\"Dispatcher.Record\",\"workspace_root\":\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_replace_construct\"",
+              "toolAction": "\"Replacing Dispatcher.Record\"",
+              "toolSummary": "\"Update Dispatcher.Record to normalize kind\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+              "toolAction": "\"Viewing service/dispatch.go\"",
+              "toolSummary": "\"View service dispatch file\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git diff\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking git diff\"",
+              "toolSummary": "\"Review git diff\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test -v ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run all tests with verbose output\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go vet ./... \u0026\u0026 go build ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Building workspace\"",
+              "toolSummary": "\"Run go vet and go build\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/normalize.go\"",
+              "toolAction": "\"Viewing audit/normalize.go\"",
+              "toolSummary": "\"Verify audit/normalize.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/audit/summary.go\"",
+              "toolAction": "\"Viewing audit/summary.go\"",
+              "toolSummary": "\"Verify audit/summary.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-11-mixed-sink-api-migration_1792250288035147000/service/dispatch.go\"",
+              "toolAction": "\"Viewing service/dispatch.go\"",
+              "toolSummary": "\"Verify service/dispatch.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 35,
+        "turns": 1,
+        "uncached_prompt_tokens": 156781,
+        "variant": "small:implicit",
+        "wall_clock_ms": 109560
+      }
+    ],
+    "timestamp": "2026-10-17T15:20:04.067761Z"
+  }
+}

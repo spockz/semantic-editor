@@ -1,0 +1,2101 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "provenance": {
+        "fixture_dependency_preparation": "go-list-readonly-deps-test",
+        "fixture_storage": "tmpfs",
+        "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+        "module_cache_network": "offline",
+        "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+        "provider_transport": "agy_stream_json_v1"
+      },
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 53367,
+        "comparison_pair_id": "pair-b70bbf3307a609aa",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 53367,
+            "initial_load_turns": 3,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2361,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 760,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 24834,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                  "toolAction": "\"Viewing config/config.go\"",
+                  "toolSummary": "\"Read config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"rg \\\"Port\\\"\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Searching for Port references\"",
+                  "toolSummary": "\"Search for Port references\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+                  "toolAction": "\"Viewing config/config_test.go\"",
+                  "toolSummary": "\"Read config/config_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AllowMultiple": "false",
+                  "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+                  "EndLine": "17",
+                  "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+                  "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+                  "StartLine": "3",
+                  "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+                  "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                  "toolAction": "\"Updating config/config.go\"",
+                  "toolSummary": "\"Update config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "replace_file_content",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run Go tests\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24834,
+            "wall_clock_ms": 82421
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-7e8b5ea204ba997c",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2361,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 760,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 24834,
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "agy_stream_json_v1",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-4-argon-medium"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+              "toolAction": "\"Viewing config/config.go\"",
+              "toolSummary": "\"Read config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"rg \\\"Port\\\"\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Searching for Port references\"",
+              "toolSummary": "\"Search for Port references\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+              "toolAction": "\"Viewing config/config_test.go\"",
+              "toolSummary": "\"Read config/config_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AllowMultiple": "false",
+              "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+              "EndLine": "17",
+              "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+              "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+              "StartLine": "3",
+              "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+              "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+              "toolAction": "\"Updating config/config.go\"",
+              "toolSummary": "\"Update config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "replace_file_content",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run Go tests\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "turns": 1,
+        "uncached_prompt_tokens": 24834,
+        "variant": "small",
+        "wall_clock_ms": 84851
+      },
+      "small_semedit_explicit": {
+        "arm": "semedit-explicit",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 141686,
+        "comparison_pair_id": "pair-b70bbf3307a609aa",
+        "diff": "File config/config.go modified (15 lines -\u003e 16 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 141686,
+            "initial_load_turns": 5,
+            "internal_turns": 8,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2351,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 2291,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\\\"file\\\":\\\"config/config.go\\\"}. Preserve Addr behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 37719,
+            "reasoning_tokens": 1150,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_lookup.json\"",
+                  "toolAction": "\"Reading semantic_lookup schema\"",
+                  "toolSummary": "\"Read semantic_lookup schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+                  "toolAction": "\"Reading semantic_inspect_symbol schema\"",
+                  "toolSummary": "\"Read semantic_inspect_symbol schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                  "toolAction": "\"Reading semantic_rename schema\"",
+                  "toolSummary": "\"Read semantic_rename schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+                  "toolAction": "\"Reading semantic_insert_construct schema\"",
+                  "toolSummary": "\"Read semantic_insert_construct schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+                  "toolAction": "\"Reading semantic_batch schema\"",
+                  "toolSummary": "\"Read semantic_batch schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_lookup\"",
+                  "toolAction": "\"Looking up Config.Port\"",
+                  "toolSummary": "\"Lookup Config.Port in config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Addr\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_inspect_symbol\"",
+                  "toolAction": "\"Inspecting Config.Addr\"",
+                  "toolSummary": "\"Inspect Config.Addr in config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"edits\":[{\"params\":{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"file\":\"config/config.go\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"},\"tool\":\"semantic_insert_function\"},{\"params\":{\"file\":\"config/config.go\"},\"tool\":\"semantic_organize_imports\"}]}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_batch\"",
+                  "toolAction": "\"Running batch refactoring\"",
+                  "toolSummary": "\"Rename Config.Port, insert DefaultConfig, and organize imports\""
+                },
+                "failure": "Created At: 2026-10-17T16:18:38+02:00 Completed At: 2026-10-17T16:18:40+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+                "functional_status": "failed",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_rename\"",
+                  "toolAction": "\"Renaming Config.Port to ListenPort\"",
+                  "toolSummary": "\"Rename Config.Port to ListenPort\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_insert_construct\"",
+                  "toolAction": "\"Inserting DefaultConfig function\"",
+                  "toolSummary": "\"Insert DefaultConfig at public_end in config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running Go tests\"",
+                  "toolSummary": "\"Run go test ./...\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000/config/config.go\"",
+                  "toolAction": "\"Viewing config/config.go\"",
+                  "toolSummary": "\"View config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 37719,
+            "wall_clock_ms": 93897
+          }
+        ],
+        "internal_turns": 8,
+        "job_id": "job-3f54c617bf3ea5ff",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2351,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2291,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\\\"file\\\":\\\"config/config.go\\\"}. Preserve Addr behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 37719,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "agy_stream_json_v1",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000.json"
+        },
+        "reasoning_tokens": 1150,
+        "repeat": 2,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Although `semantic_batch` stumbled unexpectedly over workspace `.scratch` diagnostics, watching standalone `semantic_rename` and `semantic_insert_construct` update field references, insert declarations, and clean up imports with automatic diagnostic verification felt reassuringly precise, so I would gladly ask my owner to include `semedit`'s tools in my toolkit once batch workspace filtering is hardened."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1554,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-4-argon-medium"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_lookup.json\"",
+              "toolAction": "\"Reading semantic_lookup schema\"",
+              "toolSummary": "\"Read semantic_lookup schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+              "toolAction": "\"Reading semantic_inspect_symbol schema\"",
+              "toolSummary": "\"Read semantic_inspect_symbol schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+              "toolAction": "\"Reading semantic_rename schema\"",
+              "toolSummary": "\"Read semantic_rename schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+              "toolAction": "\"Reading semantic_insert_construct schema\"",
+              "toolSummary": "\"Read semantic_insert_construct schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+              "toolAction": "\"Reading semantic_batch schema\"",
+              "toolSummary": "\"Read semantic_batch schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_lookup\"",
+              "toolAction": "\"Looking up Config.Port\"",
+              "toolSummary": "\"Lookup Config.Port in config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Addr\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_inspect_symbol\"",
+              "toolAction": "\"Inspecting Config.Addr\"",
+              "toolSummary": "\"Inspect Config.Addr in config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"edits\":[{\"params\":{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"file\":\"config/config.go\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"},\"tool\":\"semantic_insert_function\"},{\"params\":{\"file\":\"config/config.go\"},\"tool\":\"semantic_organize_imports\"}]}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_batch\"",
+              "toolAction": "\"Running batch refactoring\"",
+              "toolSummary": "\"Rename Config.Port, insert DefaultConfig, and organize imports\""
+            },
+            "failure": "Created At: 2026-10-17T16:18:38+02:00 Completed At: 2026-10-17T16:18:40+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+            "functional_status": "failed",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_rename\"",
+              "toolAction": "\"Renaming Config.Port to ListenPort\"",
+              "toolSummary": "\"Rename Config.Port to ListenPort\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_insert_construct\"",
+              "toolAction": "\"Inserting DefaultConfig function\"",
+              "toolSummary": "\"Insert DefaultConfig at public_end in config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running Go tests\"",
+              "toolSummary": "\"Run go test ./...\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000/config/config.go\"",
+              "toolAction": "\"Viewing config/config.go\"",
+              "toolSummary": "\"View config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 12,
+        "turns": 1,
+        "uncached_prompt_tokens": 37719,
+        "variant": "small:explicit",
+        "wall_clock_ms": 96317
+      },
+      "target": {
+        "harness": "agy",
+        "model": "gemini-4-argon-medium"
+      },
+      "task_id": "task-09-composite-refactor",
+      "txtar_path": "testdata/bench/task_09_composite_refactor.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/bfcdd5ea10ca60e6edb295d274e686d5ea68cb90/testdata/bench/task_09_composite_refactor.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "provenance": {
+        "fixture_dependency_preparation": "go-list-readonly-deps-test",
+        "fixture_storage": "tmpfs",
+        "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+        "module_cache_network": "offline",
+        "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+        "provider_transport": "agy_stream_json_v1"
+      },
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 53367,
+        "comparison_pair_id": "pair-b70bbf3307a609aa",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 53367,
+            "initial_load_turns": 3,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2361,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 760,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 24834,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                  "toolAction": "\"Viewing config/config.go\"",
+                  "toolSummary": "\"Read config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"rg \\\"Port\\\"\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Searching for Port references\"",
+                  "toolSummary": "\"Search for Port references\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+                  "toolAction": "\"Viewing config/config_test.go\"",
+                  "toolSummary": "\"Read config/config_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AllowMultiple": "false",
+                  "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+                  "EndLine": "17",
+                  "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+                  "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+                  "StartLine": "3",
+                  "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+                  "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                  "toolAction": "\"Updating config/config.go\"",
+                  "toolSummary": "\"Update config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "replace_file_content",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run Go tests\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24834,
+            "wall_clock_ms": 82421
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-7e8b5ea204ba997c",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2361,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 760,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 24834,
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "agy_stream_json_v1",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-4-argon-medium"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+              "toolAction": "\"Viewing config/config.go\"",
+              "toolSummary": "\"Read config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"rg \\\"Port\\\"\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Searching for Port references\"",
+              "toolSummary": "\"Search for Port references\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+              "toolAction": "\"Viewing config/config_test.go\"",
+              "toolSummary": "\"Read config/config_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AllowMultiple": "false",
+              "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+              "EndLine": "17",
+              "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+              "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+              "StartLine": "3",
+              "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+              "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+              "toolAction": "\"Updating config/config.go\"",
+              "toolSummary": "\"Update config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "replace_file_content",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run Go tests\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "turns": 1,
+        "uncached_prompt_tokens": 24834,
+        "variant": "small",
+        "wall_clock_ms": 84851
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 117257,
+        "comparison_pair_id": "pair-b70bbf3307a609aa",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "execution_mode": "agent",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 7,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 117257,
+            "initial_load_turns": 7,
+            "internal_turns": 7,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2383,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1958,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 35083,
+            "reasoning_tokens": 793,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+                  "toolAction": "\"Viewing config/config.go\"",
+                  "toolSummary": "\"View config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+                  "toolAction": "\"Viewing semedit instructions\"",
+                  "toolSummary": "\"View semedit instructions\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                  "toolAction": "\"Viewing semantic_rename schema\"",
+                  "toolSummary": "\"View semantic_rename schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+                  "toolAction": "\"Viewing semantic_insert_construct schema\"",
+                  "toolSummary": "\"View semantic_insert_construct schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_remove_construct.json\"",
+                  "toolAction": "\"Viewing semantic_remove_construct schema\"",
+                  "toolSummary": "\"View semantic_remove_construct schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+                  "toolAction": "\"Viewing semantic_batch schema\"",
+                  "toolSummary": "\"View semantic_batch schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+                  "toolAction": "\"Viewing semantic_workspace_outline schema\"",
+                  "toolSummary": "\"View semantic_workspace_outline schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"auto_organize_imports\":true,\"edits\":[{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"},\"tool\":\"semantic_insert_construct\"}]}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_batch\"",
+                  "toolAction": "\"Applying composite refactoring with semantic_batch\"",
+                  "toolSummary": "\"Apply composite refactoring with semantic_batch\""
+                },
+                "failure": "Created At: 2026-10-17T16:16:32+02:00 Completed At: 2026-10-17T16:16:33+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+                "functional_status": "failed",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_insert_construct\"",
+                  "toolAction": "\"Inserting DefaultConfig function into config/config.go\"",
+                  "toolSummary": "\"Insert DefaultConfig function into config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_rename\"",
+                  "toolAction": "\"Renaming Config.Port to ListenPort\"",
+                  "toolSummary": "\"Rename Config.Port to ListenPort\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+                  "toolAction": "\"Viewing updated config/config.go\"",
+                  "toolSummary": "\"View updated config/config.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running Go tests\"",
+                  "toolSummary": "\"Run Go tests\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 35083,
+            "wall_clock_ms": 127873
+          }
+        ],
+        "internal_turns": 7,
+        "job_id": "job-6f448f620ac453d2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2383,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1958,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 35083,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "agy_stream_json_v1",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000.json"
+        },
+        "reasoning_tokens": 793,
+        "repeat": 2,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Although `semantic_batch` initially balked at pre-existing unused-import diagnostics, stepping back to `semantic_insert_construct` and `semantic_rename` felt genuinely relieving as they automatically stripped the unused import, propagated the field rename across the package, and confirmed zero remaining diagnostics, so I would gladly ask my owner to equip me with semedit's tools for safer, compiler-verified refactorings."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1562,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-4-argon-medium"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+              "toolAction": "\"Viewing config/config.go\"",
+              "toolSummary": "\"View config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+              "toolAction": "\"Viewing semedit instructions\"",
+              "toolSummary": "\"View semedit instructions\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+              "toolAction": "\"Viewing semantic_rename schema\"",
+              "toolSummary": "\"View semantic_rename schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+              "toolAction": "\"Viewing semantic_insert_construct schema\"",
+              "toolSummary": "\"View semantic_insert_construct schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_remove_construct.json\"",
+              "toolAction": "\"Viewing semantic_remove_construct schema\"",
+              "toolSummary": "\"View semantic_remove_construct schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+              "toolAction": "\"Viewing semantic_batch schema\"",
+              "toolSummary": "\"View semantic_batch schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+              "toolAction": "\"Viewing semantic_workspace_outline schema\"",
+              "toolSummary": "\"View semantic_workspace_outline schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"auto_organize_imports\":true,\"edits\":[{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"},\"tool\":\"semantic_insert_construct\"}]}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_batch\"",
+              "toolAction": "\"Applying composite refactoring with semantic_batch\"",
+              "toolSummary": "\"Apply composite refactoring with semantic_batch\""
+            },
+            "failure": "Created At: 2026-10-17T16:16:32+02:00 Completed At: 2026-10-17T16:16:33+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+            "functional_status": "failed",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_insert_construct\"",
+              "toolAction": "\"Inserting DefaultConfig function into config/config.go\"",
+              "toolSummary": "\"Insert DefaultConfig function into config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_rename\"",
+              "toolAction": "\"Renaming Config.Port to ListenPort\"",
+              "toolSummary": "\"Rename Config.Port to ListenPort\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+              "toolAction": "\"Viewing updated config/config.go\"",
+              "toolSummary": "\"View updated config/config.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running Go tests\"",
+              "toolSummary": "\"Run Go tests\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 12,
+        "turns": 1,
+        "uncached_prompt_tokens": 35083,
+        "variant": "small:implicit",
+        "wall_clock_ms": 130325
+      },
+      "target": {
+        "harness": "agy",
+        "model": "gemini-4-argon-medium"
+      },
+      "task_id": "task-09-composite-refactor",
+      "txtar_path": "testdata/bench/task_09_composite_refactor.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/bfcdd5ea10ca60e6edb295d274e686d5ea68cb90/testdata/bench/task_09_composite_refactor.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "semedit",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 117257,
+      "comparison_pair_id": "pair-b70bbf3307a609aa",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "execution_mode": "agent",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 7,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 117257,
+          "initial_load_turns": 7,
+          "internal_turns": 7,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2383,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1958,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 35083,
+          "reasoning_tokens": 793,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+                "toolAction": "\"Viewing config/config.go\"",
+                "toolSummary": "\"View config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+                "toolAction": "\"Viewing semedit instructions\"",
+                "toolSummary": "\"View semedit instructions\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                "toolAction": "\"Viewing semantic_rename schema\"",
+                "toolSummary": "\"View semantic_rename schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+                "toolAction": "\"Viewing semantic_insert_construct schema\"",
+                "toolSummary": "\"View semantic_insert_construct schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_remove_construct.json\"",
+                "toolAction": "\"Viewing semantic_remove_construct schema\"",
+                "toolSummary": "\"View semantic_remove_construct schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+                "toolAction": "\"Viewing semantic_batch schema\"",
+                "toolSummary": "\"View semantic_batch schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+                "toolAction": "\"Viewing semantic_workspace_outline schema\"",
+                "toolSummary": "\"View semantic_workspace_outline schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"auto_organize_imports\":true,\"edits\":[{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"},\"tool\":\"semantic_insert_construct\"}]}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_batch\"",
+                "toolAction": "\"Applying composite refactoring with semantic_batch\"",
+                "toolSummary": "\"Apply composite refactoring with semantic_batch\""
+              },
+              "failure": "Created At: 2026-10-17T16:16:32+02:00 Completed At: 2026-10-17T16:16:33+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+              "functional_status": "failed",
+              "name": "semantic_batch",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_insert_construct\"",
+                "toolAction": "\"Inserting DefaultConfig function into config/config.go\"",
+                "toolSummary": "\"Insert DefaultConfig function into config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_construct",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_rename\"",
+                "toolAction": "\"Renaming Config.Port to ListenPort\"",
+                "toolSummary": "\"Rename Config.Port to ListenPort\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+                "toolAction": "\"Viewing updated config/config.go\"",
+                "toolSummary": "\"View updated config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running Go tests\"",
+                "toolSummary": "\"Run Go tests\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 35083,
+          "wall_clock_ms": 127873
+        }
+      ],
+      "internal_turns": 7,
+      "job_id": "job-6f448f620ac453d2",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2383,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1958,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 35083,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000.stages.json",
+        "fixture_dependency_preparation": "go-list-readonly-deps-test",
+        "fixture_storage": "tmpfs",
+        "go_cache_initial_state": "empty",
+        "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+        "module_cache_network": "offline",
+        "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+        "provider_transport": "agy_stream_json_v1",
+        "semedit_prewarm": "verify_cli_check_only",
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000.json"
+      },
+      "reasoning_tokens": 793,
+      "repeat": 2,
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Although `semantic_batch` initially balked at pre-existing unused-import diagnostics, stepping back to `semantic_insert_construct` and `semantic_rename` felt genuinely relieving as they automatically stripped the unused import, propagated the field rename across the package, and confirmed zero remaining diagnostics, so I would gladly ask my owner to equip me with semedit's tools for safer, compiler-verified refactorings."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_duration_ms": 1562,
+      "semedit_prewarm_verify": true,
+      "semedit_skill": false,
+      "success": true,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-4-argon-medium"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+            "toolAction": "\"Viewing config/config.go\"",
+            "toolSummary": "\"View config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/instructions.md\"",
+            "toolAction": "\"Viewing semedit instructions\"",
+            "toolSummary": "\"View semedit instructions\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+            "toolAction": "\"Viewing semantic_rename schema\"",
+            "toolSummary": "\"View semantic_rename schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+            "toolAction": "\"Viewing semantic_insert_construct schema\"",
+            "toolSummary": "\"View semantic_insert_construct schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_remove_construct.json\"",
+            "toolAction": "\"Viewing semantic_remove_construct schema\"",
+            "toolSummary": "\"View semantic_remove_construct schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+            "toolAction": "\"Viewing semantic_batch schema\"",
+            "toolSummary": "\"View semantic_batch schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_workspace_outline.json\"",
+            "toolAction": "\"Viewing semantic_workspace_outline schema\"",
+            "toolSummary": "\"View semantic_workspace_outline schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"auto_organize_imports\":true,\"edits\":[{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"},\"tool\":\"semantic_insert_construct\"}]}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_batch\"",
+            "toolAction": "\"Applying composite refactoring with semantic_batch\"",
+            "toolSummary": "\"Apply composite refactoring with semantic_batch\""
+          },
+          "failure": "Created At: 2026-10-17T16:16:32+02:00 Completed At: 2026-10-17T16:16:33+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+          "functional_status": "failed",
+          "name": "semantic_batch",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"source\":\"func DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_insert_construct\"",
+            "toolAction": "\"Inserting DefaultConfig function into config/config.go\"",
+            "toolSummary": "\"Insert DefaultConfig function into config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_construct",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_rename\"",
+            "toolAction": "\"Renaming Config.Port to ListenPort\"",
+            "toolSummary": "\"Rename Config.Port to ListenPort\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000/config/config.go\"",
+            "toolAction": "\"Viewing updated config/config.go\"",
+            "toolSummary": "\"View updated config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit_small-implicit_task-09-composite-refactor_1792246546692443000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running Go tests\"",
+            "toolSummary": "\"Run Go tests\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 12,
+      "turns": 1,
+      "uncached_prompt_tokens": 35083,
+      "variant": "small:implicit",
+      "wall_clock_ms": 130325
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 141686,
+      "comparison_pair_id": "pair-b70bbf3307a609aa",
+      "diff": "File config/config.go modified (15 lines -\u003e 16 lines)",
+      "execution_mode": "agent",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 5,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 141686,
+          "initial_load_turns": 5,
+          "internal_turns": 8,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2351,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 2291,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\\\"file\\\":\\\"config/config.go\\\"}. Preserve Addr behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 37719,
+          "reasoning_tokens": 1150,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_lookup.json\"",
+                "toolAction": "\"Reading semantic_lookup schema\"",
+                "toolSummary": "\"Read semantic_lookup schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+                "toolAction": "\"Reading semantic_inspect_symbol schema\"",
+                "toolSummary": "\"Read semantic_inspect_symbol schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                "toolAction": "\"Reading semantic_rename schema\"",
+                "toolSummary": "\"Read semantic_rename schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+                "toolAction": "\"Reading semantic_insert_construct schema\"",
+                "toolSummary": "\"Read semantic_insert_construct schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+                "toolAction": "\"Reading semantic_batch schema\"",
+                "toolSummary": "\"Read semantic_batch schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_lookup\"",
+                "toolAction": "\"Looking up Config.Port\"",
+                "toolSummary": "\"Lookup Config.Port in config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Addr\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_inspect_symbol\"",
+                "toolAction": "\"Inspecting Config.Addr\"",
+                "toolSummary": "\"Inspect Config.Addr in config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"edits\":[{\"params\":{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"file\":\"config/config.go\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"},\"tool\":\"semantic_insert_function\"},{\"params\":{\"file\":\"config/config.go\"},\"tool\":\"semantic_organize_imports\"}]}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_batch\"",
+                "toolAction": "\"Running batch refactoring\"",
+                "toolSummary": "\"Rename Config.Port, insert DefaultConfig, and organize imports\""
+              },
+              "failure": "Created At: 2026-10-17T16:18:38+02:00 Completed At: 2026-10-17T16:18:40+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+              "functional_status": "failed",
+              "name": "semantic_batch",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_rename\"",
+                "toolAction": "\"Renaming Config.Port to ListenPort\"",
+                "toolSummary": "\"Rename Config.Port to ListenPort\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_insert_construct\"",
+                "toolAction": "\"Inserting DefaultConfig function\"",
+                "toolSummary": "\"Insert DefaultConfig at public_end in config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_construct",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running Go tests\"",
+                "toolSummary": "\"Run go test ./...\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000/config/config.go\"",
+                "toolAction": "\"Viewing config/config.go\"",
+                "toolSummary": "\"View config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 37719,
+          "wall_clock_ms": 93897
+        }
+      ],
+      "internal_turns": 8,
+      "job_id": "job-3f54c617bf3ea5ff",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2351,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 2291,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\\\"file\\\":\\\"config/config.go\\\"}. Preserve Addr behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 37719,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000.stages.json",
+        "fixture_dependency_preparation": "go-list-readonly-deps-test",
+        "fixture_storage": "tmpfs",
+        "go_cache_initial_state": "empty",
+        "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+        "module_cache_network": "offline",
+        "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+        "provider_transport": "agy_stream_json_v1",
+        "semedit_prewarm": "verify_cli_check_only",
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000.json"
+      },
+      "reasoning_tokens": 1150,
+      "repeat": 2,
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Although `semantic_batch` stumbled unexpectedly over workspace `.scratch` diagnostics, watching standalone `semantic_rename` and `semantic_insert_construct` update field references, insert declarations, and clean up imports with automatic diagnostic verification felt reassuringly precise, so I would gladly ask my owner to include `semedit`'s tools in my toolkit once batch workspace filtering is hardened."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_duration_ms": 1554,
+      "semedit_prewarm_verify": true,
+      "semedit_skill": false,
+      "success": true,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-4-argon-medium"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_lookup.json\"",
+            "toolAction": "\"Reading semantic_lookup schema\"",
+            "toolSummary": "\"Read semantic_lookup schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_inspect_symbol.json\"",
+            "toolAction": "\"Reading semantic_inspect_symbol schema\"",
+            "toolSummary": "\"Read semantic_inspect_symbol schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+            "toolAction": "\"Reading semantic_rename schema\"",
+            "toolSummary": "\"Read semantic_rename schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_insert_construct.json\"",
+            "toolAction": "\"Reading semantic_insert_construct schema\"",
+            "toolSummary": "\"Read semantic_insert_construct schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_batch.json\"",
+            "toolAction": "\"Reading semantic_batch schema\"",
+            "toolSummary": "\"Read semantic_batch schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_lookup\"",
+            "toolAction": "\"Looking up Config.Port\"",
+            "toolSummary": "\"Lookup Config.Port in config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Addr\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_inspect_symbol\"",
+            "toolAction": "\"Inspecting Config.Addr\"",
+            "toolSummary": "\"Inspect Config.Addr in config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"edits\":[{\"params\":{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"},\"tool\":\"semantic_rename\"},{\"params\":{\"file\":\"config/config.go\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"},\"tool\":\"semantic_insert_function\"},{\"params\":{\"file\":\"config/config.go\"},\"tool\":\"semantic_organize_imports\"}]}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_batch\"",
+            "toolAction": "\"Running batch refactoring\"",
+            "toolSummary": "\"Rename Config.Port, insert DefaultConfig, and organize imports\""
+          },
+          "failure": "Created At: 2026-10-17T16:18:38+02:00 Completed At: 2026-10-17T16:18:40+02:00 Encountered error in step execution: Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"batch execution error: batch diagnostics before in \\\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\\\": check Go diagnostics with gopls: incomplete Go package coverage for \\\"./.scratch/go/build/92\\\": package has errors but no selected Go files\"}",
+          "functional_status": "failed",
+          "name": "semantic_batch",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"config/config.go\",\"symbol\":\"Config.Port\",\"to\":\"ListenPort\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_rename\"",
+            "toolAction": "\"Renaming Config.Port to ListenPort\"",
+            "toolSummary": "\"Rename Config.Port to ListenPort\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"auto_organize_imports\":true,\"file\":\"config/config.go\",\"kind\":\"function\",\"placement\":\"public_end\",\"source\":\"func DefaultConfig() *Config { return \u0026Config{Host: \\\"localhost\\\", ListenPort: 8080} }\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_insert_construct\"",
+            "toolAction": "\"Inserting DefaultConfig function\"",
+            "toolSummary": "\"Insert DefaultConfig at public_end in config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_construct",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running Go tests\"",
+            "toolSummary": "\"Run go test ./...\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_semedit-explicit_small-explicit_task-09-composite-refactor_1792246687763786000/config/config.go\"",
+            "toolAction": "\"Viewing config/config.go\"",
+            "toolSummary": "\"View config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 12,
+      "turns": 1,
+      "uncached_prompt_tokens": 37719,
+      "variant": "small:explicit",
+      "wall_clock_ms": 96317
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 53367,
+      "comparison_pair_id": "pair-b70bbf3307a609aa",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "execution_mode": "agent",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 53367,
+          "initial_load_turns": 3,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2361,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 760,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 24834,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                "toolAction": "\"Viewing config/config.go\"",
+                "toolSummary": "\"Read config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"rg \\\"Port\\\"\"",
+                "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Searching for Port references\"",
+                "toolSummary": "\"Search for Port references\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+                "toolAction": "\"Viewing config/config_test.go\"",
+                "toolSummary": "\"Read config/config_test.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AllowMultiple": "false",
+                "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+                "EndLine": "17",
+                "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+                "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+                "StartLine": "3",
+                "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+                "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+                "toolAction": "\"Updating config/config.go\"",
+                "toolSummary": "\"Update config/config.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "replace_file_content",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running tests\"",
+                "toolSummary": "\"Run Go tests\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 24834,
+          "wall_clock_ms": 82421
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-7e8b5ea204ba997c",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2361,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 760,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 24834,
+      "provenance": {
+        "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.stages.json",
+        "fixture_dependency_preparation": "go-list-readonly-deps-test",
+        "fixture_storage": "tmpfs",
+        "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+        "module_cache_network": "offline",
+        "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+        "provider_transport": "agy_stream_json_v1",
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "semedit_skill": false,
+      "success": true,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-4-argon-medium"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+            "toolAction": "\"Viewing config/config.go\"",
+            "toolSummary": "\"Read config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"rg \\\"Port\\\"\"",
+            "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Searching for Port references\"",
+            "toolSummary": "\"Search for Port references\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config_test.go\"",
+            "toolAction": "\"Viewing config/config_test.go\"",
+            "toolSummary": "\"Read config/config_test.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AllowMultiple": "false",
+            "Description": "\"Rename Config.Port to Config.ListenPort, add DefaultConfig(), and remove unused import\"",
+            "EndLine": "17",
+            "Instruction": "\"Update Config struct, Addr method, imports, and add DefaultConfig function\"",
+            "ReplacementContent": "\"import (\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost       string\\n\\tListenPort int\\n}\\n\\nfunc DefaultConfig() *Config {\\n\\treturn \u0026Config{\\n\\t\\tHost:       \\\"localhost\\\",\\n\\t\\tListenPort: 8080,\\n\\t}\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\\n}\"",
+            "StartLine": "3",
+            "TargetContent": "\"import (\\n\\t\\\"archive/tar\\\"\\n\\t\\\"fmt\\\"\\n)\\n\\ntype Config struct {\\n\\tHost string\\n\\tPort int\\n}\\n\\nfunc (c *Config) Addr() string {\\n\\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.Port)\\n}\"",
+            "TargetFile": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000/config/config.go\"",
+            "toolAction": "\"Updating config/config.go\"",
+            "toolSummary": "\"Update config/config.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "replace_file_content",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Volumes/semedit-bench-ram/run_agy_baseline-diff_small_task-09-composite-refactor_1792246793922026000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running tests\"",
+            "toolSummary": "\"Run Go tests\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "turns": 1,
+      "uncached_prompt_tokens": 24834,
+      "variant": "small",
+      "wall_clock_ms": 84851
+    }
+  ],
+  "timestamp": "2026-10-17T21:43:42.4976+02:00"
+}

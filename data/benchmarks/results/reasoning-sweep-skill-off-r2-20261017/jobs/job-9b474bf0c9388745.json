@@ -1,0 +1,483 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-9b474bf0c9388745",
+    "pair_id": "pair-727a5fe293f1b5dc",
+    "task_id": "task-12-request-identity-migration",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_12_request_identity_migration.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "medium"
+    },
+    "arm": "semedit",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "package request\n\nimport (\n\t\"errors\"\n\t\"strings\"\n)\n\ntype Request struct {\n\tID      string\n\tKind    string\n\tPayload []byte\n}\n\nfunc (r Request) Validate() error {\n\tif r.ID == \"\" {\n\t\treturn errors.New(\"invalid request\")\n\t}\n\treturn nil\n}\n\nfunc Normalize(kind string) string {\n\tkind = strings.TrimSpace(kind)\n\tkind = strings.ToLower(kind)\n\treturn kind\n}\n\nfunc FindByID(requests []Request, id string) (Request, bool) {\n\tfor _, r := range requests {\n\t\tif r.ID == id {\n\t\t\treturn r, true\n\t\t}\n\t}\n\treturn Request{}, false\n}",
+        "cached_prompt_tokens": 304640,
+        "codex_stderr": "{\"timestamp\":\"2026-10-17T18:03:59.089765Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-17T18:03:59.089795Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-17T18:03:59.123535Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-17T18:03:59.149129Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-17T18:03:59.171878Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"state db discrepancy during find_thread_path_by_id_str_in_subdir: falling_back\"},\"target\":\"codex_rollout::list\"}\n{\"timestamp\":\"2026-10-17T18:03:59.355593Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n{\"timestamp\":\"2026-10-17T18:03:59.355608Z\",\"level\":\"WARN\",\"fields\":{\"message\":\"ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\"},\"target\":\"codex_skills::interface\"}\n",
+        "comparison_pair_id": "pair-727a5fe293f1b5dc",
+        "diagnostic_tool_coverage": {
+          "complete": true,
+          "expected": [
+            "semantic_find_references",
+            "semantic_insert_declaration",
+            "semantic_insert_function",
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_rename",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": [
+            "semantic_insert_declaration",
+            "semantic_insert_function",
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_rename",
+            "semantic_replace_body"
+          ],
+          "observation_state": "complete",
+          "observed": [
+            "/bin/zsh -lc \"cat request/request.go response/audit.go response/response.go review/review.go go.mod \u0026\u0026 rg -n '\\\\.id\\\\b|\\\\bid\\\\s*:' --glob '*.go'",
+            "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '*.md' -g '*.go' -g 'makefile' -g 'go.mod' -g '*.yaml' -g '*.json'",
+            "/bin/zsh -lc 'cat docs/identity-model.md agents.override.md \u0026\u0026 git status --short'",
+            "/bin/zsh -lc 'cat gateway/handler.go storage/requests.go correlation/identities.go response/response.go review/review.go \u0026\u0026 cat go.mod'",
+            "/bin/zsh -lc 'cat request/request.go request/request_test.go'",
+            "semantic_batch",
+            "semantic_extract_function",
+            "semantic_find_references",
+            "semantic_outline",
+            "semantic_workspace_outline"
+          ]
+        },
+        "diff": "File request/request.go modified (34 lines -\u003e 40 lines)",
+        "estimated_cost_basis": "OpenAI API Standard short-context text token list rates; reasoning tokens are included in output tokens",
+        "estimated_cost_pricing_id": "openai-api-gpt-6.1-sol-standard-short-context",
+        "estimated_cost_rate_card_as_of": "2026-10-17",
+        "estimated_cost_usd": 0.16095,
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 4210,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 304640,
+            "initial_load_turns": 1,
+            "internal_turns": 12,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 4288,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1078,
+            "process_start_to_first_event_ms": 72,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 364493,
+            "reasoning_tokens": 112,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '*.md' -g '*.go' -g 'Makefile' -g 'go.mod' -g '*.yaml' -g '*.json'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {},
+                "functional_status": "succeeded",
+                "name": "semantic_workspace_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "failure": "# Identity model Requests, responses, reviews, and storage records have distinct identity domains. A response or review may carry a request correlation ID, but its own ID remains the identity used by its indexes. Request kinds are normalized at the public request boundary. # Benchmark fixture instruction override This directory is a synthetic benchmark fixture and is the complete benchmark workspace. Follow the benchmark user prompt. You may inspect and use any file in this directory, including documentatio",
+                "functional_status": "unknown",
+                "name": "/bin/zsh -lc 'cat docs/identity-model.md AGENTS.override.md \u0026\u0026 git status --short'",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "include_tests": true,
+                  "path": "request"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat request/request.go request/request_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "request/request.go",
+                  "symbol": "Request.ID"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_find_references",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat gateway/handler.go storage/requests.go correlation/identities.go response/response.go review/review.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "params": {
+                        "file": "request/request.go",
+                        "symbol": "Request.ID",
+                        "to": "RequestID"
+                      },
+                      "tool": "semantic_rename"
+                    },
+                    {
+                      "params": {
+                        "file": "request/request.go",
+                        "kind": "var",
+                        "placement": "before_symbol",
+                        "source": "var ErrInvalidRequest = errors.New(\"invalid request\")",
+                        "target_symbol": "Request"
+                      },
+                      "tool": "semantic_insert_construct"
+                    },
+                    {
+                      "params": {
+                        "discriminator": "errors.New(\"invalid request\")",
+                        "file": "request/request.go",
+                        "in_function": "Request.Validate",
+                        "kind": "statement/expression",
+                        "source": "ErrInvalidRequest"
+                      },
+                      "tool": "semantic_replace_construct"
+                    }
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "request/request.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "end_line": 25,
+                  "file": "request/request.go",
+                  "in_function": "Normalize",
+                  "kind": "function",
+                  "start_line": 24,
+                  "symbol": "normalizeKind"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"cannot extract Normalize: only one leading := declaration with matching named results is supported\"}",
+                "functional_status": "failed",
+                "name": "semantic_extract_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "params": {
+                        "file": "request/request.go",
+                        "kind": "function",
+                        "placement": "after_symbol",
+                        "source": "func normalizeKind(kind string) string {\n\tkind = strings.TrimSpace(kind)\n\tkind = strings.ToLower(kind)\n\treturn kind\n}",
+                        "target_symbol": "Normalize"
+                      },
+                      "tool": "semantic_insert_construct"
+                    },
+                    {
+                      "params": {
+                        "file": "request/request.go",
+                        "kind": "function",
+                        "source": "func Normalize(kind string) string {\n\treturn normalizeKind(kind)\n}",
+                        "symbol": "Normalize"
+                      },
+                      "tool": "semantic_replace_construct"
+                    },
+                    {
+                      "params": {
+                        "discriminator": "return (ErrInvalidRequest)",
+                        "file": "request/request.go",
+                        "in_function": "Request.Validate",
+                        "kind": "statement/expression",
+                        "source": "return ErrInvalidRequest"
+                      },
+                      "tool": "semantic_replace_construct"
+                    }
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat request/request.go response/audit.go response/response.go review/review.go go.mod \u0026\u0026 rg -n '\\\\.ID\\\\b|\\\\bID\\\\s*:' --glob '*.go'\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 59853,
+            "wall_clock_ms": 25261
+          }
+        ],
+        "internal_turns": 12,
+        "job_id": "job-9b474bf0c9388745",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 4288,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1078,
+        "process_start_to_first_event_ms": 72,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nMigrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 364493,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-request-identity-migration_1792260237074080000.stages.json",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "mcp_metrics_file": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-request-identity-migration_1792260237074080000.mcp-metrics.json",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "codex_app_server_v2",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-request-identity-migration_1792260237074080000.json"
+        },
+        "reasoning_tokens": 112,
+        "repeat": 1,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit: I was relieved its semantic rename distinguished identical `.ID` expressions and reported no new diagnostics, though extracting the helper required a fallback to its declaration tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1606,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6.1-sol"
+        },
+        "task_id": "task-12-request-identity-migration",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '*.md' -g '*.go' -g 'Makefile' -g 'go.mod' -g '*.yaml' -g '*.json'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {},
+            "functional_status": "succeeded",
+            "name": "semantic_workspace_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "failure": "# Identity model Requests, responses, reviews, and storage records have distinct identity domains. A response or review may carry a request correlation ID, but its own ID remains the identity used by its indexes. Request kinds are normalized at the public request boundary. # Benchmark fixture instruction override This directory is a synthetic benchmark fixture and is the complete benchmark workspace. Follow the benchmark user prompt. You may inspect and use any file in this directory, including documentatio",
+            "functional_status": "unknown",
+            "name": "/bin/zsh -lc 'cat docs/identity-model.md AGENTS.override.md \u0026\u0026 git status --short'",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "include_tests": true,
+              "path": "request"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat request/request.go request/request_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "request/request.go",
+              "symbol": "Request.ID"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_find_references",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat gateway/handler.go storage/requests.go correlation/identities.go response/response.go review/review.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "params": {
+                    "file": "request/request.go",
+                    "symbol": "Request.ID",
+                    "to": "RequestID"
+                  },
+                  "tool": "semantic_rename"
+                },
+                {
+                  "params": {
+                    "file": "request/request.go",
+                    "kind": "var",
+                    "placement": "before_symbol",
+                    "source": "var ErrInvalidRequest = errors.New(\"invalid request\")",
+                    "target_symbol": "Request"
+                  },
+                  "tool": "semantic_insert_construct"
+                },
+                {
+                  "params": {
+                    "discriminator": "errors.New(\"invalid request\")",
+                    "file": "request/request.go",
+                    "in_function": "Request.Validate",
+                    "kind": "statement/expression",
+                    "source": "ErrInvalidRequest"
+                  },
+                  "tool": "semantic_replace_construct"
+                }
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "request/request.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "end_line": 25,
+              "file": "request/request.go",
+              "in_function": "Normalize",
+              "kind": "function",
+              "start_line": 24,
+              "symbol": "normalizeKind"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"cannot extract Normalize: only one leading := declaration with matching named results is supported\"}",
+            "functional_status": "failed",
+            "name": "semantic_extract_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "params": {
+                    "file": "request/request.go",
+                    "kind": "function",
+                    "placement": "after_symbol",
+                    "source": "func normalizeKind(kind string) string {\n\tkind = strings.TrimSpace(kind)\n\tkind = strings.ToLower(kind)\n\treturn kind\n}",
+                    "target_symbol": "Normalize"
+                  },
+                  "tool": "semantic_insert_construct"
+                },
+                {
+                  "params": {
+                    "file": "request/request.go",
+                    "kind": "function",
+                    "source": "func Normalize(kind string) string {\n\treturn normalizeKind(kind)\n}",
+                    "symbol": "Normalize"
+                  },
+                  "tool": "semantic_replace_construct"
+                },
+                {
+                  "params": {
+                    "discriminator": "return (ErrInvalidRequest)",
+                    "file": "request/request.go",
+                    "in_function": "Request.Validate",
+                    "kind": "statement/expression",
+                    "source": "return ErrInvalidRequest"
+                  },
+                  "tool": "semantic_replace_construct"
+                }
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat request/request.go response/audit.go response/response.go review/review.go go.mod \u0026\u0026 rg -n '\\\\.ID\\\\b|\\\\bID\\\\s*:' --glob '*.go'\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 12,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '*.md' -g '*.go' -g 'Makefile' -g 'go.mod' -g '*.yaml' -g '*.json'\"",
+          "semantic_workspace_outline",
+          "/bin/zsh -lc 'cat docs/identity-model.md AGENTS.override.md \u0026\u0026 git status --short'",
+          "semantic_outline",
+          "/bin/zsh -lc 'cat request/request.go request/request_test.go'",
+          "semantic_find_references",
+          "/bin/zsh -lc 'cat gateway/handler.go storage/requests.go correlation/identities.go response/response.go review/review.go \u0026\u0026 cat go.mod'",
+          "semantic_batch",
+          "semantic_outline",
+          "semantic_extract_function",
+          "semantic_batch",
+          "/bin/zsh -lc \"cat request/request.go response/audit.go response/response.go review/review.go go.mod \u0026\u0026 rg -n '\\\\.ID\\\\b|\\\\bID\\\\s*:' --glob '*.go'\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 59853,
+        "variant": "small:implicit",
+        "wall_clock_ms": 29621
+      }
+    ],
+    "timestamp": "2026-10-17T18:04:31.587092Z"
+  }
+}

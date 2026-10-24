@@ -1,0 +1,702 @@
+{
+  "format_version": 1,
+  "job": {
+    "id": "job-be688a7f4d4c5591",
+    "pair_id": "pair-b4236d818d46c12a",
+    "task_id": "task-11-mixed-sink-api-migration",
+    "fixture_path": "/Users/alessandro/sources/semantic-editor/testdata/bench/task_11_mixed_sink_api_migration.txtar",
+    "context": "small",
+    "prompt_variant": "implicit",
+    "target": {
+      "harness": "copilot",
+      "model": "local/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+    },
+    "arm": "semedit",
+    "repeat": 1,
+    "policy": "write",
+    "resolved_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+    "followups": [
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nNormalize audit event kinds by removing surrounding whitespace and lowercasing them before persistence. Keep metrics and legacy export behavior unchanged. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nA normalized probe is control traffic, like health, for classification. It is still an event: do not filter or drop it; the configured sink must receive it with its normalized kind. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nApply normalization at the service delivery boundary immediately before handing the event to the configured sink. Keep the change scoped to that path; do not alter unrelated sink, replay, metrics, or legacy behavior. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\". If an earlier turn changed any protected file, restore its original contents before continuing.\n\nAcceptance behavior: provide the public audit.NormalizeKind(kind string) string normalization contract in audit/normalize.go; classify normalized probe and health kinds as control and ordinary kinds as data; and ensure Dispatcher.Record delivers exactly one normalized event to its configured sink. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE."
+    ],
+    "mcp_server_instructions": "prescriptive"
+  },
+  "report": {
+    "duration_unit": "milliseconds",
+    "format_version": 2,
+    "runs": [
+      {
+        "arm": "semedit",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 492395,
+        "comparison_pair_id": "pair-b4236d818d46c12a",
+        "diagnostic_timeout_reflection": {
+          "error": "cannot continue failed Copilot process: wait for Copilot session/prompt: context deadline exceeded; Copilot stderr: Warning: COPILOT_CLI_DIST_DIR (/Users/alessandro/Library/Caches/copilot/pkg/darwin-arm64/1.0.88) does not contain a readable index.js; ignoring",
+          "prompt": "The benchmark task stopped because its execution timed out. Do not use tools, edit files, or retry the task. Based only on the conversation so far, identify the last action underway, where time appears to have gone (model reasoning, tool wait, repeated verification or undo, exploration, or another cause), and the strongest evidence for that diagnosis. Clearly separate observed evidence from inference, and answer in a few concise sentences."
+        },
+        "diagnostic_tool_coverage": {
+          "complete": false,
+          "completeness_reason": "wait for Copilot session/prompt: context deadline exceeded; Copilot stderr: Warning: COPILOT_CLI_DIST_DIR (/Users/alessandro/Library/Caches/copilot/pkg/darwin-arm64/1.0.88) does not contain a readable index.js; ignoring",
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": null,
+          "observation_state": "partial",
+          "observed": [
+            "glob",
+            "semantic_insert_construct",
+            "semantic_replace_construct",
+            "semantic_workspace_outline",
+            "view"
+          ]
+        },
+        "error": "context deadline exceeded",
+        "execution_mode": "agent",
+        "first_event_to_first_tool_call_ms": 11,
+        "initial_context_tokens": 28928,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 492395,
+            "error": "context deadline exceeded",
+            "initial_load_turns": 0,
+            "internal_turns": 27,
+            "mcp_load_turns": 0,
+            "output_tokens": 3776,
+            "process_start_to_first_event_ms": 37802,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 528071,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "path": "."
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_workspace_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "audit/*.go"
+                },
+                "functional_status": "succeeded",
+                "name": "glob",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "service/*.go"
+                },
+                "functional_status": "succeeded",
+                "name": "glob",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/normalize.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/event.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/service/dispatch.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/sink.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/summary.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/event_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/summary_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/service/dispatch_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy/export.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy/export_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/metrics"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/cmd/migrate"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/metrics/writer.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/cmd/migrate/main.go"
+                },
+                "functional_status": "succeeded",
+                "name": "view",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "file": "audit/normalize.go",
+                  "kind": "function",
+                  "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "kind": "function",
+                  "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)",
+                  "symbol": "Record"
+                },
+                "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"validate replacement declaration: syntax error: expected declaration, found event\",\"location\":{\"range\":{\"end\":{\"character\":0,\"line\":0},\"start\":{\"character\":0,\"line\":0}},\"uri\":\"snippet:///source\"}} {\"application_state\":\"unknown\",\"error\":\"validate replacement declaration: syntax error: expected declaration, found event\",\"location\":{\"range\":{\"end\":{\"character\":0,\"line\":0},\"start\":{\"character\":0,\"line\":0}},\"uri\":\"snippet:///so",
+                "functional_status": "unknown",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "kind": "statement/expression",
+                  "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)",
+                  "symbol": "Record"
+                },
+                "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"in_function is required for nested kind=statement/expression\"} {\"application_state\":\"unknown\",\"error\":\"in_function is required for nested kind=statement/expression\"}",
+                "functional_status": "unknown",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "in_function": "Dispatcher.Record",
+                  "kind": "statement/expression",
+                  "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+                },
+                "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"discriminator is required for statement/expression replacement\"} {\"application_state\":\"unknown\",\"error\":\"discriminator is required for statement/expression replacement\"}",
+                "functional_status": "unknown",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "discriminator": "return d.sink.Write(event)",
+                  "file": "service/dispatch.go",
+                  "in_function": "Dispatcher.Record",
+                  "kind": "statement/expression",
+                  "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+                },
+                "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected exactly one statement\"} {\"application_state\":\"unknown\",\"error\":\"syntax error: expected exactly one statement\"}",
+                "functional_status": "unknown",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "failed"
+              },
+              {
+                "arguments": {
+                  "discriminator": "return d.sink.Write(event)",
+                  "file": "service/dispatch.go",
+                  "in_function": "Dispatcher.Record",
+                  "kind": "statement/expression",
+                  "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "anchor": "after",
+                  "discriminator": "event.Kind = audit.NormalizeKind(event.Kind)",
+                  "file": "service/dispatch.go",
+                  "in_function": "Dispatcher.Record",
+                  "kind": "statement/expression",
+                  "source": "return d.sink.Write(event)"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "discriminator": "case \"health\":",
+                  "file": "audit/summary.go",
+                  "in_function": "Classify",
+                  "kind": "case",
+                  "source": "case \"health\", \"probe\":"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "anchor": "after",
+                  "discriminator": "case \"health\", \"probe\":",
+                  "file": "audit/summary.go",
+                  "in_function": "Classify",
+                  "kind": "statement/expression",
+                  "source": "return \"control\""
+                },
+                "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"plan statement insertion: statement anchor \\\"case \\\\\\\"health\\\\\\\", \\\\\\\"probe\\\\\\\":\\\" not found in \\\"Classify\\\"\"} {\"application_state\":\"unknown\",\"error\":\"plan statement insertion: statement anchor \\\"case \\\\\\\"health\\\\\\\", \\\\\\\"probe\\\\\\\":\\\" not found in \\\"Classify\\\"\"}",
+                "functional_status": "unknown",
+                "name": "semantic_insert_construct",
+                "server": "semedit",
+                "transport_status": "failed"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 35676,
+            "wall_clock_ms": 300016
+          }
+        ],
+        "internal_turns": 27,
+        "job_id": "job-be688a7f4d4c5591",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": null,
+        "output_tokens": 3776,
+        "process_start_to_first_event_ms": 37802,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 528071,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "adapter_stage_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000.stages.json",
+          "copilot_agent_name": "Copilot",
+          "copilot_agent_version": "1.0.88",
+          "copilot_model_selection": "acp_session_set_config_option",
+          "copilot_protocol_version": "1",
+          "fixture_dependency_preparation": "go-list-readonly-deps-test",
+          "fixture_storage": "tmpfs",
+          "go_cache_initial_state": "empty",
+          "local_model_context_tokens": "212992",
+          "local_model_limits_source": "llama.cpp-props",
+          "local_model_output_tokens": "8192",
+          "mcp_metrics_file": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000.mcp-metrics.json",
+          "module_cache": "/Users/alessandro/sources/semantic-editor/.scratch/go/mod",
+          "module_cache_network": "offline",
+          "module_cache_preparation": "go-mod-download-all-before-offline-execution",
+          "provider_transport": "copilot_acp_v1",
+          "retained_working_directory": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000",
+          "semedit_prewarm": "verify_cli_check_only",
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 1,
+        "semantic_integration_reflection": {
+          "error": "cannot continue failed Copilot process: wait for Copilot session/prompt: context deadline exceeded; Copilot stderr: Warning: COPILOT_CLI_DIST_DIR (/Users/alessandro/Library/Caches/copilot/pkg/darwin-arm64/1.0.88) does not contain a readable index.js; ignoring",
+          "prompt": "The benchmark task stopped because its execution timed out. For benchmark analysis only, do not use tools, edit files, or retry the task. In one sentence, say whether semedit's tools helped or hindered the work before the timeout, grounded in what actually happened. If you could not assess their value, say so."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_duration_ms": 1578,
+        "semedit_prewarm_verify": true,
+        "semedit_skill": false,
+        "success": false,
+        "target": {
+          "harness": "copilot",
+          "model": "local/Kujira/Underdog-Saluki-27B-1.0-MTP-GGUF:latest"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "arguments": {
+              "path": "."
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_workspace_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "audit/*.go"
+            },
+            "functional_status": "succeeded",
+            "name": "glob",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "service/*.go"
+            },
+            "functional_status": "succeeded",
+            "name": "glob",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/normalize.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/event.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/service/dispatch.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/sink.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/summary.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/event_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/audit/summary_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/service/dispatch_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy/export.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/legacy/export_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/metrics"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/cmd/migrate"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/metrics/writer.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Volumes/semedit-bench-ram/run_copilot_semedit_small-implicit_task-11-mixed-sink-api-migration_1792255827432778000/cmd/migrate/main.go"
+            },
+            "functional_status": "succeeded",
+            "name": "view",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "file": "audit/normalize.go",
+              "kind": "function",
+              "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/dispatch.go",
+              "kind": "function",
+              "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)",
+              "symbol": "Record"
+            },
+            "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"validate replacement declaration: syntax error: expected declaration, found event\",\"location\":{\"range\":{\"end\":{\"character\":0,\"line\":0},\"start\":{\"character\":0,\"line\":0}},\"uri\":\"snippet:///source\"}} {\"application_state\":\"unknown\",\"error\":\"validate replacement declaration: syntax error: expected declaration, found event\",\"location\":{\"range\":{\"end\":{\"character\":0,\"line\":0},\"start\":{\"character\":0,\"line\":0}},\"uri\":\"snippet:///so",
+            "functional_status": "unknown",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "file": "service/dispatch.go",
+              "kind": "statement/expression",
+              "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)",
+              "symbol": "Record"
+            },
+            "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"in_function is required for nested kind=statement/expression\"} {\"application_state\":\"unknown\",\"error\":\"in_function is required for nested kind=statement/expression\"}",
+            "functional_status": "unknown",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "file": "service/dispatch.go",
+              "in_function": "Dispatcher.Record",
+              "kind": "statement/expression",
+              "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+            },
+            "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"discriminator is required for statement/expression replacement\"} {\"application_state\":\"unknown\",\"error\":\"discriminator is required for statement/expression replacement\"}",
+            "functional_status": "unknown",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "discriminator": "return d.sink.Write(event)",
+              "file": "service/dispatch.go",
+              "in_function": "Dispatcher.Record",
+              "kind": "statement/expression",
+              "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+            },
+            "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected exactly one statement\"} {\"application_state\":\"unknown\",\"error\":\"syntax error: expected exactly one statement\"}",
+            "functional_status": "unknown",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "failed"
+          },
+          {
+            "arguments": {
+              "discriminator": "return d.sink.Write(event)",
+              "file": "service/dispatch.go",
+              "in_function": "Dispatcher.Record",
+              "kind": "statement/expression",
+              "source": "\tevent.Kind = audit.NormalizeKind(event.Kind)"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "anchor": "after",
+              "discriminator": "event.Kind = audit.NormalizeKind(event.Kind)",
+              "file": "service/dispatch.go",
+              "in_function": "Dispatcher.Record",
+              "kind": "statement/expression",
+              "source": "return d.sink.Write(event)"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "discriminator": "case \"health\":",
+              "file": "audit/summary.go",
+              "in_function": "Classify",
+              "kind": "case",
+              "source": "case \"health\", \"probe\":"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "anchor": "after",
+              "discriminator": "case \"health\", \"probe\":",
+              "file": "audit/summary.go",
+              "in_function": "Classify",
+              "kind": "statement/expression",
+              "source": "return \"control\""
+            },
+            "failure": "MCP server 'semedit': Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"plan statement insertion: statement anchor \\\"case \\\\\\\"health\\\\\\\", \\\\\\\"probe\\\\\\\":\\\" not found in \\\"Classify\\\"\"} {\"application_state\":\"unknown\",\"error\":\"plan statement insertion: statement anchor \\\"case \\\\\\\"health\\\\\\\", \\\\\\\"probe\\\\\\\":\\\" not found in \\\"Classify\\\"\"}",
+            "functional_status": "unknown",
+            "name": "semantic_insert_construct",
+            "server": "semedit",
+            "transport_status": "failed"
+          }
+        ],
+        "tool_count": 27,
+        "tools_used": [
+          "semantic_workspace_outline",
+          "glob",
+          "glob",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "view",
+          "semantic_insert_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "semantic_insert_construct",
+          "semantic_replace_construct",
+          "semantic_insert_construct"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 35676,
+        "variant": "small:implicit",
+        "wall_clock_ms": 300016
+      }
+    ],
+    "timestamp": "2026-10-17T16:55:29.457465Z"
+  }
+}
