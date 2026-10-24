@@ -15,7 +15,7 @@ For diagnostic details, copy the response's `diagnostic_report.arguments` into
 `next_offset`. Pages reuse the captured report; a deferred/unavailable count
 does not indicate a clean workspace. Use verification only for a fresh report.
 
-This reference provides workflows for inspecting and refactoring shell scripts with `semedit` primitives. Read this document only when working with Bash scripts.
+This reference provides lookup guidance and agent-authored manual refactoring patterns for Bash. Read it only when working with Bash scripts.
 
 ---
 
@@ -25,9 +25,9 @@ selectors remain separate and must be copied verbatim. Use ordinary file reading
 for disk-backed results. A navigation result does not imply that this backend
 supports symbol inspection or mutation.
 
-## 1. Macro Refactorings in Bash
+## 1. Manual Refactoring Patterns (Not semedit Mutations)
 
-`semedit` core operations for Bash (`semantic_outline`, `semantic_lookup`, `semantic_verify`) are indexed in the primary `SKILL.md` table. Bash backend operations require workspace trust and an installed `bash-language-server`. This reference defines script modularization patterns and ShellCheck verification practices.
+`semedit` core operations for Bash (`semantic_outline`, `semantic_lookup`, `semantic_verify`) are indexed in the primary `SKILL.md` table. Bash backend operations require workspace trust and an installed `bash-language-server`; source mutations are unsupported. The manual patterns below do not imply semedit mutation support; verify any agent-authored edits independently.
 
 ---
 

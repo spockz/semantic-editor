@@ -15,7 +15,7 @@ For diagnostic details, copy the response's `diagnostic_report.arguments` into
 `next_offset`. Pages reuse the captured report; a deferred/unavailable count
 does not indicate a clean workspace. Use verification only for a fresh report.
 
-This reference provides workflows for inspecting and refactoring Makefiles with `semedit` primitives. Read this document only when working with Makefiles.
+This reference provides lookup guidance and agent-authored manual refactoring patterns for Makefiles. Read it only when working with Makefiles.
 
 ---
 
@@ -25,9 +25,9 @@ Read disk-backed source directly, or use supported `semantic_inspect_symbol`
 inspection to retrieve source and revision information. Navigation does not grant
 mutation capability.
 
-## 1. Macro Refactorings in Makefiles
+## 1. Manual Refactoring Patterns (Not semedit Mutations)
 
-`semedit` core operations for Makefiles are indexed in the primary `SKILL.md` table. Makefile backend operations require workspace trust and an installed `make-ls`. This reference defines target structuring patterns and verification practices.
+`semedit` core operations for Makefiles are indexed in the primary `SKILL.md` table. Makefile backend operations require workspace trust and an installed `make-ls`; source mutations are unsupported. The manual patterns below do not imply semedit mutation support; verify any agent-authored edits independently.
 
 ---
 
