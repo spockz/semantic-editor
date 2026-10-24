@@ -256,6 +256,13 @@ test-core: go-env test-package-closure test-wrap-up-transcript ## Run core engin
 	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
 	go test $$CORE_PACKAGES
 
+.PHONY: test-mcp-functional test-mcp-integration
+test-mcp-functional: go-env ## Run fast MCP functional tests without black-box server workflows
+	go test ./internal/mcp ./internal/mcp/presentation ./internal/mcp/workspace
+
+test-mcp-integration: go-env ## Run black-box MCP server and protocol tests
+	go test ./internal/mcp/integration
+
 .PHONY: test-package-closure
 test-package-closure: go-env ## Test the custom package-closure linter module
 	cd tools/package-closure && go test ./...
@@ -279,6 +286,12 @@ test-harness: go-env ## Run benchmark harness tests
 test-all: go-env ## Run all unit and race tests including benchmark-harness
 	@echo "==> Running full test suite with race detector..."
 	go test -race -shuffle=on -cover -v ./...
+
+.PHONY: FORCE
+FORCE:
+
+%/test: FORCE go-env ## Run tests for one package (e.g. make internal/mcp/test)
+	go test ./$*
 
 .PHONY: bench-mcp-tools
 COLD_SAMPLES ?= 100
