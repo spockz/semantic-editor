@@ -13,6 +13,7 @@ import (
 
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
 	"github.com/spockz/semantic-editor/internal/backends"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
@@ -31,6 +32,10 @@ func runExtractVariableScalaWithReceipt(ctx context.Context, cc CallContext, req
 	project := effectiveProject(cc, req.Project)
 	file := resolveWorkPath(cc.WorkDir, req.File)
 	project.File = file
+	ctx, buffer, owned, err := sourcebuf.Prepare(ctx, project.RootDir)
+	if err != nil {
+		return ExtractionResult{}, fmt.Errorf("prepare Scala extraction snapshot: %w", err)
+	}
 	source, err := sourcebuf.ReadFile(ctx, file)
 	if err != nil {
 		return ExtractionResult{}, fmt.Errorf("read scala extraction source: %w", err)
@@ -39,10 +44,14 @@ func runExtractVariableScalaWithReceipt(ctx context.Context, cc CallContext, req
 	if err != nil {
 		return ExtractionResult{}, err
 	}
+	sourceRevision := structuralRevision(source)
+	if req.ExpectedRevision != "" && req.ExpectedRevision != sourceRevision {
+		return ExtractionResult{}, fmt.Errorf("scala extraction source changed since selection")
+	}
 	result, err := service.ApplyCodeAction(ctx, backend.CodeActionRequest{
 		Operation: backend.OperationExtractVariable, Project: project, File: file,
 		Range: selection, Kind: "refactor.extract", NewName: req.Symbol,
-		Symbol: req.InFunction, ExpectedRevision: req.ExpectedRevision,
+		Symbol: req.InFunction, ExpectedRevision: sourceRevision,
 	})
 	if err != nil {
 		return ExtractionResult{}, err
@@ -64,6 +73,9 @@ func runExtractVariableScalaWithReceipt(ctx context.Context, cc CallContext, req
 		ReadSet: readSet, PlannedChanges: planned,
 		Continuations: []SymbolTarget{{File: relative, Symbol: req.InFunction, ExpectedRevision: &revision}},
 	}
+	if err := finishScalaOperation(ctx, buffer, owned); err != nil {
+		return ExtractionResult{}, err
+	}
 	return ExtractionResult{Edit: FileEditRes{
 		File: file, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol,
 		InFunction: req.InFunction, Discriminator: req.Discriminator,
@@ -84,6 +96,14 @@ func runExtractFunctionScalaWithReceipt(ctx context.Context, cc CallContext, req
 	project := effectiveProject(cc, req.Project)
 	file := resolveWorkPath(cc.WorkDir, req.File)
 	project.File = file
+	ctx, buffer, owned, err := sourcebuf.Prepare(ctx, project.RootDir)
+	if err != nil {
+		return ExtractionResult{}, fmt.Errorf("prepare Scala callable snapshot: %w", err)
+	}
+	source, err := sourcebuf.ReadFile(ctx, file)
+	if err != nil {
+		return ExtractionResult{}, fmt.Errorf("read Scala extraction preimage: %w", err)
+	}
 	owner, err := service.Lookup(ctx, project, req.InFunction)
 	if err != nil {
 		return ExtractionResult{}, err
@@ -91,18 +111,19 @@ func runExtractFunctionScalaWithReceipt(ctx context.Context, cc CallContext, req
 	if owner == nil || owner.Definition == nil || owner.Definition.DeclarationRange == nil || owner.Definition.Kind != "method" && owner.Definition.Kind != "function" {
 		return ExtractionResult{}, fmt.Errorf("scala extraction owner %q must resolve to one method", req.InFunction)
 	}
-	source, err := sourcebuf.ReadFile(ctx, file)
-	if err != nil {
-		return ExtractionResult{}, fmt.Errorf("read Scala extraction preimage: %w", err)
-	}
 	selection, statement, err := scalaCallableStatementRange(source, *owner.Definition.DeclarationRange, req.StartLine, req.EndLine)
 	if err != nil {
 		return ExtractionResult{}, err
+	}
+	sourceRevision := structuralRevision(source)
+	if req.ExpectedRevision != "" && req.ExpectedRevision != sourceRevision {
+		return ExtractionResult{}, fmt.Errorf("scala callable extraction source changed since selection")
 	}
 	result, err := service.ApplyCodeAction(ctx, backend.CodeActionRequest{
 		Operation: backend.OperationExtractFunction, Project: project, File: file,
 		Range: selection, Kind: "refactor.extract", NewName: req.Symbol,
 		Expression: statement, EnclosingSymbol: owner.Definition.QualifiedName,
+		ExpectedRevision: sourceRevision,
 	})
 	if err != nil {
 		return ExtractionResult{}, err
@@ -124,6 +145,9 @@ func runExtractFunctionScalaWithReceipt(ctx context.Context, cc CallContext, req
 		ReadSet: readSet, PlannedChanges: planned,
 		Continuations: []SymbolTarget{{File: relative, Symbol: req.Symbol, ExpectedRevision: &revision}},
 	}
+	if err := finishScalaOperation(ctx, buffer, owned); err != nil {
+		return ExtractionResult{}, err
+	}
 	return ExtractionResult{Edit: FileEditRes{
 		File: file, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol,
 		InFunction:       owner.Definition.QualifiedName,
@@ -131,6 +155,16 @@ func runExtractFunctionScalaWithReceipt(ctx context.Context, cc CallContext, req
 		Detail:           "Extracted the Scala statement through a resolved Metals method-local action.",
 		DiagnosticStatus: diagnosticStatusUnavailable, HasDelta: !bytes.Equal(result.Before, result.After),
 	}, Draft: draft}, nil
+}
+
+func finishScalaOperation(ctx context.Context, buffer *sourcebuf.Buffer, owned bool) error {
+	if !owned {
+		return nil
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		return fmt.Errorf("publish Scala extraction: %w", err)
+	}
+	return nil
 }
 
 func scalaCallableStatementRange(source []byte, ownerRange backend.Range, startLine, endLine int) (backend.Range, string, error) {
@@ -383,33 +417,11 @@ func scalaSourceLineOffset(source []byte, target int) (int, error) {
 }
 
 func scalaSourceOffset(source []byte, position backend.Position) (int, error) {
-	if position.Line < 0 || position.Character < 0 {
-		return 0, fmt.Errorf("negative Scala source position")
+	offset, err := readlsp.ByteOffset(source, position)
+	if err != nil {
+		return 0, fmt.Errorf("map Scala source position: %w", err)
 	}
-	lineStart := 0
-	for range position.Line {
-		next := bytes.IndexByte(source[lineStart:], '\n')
-		if next < 0 {
-			return 0, fmt.Errorf("scala source line is outside the file")
-		}
-		lineStart += next + 1
-	}
-	lineEnd := len(source)
-	if next := bytes.IndexByte(source[lineStart:], '\n'); next >= 0 {
-		lineEnd = lineStart + next
-	}
-	units := 0
-	line := string(source[lineStart:lineEnd])
-	for byteOffset, character := range line {
-		if units == position.Character {
-			return lineStart + byteOffset, nil
-		}
-		units += len(utf16.Encode([]rune{character}))
-	}
-	if units == position.Character {
-		return lineEnd, nil
-	}
-	return 0, fmt.Errorf("scala source character is outside the selected line")
+	return offset, nil
 }
 
 func scalaExtractionSelection(source []byte, owner, expression string) (backend.Range, error) {

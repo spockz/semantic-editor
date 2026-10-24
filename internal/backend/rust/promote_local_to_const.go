@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
-	"slices"
 	"strings"
 
 	"github.com/spockz/semantic-editor/internal/backend"
@@ -25,13 +24,7 @@ var rustPromoteActionID = regexp.MustCompile("^promote_local_to_const:Refactor:[
 type rustPromotePlan struct {
 	rangeValue backend.Range
 	expected   []byte
-	edits      []rustPromoteEdit
-}
-
-type rustPromoteEdit struct {
-	start int
-	end   int
-	text  string
+	edits      []rustEditSpan
 }
 
 func (b *RustBackend) applyRustPromoteLocalToConst(ctx context.Context, request backend.CodeActionRequest) (*backend.CodeActionResult, error) {
@@ -157,17 +150,17 @@ func planRustPromoteStatements(source []byte, lines [][]byte, ownerLine int, nam
 	if err != nil {
 		return empty, err
 	}
-	edits := []rustPromoteEdit{
+	edits := []rustEditSpan{
 		{start: keywordStart, end: keywordStart + len("let"), text: "const"},
 		{start: nameStart, end: nameStart + len(name), text: generated},
 		{start: callArgStart, end: callArgStart + len(name), text: generated},
 	}
-	sortRustPromoteEdits(edits)
+	sortRustEditSpans(edits)
 	selection, err := byteOffsetsToBackendRange(source, nameStart, nameStart+len(name))
 	if err != nil {
 		return empty, fmt.Errorf("resolve Rust promote-local-to-const binding: %w", err)
 	}
-	return rustPromotePlan{rangeValue: selection, expected: applyRustPromoteEdits(source, edits), edits: edits}, nil
+	return rustPromotePlan{rangeValue: selection, expected: applyRustEditSpans(source, edits), edits: edits}, nil
 }
 
 func rustPromoteBindingOffsets(source []byte, lines [][]byte, ownerLine int, name string) (keywordStart, nameStart, callArgStart int, returnErr error) {
@@ -304,23 +297,6 @@ func byteOffsetsToBackendRange(source []byte, start, end int) (backend.Range, er
 	return backend.Range{Start: backend.Position{Line: startPosition.Line, Character: startPosition.Character}, End: backend.Position{Line: endPosition.Line, Character: endPosition.Character}}, nil
 }
 
-func sortRustPromoteEdits(edits []rustPromoteEdit) {
-	for index := 1; index < len(edits); index++ {
-		for cursor := index; cursor > 0 && edits[cursor].start < edits[cursor-1].start; cursor-- {
-			edits[cursor], edits[cursor-1] = edits[cursor-1], edits[cursor]
-		}
-	}
-}
-
-func applyRustPromoteEdits(source []byte, edits []rustPromoteEdit) []byte {
-	result := bytes.Clone(source)
-	for _, edit := range slices.Backward(edits) {
-
-		result = append(result[:edit.start], append([]byte(edit.text), result[edit.end:]...)...)
-	}
-	return result
-}
-
 func resolveAndValidateRustPromoteLocalToConst(ctx context.Context, session RustSession, file, uri string, source []byte, plan rustPromotePlan) ([]byte, error) {
 	raw, err := session.Request(ctx, "textDocument/codeAction", map[string]any{
 		lspTextDocumentKey: map[string]string{"uri": uri},
@@ -386,22 +362,22 @@ func validateRustPromoteActionEdit(file string, source []byte, plan rustPromoteP
 	if err != nil || len(edits) != len(plan.edits) {
 		return nil, &RustError{Op: rustOpCodeAction, File: file, Err: fmt.Errorf("invalid Rust promote-local-to-const edit (decode: %w, edit count: %d): %w", err, len(edits), ErrRustRenameInvalidEdit)}
 	}
-	actual := make([]rustPromoteEdit, len(edits))
+	actual := make([]rustEditSpan, len(edits))
 	for index, edit := range edits {
 		start, startErr := rustByteOffset(source, edit.Range.Start)
 		end, endErr := rustByteOffset(source, edit.Range.End)
 		if startErr != nil || endErr != nil || end < start {
 			return nil, &RustError{Op: rustOpCodeAction, File: file, Err: ErrRustRenameInvalidEdit}
 		}
-		actual[index] = rustPromoteEdit{start: start, end: end, text: edit.NewText}
+		actual[index] = rustEditSpan{start: start, end: end, text: edit.NewText}
 	}
-	sortRustPromoteEdits(actual)
+	sortRustEditSpans(actual)
 	for index := range actual {
 		if actual[index] != plan.edits[index] {
 			return nil, &RustError{Op: rustOpCodeAction, File: file, Err: fmt.Errorf("unexpected Rust promote-local-to-const edit %d: got %+v want %+v: %w", index, actual[index], plan.edits[index], ErrRustRenameInvalidEdit)}
 		}
 	}
-	candidate := applyRustPromoteEdits(source, actual)
+	candidate := applyRustEditSpans(source, actual)
 	if !bytes.Equal(candidate, plan.expected) {
 		return nil, &RustError{Op: rustOpCodeAction, File: file, Err: fmt.Errorf("rust promote-local-to-const result did not match the independently derived postimage (got %q want %q): %w", candidate, plan.expected, ErrRustRenameInvalidEdit)}
 	}

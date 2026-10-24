@@ -3,8 +3,14 @@
 package operation
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spockz/semantic-editor/internal/backend"
 )
 
 func TestScalaCallableSelectionStaysWithinResolvedOwnerBody(t *testing.T) {
@@ -78,5 +84,114 @@ object B {
 	abstractCall := strings.Index(string(abstractOwner), "consume(1)")
 	if scalaSelectionWithinOwnerBody(abstractOwner, abstractStart, laterOwnerStart, abstractCall, abstractCall+len("consume(1)")) {
 		t.Fatal("abstract owner borrowed the body of a later same-named method")
+	}
+}
+
+func TestScalaSourceOffsetUsesSharedDecoder(t *testing.T) {
+	source := []byte("first\r\nsecond")
+	offset, err := scalaSourceOffset(source, backend.Position{Line: 1, Character: 0})
+	if err != nil {
+		t.Fatalf("map CRLF source position: %v", err)
+	}
+	if want := len("first\r\n"); offset != want {
+		t.Fatalf("offset = %d, want %d", offset, want)
+	}
+	if _, err := scalaSourceOffset(source, backend.Position{Line: 0, Character: 6}); err == nil {
+		t.Fatal("position inside the CRLF terminator was accepted")
+	}
+}
+
+func TestScalaVariableExtractionRejectsStaleSelectionRevision(t *testing.T) {
+	directory := t.TempDir()
+	file := filepath.Join(directory, "service.scala")
+	source := []byte("object Pipeline {\n  def update(): Int = calculate(3*60)\n}\n")
+	if err := os.WriteFile(file, source, 0o600); err != nil {
+		t.Fatalf("write Scala source: %v", err)
+	}
+	_, err := runExtractVariableScalaWithReceipt(context.Background(), CallContext{WorkDir: directory}, ExtractVariableReq{
+		File: "service.scala", Symbol: "minutes", Kind: "variable", InFunction: "update",
+		Discriminator: "3*60", ExpectedRevision: "stale-revision",
+	})
+	if err == nil || !strings.Contains(err.Error(), "source changed since selection") {
+		t.Fatalf("stale extraction error = %v", err)
+	}
+}
+
+type scalaLookupRaceBackend struct {
+	file        string
+	replacement []byte
+	actionErr   error
+	request     *backend.CodeActionRequest
+}
+
+func (*scalaLookupRaceBackend) Language() backend.LanguageID { return backend.LanguageScala }
+
+func (*scalaLookupRaceBackend) Capabilities() backend.Capabilities {
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationExtractFunction)
+}
+
+func (fake *scalaLookupRaceBackend) Lookup(_ context.Context, _ backend.ProjectContext, _ string) (*backend.LookupResult, error) {
+	if err := os.WriteFile(fake.file, fake.replacement, 0o600); err != nil {
+		return nil, err
+	}
+	return &backend.LookupResult{Definition: &backend.NamedTarget{
+		QualifiedName: "A.emit", Kind: "method",
+		DeclarationRange: &backend.Range{
+			Start: backend.Position{Line: 1, Character: 2},
+			End:   backend.Position{Line: 3, Character: 3},
+		},
+	}}, nil
+}
+
+func (*scalaLookupRaceBackend) Rename(context.Context, backend.RenameRequest) (*backend.RenameResult, error) {
+	return nil, errors.New("unexpected Scala rename")
+}
+
+func (*scalaLookupRaceBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.Diagnostic, error) {
+	return nil, nil
+}
+
+func (fake *scalaLookupRaceBackend) ApplyCodeAction(_ context.Context, request backend.CodeActionRequest) (*backend.CodeActionResult, error) {
+	fake.request = &request
+	return nil, fake.actionErr
+}
+
+func TestScalaCallableLookupAndEditShareCapturedSource(t *testing.T) {
+	directory := t.TempDir()
+	file := filepath.Join(directory, "service.scala")
+	source := []byte("object A {\n  def emit(): Unit = {\n    consume()\n  }\n}\n")
+	replacement := []byte("object B {\n  def emit(): Unit = {\n    consume()\n  }\n}\n")
+	if err := os.WriteFile(file, source, 0o600); err != nil {
+		t.Fatalf("write Scala source: %v", err)
+	}
+	stop := errors.New("stop after action request")
+	fake := &scalaLookupRaceBackend{file: file, replacement: replacement, actionErr: stop}
+	registry, err := backend.NewRegistry(fake)
+	if err != nil {
+		t.Fatalf("register Scala test backend: %v", err)
+	}
+	cc := CallContext{
+		WorkDir: directory,
+		Project: backend.ProjectContext{RootDir: directory, Language: backend.LanguageScala},
+		Service: &backend.Service{Registry: registry},
+	}
+	_, err = runExtractFunctionScalaWithReceipt(context.Background(), cc, ExtractFunctionReq{
+		Project: cc.Project, File: "service.scala", Symbol: "extracted", InFunction: "A.emit",
+		Kind: "function", StartLine: 3, EndLine: 3,
+	})
+	if !errors.Is(err, stop) {
+		t.Fatalf("callable extraction error = %v, want action stop", err)
+	}
+	if fake.request == nil {
+		t.Fatal("Scala code action was not called")
+	}
+	if got, want := fake.request.ExpectedRevision, structuralRevision(source); got != want {
+		t.Fatalf("action revision = %q, want captured owner revision %q", got, want)
+	}
+	if fake.request.EnclosingSymbol != "A.emit" {
+		t.Fatalf("action owner = %q, want A.emit", fake.request.EnclosingSymbol)
+	}
+	if got, err := os.ReadFile(file); err != nil || string(got) != string(replacement) {
+		t.Fatalf("external source change was overwritten: got %q, err %v", got, err)
 	}
 }

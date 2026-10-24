@@ -4,7 +4,7 @@
 * **Status**: Open
 * **Category**: Go Refactoring & Implementation Handover
 * **Date**: 2026-10-01
-* **Last Updated**: 2026-10-23
+* **Last Updated**: 2026-10-24
 
 This is the single implementation investigation for the refactoring tools and expansions originally planned across the historical RQ-0041–0059 handovers. The individual forwarding files have been retired to eliminate documentation clutter, and their complete tool-specific contracts, semantic risks, implementation steps, fixture sketches, and model-facing description drafts are retained below. Repeated shared requirements are recorded once. Bounded `semantic_extract_delegate` and `semantic_encapsulate_field` deliveries are implemented; their broader expansion gates and other beyond-first-release work keep this research question open.
 
@@ -2833,8 +2833,12 @@ The first integrated Go-local reuse sweep is committed as `6da0b437`. It separat
 
 Worktree audit found no missing Go implementation to copy. The unmerged `codex/refactor-cross-package` commit `50b80b23` adds typed destination-reference validation and refusal coverage; the committed Go-local cleanup already contains that behavior and those cases. The `codex/flow-contracts` worktree has only an untracked fuzz-failure artifact, and the `codex/refactoring-integration` worktree has benchmark result artifacts rather than Go source changes. Keep those paths untouched.
 
-The shared operation/CLI integration and its public txtars remain uncommitted in this worktree and must be reviewed as one coherent surface before they are committed. The remaining Go backlog is still tracked in the operation sections below, including broader cross-package resource and initializer moves and unsupported extraction/inlining contexts. Finish the second Go-local cleanup sweep after that integration, then complete the cross-language sweeps, remaining Sol 6.1 reviews, integrated checks, and final Gemini review before resolving this RQ.
+The shared operation/CLI integration and public txtars are committed as `96a0e8f9` and were reviewed as one coherent surface. The remaining Go backlog is still tracked in the operation sections below, including broader cross-package resource and initializer moves and unsupported extraction/inlining contexts. The second Go-local cleanup and cross-language generalization sweeps remain closeout work, along with final Gemini review, before resolving this RQ.
 
 ### 2026-10-24 shared integration review correction
 
-The shared operation/CLI surface now rejects Go constant extraction requests that provide `construct_path`, instead of silently ignoring the selector. Its refusal txtar confirms byte-identical source; repeated expressions continue to use `occurrence_indices`. ADR-0032 now documents the captured-file publication checks without promising a complete tree-membership recheck. The reused Sol 6.1 reviewer confirmed both corrections and reported no remaining issue in those findings. Focused operation and CLI tests and elevated `MAKE_JOBS=4 GOFLAGS=-p=2 make check` pass on 2026-10-24. The second cleanup sweep, full cross-language generalization review, and Gemini review remain open.
+The shared operation/CLI surface now rejects Go constant extraction requests that provide `construct_path`, instead of silently ignoring the selector. Its refusal txtar confirms byte-identical source; repeated expressions continue to use `occurrence_indices`. ADR-0032 now documents the captured-file publication checks without promising a complete tree-membership recheck. The reused Sol 6.1 reviewer confirmed both corrections and reported no remaining issue in those findings. Focused operation and CLI tests and elevated `MAKE_JOBS=4 GOFLAGS=-p=2 make check` passed on 2026-10-24.
+
+### 2026-10-24 Scala snapshot and Rust edit-span reuse cleanup
+
+Scala callable extraction now captures the source buffer before symbol lookup, so lookup, selection validation, and the Metals action share one preimage even if the file changes during lookup. The regression test mutates the on-disk source during lookup and verifies the action retains the captured revision; the CRLF offset test rejects positions inside the line terminator. Rust constant promotion now reuses the shared descending edit-span ordering and application helpers while retaining exact postimage validation. Focused Scala operation tests and full elevated `MAKE_JOBS=4 GOFLAGS=-p=2 make check` pass. Reused Sol 6.1 review found no actionable findings. Remaining closeout is the second Go-local sweep, cross-language generalization/quality sweep, and final Gemini review.

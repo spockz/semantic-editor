@@ -8395,3 +8395,75 @@ Every extracted attempt is listed separately. event is the complete recorded too
 * Observed: outline preparation failed because the guessed path does not exist; no source was changed.
 * Workaround: locate the current move helper file through the workspace package outline before requesting its declarations.
 * Root cause: the caller inferred a filename from the implementation's conceptual role instead of checking the workspace's actual file layout.
+
+## 2026-10-24 semantic inspection targeted a revision helper in the wrong file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/operation/wire_scala_refactor.go`, guessed helper `structuralRevision`.
+* Observed: inspection returned `symbol not found`; no source was changed. The helper is not declared in this file.
+* Workaround: locate the helper declaration with workspace search, then inspect it in its defining file.
+* Root cause: the caller inferred the helper's location from its usage rather than locating its declaration first.
+
+## 2026-10-24 semantic insertion rejected a multi-statement snippet
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_scala_refactor.go`, immediately after the Scala variable extraction selection.
+* Observed: insertion returned `expected exactly one statement`; no source was changed.
+* Workaround: insert the revision declaration and stale-revision guard as separate statements, or use a minimal source edit if the selector cannot represent the compound insertion.
+* Root cause: statement insertion accepts exactly one statement per operation.
+
+## 2026-10-24 semantic insertion used an existing local name
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_scala_refactor.go`, Scala variable extraction revision binding.
+* Observed: the statement was inserted, but verification reported a duplicate `revision` local. A later import cleanup also temporarily removed `unicode/utf16`, which is still used by the inverse byte-offset-to-LSP-position conversion.
+* Workaround: rename the new local to `sourceRevision`, use the shared LSP byte-position decoder for the forward conversion, and retain `unicode/utf16` for the inverse conversion.
+* Root cause: the selector context did not include a later local declaration with the same name, and the file has two distinct coordinate conversions.
+
+## 2026-10-24 semantic diagnostics rejected an unsupported workspace argument
+
+* Tool: `semantic_diagnostics`.
+* Target: the captured diagnostics report for `internal/operation/wire_scala_refactor.go`.
+* Observed: the request rejected the `workspace_root` field as unknown; no source was changed.
+* Workaround: page the existing report using only its report ID and pagination/filter fields.
+* Root cause: this report reader does not accept the workspace selection field used by source tools.
+
+## 2026-10-24 semantic replacement required a construct path for repeated revision access
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_scala_refactor.go`, the code action request revision field in Scala variable extraction.
+* Observed: the expression discriminator matched the revision in both guard conditions and the backend request; replacement was refused before writing.
+* Workaround: select the backend request expression using the listed `construct_path` and current selection revision.
+* Root cause: repeated identical expressions require path-based disambiguation.
+
+## 2026-10-24 semantic element insertion did not resolve a Go keyed literal
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_scala_refactor.go`, the `backend.CodeActionRequest` literal in Scala callable extraction.
+* Observed: selecting the literal by its type prefix matched zero composites; no source was changed.
+* Workaround: use a narrowly scoped source edit to add the `ExpectedRevision` keyed element, since the semantic literal selector cannot address this literal in the function.
+* Root cause: the literal selector did not resolve the qualified Go composite literal using a type-prefix discriminator.
+
+## 2026-10-24 semantic inspection guessed the source buffer file path
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/sourcebuf/sourcebuf.go`, helper `Prepare`.
+* Observed: inspection could not open the guessed file; no source was changed. The package stores the helper in another file.
+* Workaround: locate the declaration through the package outline or `rg --files`, then inspect its defining file.
+* Root cause: the caller guessed the package's file name instead of checking its layout.
+
+## 2026-10-24 semantic statement insertion could not select a composite return
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_scala_refactor.go`, before the successful result return in Scala extraction.
+* Observed: the statement selector did not recognize the composite-literal return prefix as an anchor; no source was changed.
+* Workaround: use a narrow source edit at the known return boundary after confirming the current declaration with semantic inspection.
+* Root cause: the statement anchor expects a complete selectable statement rather than a partial return expression prefix.
+
+## 2026-10-24 semantic inspection guessed a buffer read method name
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/sourcebuf/buffer.go`, guessed method `Buffer.Read`.
+* Observed: inspection returned `symbol not found` and suggested the actual private loader; no source was changed.
+* Workaround: inspect the exported `ReadFile` operation, which owns the buffer lookup behavior.
+* Root cause: the caller inferred an internal method name from the package API instead of inspecting the exported read path.

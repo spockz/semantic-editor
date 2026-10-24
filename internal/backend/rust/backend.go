@@ -641,11 +641,7 @@ func validateRustEditSpans(source []byte, edits []rustTextEdit, oldName string) 
 		seen[key] = true
 		spans = append(spans, rustEditSpan{start: start, end: end, text: edit.NewText})
 	}
-	for i := 1; i < len(spans); i++ {
-		for j := i; j > 0 && spans[j].start > spans[j-1].start; j-- {
-			spans[j], spans[j-1] = spans[j-1], spans[j]
-		}
-	}
+	sortRustEditSpans(spans)
 	for i := 1; i < len(spans); i++ {
 		if spans[i].end > spans[i-1].start {
 			return nil, ErrRustRenameInvalidEdit
@@ -660,6 +656,14 @@ func applyRustEditSpans(source []byte, spans []rustEditSpan) []byte {
 		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
 	}
 	return updated
+}
+
+func sortRustEditSpans(spans []rustEditSpan) {
+	for index := 1; index < len(spans); index++ {
+		for cursor := index; cursor > 0 && spans[cursor].start > spans[cursor-1].start; cursor-- {
+			spans[cursor], spans[cursor-1] = spans[cursor-1], spans[cursor]
+		}
+	}
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.
