@@ -2,6 +2,55 @@
 
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-19: Semantic field insertion was blocked by an incomplete CLI refactor
+
+* Tool: `semantic_insert_construct` adding a usage field to `analysisCodexChatRecord` in `tools/benchmark-harness/analysis_extract.go`.
+* Failure: The request did not apply because the package temporarily referenced `listCodexTranscriptFiles` before that helper existed, so the tool's package typecheck failed.
+* Workaround: Finish the transcript helpers first, then retry the field insertion.
+* Root cause: Semantic edits typecheck the complete package and reject mutations while an incremental change leaves unresolved declarations.
+
+## 2026-10-19: Semantic usage-field insertion was blocked by an incomplete type update
+
+* Tool: `semantic_insert_construct` adding the usage value to `analysisCodexChatRecord` in `tools/benchmark-harness/analysis_extract.go`.
+* Failure: The request did not apply because the new transcript parser already assigned `record.Usage`, but the struct field had not yet been added (`record.Usage undefined`).
+* Workaround: Stage the struct and parser edits in an order that keeps the package typechecked, then insert the field.
+* Root cause: The semantic editor validates the full package before applying a field insertion and cannot accept a temporarily inconsistent multi-file edit sequence.
+
+## 2026-10-19: Semantic usage-field insertion was blocked by an unused import
+
+* Tool: `semantic_insert_construct` adding the usage value to `analysisCodexChatRecord` in `tools/benchmark-harness/analysis_extract.go`.
+* Failure: The request did not apply because `analysis_extract.go` imported `bufio` even though the streaming writer helper that uses it lives in another file.
+* Workaround: Remove the misplaced import, then retry after the package typechecks.
+* Root cause: Go imports are file-scoped; the new helper file did not make the import in `analysis_extract.go` valid.
+
+## 2026-10-18: Semantic field insertion rejected exported benchmark result type
+
+* Tool: `semantic_insert_construct` adding failed-call counters to `RunResult` in `tools/benchmark-harness/runner.go`.
+* Failure: The first request supplied multiple fields where the tool requires one; the corrected request was rejected because it could not prove positional-literal compatibility for the exported struct.
+* Workaround: Add the JSON fields with a targeted source patch and run repository checks.
+* Root cause: The semantic field insertion operation fails closed for this exported result type, which has compatibility-sensitive composite literals.
+
+## 2026-10-18: Semantic batch verification stopped at Bash workspace trust gate
+
+* Tool: `semantic_batch` renaming and replacing external-oracle checkout code in `tools/benchmark-harness/oracle.go` and extending `tools/benchmark-harness/external_repo_test.go`.
+* Failure: The Go edits applied, but final verification stopped before running checks because the configured Bash source verifier required workspace trust for the repository root.
+* Workaround: Inspect the applied diff and run the repository's `make check` and focused benchmark-harness tests.
+* Root cause: Automatic verification included a Bash check unrelated to the Go changes, and the request had not enabled the required trust for that hook.
+
+## 2026-10-17: Semantic batch verification used an incompatible cached linter plugin
+
+* Tool: `semantic_batch` adding retained-workspace cache cleanup coverage in `tools/benchmark-harness/session_cleanup_test.go`.
+* Failure: The test edit applied, but automatic verification failed when `golangci-lint` loaded `.scratch/go/bin/packageclosure.so`, which was built with a different version of package `cmp`.
+* Workaround: Rebuild the configured linter/plugin with the current Go toolchain, then rerun `make check` and targeted harness tests.
+* Root cause: The repository-local analyzer plugin cache is stale relative to the currently selected Go toolchain.
+
+## 2026-10-17: Semantic batch edits applied but verification blocked by trust gate
+
+* Tool: `semantic_batch` inserting `removeRetainedWorkspaceCache` and replacing `agentSession.close` in `tools/benchmark-harness/session.go`.
+* Failure: Both Go edits applied, but automatic verification stopped because the configured Bash linter required explicit trust for the repository root.
+* Workaround: Re-run scoped verification with workspace trust enabled, then inspect the final source and tests.
+* Root cause: The batch implicitly ran all configured verification hooks, including a Bash source check unrelated to the Go-only edit, without the per-request workspace trust needed by that hook.
+
 ## 2026-10-17: Batch function insertion rejected multiple declarations
 
 * Tool: `semantic_batch` containing `semantic_insert_construct` for timeout reflection helpers in `tools/benchmark-harness/driver.go`.
@@ -6294,6 +6343,12 @@ Every extracted attempt is listed separately. event is the complete recorded too
 
 *local=n/a*: the historical source snapshot for this exact call is not available; replaying a mutation on the final working tree would compare different input states. The current read-only timing sample is reported above.
 
+### Current session
+
+| Tool | Target | Observation | Workaround | Root cause |
+| --- | --- | --- | --- | --- |
+| `semantic_batch` with `semantic_replace_body` | `tools/benchmark-harness/session_lifecycle.go`, `agentSession.execute` | Rejected the first child with `syntax error: missing ',' in argument list (and 10 more errors)`; no changes were published. | Apply the smallest direct patch and verify with `make check`. | The generated replacement-body payload was not accepted as valid Go by the semantic parser. |
+
 ### Batch parent and child-result ledger
 
 | Parent call | Requested edits | Recorded child outcomes | Assessment |
@@ -6322,3 +6377,11 @@ Every extracted attempt is listed separately. event is the complete recorded too
 | exec-f9cd8348-3e7a-428e-bea7-54cbe6808883 (thread 01a148bc, turn 01a148f0, line 1249) | 13 | 0 (none; child execution/result unknown) | parent status=failed; no per-child duration assigned |
 | exec-2d57933f-9357-4b60-8bbf-aecab9a9b206 (thread 01a148bc, turn 01a148f9, line 1481) | 9 | 0 (none; child execution/result unknown) | parent status=failed; no per-child duration assigned |
 | exec-a322074a-ba68-419d-ab3c-0c67bd4c4d14 (thread 01a148bc, turn 01a148f9, line 1509) | 2 | 0 (none; child execution/result unknown) | parent status=failed; no per-child duration assigned |
+
+## 2026-10-19: Benchmark analysis exporter construct selector did not match
+
+* Tool: `semantic_insert_construct` (`kind: element`)
+* Target: `tools/benchmark-harness/analysis_extract.go`, the `analysisTranscriptTurn` literal in `extractAnalysisSidecars`
+* Observed failure: selecting the literal with discriminator `analysisTranscriptTurn` returned `literal selector matched 0 composites`; no edit was applied.
+* Workaround: add the `RawEvents` initializer field with a narrowly scoped source patch after locating the exact literal.
+* Root cause: the construct selector did not accept the Go type name as a matching discriminator for this composite literal.

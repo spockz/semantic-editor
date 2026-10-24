@@ -49,7 +49,44 @@ need to own.
 We unify batch execution across two complementary access paths: direct multi-edit
 plans and state-journaled staging transactions.
 
+### Operation-Call Parity
+
+A batch child is the same registered operation exposed as an individual tool;
+both paths must use the same parser, handler, finalizer, and output projectors.
+Given the same arguments and source revision, they apply the same normalization,
+validation, semantic transformation, refusal rules, and operation-level output
+contract. Batch execution must not accept extra fields, weaken required
+parameters, suppress operation failures, or return a looser result schema. It
+may add its edit index, execution status, and shared final diff/diagnostic
+envelope around the child result.
+
+The operation implementation must not fork on whether it was invoked directly
+or as a batch child. The caller supplies its source buffer through the same
+operation dependency: an individual call receives a fresh request buffer, while
+batch children receive the shared working buffer so later children observe
+earlier edits. The operation reads and writes that buffer using the same code in
+both cases. It must not inspect invocation-mode flags to select different
+normalization, validation, transformation, refusal, or result behavior.
+
+Buffer ownership and orchestration remain outside the operation. The caller
+chooses when to publish, normalize, and verify the buffer; staged execution also
+keeps its shared buffer reversible so callers can drop selected steps or abort
+before commit. Those lifecycle differences may change when effects become
+visible, but not the operation's behavior or canonical result contract
+(ADR-0065). Batch may add its edit index, execution status, and shared final
+diff/diagnostic envelope around the same child result.
+
 ### 1. Direct Batch Mode (`semantic_batch`)
+
+MCP batching is a startup-configured catalog feature. `--enable-batching` is
+disabled by default and must be explicitly enabled. When disabled, the server omits
+`semantic_batch`, rejects calls to that unadvertised name, and removes
+batch-specific guidance from exposed operation descriptions and input schemas.
+When enabled, it advertises `semantic_batch` where eligible operations exist
+and adds matching guidance to those operations' descriptions and input schemas.
+This toggle controls MCP discovery and invocation only; individual operations,
+CLI dispatch, and retained staging remain available independently. Catalog text
+must never direct an agent to a disabled feature.
 
 Choose buffering according to the required preparation and publication boundary:
 
@@ -248,6 +285,10 @@ operating-system sandbox.
   lifecycle (ADR-0068), and does not establish equivalent caches for other LSPs.
 
 - No second approval, authenticated receipt, or client-supplied patch exists.
+- The MCP startup toggle gates batch discovery and calls without changing
+  registered operation behavior, CLI availability, or retained staging.
+- Batch guidance appears in MCP descriptions and schemas only when batching is
+  enabled; a disabled catalog contains no batch-specific guidance.
 - Direct mode reports applied operations and the resulting diff; it does not
   promise rollback or crash recovery.
 - Buffered Go edits share one working revision with gopls; save and watcher
@@ -260,6 +301,11 @@ operating-system sandbox.
   Standalone single-file pipelines use target-scoped preparation and checked
   atomic publication; Java retains its normalization buffer. Neither buffer
   construction nor write authorization captures a full workspace implicitly.
+- A batch child and its standalone tool counterpart use the same registered
+  parser, handler, finalizer, and output projectors. Their only operation-context
+  difference is whether they receive a fresh request buffer or the batch's
+  shared working buffer. Buffer publication and staging drop/abort remain
+  lifecycle responsibilities outside the child operation implementation.
 - Lazy preimages cover every semantic read and write and explicitly observed
   package tree. Membership changes and exact-content conflicts remain failures;
   reducing unrelated scans cannot weaken pre-publication validation.

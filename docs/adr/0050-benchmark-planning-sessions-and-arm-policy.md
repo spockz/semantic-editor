@@ -295,6 +295,13 @@ their original `none` interpretation.
 In its place, skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`),
 testing whether prompt-delivered macro-refactoring guidelines alter agent tool selection efficiency without inflating primary evaluation arms. Direct control jobs execute under deterministic AST semantics without agent interaction.
 
+MCP batch availability is a separate orthogonal boolean ablation condition
+(`--semedit-batching`, default `false`). When enabled, the harness passes
+`--enable-batching` only to semedit MCP servers; baseline arms are unchanged.
+The setting is recorded in job results and included in job and pair identities,
+so checkpoints cannot mix runs with different batch availability. Benchmark
+plans select one value at a time; compare enabled and disabled runs explicitly.
+
 The command-line interface (CLI) exposes
 `--semedit-arm-restrict=read|write|readwrite`. The explicitly selected default is
 `write`, including the benchmark Makefile variable `SEMEDIT_ARM_RESTRICT`.
@@ -332,22 +339,23 @@ corrective-attempt publication metrics.
 
 Measured results contain only the original task answer and subsequent interactive
 attempts to solve the task. Freeze task metrics before diagnostic questioning.
-Any non-use, batching, or integration-value reflection has a separate diagnostic record and contributes
+Any non-use, batching, or tooling-improvement reflection has a separate diagnostic record and contributes
 nothing to measured tokens, turns, tools, elapsed time, or oracle outcomes.
-Every successful semedit session with a continuation identity receives an additional
-integration-value question after any non-use or batching question. The existing
-report representation stores its prompt, response, and capture error in
-`semantic_integration_reflection`; the generic diagnostic collection defined
-above replaces this dedicated field when the representation is migrated. Ask for a candid
-one-sentence coding-agent recommendation, including whether the agent would ask
-its owner to add semedit. Accept negative recommendations and acknowledge unassessed
-tools. Render this as agent opinion, never a performance measurement. Failed or
-non-resumable sessions keep the existing diagnostic skip behavior. When a semedit
-task times out but its provider exposed a resumable identity and the parent job is
-still active, make two best-effort diagnostic continuations on that same identity:
-first ask where execution stalled using observed evidence, then ask for integration
-feedback grounded in the partial run. Bound this work separately from the expired
-task deadline, but honor parent cancellation. Store the timeout analysis in
+Every semedit-enabled run with a continuation identity receives an additional
+tooling-improvement question after any non-use or batching question, whether the
+task succeeded or failed. Ask for candid, serious feedback on the most useful
+improvement, grounded in the agent's observed run; distinguish observed friction
+from suggestions and allow the agent to say it lacked enough exposure. The
+existing report representation stores the prompt, response, and capture error in
+`semantic_integration_reflection` for compatibility. Render this as agent
+opinion, never a performance measurement. If the provider supplies no resumable
+identity, or the parent job is cancelled, record why feedback could not be
+collected. When a semedit task times out but its provider exposed a resumable
+identity and the parent job is still active, make two best-effort diagnostic
+continuations on that same identity: first ask where execution stalled using
+observed evidence, then ask for tooling-improvement feedback grounded in the
+partial run. Bound this work separately from the expired task deadline, but honor
+parent cancellation. Store the timeout analysis in
 `diagnostic_timeout_reflection`; neither reflection changes task measurements or
 success. Only diagnostic-reflection turns may continue a failed provider session.
 Cumulative provider transcripts must contribute each task event at most once.
@@ -402,6 +410,31 @@ signal-cancelled jobs remain pending and can run on resume.
 - Diagnostic extension is global and uses one structurally excluded collection.
 - Wrapped or joined process exits cannot hide genuine cleanup failures.
 - Diagnostic questioning never changes measured task aggregates.
+- Analysis exports read only explicitly selected reports or direct job
+  checkpoints. Transcript, raw adapter events, adapter stages, and MCP metrics
+  remain opt-in sidecars; missing or incomplete observations stay explicit.
+- Interactive Codex chat export is opt-in through an explicitly selected
+  Codex home. It reads only regular `.jsonl` and `.jsonl.zst` files beneath
+  `sessions/` and `archived_sessions/`, streams records, and omits developer
+  instructions and private assistant phases while retaining user messages,
+  public assistant final/commentary messages,
+  tool calls/results, and per-turn usage. It does not inspect Codex databases,
+  settings, or other state; compressed transcripts require the `zstd` CLI.
+  Output files remain atomic because a complete chat export can be large.
+  `--limit` adds JSONL pages with a `page_info` record and opaque continuation
+  cursor; continuation skips completed transcript files and resumes at a
+  record ordinal in the active file, making exports practical for bounded
+  agent context ingestion. Cursors require stable input files and ordering.
+  `--since` accepts an inclusive RFC3339 timestamp and filters benchmark
+  reports/checkpoints by report time and Codex records by event time; records
+  without a timestamp are excluded when a cutoff is active.
+- Benchmark improvement proposals must cite the prompt, tool arguments and
+  outcomes, response/next-turn evidence when available, final diff, oracle
+  result, and agent feedback. Capability gaps remain hypotheses until evidence
+  distinguishes them from tool-selection or parameter mistakes.
+- Evaluate tooling changes by rerunning the same task and experiment conditions;
+  compare correctness, failed calls, interaction counts, latency, token use, and
+  recorded cost before retaining a change.
 - Cloud token estimates use explicit rate-card metadata and never imply actual
   invoice charges; unavailable token usage remains unavailable rather than zero.
 - Transcript failures remain explicit; missing telemetry is not measured zero.
@@ -411,6 +444,11 @@ signal-cancelled jobs remain pending and can run on resume.
   execution. A known efficient recipe does not prove a global time minimum.
 - External repository arms share a pinned base commit; acceptance patches remain
   outside the issue prompt and test patches stay outside the agent workspace.
+
+The explicit analysis exporter produces a bounded evidence package for this
+cycle. It does not classify an agent mistake or claim a capability gap on its
+own; analysis must preserve the distinction between observed facts and causal
+hypotheses.
 
 ## Consequences
 

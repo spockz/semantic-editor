@@ -40,7 +40,13 @@ We adopt the robustness principle (**Lenient In, Precise/Strict Out**) across al
 
 * **Identifier Casing Precedence in Go**: When Go declaration insertions encounter an explicit `access_modifier` that conflicts with the identifier casing (such as `private` for an exported `Test*` function), the engine infers visibility directly from Go casing rules rather than aborting the operation.
 
-### 5. Precise, Canonical Output Contracts
+### 5. Uniform Direct and Batch Contracts
+
+* **Same Operation Implementation**: An individual tool call and the corresponding batch child dispatch to the same registered parser, handler, finalizer, and projectors. The operation receives either a fresh request buffer or the batch's shared working buffer and uses the same code to read and mutate it. It must not branch on invocation mode to change aliases, normalization, validation, required fields, semantic transformation, refusal rules, or operation-level output. Batch errors may add the failing edit index, and its response may add a per-edit status and execution envelope.
+* **Shared Output Rules**: Both paths use the registered operation's success and known-error projectors, which validate against the same strict result schemas. Batch reports the child's result against the batch working revision; it does not loosen the result schema or change the operation's canonical result shape.
+* **No Silent Unknown-Field Dropping**: An unrecognized named parameter is not treated as an optional extension. Callers must use a declared parameter or alias so misspellings and unsupported options fail visibly.
+
+### 6. Precise, Canonical Output Contracts
 
 While ingress is lenient, tool outputs remain strictly canonical, precise, and deterministic:
 
@@ -52,6 +58,8 @@ While ingress is lenient, tool outputs remain strictly canonical, precise, and d
 ## Invariants
 
 * Input leniency must never compromise semantic safety; ambiguous matches must fail closed with candidate choices rather than making heuristic selections.
+* Individual operations and batch children must dispatch to the same registered operation code and share input normalization, parameter validation, semantic behavior, and operation-level output validation. The only operation-context difference is a fresh request buffer versus a shared batch buffer.
+* Unknown parameters remain errors in every ingress path; only declared aliases and normalizations are lenient.
 * Outputs emitted by the host engine must always be canonical, syntactically valid, and strictly typed.
 * Downstream continuations emitted in receipts must use canonical parameter names, never ingress aliases.
 
@@ -59,4 +67,4 @@ While ingress is lenient, tool outputs remain strictly canonical, precise, and d
 
 * Eliminates common friction points that derail agent workflows during navigation, scaffolding, and construct replacement.
 * Prevents unnecessary agent fallbacks to raw text-editing tools.
-* Ingress adapters maintain explicit mapping tables for recognized aliases and delimiters without relaxing internal AST validation.
+* The registry owns normalization, validation, and output projection so ingress adapters do not drift in strictness. Recognized aliases and delimiters do not relax internal AST validation.

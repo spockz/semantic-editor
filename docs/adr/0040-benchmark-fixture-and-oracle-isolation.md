@@ -30,7 +30,14 @@ stored outside the agent-visible fixture. Before provider launch, shared-module
 setup may install them in a disposable private copy to download their pinned
 dependencies and prove offline access. That copy is removed before launch;
 the original fixture manifests remain unchanged. Evaluation installs hidden
-tests into its own copy after the agent exits.
+tests into its own copy after the agent exits. External Multi-SWE-Bench tasks
+use the benchmark's patch protocol in a separate private checkout: start from
+the pinned base commit, apply `test.patch`, then apply the candidate's source
+patch before running build and test checks. The private test patch never enters
+the agent's workspace. These task prompts forbid edits to test files and the
+mutation policy enforces that restriction. Ground-truth fix-patch replay
+follows the same patch order, while allowing test-file changes that are part
+of the benchmark's reference fix.
 The copy path is root-scoped so an agent-created symlink cannot redirect a
 hidden test outside the benchmark workspace.
 
@@ -77,6 +84,9 @@ after publishing required evidence, never the mountpoint or shared modules.
   checklist.
 - The oracle rejects disallowed mutation, validates semantic postconditions,
   and runs build and hidden behavioral checks independently.
+- External Multi-SWE-Bench evaluation applies the pinned base, private test
+  patch, and candidate patch in that order; test files remain protected in
+  model runs.
 - Small and large variants preserve the same task contract while changing the
   amount of related code an agent must navigate.
 - Acceptance fixture corrections preserve assertions and record original and
