@@ -185,7 +185,7 @@ func applyAdapterObservation(result *RunResult, observation adapterTurnObservati
 	result.InitialContextTokens = observation.InitialContextTokens
 	result.ToolCalls = append([]ToolCall(nil), observation.ToolCalls...)
 	result.ToolsUsed = append([]string(nil), observation.ToolsUsed...)
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	result.toolObservationState = observation.ToolObservationState
 	result.toolObservationReason = observation.ToolObservationReason
 	result.agentResponse = observation.Response

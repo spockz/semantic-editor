@@ -92,7 +92,7 @@ func mergeTurn(total, turn *RunResult) {
 	total.InternalTurns += turn.InternalTurns
 	total.ToolCalls = append(total.ToolCalls, turn.ToolCalls...)
 	total.ToolsUsed = append(total.ToolsUsed, turn.ToolsUsed...)
-	total.ToolCount = len(total.ToolCalls)
+	refreshToolCallCounts(total)
 	total.PromptTokens += turn.PromptTokens
 	total.CachedPromptTokens += turn.CachedPromptTokens
 	total.UncachedPromptTokens += turn.UncachedPromptTokens
@@ -166,8 +166,14 @@ func (s *agentSession) execute(ctx context.Context, prompt string) {
 	stopEarly := s.runInitialTask(taskCtx, ctx, prompt)
 	if shouldRequestTimeoutReflections(taskCtx, ctx, s, s.execution.Arm) {
 		s.requestTimeoutReflections(ctx)
+		return
 	}
 	if stopEarly {
+		if ctx.Err() == nil {
+			s.runDiagnostics(ctx)
+		} else if s.result.DiagnosticReflectionSkipped == "" {
+			s.result.DiagnosticReflectionSkipped = "parent benchmark job cancelled before diagnostic feedback"
+		}
 		return
 	}
 	if s.execution.Task.Metadata.InteractiveMode == "staged" {
@@ -176,10 +182,13 @@ func (s *agentSession) execute(ctx context.Context, prompt string) {
 		s.runFollowups(taskCtx, ctx)
 	}
 	s.result.WallClock = elapsedTaskTime(s.started)
-	if shouldRequestTimeoutReflections(taskCtx, ctx, s, s.execution.Arm) {
+	switch {
+	case shouldRequestTimeoutReflections(taskCtx, ctx, s, s.execution.Arm):
 		s.requestTimeoutReflections(ctx)
-	} else {
+	case ctx.Err() == nil:
 		s.runDiagnostics(ctx)
+	case isSemeditArm(s.execution.Arm) && s.result.DiagnosticReflectionSkipped == "":
+		s.result.DiagnosticReflectionSkipped = "parent benchmark job cancelled before diagnostic feedback"
 	}
 }
 
@@ -217,9 +226,18 @@ func (s *agentSession) runDiagnostics(ctx context.Context) {
 	} else if shouldRequestSemanticToolReflection(arm, s.resumeID, result) {
 		result.SemanticToolReflection = s.requestSemanticToolReflection(ctx, semanticToolReflectionPrompt)
 	}
-	if isSemeditArm(arm) && s.resumeID != "" && result.Success {
-		result.SemanticIntegrationReflection = s.requestSemanticToolReflection(ctx, semanticIntegrationReflectionPrompt)
+	if !isSemeditArm(arm) {
+		return
 	}
+	if s.resumeID == "" {
+		result.DiagnosticReflectionSkipped = "provider did not expose a resumable session ID"
+		return
+	}
+	if ctx.Err() != nil {
+		result.DiagnosticReflectionSkipped = "parent benchmark job cancelled before diagnostic feedback"
+		return
+	}
+	result.SemanticIntegrationReflection = s.requestSemanticToolReflection(ctx, semanticIntegrationReflectionPrompt)
 }
 
 func shouldRequestTimeoutReflections(taskCtx, parentCtx context.Context, session *agentSession, arm ArmType) bool {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -111,6 +112,9 @@ func TestCopilotMCPConfig(t *testing.T) {
 		t.Fatalf("unexpected semedit command configuration: %#v", server)
 	}
 	joined := strings.Join(server.Args, " ")
+	if slices.Contains(server.Args, "--enable-batching") {
+		t.Fatal("Copilot MCP batching should be disabled by default")
+	}
 	for _, want := range []string{"--expected-root " + root, "--go-base-dir " + filepath.Join(root, ".scratch", "go"), "--metrics-file " + benchmarkMCPMetricsPath(root), "--instructions "} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("semedit MCP arguments %q do not contain %q", joined, want)
@@ -118,6 +122,19 @@ func TestCopilotMCPConfig(t *testing.T) {
 	}
 	if len(server.Tools) != 1 || server.Tools[0] != "*" {
 		t.Fatalf("semedit MCP server should expose all registered tools: %#v", server.Tools)
+	}
+}
+
+func TestCopilotMCPConfigEnablesBatchingWhenSelected(t *testing.T) {
+	root := t.TempDir()
+	runner := &Runner{baseScratchDir: filepath.Join(t.TempDir(), ".scratch", "benchmark"), mcpServerInstructionsMode: MCPServerInstructionsNone, semeditBatching: true}
+	config, err := copilotMCPConfig(runner, root, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := config.MCPServers["semedit"]
+	if !slices.Contains(server.Args, "--enable-batching") {
+		t.Fatalf("Copilot MCP args = %v, want --enable-batching", server.Args)
 	}
 }
 

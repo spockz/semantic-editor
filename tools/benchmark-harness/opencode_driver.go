@@ -153,7 +153,7 @@ func applyOpenCodeStreamMetrics(result *RunResult, stream openCodeEventStream, p
 	result.InternalTurns = stream.tracker.internalTurns
 	result.InitialLoadTurns = stream.tracker.initialLoadTurns
 	result.MCPLoadTurns = stream.tracker.mcpLoadTurns
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	if !processStartedAt.IsZero() && !stream.firstEventAt.IsZero() {
 		value := stream.firstEventAt.Sub(processStartedAt)
 		result.ProcessStartToFirstEvent = &value

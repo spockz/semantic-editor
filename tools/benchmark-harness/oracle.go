@@ -593,13 +593,26 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("oracle context: %w", err)
 	}
+	externalRepository := task.Metadata.Repository.URL != ""
+	if externalRepository {
+		changedFiles, err := externalRepositoryChangedFiles(ctx, task, workDir)
+		if err != nil {
+			return nil, fmt.Errorf("inspect external repository candidate changes: %w", err)
+		}
+		modifiedFiles = append(modifiedFiles, changedFiles...)
+		modifiedFiles = slices.Compact(slices.Sorted(slices.Values(modifiedFiles)))
+	}
 	if failure := checkMutationPolicy(task.Metadata.Oracle.MutationPolicy, modifiedFiles); failure.failed {
 		applyOracleFailure(res, failure, start)
 		return res, nil
 	}
 	res.Level1Policy = true
-	evalDir, cleanup, err := copyWorkspaceForOracle(workDir)
+	evalDir, cleanup, testsPrepared, err := prepareOracleWorkspace(ctx, task, workDir, modifiedFiles)
 	if err != nil {
+		if candidatePatchErr, ok := errors.AsType[candidatePatchApplicationError](err); ok {
+			applyOracleFailure(res, oracleFailure{failed: true, stage: "candidate_patch", message: candidatePatchErr.Error()}, start)
+			return res, nil
+		}
 		return nil, fmt.Errorf("prepare private oracle workspace: %w", err)
 	}
 	defer func() {
@@ -620,12 +633,15 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 		return res, nil
 	}
 	res.Level3Build = true
-	if err := prepareOracleTests(ctx, task, evalDir); err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, fmt.Errorf("oracle context: %w", ctxErr)
+	if !testsPrepared {
+		if err := prepareOracleTests(ctx, task, evalDir); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, fmt.Errorf("oracle context: %w", ctxErr)
+			}
+			return nil, fmt.Errorf("prepare oracle tests: %w", err)
 		}
-		return nil, fmt.Errorf("prepare oracle tests: %w", err)
-	} else if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
+	}
+	if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("oracle context: %w", ctxErr)
 		}
@@ -636,6 +652,155 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	res.Passed = true
 	res.Duration = time.Since(start)
 	return res, nil
+}
+
+type candidatePatchApplicationError struct{ err error }
+
+func (e candidatePatchApplicationError) Error() string { return e.err.Error() }
+
+func (e candidatePatchApplicationError) Unwrap() error { return e.err }
+
+func prepareOracleWorkspace(ctx context.Context, task *Task, sourceWorkspace string, modifiedFiles []string) (string, func() error, bool, error) {
+	if task.Metadata.Repository.URL != "" {
+		evalDir, cleanup, err := prepareExternalOracleWorkspace(ctx, task, sourceWorkspace, modifiedFiles)
+		if err != nil {
+			return "", nil, false, err
+		}
+		return evalDir, cleanup, true, nil
+	}
+	evalDir, cleanup, err := copyWorkspaceForOracle(sourceWorkspace)
+	if err != nil {
+		return "", nil, false, fmt.Errorf("copy first-party fixture: %w", err)
+	}
+	return evalDir, cleanup, false, nil
+}
+
+func prepareExternalOracleWorkspace(ctx context.Context, task *Task, sourceWorkspace string, modifiedFiles []string) (string, func() error, error) {
+	evalDir, cleanup, err := checkoutPinnedRepositoryForOracle(ctx, task, sourceWorkspace)
+	if err != nil {
+		return "", nil, fmt.Errorf("prepare pinned repository base: %w", err)
+	}
+	if testErr := prepareOracleTests(ctx, task, evalDir); testErr != nil {
+		return "", nil, errors.Join(fmt.Errorf("prepare oracle tests: %w", testErr), cleanup())
+	}
+	candidatePatch, err := externalRepositoryCandidatePatch(ctx, task, sourceWorkspace, modifiedFiles)
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("prepare candidate patch: %w", err), cleanup())
+	}
+	if err := applyRepositoryPatch(ctx, evalDir, candidatePatch, "candidate solution patch"); err != nil {
+		return "", nil, errors.Join(candidatePatchApplicationError{err: err}, cleanup())
+	}
+	return evalDir, cleanup, nil
+}
+
+func checkoutPinnedRepositoryForOracle(ctx context.Context, task *Task, sourceWorkspace string) (string, func() error, error) {
+	sourceRoot, err := filepath.Abs(sourceWorkspace)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve candidate workspace: %w", err)
+	}
+	scratch, err := prepareOracleScratch(sourceRoot)
+	if err != nil {
+		return "", nil, err
+	}
+	root, err := os.MkdirTemp(scratch.path, "oracle-repository-*")
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("create external oracle workspace: %w", err), scratch.cleanup())
+	}
+	repoRoot := filepath.Join(root, "workspace")
+	cleanup := func() error {
+		return errors.Join(cleanupExternalOracleWorkspace(root), scratch.cleanup())
+	}
+	if err := checkoutRepositoryTree(ctx, sourceRoot, task.Metadata.Repository.BaseCommit, repoRoot); err != nil {
+		return "", nil, errors.Join(fmt.Errorf("materialize pinned repository tree: %w", err), cleanup())
+	}
+	if _, err := runCommand(ctx, "git", "", "init", "--quiet", repoRoot); err != nil {
+		return "", nil, errors.Join(fmt.Errorf("initialize private oracle repository: %w", err), cleanup())
+	}
+	return repoRoot, cleanup, nil
+}
+
+func externalRepositoryChangedFiles(ctx context.Context, task *Task, workDir string) ([]string, error) {
+	tracked, err := runGit(ctx, workDir, "diff", "--name-only", "-z", task.Metadata.Repository.BaseCommit, "--")
+	if err != nil {
+		return nil, fmt.Errorf("list tracked changes: %w: %s", err, strings.TrimSpace(string(tracked)))
+	}
+	untracked, err := runGit(ctx, workDir, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked changes: %w: %s", err, strings.TrimSpace(string(untracked)))
+	}
+	paths := make([]string, 0)
+	for _, value := range [][]byte{tracked, untracked} {
+		for name := range strings.SplitSeq(string(value), "\x00") {
+			if name == "" || isPrivateBenchmarkPath(name) {
+				continue
+			}
+			paths = append(paths, filepath.ToSlash(filepath.Clean(name)))
+		}
+	}
+	slices.Sort(paths)
+	return slices.Compact(paths), nil
+}
+
+func externalRepositoryCandidatePatch(ctx context.Context, task *Task, sourceWorkspace string, modifiedFiles []string) ([]byte, error) {
+	patch, err := runGit(ctx, sourceWorkspace, "diff", "--binary", "--no-ext-diff", "--no-renames", task.Metadata.Repository.BaseCommit, "--")
+	if err != nil {
+		return nil, fmt.Errorf("capture tracked candidate changes: %w: %s", err, strings.TrimSpace(string(patch)))
+	}
+	untracked, err := runGit(ctx, sourceWorkspace, "ls-files", "--others", "--exclude-standard", "-z")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked candidate changes: %w: %s", err, strings.TrimSpace(string(untracked)))
+	}
+	modified := make(map[string]struct{}, len(modifiedFiles))
+	for _, name := range modifiedFiles {
+		modified[filepath.ToSlash(filepath.Clean(name))] = struct{}{}
+	}
+	for name := range strings.SplitSeq(string(untracked), "\x00") {
+		name = filepath.ToSlash(filepath.Clean(name))
+		if name == "." || isPrivateBenchmarkPath(name) {
+			continue
+		}
+		if _, changed := modified[name]; !changed {
+			continue
+		}
+		if !filepath.IsLocal(filepath.FromSlash(name)) {
+			return nil, fmt.Errorf("untracked candidate path %q is not local", name)
+		}
+		info, err := os.Lstat(filepath.Join(sourceWorkspace, filepath.FromSlash(name)))
+		if err != nil {
+			return nil, fmt.Errorf("inspect untracked candidate file %s: %w", name, err)
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("untracked candidate path %q is not a regular file", name)
+		}
+		output, diffErr := runCommand(ctx, "git", sourceWorkspace, "diff", "--no-index", "--binary", "--", os.DevNull, name)
+		if diffErr != nil {
+			var exitErr *exec.ExitError
+			if !errors.As(diffErr, &exitErr) || exitErr.ExitCode() != 1 {
+				return nil, fmt.Errorf("diff untracked candidate file %s: %w: %s", name, diffErr, strings.TrimSpace(string(output)))
+			}
+		}
+		patch = append(patch, output...)
+	}
+	return patch, nil
+}
+
+func cleanupExternalOracleWorkspace(root string) error {
+	workspace, err := os.OpenRoot(root)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return errors.Join(fmt.Errorf("open external oracle workspace for cleanup: %w", err), os.RemoveAll(root))
+	}
+	writableErr := makeSessionWorkspaceRemovable(workspace)
+	closeErr := workspace.Close()
+	removeErr := os.RemoveAll(root)
+	return errors.Join(writableErr, closeErr, removeErr)
+}
+
+func isPrivateBenchmarkPath(name string) bool {
+	clean := filepath.ToSlash(filepath.Clean(name))
+	return clean == ".benchmark" || strings.HasPrefix(clean, ".benchmark/") || clean == ".scratch" || strings.HasPrefix(clean, ".scratch/")
 }
 
 // Populate shared modules using private acceptance manifests, then prove offline dependency access.
@@ -1135,4 +1300,34 @@ func prepareOracleTests(ctx context.Context, task *Task, workDir string) error {
 		return fmt.Errorf("install hidden tests: %w", err)
 	}
 	return applyRepositoryPatch(ctx, workDir, task.TestPatch, "Multi-SWE test patch")
+}
+
+func checkoutRepositoryTree(ctx context.Context, sourceRoot, commit, target string) error {
+	indexPath := filepath.Join(filepath.Dir(target), "oracle.index")
+	env := replaceEnvironment(os.Environ(), map[string]string{"GIT_INDEX_FILE": indexPath})
+
+	// #nosec G204 -- commit is validated as a full SHA and target is an internally created temporary path.
+	cmd := exec.CommandContext(ctx, "git", "read-tree", commit)
+	cmd.Dir = sourceRoot
+	cmd.Env = env
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("run git read-tree: %w", ctx.Err())
+		}
+		return fmt.Errorf("run git read-tree: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+
+	// #nosec G204 -- target is an internally created temporary path beneath the oracle scratch root.
+	cmd = exec.CommandContext(ctx, "git", "checkout-index", "--all", "--prefix="+target+string(filepath.Separator))
+	cmd.Dir = sourceRoot
+	cmd.Env = env
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("run git checkout-index: %w", ctx.Err())
+		}
+		return fmt.Errorf("run git checkout-index: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }

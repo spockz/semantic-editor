@@ -780,7 +780,7 @@ func runOpenCodeUsageTurn(args []string) {
 	fmt.Printf("{\"type\":\"session.created\",\"properties\":{\"info\":{\"id\":\"fake-session\"}}}\n")
 	fmt.Printf("{\"type\":\"step_start\",\"sessionID\":\"fake-session\",\"part\":{\"id\":\"start-%d\",\"type\":\"step-start\"}}\n", count)
 	fmt.Printf("{\"type\":\"tool_use\",\"part\":{\"id\":\"tool-%d\",\"type\":\"tool\",\"tool\":\"%s\",\"server\":\"semedit\",\"state\":{\"status\":\"completed\",\"input\":{},\"output\":\"ok\"}}}\n", count, tool)
-	fmt.Println(`{"type":"text","part":{"type":"text","text":"I would ask my owner to add semedit because it helped this task."}}`)
+	fmt.Println(`{"type":"text","part":{"type":"text","text":"Improvement: make diagnostic summaries surface the remaining problem count before paging details."}}`)
 	fmt.Printf("{\"type\":\"step_finish\",\"part\":{\"id\":\"finish-%d\",\"type\":\"step-finish\",\"reason\":\"stop\",\"tokens\":{\"input\":%d,\"output\":%d,\"reasoning\":%d,\"cache\":{\"read\":%d,\"write\":%d}}}}\n", count, input, output, reasoning, read, write)
 	os.Exit(0)
 }

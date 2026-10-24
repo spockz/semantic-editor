@@ -183,6 +183,16 @@ func TestBenchmarkCLIPrewarmDefaultAndOptOut(t *testing.T) {
 	if !defaults.Plan.SemeditPrewarmVerify {
 		t.Fatal("semedit verify prewarm should be enabled by default")
 	}
+	if defaults.Plan.SemeditBatching {
+		t.Fatal("semedit batching should be disabled by default")
+	}
+	enabled, err := parseBenchmarkCLI([]string{"--out-dir=", "--semedit-batching=true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enabled.Plan.SemeditBatching {
+		t.Fatal("explicit semedit batching opt-in was ignored")
+	}
 	disabled, err := parseBenchmarkCLI([]string{"--out-dir=", "--semedit-prewarm-verify=false"})
 	if err != nil {
 		t.Fatal(err)
@@ -262,6 +272,22 @@ func TestBenchmarkMakeTargetsForwardRAMRootAndModuleCache(t *testing.T) {
 		for _, argument := range []string{`--ram-fixture-root "/mnt/benchmark-ram"`, `--module-cache "/ssd/go-mod"`} {
 			if !strings.Contains(string(output), argument) {
 				t.Errorf("%s did not forward %s:\n%s", target, argument, output)
+			}
+		}
+	}
+}
+
+func TestBenchmarkMakeTargetsDefaultToRAMAndPersistentModuleCache(t *testing.T) {
+	for _, target := range []string{"bench", "bench-all"} {
+		args := []string{"-n", "-f", "Makefile", target, "BENCH_RAM_DEFAULT=/mnt/benchmark-ram", "GOMODCACHE=/ssd/go-mod"}
+		// #nosec G204 -- dry-run repository benchmark Make targets with controlled values.
+		output, err := exec.Command("make", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("make %s: %v\n%s", target, err, output)
+		}
+		for _, argument := range []string{`--ram-fixture-root "/mnt/benchmark-ram"`, `--module-cache "/ssd/go-mod"`} {
+			if !strings.Contains(string(output), argument) {
+				t.Errorf("%s default did not forward %s:\n%s", target, argument, output)
 			}
 		}
 	}

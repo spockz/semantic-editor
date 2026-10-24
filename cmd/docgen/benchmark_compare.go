@@ -642,6 +642,8 @@ func benchmarkMetrics() []benchmarkMetric {
 		integer("MCP discovery and schema turns", func(run *BenchRunResult) int { return run.MCPLoadTurns }),
 		integer("Internal tool cycles", func(run *BenchRunResult) int { return run.InternalTurns }),
 		integer("Tool invocations", func(run *BenchRunResult) int { return run.ToolCount }),
+		integer("Failed tool invocations", func(run *BenchRunResult) int { return run.FailedToolCallCount }),
+		integer("Failed semantic tool invocations", func(run *BenchRunResult) int { return run.FailedSemanticToolCallCount }),
 		integer("Initial context tokens", func(run *BenchRunResult) int { return run.InitialContextTokens }),
 		integer("Total input tokens", func(run *BenchRunResult) int { return run.PromptTokens }),
 		integer("Cached input tokens", func(run *BenchRunResult) int { return run.CachedPromptTokens }),

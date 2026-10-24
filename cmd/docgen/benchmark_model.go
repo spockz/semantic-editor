@@ -33,6 +33,7 @@ type BenchRunResult struct {
 	Complexity                       *ComplexityProfile           `json:"complexity,omitempty"`
 	ExecutionMode                    string                       `json:"execution_mode,omitempty"`
 	SemeditSkill                     bool                         `json:"semedit_skill"`
+	SemeditBatching                  bool                         `json:"semedit_batching"`
 	SemeditArmRestrict               string                       `json:"semedit_arm_restrict,omitempty"`
 	SemeditArmRestrictionApplied     *bool                        `json:"semedit_arm_restriction_applied,omitempty"`
 	TaskID                           string                       `json:"task_id"`
@@ -50,6 +51,8 @@ type BenchRunResult struct {
 	MCPLoadTurns                     int                          `json:"mcp_load_turns"`
 	InternalTurns                    int                          `json:"internal_turns"`
 	ToolCount                        int                          `json:"tool_count"`
+	FailedToolCallCount              int                          `json:"failed_tool_call_count"`
+	FailedSemanticToolCallCount      int                          `json:"failed_semantic_tool_call_count"`
 	WallClock                        time.Duration                `json:"wall_clock_ms"`
 	ProcessStartToFirstEvent         *time.Duration               `json:"process_start_to_first_event_ms,omitempty"`
 	FirstEventToFirstToolCall        *time.Duration               `json:"first_event_to_first_tool_call_ms,omitempty"`

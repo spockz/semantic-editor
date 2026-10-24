@@ -219,6 +219,7 @@ type RunResult struct {
 	Complexity                       *ComplexityProfile       `json:"complexity,omitempty"`
 	ExecutionMode                    string                   `json:"execution_mode,omitempty"`
 	SemeditSkill                     bool                     `json:"semedit_skill"`
+	SemeditBatching                  bool                     `json:"semedit_batching"`
 	JobID                            string                   `json:"job_id,omitempty"`
 	ComparisonPairID                 string                   `json:"comparison_pair_id,omitempty"`
 	Variant                          string                   `json:"variant,omitempty"`
@@ -238,6 +239,8 @@ type RunResult struct {
 	MCPLoadTurns                     int                      `json:"mcp_load_turns"`
 	InternalTurns                    int                      `json:"internal_turns"`
 	ToolCount                        int                      `json:"tool_count"`
+	FailedToolCallCount              int                      `json:"failed_tool_call_count"`
+	FailedSemanticToolCallCount      int                      `json:"failed_semantic_tool_call_count"`
 	WallClock                        time.Duration            `json:"wall_clock_ms"`
 	ProcessStartToFirstEvent         *time.Duration           `json:"process_start_to_first_event_ms,omitempty"`
 	FirstEventToFirstToolCall        *time.Duration           `json:"first_event_to_first_tool_call_ms,omitempty"`
@@ -310,6 +313,7 @@ type Runner struct {
 	configurationErr                   error
 	mcpServerInstructionsMode          MCPServerInstructionMode
 	semeditArmRestriction              SemeditArmRestriction
+	semeditBatching                    bool
 	semeditPrewarmVerify               bool
 	provenance                         ProvenanceSet
 	agyExecutable                      string
@@ -331,6 +335,10 @@ func WithMCPServerInstructions(mode MCPServerInstructionMode) RunnerOption {
 
 func WithSemeditPrewarmVerify(enabled bool) RunnerOption {
 	return func(r *Runner) { r.semeditPrewarmVerify = enabled }
+}
+
+func WithSemeditBatching(enabled bool) RunnerOption {
+	return func(r *Runner) { r.semeditBatching = enabled }
 }
 
 // WithFixtureRoot puts disposable fixture workspaces on a caller-selected filesystem.
@@ -396,6 +404,9 @@ func (r *Runner) mcpGoArguments(workDir string) ([]string, error) {
 		return nil, fmt.Errorf("resolve MCP fixture workspace: %w", err)
 	}
 	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
+	if r.semeditBatching {
+		args = append(args, "--enable-batching")
+	}
 	if r.moduleCache != "" {
 		args = append(args, "--go-module-cache", r.moduleCache)
 	}

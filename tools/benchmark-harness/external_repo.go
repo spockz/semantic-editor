@@ -199,7 +199,12 @@ func (r *Runner) ExecutePatchReplay(ctx context.Context, task *Task, target Targ
 		return nil, fmt.Errorf("capture patch replay diff: %w: %s", err, strings.TrimSpace(string(diff)))
 	}
 	result.Diff = string(diff)
-	oracle, err := Evaluate(ctx, task, workDir, modifiedFiles)
+	// The human fix patch may legitimately update visible tests. The model arm
+	// enforces this fixture policy; the ground-truth replay evaluates the patch
+	// against the same private tests without applying that model-only restriction.
+	oracleTask := *task
+	oracleTask.Metadata.Oracle.MutationPolicy.ForbidTestEdits = false
+	oracle, err := Evaluate(ctx, &oracleTask, workDir, modifiedFiles)
 	result.WallClock = time.Since(started)
 	if err != nil {
 		result.Error = fmt.Sprintf("oracle evaluation: %v", err)

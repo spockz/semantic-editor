@@ -54,6 +54,7 @@ type Job struct {
 	Execution             AgentExecution
 	MCPServerInstructions MCPServerInstructionMode
 	SemeditSkill          bool
+	SemeditBatching       bool
 }
 
 type PlanOptions struct {
@@ -68,6 +69,7 @@ type PlanOptions struct {
 	RunID                 string
 	Resume                bool
 	SemeditSkill          bool
+	SemeditBatching       bool
 	OutJSON               string
 	OutMD                 string
 	MCPServerInstructions []MCPServerInstructionMode
@@ -111,7 +113,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 		return err
 	}
 	options := plan.Options
-	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s semedit-skill=%t semedit-prewarm-verify=%t out-dir=%q run-id=%q resume=%t out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.SemeditSkill, options.SemeditPrewarmVerify, options.OutDir, options.RunID, options.Resume, options.OutJSON, options.OutMD); err != nil {
+	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s semedit-skill=%t semedit-batching=%t semedit-prewarm-verify=%t out-dir=%q run-id=%q resume=%t out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.SemeditSkill, options.SemeditBatching, options.SemeditPrewarmVerify, options.OutDir, options.RunID, options.Resume, options.OutJSON, options.OutMD); err != nil {
 		return err
 	}
 	for index, job := range plan.Jobs {
@@ -122,7 +124,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 			policy = "-"
 			applies = false
 		}
-		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d MCP-instructions=%s policy=%s policy-applies=%t semedit-skill=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, job.MCPServerInstructions, policy, applies, job.SemeditSkill); err != nil {
+		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d MCP-instructions=%s policy=%s policy-applies=%t semedit-skill=%t semedit-batching=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, job.MCPServerInstructions, policy, applies, job.SemeditSkill, job.SemeditBatching); err != nil {
 			return err
 		}
 		if job.Execution.Prompt != "" {
@@ -242,6 +244,7 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	result.Target = job.Target
 	result.Arm = job.Arm
 	result.SemeditSkill = job.SemeditSkill
+	result.SemeditBatching = job.SemeditBatching
 	result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
 	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm)
 	result.Prompt = job.Execution.Prompt
@@ -721,14 +724,15 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 		if options.SemeditPrewarmVerify {
 			pairParts = append(pairParts, "prewarm-verify")
 		}
-		pairParts = append(pairParts, fmt.Sprintf("semedit-skill=%t", options.SemeditSkill))
+		pairParts = append(pairParts, fmt.Sprintf("semedit-skill=%t", options.SemeditSkill), fmt.Sprintf("semedit-batching=%t", options.SemeditBatching))
 		pairID := stablePlanID(pairParts...)
 		for offset := range conditions {
 			condition := conditions[(offset+specification.Repeat-1)%len(conditions)]
 			job := specification
 			job.PromptVariant = condition.variant
 			job.SemeditSkill = options.SemeditSkill && isSemeditArm(condition.arm)
-			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill))
+			job.SemeditBatching = options.SemeditBatching && isSemeditArm(condition.arm)
+			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), fmt.Sprintf("semedit-batching=%t", job.SemeditBatching))
 			job.PairID = pairID
 			job.Arm = condition.arm
 			job.MCPServerInstructions = mode
@@ -739,11 +743,12 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 			if condition.variant != "" {
 				variant += ":" + condition.variant
 			}
-			execution, err := ResolveAgentExecution(job.Task, job.Target, condition.arm, variant, options.SemeditArmRestriction)
+			execution, err := ResolveAgentExecution(job.Task, job.Target, condition.arm, variant, options.SemeditArmRestriction, job.SemeditBatching)
 			if err != nil {
 				return nil, err
 			}
 			execution.SemeditSkill = job.SemeditSkill
+			execution.SemeditBatching = job.SemeditBatching
 			job.Execution = execution
 			jobs = append(jobs, job)
 		}
@@ -790,7 +795,7 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		pairID := ""
 		if !isControl {
 			arms = []ArmType{ArmBaseline, ArmSemedit}
-			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", options.SemeditSkill)}
+			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", options.SemeditSkill), fmt.Sprintf("semedit-batching=%t", options.SemeditBatching)}
 			if options.SemeditPrewarmVerify {
 				pairParts = append(pairParts, "prewarm-verify")
 			}
@@ -799,7 +804,8 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		for _, arm := range arms {
 			job := specification
 			job.SemeditSkill = options.SemeditSkill && isSemeditArm(arm)
-			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill)}
+			job.SemeditBatching = semeditConditionEnabled(options.SemeditBatching, arm)
+			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), fmt.Sprintf("semedit-batching=%t", job.SemeditBatching)}
 			if arm != ArmControl {
 				idParts = append(idParts, string(policy))
 				if options.SemeditPrewarmVerify {
@@ -814,17 +820,22 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 				job.Policy = policy
 			}
 			if arm != ArmControl {
-				execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy)
+				execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy, job.SemeditBatching)
 				if err != nil {
 					return nil, err
 				}
 				execution.SemeditSkill = job.SemeditSkill
+				execution.SemeditBatching = job.SemeditBatching
 				job.Execution = execution
 			}
 			jobs = append(jobs, job)
 		}
 	}
 	return jobs, nil
+}
+
+func semeditConditionEnabled(enabled bool, arm ArmType) bool {
+	return enabled && isSemeditArm(arm)
 }
 
 func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, error) {
@@ -841,7 +852,7 @@ func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, 
 	arms := []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit}
 	jobs := make([]Job, 0, len(modes)*len(arms))
 	for _, mode := range modes {
-		pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", skillEnabled)}
+		pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", skillEnabled), fmt.Sprintf("semedit-batching=%t", options.SemeditBatching)}
 		if options.SemeditPrewarmVerify {
 			pairParts = append(pairParts, "prewarm-verify")
 		}
@@ -854,10 +865,11 @@ func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, 
 			job.MCPServerInstructions = mode
 			job.PromptVariant = ""
 			job.SemeditSkill = skillEnabled && isSemeditArm(arm)
+			job.SemeditBatching = options.SemeditBatching && isSemeditArm(arm)
 			if isSemeditArm(arm) {
 				job.Policy = policy
 			}
-			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), string(policy)}
+			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), fmt.Sprintf("semedit-batching=%t", job.SemeditBatching), string(policy)}
 			if options.SemeditPrewarmVerify {
 				idParts = append(idParts, "prewarm-verify")
 			}
@@ -873,11 +885,12 @@ func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, 
 			case ArmBaseline, ArmSemedit, ArmControl:
 			}
 			job.ID = stablePlanID(idParts...)
-			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, executionVariant, policy)
+			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, executionVariant, policy, job.SemeditBatching)
 			if err != nil {
 				return nil, err
 			}
 			execution.SemeditSkill = job.SemeditSkill
+			execution.SemeditBatching = job.SemeditBatching
 			job.Execution = execution
 			jobs = append(jobs, job)
 		}

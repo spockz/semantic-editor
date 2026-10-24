@@ -244,6 +244,8 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 		"Initial Load / Discovery Turns",
 		"MCP Discovery / Schema Turns",
 		"Total Tool Invocations",
+		"Failed Tool Invocations",
+		"Failed Semantic Tool Invocations",
 		"Oracle L1: Mutation Policy",
 		"Oracle L4: Verification Test",
 		"Semedit Tool-Use Reflection",

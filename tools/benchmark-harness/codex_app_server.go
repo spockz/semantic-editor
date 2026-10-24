@@ -268,7 +268,7 @@ func (s *codexAppServer) appendAppServerItems(result *RunResult, items []codexIt
 	result.InternalTurns = s.toolTracker.internalTurns
 	result.InitialLoadTurns = s.toolTracker.initialLoadTurns
 	result.MCPLoadTurns = s.toolTracker.mcpLoadTurns
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	refreshMCPVerified(result)
 }
 

@@ -158,3 +158,60 @@ func TestExecuteAgentCleansReadonlyModuleCacheAfterPassingOracle(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentSessionRetainsWorkspaceWithoutDisposableCaches(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	cacheDirs := []string{
+		".scratch/go/build/aa",
+		".scratch/go/gopls",
+		".scratch/go/tmp",
+		".scratch/copilot/cache",
+		".scratch/copilot/tmp/node-compile-cache",
+		".scratch/copilot/home/Library/Caches/copilot/pkg",
+		".scratch/opencode/cache",
+		".scratch/opencode/tmp",
+	}
+	for _, relative := range append(cacheDirs, ".scratch/go/mod") {
+		if err := os.MkdirAll(filepath.Join(workDir, relative), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if relative == ".scratch/go/mod" {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(workDir, relative, "cache-entry"), []byte("generated"), 0o400); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(filepath.Join(workDir, ".scratch", "go", "build", "aa"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(workDir, ".scratch", "go", "mod"), 0o500); err != nil {
+		t.Fatal(err)
+	}
+	session, err := newAgentSession(&behavioralSessionProvider{}, root, root, "retained-cache-prune", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.execution = AgentExecution{Task: &Task{}}
+	session.retainWorkDir = true
+	session.result = &RunResult{}
+	if closeErr := session.close(); closeErr != nil {
+		t.Fatalf("close retained session: %v", closeErr)
+	}
+	for _, relative := range cacheDirs {
+		if _, statErr := os.Stat(filepath.Join(workDir, relative)); !os.IsNotExist(statErr) {
+			t.Errorf("retained cache %q still exists: %v", relative, statErr)
+		}
+	}
+	modInfo, err := os.Stat(filepath.Join(workDir, ".scratch", "go", "mod"))
+	if err != nil {
+		t.Fatalf("retained module cache was removed: %v", err)
+	}
+	if got := modInfo.Mode().Perm(); got != 0o500 {
+		t.Fatalf("retained module cache mode = %04o, want 0500", got)
+	}
+	if got := session.result.Provenance["retained_working_directory"]; got != workDir {
+		t.Fatalf("retained directory provenance = %q, want %q", got, workDir)
+	}
+}

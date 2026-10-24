@@ -23,23 +23,33 @@ func TestExecutePatchReplayUsesPinnedRepositoryAndPrivateTestPatch(t *testing.T)
 	runGitTestCommand(t, repository, "config", "user.name", "Benchmark Test")
 	writeTestFile(t, filepath.Join(repository, "go.mod"), "module example.com/replay\n\ngo 1.24\n")
 	writeTestFile(t, filepath.Join(repository, "value.go"), "package replay\n\nfunc Value() int { return 1 }\n")
-	runGitTestCommand(t, repository, "add", "go.mod", "value.go")
+	writeTestFile(t, filepath.Join(repository, "value_test.go"), "package replay\n\nimport \"testing\"\n\nfunc TestVisible(t *testing.T) {\n\tif Value() != 1 { t.Fatal(Value()) }\n}\n")
+	runGitTestCommand(t, repository, "add", "go.mod", "value.go", "value_test.go")
 	runGitTestCommand(t, repository, "commit", "-qm", "base")
 	base := strings.TrimSpace(string(runGitTestCommand(t, repository, "rev-parse", "HEAD")))
 	if err := os.WriteFile(filepath.Join(repository, "value.go"), []byte("package replay\n\nfunc Value() int { return 2 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repository, "value_test.go"), []byte("package replay\n\nimport \"testing\"\n\nfunc TestVisible(t *testing.T) {\n\tif Value() != 2 { t.Fatal(Value()) }\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	fixPatch := runGitTestCommand(t, repository, "diff", "--binary")
 	if err := os.WriteFile(filepath.Join(repository, "value.go"), []byte("package replay\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	testPatch := []byte("diff --git a/value_test.go b/value_test.go\nnew file mode 100644\nindex 0000000..a03a9b1\n--- /dev/null\n+++ b/value_test.go\n@@ -0,0 +1,7 @@\n+package replay\n+\n+import \"testing\"\n+\n+func TestValue(t *testing.T) {\n+\tif Value() != 2 { t.Fatal(Value()) }\n+}\n")
+	if err := os.WriteFile(filepath.Join(repository, "value_test.go"), []byte("package replay\n\nimport \"testing\"\n\nfunc TestVisible(t *testing.T) {\n\tif Value() != 1 { t.Fatal(Value()) }\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	testPatch := []byte("diff --git a/acceptance_test.go b/acceptance_test.go\nnew file mode 100644\nindex 0000000..a03a9b1\n--- /dev/null\n+++ b/acceptance_test.go\n@@ -0,0 +1,7 @@\n+package replay\n+\n+import \"testing\"\n+\n+func TestValue(t *testing.T) {\n+\tif Value() != 2 { t.Fatal(Value()) }\n+}\n")
 	task := &Task{
 		Metadata: TaskMetadata{
 			TaskID:      "local-replay",
 			Instruction: "Change Value to return 2.",
 			Repository:  RepositoryMetadata{URL: repository, BaseCommit: base},
-			Oracle:      OracleConfig{Test: TestConfig{PassTests: true, Command: []string{"./..."}}},
+			Oracle: OracleConfig{
+				MutationPolicy: MutationPolicyConfig{ForbidTestEdits: true},
+				Test:           TestConfig{PassTests: true, Command: []string{"./..."}},
+			},
 		},
 		Archive:   ParseArchive([]byte("-- .benchmark/fix.patch --\nmetadata only\n")),
 		FixPatch:  fixPatch,
@@ -159,6 +169,80 @@ func TestEvaluateInstallsMultiSWETestsInsideNestedCheckout(t *testing.T) {
 	}
 }
 
+func TestEvaluateExternalRepositoryAppliesTestsBeforeCandidatePatch(t *testing.T) {
+	repository, task := externalOracleFixture(t)
+	writeTestFile(t, filepath.Join(repository, "value.go"), "package replay\n\nfunc Value() int { return helper() }\n")
+	writeTestFile(t, filepath.Join(repository, "helper.go"), "package replay\n\nfunc helper() int { return 2 }\n")
+	task.TestPatch = []byte("diff --git a/value_test.go b/value_test.go\nindex 885f375..46d3a13 100644\n--- a/value_test.go\n+++ b/value_test.go\n@@ -5,5 +5,5 @@ import \"testing\"\n func TestValue(t *testing.T) {\n-\tif Value() != 1 { t.Fatal(Value()) }\n+\tif Value() != 2 { t.Fatal(Value()) }\n }\n")
+
+	originalTest, err := os.ReadFile(filepath.Join(repository, "value_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, filepath.Join(repository, "value_test.go"), strings.Replace(string(originalTest), "Value() != 1", "Value() != 2", 1))
+	task.TestPatch = runGitTestCommand(t, repository, "diff", "--", "value_test.go")
+	writeTestFile(t, filepath.Join(repository, "value_test.go"), string(originalTest))
+
+	if mkdirErr := os.MkdirAll(filepath.Join(repository, ".git", "refs", "tags"), 0o750); mkdirErr != nil {
+		t.Fatal(mkdirErr)
+	}
+	writeTestFile(t, filepath.Join(repository, ".git", "refs", "tags", "unrelated-missing-object"), "71adf79396437ec5d5d35a8dc197ef75728e4b66\n")
+
+	result, err := Evaluate(t.Context(), task, repository, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Passed || !result.Level4Test {
+		t.Fatalf("oracle did not apply test patch before candidate patch: %+v", result)
+	}
+	visibleTest, err := os.ReadFile(filepath.Join(repository, "value_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(visibleTest), "Value() != 1") {
+		t.Fatalf("private test patch changed visible workspace: %s", visibleTest)
+	}
+}
+
+func TestEvaluateExternalRepositoryRejectsCandidateTestEdits(t *testing.T) {
+	repository, task := externalOracleFixture(t)
+	writeTestFile(t, filepath.Join(repository, "value_test.go"), "package replay\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) {\n\tif Value() != 3 { t.Fatal(Value()) }\n}\n")
+
+	result, err := Evaluate(t.Context(), task, repository, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Passed || result.FailureStage != "level_1_mutation_policy" || !strings.Contains(result.ErrorMessage, "value_test.go") {
+		t.Fatalf("candidate test edit was not rejected by the external task policy: %+v", result)
+	}
+}
+
+func externalOracleFixture(t *testing.T) (string, *Task) {
+	t.Helper()
+	repository := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repository, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	runGitTestCommand(t, repository, "init", "-q")
+	runGitTestCommand(t, repository, "config", "user.email", "benchmark@example.invalid")
+	runGitTestCommand(t, repository, "config", "user.name", "Benchmark Test")
+	writeTestFile(t, filepath.Join(repository, "go.mod"), "module example.com/replay\n\ngo 1.24\n")
+	writeTestFile(t, filepath.Join(repository, "value.go"), "package replay\n\nfunc Value() int { return 1 }\n")
+	writeTestFile(t, filepath.Join(repository, "value_test.go"), "package replay\n\nimport \"testing\"\n\nfunc TestValue(t *testing.T) {\n\tif Value() != 1 { t.Fatal(Value()) }\n}\n")
+	runGitTestCommand(t, repository, "add", "go.mod", "value.go", "value_test.go")
+	runGitTestCommand(t, repository, "commit", "-qm", "base")
+	base := strings.TrimSpace(string(runGitTestCommand(t, repository, "rev-parse", "HEAD")))
+	task := &Task{Metadata: TaskMetadata{
+		TaskID:     "external-oracle",
+		Repository: RepositoryMetadata{URL: repository, BaseCommit: base},
+		Oracle: OracleConfig{
+			MutationPolicy: MutationPolicyConfig{ForbidTestEdits: true},
+			Test:           TestConfig{PassTests: true, Command: []string{"./..."}},
+		},
+	}}
+	return repository, task
+}
+
 func TestMultiSWEFixturesDeclareProgressiveHints(t *testing.T) {
 	tasks := []string{"grpc__grpc-go-2735", "grpc__grpc-go-2951", "grpc__grpc-go-3361", "zeromicro__go-zero-2463", "zeromicro__go-zero-964"}
 	for _, taskID := range tasks {
@@ -174,6 +258,7 @@ func TestMultiSWEFixturesDeclareProgressiveHints(t *testing.T) {
 			if len(task.Metadata.InteractiveFollowups) != 3 {
 				t.Fatalf("hints = %d, want 3", len(task.Metadata.InteractiveFollowups))
 			}
+			assertExternalTestEditPolicy(t, task)
 			for index, hint := range task.Metadata.InteractiveFollowups {
 				if strings.TrimSpace(hint) == "" {
 					t.Errorf("hint %d is blank", index+1)
@@ -183,6 +268,20 @@ func TestMultiSWEFixturesDeclareProgressiveHints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertExternalTestEditPolicy(t *testing.T, task *Task) {
+	t.Helper()
+	if !task.Metadata.Oracle.MutationPolicy.ForbidTestEdits {
+		t.Fatal("external Multi-SWE task does not forbid candidate test edits")
+	}
+	prompt, err := prepareAgentPromptWithPolicy(task, ArmBaseline, "small", &RunResult{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prompt, "Do not edit tests.") {
+		t.Fatalf("external baseline prompt omits the test-edit constraint: %q", prompt)
 	}
 }
 
@@ -605,8 +704,11 @@ func assertMultiSWEPlanPrompts(t *testing.T, taskID string, task *Task, jobs []J
 	if !hasBaseline || !hasImplicit || !hasExplicit {
 		t.Fatalf("%s planned arms = %v", taskID, mapsKeys(byArm))
 	}
-	if baseline.Execution.Prompt != task.Metadata.Instruction {
-		t.Error("baseline prompt must remain the original issue")
+	if !strings.HasPrefix(baseline.Execution.Prompt, task.Metadata.Instruction) {
+		t.Error("baseline prompt must begin with the original issue")
+	}
+	if task.Metadata.Oracle.MutationPolicy.ForbidTestEdits && !strings.Contains(baseline.Execution.Prompt, "Do not edit tests.") {
+		t.Error("baseline prompt omits the candidate test-edit restriction")
 	}
 	issue := strings.TrimSpace(task.Metadata.Instruction)
 	if !strings.HasPrefix(strings.TrimSpace(implicit.Execution.Prompt), issue) {

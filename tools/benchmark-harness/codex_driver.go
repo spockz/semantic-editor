@@ -365,7 +365,7 @@ func applyCodexStreamMetrics(result *RunResult, stream codexEventStream, process
 	result.InternalTurns = stream.tracker.internalTurns
 	result.InitialLoadTurns = stream.tracker.initialLoadTurns
 	result.MCPLoadTurns = stream.tracker.mcpLoadTurns
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	if !stream.firstEventAt.IsZero() {
 		value := stream.firstEventAt.Sub(processStartedAt)
 		result.ProcessStartToFirstEvent = &value

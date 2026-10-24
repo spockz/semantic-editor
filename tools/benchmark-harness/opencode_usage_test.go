@@ -126,7 +126,7 @@ func assertOpenCodeDiagnosticEvidence(t *testing.T, result *RunResult, countPath
 	if got := result.Target.String(); got != "opencode/qwen36-iq4-xs" {
 		t.Fatalf("benchmark target = %q, want opencode/qwen36-iq4-xs", got)
 	}
-	if result.SemanticBatchReflection == nil || result.SemanticIntegrationReflection == nil || !strings.Contains(result.SemanticIntegrationReflection.Response, "ask my owner") {
+	if result.SemanticBatchReflection == nil || result.SemanticIntegrationReflection == nil || !strings.Contains(strings.ToLower(result.SemanticIntegrationReflection.Response), "improvement") {
 		t.Fatalf("missing diagnostic answers: %+v", result)
 	}
 	count, err := os.ReadFile(countPath)
@@ -197,6 +197,7 @@ func TestOpenCodePrefixedSemanticEventsDriveReflectionChoices(t *testing.T) {
 
 	t.Run("consecutive prefixed semantic events trigger batch reflection", func(t *testing.T) {
 		result := parse("semedit_semantic_rename", "semedit_semantic_insert_function")
+		result.SemeditBatching = true
 		if !result.MCPVerified || !shouldRequestSemanticBatchReflection(ArmSemedit, "session-123", result) {
 			t.Fatalf("consecutive OpenCode semantic calls were not recognized for batching: %+v", result)
 		}

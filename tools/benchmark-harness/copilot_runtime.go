@@ -281,6 +281,9 @@ func copilotMCPConfig(runner *Runner, workDir, root string) (copilotMCPConfigura
 		semeditPath = resolvedPath
 	}
 	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--go-base-dir", filepath.Join(root, ".scratch", "go"), "--metrics-file", benchmarkMCPMetricsPath(workDir)}
+	if runner.semeditBatching {
+		args = append(args, "--enable-batching")
+	}
 	switch runner.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 		args = append(args, "--instructions", "")

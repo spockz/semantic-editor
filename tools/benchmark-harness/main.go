@@ -27,6 +27,12 @@ func main() {
 }
 
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == "analyze" {
+		return runAnalysisCLI(os.Args[2:])
+	}
+	if len(os.Args) > 1 && os.Args[1] == "observe" {
+		return runObservationCLI(os.Args[2:])
+	}
 	return runPlannedCLI()
 }
 
@@ -331,6 +337,7 @@ type benchmarkCLIFlags struct {
 	runID               string
 	resume              bool
 	semeditSkill        bool
+	semeditBatching     bool
 	timeout             time.Duration
 	concurrency         int
 	repeats             int
@@ -411,6 +418,7 @@ func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
 	fs.StringVar(&input.runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
 	fs.BoolVar(&input.resume, "resume", false, "Resume an existing run directory and skip jobs with saved results")
 	fs.BoolVar(&input.semeditSkill, "semedit-skill", false, "Install the semedit skill in both semedit benchmark arms")
+	fs.BoolVar(&input.semeditBatching, "semedit-batching", false, "Enable semantic_batch in semedit benchmark arms (default false)")
 	fs.StringVar(&input.settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
 	fs.StringVar(&input.settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
 	fs.DurationVar(&input.timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
@@ -451,6 +459,7 @@ func applyBenchmarkCLIPlan(settings *benchmarkCLIOptions, input benchmarkCLIFlag
 	settings.Plan.RunID = input.runID
 	settings.Plan.Resume = input.resume
 	settings.Plan.SemeditSkill = input.semeditSkill
+	settings.Plan.SemeditBatching = input.semeditBatching
 	settings.Plan.OutJSON = input.outJSON
 	settings.Plan.OutMD = input.outMD
 	settings.Plan.MCPServerInstructions = mcpModes
@@ -573,7 +582,7 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 		}
 	}()
 	freshOutcomes, progressErr := ExecutePlanWithCompletion(ctx, pending, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
-		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithFixtureRoot(plan.Options.RAMFixtureRoot), WithModuleCache(plan.Options.ModuleCache), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance), WithLocalModelRelayURL(relayURL), WithLocalModelLimits(modelLimits))
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithFixtureRoot(plan.Options.RAMFixtureRoot), WithModuleCache(plan.Options.ModuleCache), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditBatching(job.SemeditBatching), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance), WithLocalModelRelayURL(relayURL), WithLocalModelLimits(modelLimits))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}

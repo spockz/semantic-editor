@@ -6,7 +6,39 @@ Start here when changing the benchmark harness. This guide maps the current impl
 
 ## Execution flow
 
-All benchmark runs follow the same planning and scheduling path. Listing, fixture extraction, and standalone oracle evaluation are command-line utilities outside that execution path.
+All benchmark runs follow the same planning and scheduling path. Listing, fixture extraction, standalone oracle evaluation, and analysis extraction are command-line utilities outside that execution path.
+
+Use `go run ./tools/benchmark-harness analyze --input <report.json>` to export newline-delimited analysis events from an explicit report. Pass `--input <run-directory>` to read only its direct `jobs/*.json` checkpoints; the command never walks the archived benchmark-results tree. Repeat `--input` to combine selected runs, use `--include-sidecars` to add provider-turn transcripts (including raw adapter events), adapter-stage evidence, and MCP phase metrics, and pass `--out <file.jsonl>` to write atomically. Each run’s conditions, oracle outcomes, diffs, latency/token/cost measurements, diagnostic coverage, and provenance appear once; compact run references connect those records to tool calls and failures, step results, reflections, provider errors, and optional sidecars. The raw event stream is opt-in because it can be large; it lets analysis connect a tool response to the next agent turn and assess whether the response supported a useful tactic change.
+
+To include interactive Codex chats, pass `--codex-home ~/.codex`. This explicitly scans only `sessions/` and `archived_sessions/` below that home for `.jsonl` and `.jsonl.zst` transcripts; it does not inspect databases, settings, logs, or other Codex state. User messages, assistant final/commentary messages, tool calls and results, and per-turn token usage are streamed as `codex_chat` records. Developer instructions, private assistant phases, and reasoning records are omitted. Compressed transcripts require `zstd` on `PATH`; override its executable with `--zstd-bin`. The exporter processes transcripts one at a time and writes `--out` through an atomic temporary file, so the full chat archive is not loaded into memory. These transcripts can contain sensitive conversation and tool output; keep the analysis output local and select its destination deliberately.
+
+For context-sized exports, add `--limit N`. Each page ends with a `page_info` record containing `pagination.returned`, `pagination.has_more`, and an opaque `pagination.next_cursor`. Resume with the same inputs and `--cursor <next_cursor>`; the cursor skips completed benchmark events and transcript files, then resumes at the recorded JSONL ordinal. For example, save each page separately and read the final cursor with `jq -r 'select(.type == "page_info") | .pagination.next_cursor // empty' page.jsonl`. Pagination reads only the current transcript file on continuation, but cursors assume the selected input files and ordering stay unchanged; restart from page one if they change. Without `--limit`, output remains unpaged.
+
+Use `--since 2026-10-19T12:00:00Z` to exclude benchmark reports and transcript records before an RFC3339 instant. Benchmark records use the report/checkpoint timestamp; Codex records use each transcript record timestamp. The cutoff is inclusive, and data without a timestamp is omitted when filtering. Keep the same cutoff while following a pagination cursor.
+
+Run `go run ./tools/benchmark-harness observe --input analysis.jsonl` after exporting evidence to derive deterministic observations and exact-condition cohort summaries. Pass selected pages with repeated `--input` flags; use `--out observations.json` to save the compact report atomically. It groups run outcomes, failed-call counts, wall-clock p50/p95/p99, tokens and recorded cost by task, arm, model, effort, skill, batching, variant, execution mode, server instructions, and arm restriction. When transcript sidecars contain paired provider start/completion timestamps, `analyze --include-sidecars` adds per-call `tool_duration_ms` plus run-level `tool_wait_ms` (sum of call durations, including overlap), `semantic_tool_wait_ms`, `other_tool_wait_ms`, `tool_occupied_ms` (union of tool-call intervals), and `non_tool_wall_clock_ms` (run wall time minus occupied tool intervals). `observe` reports timing coverage and p50/p95 tool-wait, semantic-tool-wait, other-tool-wait, occupied-time, and non-tool residuals by cohort, plus per-tool timed-call counts, total/mean wait, and p50/p95 call duration. Per-tool rows identify semantic tools and retain each tool name, so matched semedit and control cohorts can show whether wall-time differences coincide with particular semantic operations. The non-tool residual includes model generation and provider, harness, or startup overhead outside tool calls; it is not a pure model-inference measurement. Timing summaries only include runs with complete call timing, and coverage is reported so missing transcript timestamps remain visible. `tool_stats` gives per-tool call, transport-failure, functional-failure, and unknown-outcome counts; interactive Codex records are grouped as `codex-chat` because they may not retain benchmark model metadata. The report also identifies narrow failure-text signals, exact repeated tool calls, the next observed call after a failure, and keyword matches in benchmark reflections. Codex call/result references are linked by chat and call ID when the export provides them. Check `coverage.has_more_pages` before interpreting silence as absence; rerun `analyze` without paging for a complete local export when practical.
+
+The observation report is a mechanical index into evidence, not a verdict. A different next tool does not prove the agent understood the failure; a keyword match does not establish a real capability gap; and a missing event may reflect incomplete capture. Compare only matched benchmark conditions, then inspect the linked prompt, tool arguments and response, later turns, final diff, oracle, and testimonial. Use that evidence to propose a focused change, keep the benchmark method fixed, rerun the same cells, and accept or reject the change on correctness and measured outcomes. [ADR-0077](../../docs/adr/0077-deterministic-benchmark-evidence-analysis.md) defines this analysis boundary and the broader improvement loop.
+
+### Benchmark improvement loop
+
+Use the exporter as the evidence package for a controlled improvement cycle:
+
+1. Select explicit result files or run directories and export them with `--include-sidecars` when diagnosing tool choice, parameter errors, retries, or response guidance. Keep matched task, model, reasoning effort, skill, and batching conditions together; do not compare unmatched cells as if the harness changed alone.
+2. For each unsuccessful or inefficient run, trace the prompt, tool arguments, transport and functional status, server/tool response, subsequent agent turn, final diff, oracle stage, and post-run reflection. Assess:
+   - tool selection and parameter fit, separating harness/provider transport failures from server-side functional rejections;
+   - repeated calls with the same or changed arguments, their outcomes, and whether a failure led to a different tactic;
+   - whether a response supplied an actionable correction and whether the next agent turn used it;
+   - suspected capability gaps against the declared semedit/backend capability and the relevant native LSP or language-tool support;
+   - correctness, failed-call counts, call/turn counts, latency, token use, and cost; and
+   - the agent’s unmeasured testimonial and diagnostic reflections, including whether a reflection was skipped and why.
+
+   Treat capability gaps and planner misunderstandings as hypotheses until the trace distinguishes them. Incomplete tool observation means absence of a call is unknown, not proof that the agent skipped it.
+3. Propose the smallest change that addresses the strongest repeated evidence. Keep task prompts and benchmark method fixed when evaluating a tooling change. Record architectural decisions in an ADR and open or update a research question for measurements or unresolved alternatives, updating the corresponding index in the same change.
+4. Re-run the same benchmark cells and compare functional success, oracle levels, failed tool and failed semantic-call counts, call/turn counts, wall time, token use, and harness-recorded cost. Accept a change only when the intended outcome improves without an unacceptable correctness or cost regression; otherwise retain the baseline and investigate the next cause.
+5. Repeat from the exported evidence while improvements remain measurable. Keep raw outputs, analysis exports, implementation diffs, and the specific hypothesis linked so later runs can reproduce the comparison.
+
+The exporter preserves evidence and links records; it does not automatically decide that a tool call was wrong or that a response caused a retry. Those judgments need trace review and should identify the exact evidence and confidence behind each diagnosis.
 
 ```mermaid
 flowchart TD
@@ -32,6 +64,17 @@ flowchart TD
 ```
 
 `main.go:executeBenchmarkPlan` connects these components. Read that function first to trace a complete invocation. For an individual agent job, continue at `driver.go:Runner.ExecuteAgent`. The `task-00-hi-overhead` fixture has no source files and uses `disallowed_files: ["*"]` to require no workspace changes. The single-file `task-12-rename-scale-*` fixtures measure 1, 2, 4, 8, and 16 coordinated method renames under one task contract. The `task-12-rename-scale-05-multifile` fixture asks for five renames in one turn, with call sites in separate files and batching permitted. Compare paired arms within each edit count; the no-op probe is an overhead diagnostic, not the intercept of an edit-count fit. The `task-13-rename-followup-scale` fixture uses one continuing session: the first prompt makes one edit, then four follow-ups reach cumulative totals of 2, 4, 8, and 16. Each checkpoint has an exact-state oracle.
+
+External Multi-SWE-Bench tasks use their prescribed patch protocol in
+`oracle.go:Evaluate`: the oracle checks the agent's mutation policy, creates a
+private checkout at the fixture's pinned commit, applies the private
+`test.patch`, then applies the candidate patch captured from the agent
+workspace. Build and test evaluation run on that combined state. Test patches
+never enter the agent-visible checkout, and external task fixtures forbid
+candidate test edits. Ground-truth patch replay uses the same sequence while
+allowing test-file edits included in the reference fix. First-party txtar
+fixtures continue to use the private workspace-copy path and install hidden
+tests after candidate execution.
 
 ### Task complexity profiles and evaluation axes
 
@@ -330,6 +373,7 @@ automatically discover models or change the user's OpenCode configuration.
 | `MCP_SERVER_INSTRUCTIONS` | `prescriptive` | `none`, `descriptive`, or a comma-separated subset of all three |
 | `SEMEDIT_ARM_RESTRICT` | `write` | `read` or `readwrite` |
 | `SEMEDIT_SKILL` | `false` | `true` to install the semedit skill in both semedit arms; baseline remains unchanged |
+| `SEMEDIT_BATCHING` | `false` | `true` to expose `semantic_batch` to semedit arms; baseline remains unchanged |
 | `SEMEDIT_PREWARM_VERIFY` | `true` | `false` to include cold semantic startup |
 | `CONCURRENCY` | Hard/SWE 2; Saluki 1 | Any positive integer; local models share desktop capacity |
 | `TIMEOUT` | `5m` per job, including corrective follow-ups | Any positive Go duration |
@@ -349,6 +393,13 @@ existing one-repeat, `codex/gpt-6-luna/medium` configuration; the single-fixture
 example only narrows `TASKS`. The run metadata records the skill condition, and
 resume requires an identical plan, so an existing run cannot be resumed with a
 different skill setting.
+
+`SEMEDIT_BATCHING=true` enables the MCP server's `--enable-batching` startup
+flag in semedit arms. It is an independent boolean ablation from skill delivery,
+is off by default, and is recorded in result metadata and job/pair identities.
+Run once with batching disabled and again with it enabled to compare the same
+tasks; existing run IDs cannot resume across the two settings. Baseline arms
+never receive the option.
 
 ## Contracts and state ownership
 
@@ -389,13 +440,13 @@ Fixture extraction, directory preparation, provider configuration, shared-module
 
 The measured lifecycle is initial task answer, oracle evaluation, and declared corrective follow-ups with oracle evaluation after each. Follow-ups stop on success or terminal failure. A staged fixture instead runs every declared checkpoint in one workspace and provider session, evaluating its stage oracle after each turn. A failed checkpoint remains a failed overall result even when later stages pass. The printed plan includes every resolved staged prompt. Staged turns are excluded from corrective-attempt publication statistics. Hidden oracle output never becomes agent steering.
 
-Failed or exhausted task attempts normally do not trigger diagnostic reflection. A semedit task stopped by a deadline receives two best-effort reflections when the provider exposed a resumable session ID and the parent job is still active: a timeout diagnosis based on observed conversation evidence, followed by integration feedback about semedit. The reflection context is newly bounded and detached from the expired task deadline; parent cancellation still suppresses it. Failed, non-timeout, non-resumable, or externally cancelled runs retain their skip outcome.
+Every semedit-enabled run asks for tooling-improvement feedback after the task attempt, including failed oracle outcomes, when the provider exposes a resumable session ID and the parent job remains active. The feedback asks for candid, serious, experience-based improvements and accepts an explicit "not enough exposure" answer. A timed-out run first receives a separate timeout diagnosis, then the same improvement question using the partial run as evidence. These diagnostic turns resume the original provider session, prohibit tools, edits, and retries, and remain outside measured task time and aggregates. Runs without a resumable identity or cancelled parent record why feedback was skipped.
 
 An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after the matching app-server `turn/completed` notification reports completed status; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
 
 Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
 
-Task elapsed time is finalized before optional diagnostic questioning. A non-use, batching, integration-value, or timeout reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every successful semedit session with a continuation identity receives an integration-value question after any behavior-specific reflection, regardless of observed tool use. A timed-out semedit session with a resumable identity receives a timeout diagnosis followed by integration feedback. Save the timeout diagnosis as `diagnostic_timeout_reflection` and integration feedback as `semantic_integration_reflection`. Reflection prompts prohibit edits, tools, and retries. Reports label feedback as agent opinion or best-effort timeout analysis; browser metric rows exclude the entire object.
+Task elapsed time is finalized before diagnostic questioning. A non-use, batching, integration, timeout, or tooling-improvement reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every semedit run with a continuation identity receives tooling-improvement feedback after any behavior-specific reflection, regardless of task success or observed tool use. A timed-out semedit session receives a timeout diagnosis followed by tooling feedback. Save the timeout diagnosis as `diagnostic_timeout_reflection` and the improvement response as `semantic_integration_reflection` for report compatibility. Reflection prompts prohibit edits, tools, and retries. Reports label feedback as agent opinion; browser metric rows exclude the entire object.
 
 The turn wrapper owns session identity. Callers pass a prompt, a typed task or
 diagnostic kind, and a result destination; they cannot supply a second target.
@@ -426,7 +477,7 @@ The primary evaluation matrix standardizes on three canonical arms (ADR-0050):
 2. `semedit-agentic`: Autonomous agentic AST discovery, navigation, and editing using semedit MCP tools.
 3. `semedit-explicit`: An agent receives an exact successful semedit recipe, including complete arguments, batch grouping, and operation order.
 
-New benchmark plans default to `--mcp-server-instructions=prescriptive`; pass `none` explicitly to omit MCP initialization guidance, or select `descriptive` to advertise semantic tools without directing their use. The legacy instruction-mode array remains available for ablation runs. Historical results without an instruction-mode field continue to report as `none`. Skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`). External-repository fixtures require a pre-existing local clone under `.scratch/benchmarks/cache/repos/<repository>/<base-commit>`. The harness checks out the pinned revision, removes remotes, and copies the fully materialized checkout into the fixture before provider launch, outside measured agent wall-clock time. Missing or invalid cache data fails setup; there is no clone or fetch fallback.
+New benchmark plans default to `--mcp-server-instructions=prescriptive`; pass `none` explicitly to omit MCP initialization guidance, or select `descriptive` to advertise semantic tools without directing their use. The legacy instruction-mode array remains available for ablation runs. Historical results without an instruction-mode field continue to report as `none`. Skill delivery is evaluated as an orthogonal boolean ablation condition (`--semedit-skill=true|false`). External-repository fixtures require a pre-existing local clone under `.scratch/benchmarks/cache/repos/<repository>/<base-commit>`. The oracle materializes the pinned tree from that local object database with a temporary Git index, then initializes an isolated repository for applying test and candidate patches. It does not clone or enumerate unrelated refs, and it never fetches. Missing or invalid cache data fails setup.
 
 The selected `read`, `write`, or `readwrite` policy is a comparison condition on both agent arms, but steering applies only to semedit. `Job.Policy` describes semedit applicability; `AgentExecution.Policy` carries the selected agent condition. Terminal `RunResult.SemeditArmRestrict` records the condition, and `SemeditArmRestrictionApplied` records applicability. Direct control has no restriction condition. All policies permit shell builds and tests.
 
@@ -669,13 +720,12 @@ the run. `--module-cache` selects an SSD cache populated during setup and access
 without copying it into fixtures. Each job retains independent build, temporary,
 gopls, binary, and agent runtime directories beneath its RAM workspace. Reports,
 checkpoints, manifests, and transcripts stay on SSD and survive fixture cleanup.
-Normal project build configuration is unchanged. Benchmark Make targets detect
-the management marker at the platform's default mountpoint and select that RAM
-root automatically, retaining `GOMODCACHE` on SSD. The harness still verifies
-actual tmpfs and fails explicitly if a selected volume is incompatible or gone.
-Use `BENCH_RAM_ROOT=` to explicitly select SSD fixtures, or set a custom
-`BENCH_RAM_ROOT` and `BENCH_MODCACHE`. Without a managed volume, Make retains
-ordinary SSD fixture behavior. Direct CLI invocations require explicit flags.
+Normal project build configuration is unchanged. Benchmark Make targets default
+to the platform's RAM mount and retain `GOMODCACHE` on SSD. The harness verifies
+actual tmpfs and fails explicitly if the mount is unavailable or incompatible;
+it never silently falls back to SSD. Use `BENCH_RAM_ROOT=` to explicitly select
+SSD fixtures, or set a custom `BENCH_RAM_ROOT` and `BENCH_MODCACHE`. Direct CLI
+invocations require explicit flags.
 
 | Responsibility | Implementation |
 | :--- | :--- |

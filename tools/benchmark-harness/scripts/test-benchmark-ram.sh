@@ -14,12 +14,10 @@ makefile="$script_dir/../Makefile"
 make_mount="$tmp/make-mount"
 mkdir -p "$make_mount"
 make_plan=$(make -n -f "$makefile" REPO_ROOT="$tmp" GOMODCACHE="$tmp/.scratch/go/mod" BENCH_RAM_DEFAULT="$make_mount" bench TASK=task-09-composite-refactor)
-case "$make_plan" in *--ram-fixture-root*) fail 'Make selected RAM without a managed marker' ;; esac
-touch "$make_mount/.semedit-benchmark-ram"
-make_plan=$(make -n -f "$makefile" REPO_ROOT="$tmp" GOMODCACHE="$tmp/.scratch/go/mod" BENCH_RAM_DEFAULT="$make_mount" bench TASK=task-09-composite-refactor)
-case "$make_plan" in *"--ram-fixture-root \"$make_mount\""*"--module-cache \"$tmp/.scratch/go/mod\""*) ;; *) fail "Make did not select managed RAM and existing module cache: $make_plan" ;; esac
+case "$make_plan" in *"--ram-fixture-root \"$make_mount\""*"--module-cache \"$tmp/.scratch/go/mod\""*) ;; *) fail "Make did not default to RAM fixtures and existing module cache: $make_plan" ;; esac
 make_plan=$(make -n -f "$makefile" REPO_ROOT="$tmp" GOMODCACHE="$tmp/.scratch/go/mod" BENCH_RAM_DEFAULT="$make_mount" BENCH_RAM_ROOT= bench TASK=task-09-composite-refactor)
-case "$make_plan" in *--ram-fixture-root*|*--module-cache*) fail 'Make ignored explicit SSD selection' ;; esac
+case "$make_plan" in *--ram-fixture-root*) fail 'Make ignored explicit SSD fixture selection' ;; esac
+case "$make_plan" in *"--module-cache \"$tmp/.scratch/go/mod\""*) ;; *) fail 'Make did not retain the persistent module cache for SSD fixtures' ;; esac
 make_plan=$(make -n -f "$makefile" REPO_ROOT="$tmp" GOMODCACHE="$tmp/.scratch/go/mod" BENCH_RAM_DEFAULT="$make_mount" BENCH_RAM_ROOT="$tmp/custom-mount" BENCH_MODCACHE="$tmp/existing-modules" bench TASK=task-09-composite-refactor)
 case "$make_plan" in *"--ram-fixture-root \"$tmp/custom-mount\""*"--module-cache \"$tmp/existing-modules\""*) ;; *) fail 'Make ignored explicit storage overrides' ;; esac
 . "$script_dir/benchmark-ram-memory.sh"

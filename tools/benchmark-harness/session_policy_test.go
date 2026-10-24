@@ -54,7 +54,7 @@ func TestSemeditRestrictionSteeringAndPrompts(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			execution, err := ResolveAgentExecution(task, Target{}, ArmSemedit, "", test.policy)
+			execution, err := ResolveAgentExecution(task, Target{}, ArmSemedit, "", test.policy, false)
 			if err != nil {
 				t.Fatalf("ResolveAgentExecution: %v", err)
 			}
@@ -83,7 +83,7 @@ func TestResolveStagedFollowupPrompts(t *testing.T) {
 		},
 	}}
 	for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
-		execution, err := ResolveAgentExecution(task, Target{}, arm, "", SemeditArmRestrictWrite)
+		execution, err := ResolveAgentExecution(task, Target{}, arm, "", SemeditArmRestrictWrite, false)
 		if err != nil {
 			t.Fatalf("%s: %v", arm, err)
 		}
@@ -111,6 +111,34 @@ func TestResolveStagedFollowupPrompts(t *testing.T) {
 	}
 }
 
+func TestExplicitBatchGuidanceFollowsBatchingCondition(t *testing.T) {
+	task := &Task{Metadata: TaskMetadata{
+		Instruction:    "Inspect and fix the task.",
+		PromptVariants: map[string]string{"explicit": "Use semantic_lookup and semantic_rename in order."},
+	}}
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		want    string
+	}{{name: "disabled"}, {name: "enabled", enabled: true, want: "inside one ordered semantic_batch"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			execution, err := ResolveAgentExecution(task, Target{}, ArmSemeditExplicit, "small:explicit", SemeditArmRestrictWrite, tc.enabled)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if execution.SemeditBatching != tc.enabled {
+				t.Errorf("execution batching = %t, want %t", execution.SemeditBatching, tc.enabled)
+			}
+			if strings.Contains(execution.Prompt, "inside one ordered semantic_batch") != tc.enabled {
+				t.Errorf("explicit prompt batching guidance = %q, enabled=%t", execution.Prompt, tc.enabled)
+			}
+			if tc.want != "" && !strings.Contains(execution.Prompt, tc.want) {
+				t.Errorf("explicit prompt missing %q: %q", tc.want, execution.Prompt)
+			}
+		})
+	}
+}
+
 func TestExternalRepositoryHintsApplyOnlyToDiscoveryArms(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "zeromicro__go-zero-2463.txtar"))
 	if err != nil {
@@ -126,7 +154,7 @@ func TestExternalRepositoryHintsApplyOnlyToDiscoveryArms(t *testing.T) {
 	target := Target{Harness: "codex", Model: "fixture"}
 	for _, arm := range []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit} {
 		t.Run(string(arm), func(t *testing.T) {
-			execution, err := ResolveAgentExecution(task, target, arm, "small", SemeditArmRestrictWrite)
+			execution, err := ResolveAgentExecution(task, target, arm, "small", SemeditArmRestrictWrite, false)
 			if err != nil {
 				t.Fatal(err)
 			}

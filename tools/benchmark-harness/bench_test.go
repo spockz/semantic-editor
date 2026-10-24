@@ -447,15 +447,18 @@ func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
 func TestSemanticBatchReflectionRequiresConsecutiveUnbatchedCalls(t *testing.T) {
 	t.Parallel()
 
-	result := &RunResult{MCPVerified: true, Success: true, ToolCalls: []ToolCall{
+	result := &RunResult{MCPVerified: true, SemeditBatching: true, Success: true, ToolCalls: []ToolCall{
 		{Name: "semantic_rename", Server: "semedit"},
 		{Name: "semantic_insert_function", Server: "semedit"},
 	}}
 	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", result) {
 		t.Fatal("consecutive unbatched semantic calls should request a reflection")
 	}
-	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{Success: true, ToolCalls: result.ToolCalls}) {
+	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{SemeditBatching: true, Success: true, ToolCalls: result.ToolCalls}) {
 		t.Fatal("attempted consecutive semantic calls should request a reflection even when transport was not confirmed")
+	}
+	if shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{Success: true, ToolCalls: result.ToolCalls}) {
+		t.Fatal("batching reflection requested when batching was disabled")
 	}
 	for _, test := range []struct {
 		name   string
@@ -517,6 +520,26 @@ func TestMCPVerificationRequiresSemanticToolIdentity(t *testing.T) {
 	refreshMCPVerified(res)
 	if res.MCPVerified {
 		t.Fatal("MCPVerified = true for a shell command that only mentions semedit")
+	}
+}
+
+func TestMCPGoArgumentsBatchingIsOptIn(t *testing.T) {
+	workDir := t.TempDir()
+	for _, tc := range []struct {
+		name    string
+		enabled bool
+		want    bool
+	}{{name: "default off"}, {name: "enabled", enabled: true, want: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewRunner(t.TempDir(), WithSemeditBatching(tc.enabled))
+			args, err := runner.mcpGoArguments(workDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := slices.Contains(args, "--enable-batching"); got != tc.want {
+				t.Errorf("batching argument present = %t, want %t; args=%v", got, tc.want, args)
+			}
+		})
 	}
 }
 
@@ -1159,6 +1182,12 @@ func TestMutationPolicyGuidance(t *testing.T) {
 	withoutPolicy := &Task{}
 	if got := withMutationPolicyGuidance(prompt, withoutPolicy, true); got != prompt {
 		t.Fatalf("guidance without protected files = %q, want original prompt", got)
+	}
+	withoutProtectedList := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{MutationPolicy: MutationPolicyConfig{
+		ForbidTestEdits: true,
+	}}}}
+	if got := withMutationPolicyGuidance(prompt, withoutProtectedList, false); !strings.Contains(got, "Do not edit tests.") {
+		t.Fatalf("test-edit policy guidance missing without a protected-file list: %q", got)
 	}
 }
 

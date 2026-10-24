@@ -1129,7 +1129,7 @@ func TestIntegrationFeedbackSurvivesReportPublication(t *testing.T) {
 		t.Fatal(err)
 	}
 	rendered := renderBenchmarkComparisonsDoc("Feedback", "Feedback", "", report.Comparisons)
-	for _, want := range []string{"Semedit integration feedback", "agent opinion", "I would not ask my owner", "&lt;unassessed&gt;", "capture &lt;error&gt;"} {
+	for _, want := range []string{"Semedit tooling feedback", "agent opinion", "I would not ask my owner", "&lt;unassessed&gt;", "capture &lt;error&gt;"} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("published report missing %q: %s", want, rendered)
 		}

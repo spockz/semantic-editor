@@ -417,10 +417,10 @@ func writeFakeCodexTurnResult(state *fakeCodexAppServerState, turnID string, wri
 func fakeCodexAnswer(mode string, turnCount int) string {
 	switch mode {
 	case "session":
-		return "I would ask my owner to add semedit because its precise edits eased this task."
+		return "Improvement: show the remaining diagnostic count up front; I had to inspect details to understand how much remained."
 	case "feedback":
 		if turnCount > 1 {
-			return "I would not ask my owner to add semedit because I could not assess its value in this task."
+			return "The parameter names were confusing; canonical aliases and closer error suggestions would have prevented the failed call."
 		}
 		return "Task completed."
 	default:

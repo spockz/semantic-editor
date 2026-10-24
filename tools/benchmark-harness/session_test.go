@@ -436,8 +436,8 @@ func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
 	if strings.Count(string(transcript), "diagnostic_reflection") != 2 || strings.Count(string(transcript), "persistent-thread") < 4 {
 		t.Fatalf("transcript did not retain task and diagnostic events: %s", transcript)
 	}
-	if result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Prompt != semanticIntegrationReflectionPrompt || !strings.Contains(result.SemanticIntegrationReflection.Response, "ask my owner") {
-		t.Fatalf("integration feedback missing or incorrectly captured: %#v", result.SemanticIntegrationReflection)
+	if result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Prompt != semanticIntegrationReflectionPrompt || !strings.Contains(strings.ToLower(result.SemanticIntegrationReflection.Response), "improvement") {
+		t.Fatalf("tooling improvement feedback missing or incorrectly captured: %#v", result.SemanticIntegrationReflection)
 	}
 	var turns []sessionTurn
 	if decodeErr := json.Unmarshal(transcript, &turns); decodeErr != nil {
@@ -861,7 +861,7 @@ func TestDiagnosticToolCoverageUsesAllTaskToolSelectionsAndKeepsBatchExplicit(t 
 	}
 }
 
-func TestExecuteAgentSkipsDiagnosticReflectionAfterFailedFinalOracle(t *testing.T) {
+func TestExecuteAgentRequestsToolingFeedbackAfterFailedFinalOracle(t *testing.T) {
 	cases := []struct {
 		name      string
 		followups []string
@@ -901,11 +901,14 @@ func runFailedFinalOracleScenario(t *testing.T, followups []string) {
 	if result.Oracle == nil || result.Oracle.Passed || result.Oracle.FailureStage != "level_2_ast" {
 		t.Fatalf("final failed oracle was not preserved: %#v", result.Oracle)
 	}
-	if result.DiagnosticReflectionSkipped != "final task oracle did not pass" {
-		t.Fatalf("diagnostic skip reason = %q", result.DiagnosticReflectionSkipped)
+	if result.DiagnosticReflectionSkipped != "" {
+		t.Fatalf("diagnostic feedback skip reason = %q", result.DiagnosticReflectionSkipped)
 	}
-	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil || result.SemanticIntegrationReflection != nil {
-		t.Fatalf("failed final oracle triggered diagnostic reflection: %#v", result)
+	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil || result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Prompt != semanticIntegrationReflectionPrompt {
+		t.Fatalf("failed final oracle did not receive tooling feedback: %#v", result)
+	}
+	if result.Turns != 1+len(followups) {
+		t.Fatalf("tooling feedback changed measured turns: got %d, want %d", result.Turns, 1+len(followups))
 	}
 	processes, err := os.ReadFile(processLog)
 	if err != nil || strings.Count(string(processes), "process") != 1 {
@@ -915,8 +918,8 @@ func runFailedFinalOracleScenario(t *testing.T, followups []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Count(string(requests), "\"method\":\"turn/start\""); got != 1+len(followups) {
-		t.Fatalf("task turns = %d; want %d", got, 1+len(followups))
+	if got := strings.Count(string(requests), "\"method\":\"turn/start\""); got != 2+len(followups) {
+		t.Fatalf("task and feedback turns = %d; want %d", got, 2+len(followups))
 	}
 	if len(result.InteractionSteps) != 1+len(followups) {
 		t.Fatalf("interaction steps = %d, want %d task attempts", len(result.InteractionSteps), 1+len(followups))
@@ -1104,8 +1107,8 @@ func assertIntegrationFeedbackCapture(t *testing.T, testCase integrationFeedback
 		if feedback.Error == "" {
 			t.Fatal("feedback failure was silently swallowed")
 		}
-	} else if !strings.Contains(feedback.Response, "would not ask my owner") || feedback.Error != "" {
-		t.Fatalf("negative feedback was not preserved: %#v", feedback)
+	} else if !strings.Contains(strings.ToLower(feedback.Response), "parameter names") || feedback.Error != "" {
+		t.Fatalf("actionable tooling feedback was not preserved: %#v", feedback)
 	}
 }
 

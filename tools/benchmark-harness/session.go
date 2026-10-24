@@ -282,6 +282,20 @@ func (s *agentSession) close() (retErr error) {
 	}
 	s.finalizeResult()
 	if s.retainWorkDir {
+		for _, cachePath := range []string{
+			".scratch/go/build",
+			".scratch/go/gopls",
+			".scratch/go/tmp",
+			".scratch/copilot/cache",
+			".scratch/copilot/tmp",
+			".scratch/copilot/home/Library/Caches",
+			".scratch/opencode/cache",
+			".scratch/opencode/tmp",
+		} {
+			if err := removeRetainedWorkspaceCache(s.workspaceRoot, cachePath); err != nil {
+				retErr = errors.Join(retErr, fmt.Errorf("prune retained workspace cache %q: %w", cachePath, err))
+			}
+		}
 		s.recordRetainedWorkDir()
 		return retErr
 	}
@@ -330,7 +344,7 @@ func (s *agentSession) finalizeResult() {
 		reason = "no task turn produced tool observation evidence"
 	}
 	s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
-	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success && s.result.DiagnosticTimeoutReflection == nil
+	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success && s.result.DiagnosticTimeoutReflection == nil && s.result.SemanticIntegrationReflection == nil
 	if shouldSkipReflection && s.result.DiagnosticReflectionSkipped == "" {
 		s.result.DiagnosticReflectionSkipped = diagnosticReflectionSkipReason(s.result.Error)
 	}
@@ -683,4 +697,49 @@ func (s *agentSession) recordTaskObservation(result *RunResult) {
 		}
 	}
 	s.taskObservationTurns++
+}
+
+func removeRetainedWorkspaceCache(workspaceRoot *os.Root, relative string) error {
+	clean := filepath.Clean(relative)
+	if !filepath.IsLocal(clean) || clean == "." {
+		return fmt.Errorf("retained cache path %q is not workspace-local", relative)
+	}
+	for parent := filepath.Dir(clean); parent != "."; parent = filepath.Dir(parent) {
+		info, err := fs.Stat(workspaceRoot.FS(), parent)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspect retained cache parent %q: %w", parent, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("retained cache parent %q is not a directory", parent)
+		}
+		if err := makeSessionDirectoryWritable(workspaceRoot, parent, info); err != nil {
+			return err
+		}
+	}
+	walkErr := fs.WalkDir(workspaceRoot.FS(), clean, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("inspect retained cache path %q: %w", path, walkErr)
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("read retained cache directory metadata %q: %w", path, err)
+		}
+		return makeSessionDirectoryWritable(workspaceRoot, path, info)
+	})
+	if errors.Is(walkErr, fs.ErrNotExist) {
+		return nil
+	}
+	if walkErr != nil {
+		return walkErr
+	}
+	if err := workspaceRoot.RemoveAll(clean); err != nil {
+		return fmt.Errorf("remove retained cache %q: %w", clean, err)
+	}
+	return nil
 }

@@ -22,7 +22,7 @@ import (
 
 const (
 	semanticTimeoutDiagnosticReflectionPrompt  = "The benchmark task stopped because its execution timed out. Do not use tools, edit files, or retry the task. Based only on the conversation so far, identify the last action underway, where time appears to have gone (model reasoning, tool wait, repeated verification or undo, exploration, or another cause), and the strongest evidence for that diagnosis. Clearly separate observed evidence from inference, and answer in a few concise sentences."
-	semanticTimeoutIntegrationReflectionPrompt = "The benchmark task stopped because its execution timed out. For benchmark analysis only, do not use tools, edit files, or retry the task. In one sentence, say whether semedit's tools helped or hindered the work before the timeout, grounded in what actually happened. If you could not assess their value, say so."
+	semanticTimeoutIntegrationReflectionPrompt = "The benchmark attempt ended at its time limit. For benchmark analysis only, do not use tools, edit files, or retry the task. In one to three concise sentences, give candid, serious feedback on the most important improvement to semedit's tools, grounded in what you actually encountered before the timeout. Distinguish observed friction from suggestions; if you lacked enough exposure to assess the tools, say so instead of inventing feedback."
 )
 
 func boundedDiagnostic(data []byte, limit int) string {
@@ -116,7 +116,7 @@ func errorComponents(err error) []error {
 }
 
 func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Target, arm ArmType, variant string) (*RunResult, error) {
-	execution, err := ResolveAgentExecution(task, target, arm, variant, r.semeditArmRestriction)
+	execution, err := ResolveAgentExecution(task, target, arm, variant, r.semeditArmRestriction, r.semeditBatching)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +156,9 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 				session.result.Error = appendResultError(session.result.Error, closeErr)
 			}
 			executeErr = joinDistinctErrors(executeErr, closeErr)
+		}
+		if session.result != nil {
+			refreshToolCallCounts(session.result)
 		}
 	}()
 	workspace, workspaceErr := prepareAgentWorkspace(ctx, r, task, target, arm, variant, workDir, session)
@@ -287,7 +290,7 @@ type agentRunResultInput struct {
 func newAgentRunResult(r *Runner, task *Task, input agentRunResultInput) *RunResult {
 	return &RunResult{
 		TaskID: task.Metadata.TaskID, Variant: input.variant,
-		ExecutionMode: "agent", SemeditSkill: input.execution.SemeditSkill,
+		ExecutionMode: "agent", SemeditSkill: input.execution.SemeditSkill, SemeditBatching: input.execution.SemeditBatching,
 		InteractiveMode:              task.Metadata.InteractiveMode,
 		PromptVariant:                promptVariantFromExecution(input.execution),
 		SemeditArmRestrict:           input.execution.Policy,
@@ -337,7 +340,7 @@ func ensureProvenance(result *RunResult) {
 	}
 }
 
-func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *RunResult, policy ...SemeditArmRestriction) (string, error) {
+func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *RunResult, batching bool, policy ...SemeditArmRestriction) (string, error) {
 	effectivePolicy := SemeditArmRestrictWrite
 	if len(policy) > 1 {
 		return "", fmt.Errorf("prepare agent prompt accepts at most one semedit arm restriction")
@@ -367,6 +370,9 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	}
 	res.PromptVariant = promptVarName
 	if task.Metadata.Repository.URL != "" {
+		if guidance := mutationPolicyGuidance(task, false); guidance != "" {
+			baseInstruction = strings.TrimSpace(baseInstruction + "\n\n" + guidance)
+		}
 		if arm == ArmBaseline {
 			return baseInstruction, nil
 		}
@@ -384,7 +390,7 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	}
 	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
 	if arm == ArmSemeditExplicit {
-		baseInstruction = strings.TrimSpace(baseInstruction + " Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently.")
+		baseInstruction = strings.TrimSpace(baseInstruction + explicitMutationGuidance(batching))
 	}
 	if isSemeditArm(arm) {
 		steering, err := semeditRestrictionSteering(effectivePolicy)
@@ -400,18 +406,25 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	return "", fmt.Errorf("unsupported arm for agent driver: %s", arm)
 }
 
+func explicitMutationGuidance(batching bool) string {
+	if batching {
+		return " Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently."
+	}
+	return " Parallelize independent read-only lookups. Perform mutations serially in the stated order; never run overlapping mutations concurrently."
+}
+
 const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
 
 const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
 
-const semanticIntegrationReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits."
+const semanticIntegrationReflectionPrompt = "The benchmark attempt has ended. For benchmark analysis only, do not make further file changes, run tools, or retry the task. In one to three concise sentences, give candid, serious feedback on the most important improvement to semedit's tools, grounded in what you actually encountered during this run. Distinguish observed friction from suggestions, and describe the practical effect of the improvement. You may mention what worked well when relevant. If you did not use the tools or lack enough exposure to assess them, say so; do not invent issues or benefits."
 
 func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
 	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && result.Error == "" && !result.MCPVerified
 }
 
 func shouldRequestSemanticBatchReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && result.Error == "" && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
+	return isSemeditArm(arm) && sessionID != "" && result != nil && result.SemeditBatching && result.Success && result.Error == "" && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
 }
 
 func hasConsecutiveUnbatchedSemanticToolCalls(calls []ToolCall) bool {
@@ -453,15 +466,24 @@ func safePathFragment(value string) string {
 }
 
 func withMutationPolicyGuidance(prompt string, task *Task, remediate bool) string {
-	protected := append([]string(nil), task.Metadata.Oracle.MutationPolicy.DisallowedFiles...)
-	if len(protected) == 0 {
+	guidance := mutationPolicyGuidance(task, remediate)
+	if guidance == "" {
 		return prompt
 	}
+	return fmt.Sprintf("%s\n\n%s", guidance, prompt)
+}
+
+func mutationPolicyGuidance(task *Task, remediate bool) string {
+	policy := task.Metadata.Oracle.MutationPolicy
+	protected := append([]string(nil), policy.DisallowedFiles...)
+	if len(protected) == 0 && !policy.ForbidTestEdits {
+		return ""
+	}
 	if slices.Contains(protected, "*") {
-		return fmt.Sprintf("Do not modify any workspace files.\n\n%s", prompt)
+		return "Do not modify any workspace files."
 	}
 	slices.Sort(protected)
-	hasTests := false
+	hasTests := policy.ForbidTestEdits
 	otherFiles := make([]string, 0, len(protected))
 	for _, path := range protected {
 		if strings.HasSuffix(path, "_test.go") {
@@ -481,7 +503,7 @@ func withMutationPolicyGuidance(prompt string, task *Task, remediate bool) strin
 	if remediate {
 		guidance += " If an earlier turn changed any protected file, restore its original contents before continuing."
 	}
-	return fmt.Sprintf("%s\n\n%s", guidance, prompt)
+	return guidance
 }
 
 func evaluateAgentResult(ctx context.Context, task *Task, workDir string, before workspaceSnapshot, initialPath, beforeContent string, res *RunResult) error {

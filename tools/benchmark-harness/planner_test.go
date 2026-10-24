@@ -220,6 +220,47 @@ func TestBuildBenchmarkPlanInjectsSkillOnlyIntoSemeditArms(t *testing.T) {
 	}
 }
 
+func TestBuildBenchmarkPlanEnablesBatchingOnlyForSemeditArms(t *testing.T) {
+	dir := t.TempDir()
+	writePlanningFixture(t, dir, "batching", "contexts:\n  - small\nprompt_variants:\n  default: concise\n")
+	options := PlanOptions{
+		BenchDir: dir,
+		OutDir:   "",
+		Targets:  []Target{{Harness: "codex", Model: "gpt-6-luna", Effort: "medium"}},
+		Variants: []string{"small:default"},
+		Repeats:  1,
+	}
+	off, err := BuildBenchmarkPlan(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options.SemeditBatching = true
+	on, err := BuildBenchmarkPlan(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	offByArm := plannedJobsByArm(off.Jobs)
+	onByArm := plannedJobsByArm(on.Jobs)
+	if len(off.Jobs) != 2 || len(on.Jobs) != 2 {
+		t.Fatalf("job counts = %d and %d, want 2 each", len(off.Jobs), len(on.Jobs))
+	}
+	if offByArm[ArmSemedit].SemeditBatching || offByArm[ArmSemedit].Execution.SemeditBatching {
+		t.Fatal("batching was enabled in the default plan")
+	}
+	if !onByArm[ArmSemedit].SemeditBatching || !onByArm[ArmSemedit].Execution.SemeditBatching {
+		t.Fatal("batching opt-in was not propagated to the semedit job")
+	}
+	if onByArm[ArmBaseline].SemeditBatching || onByArm[ArmBaseline].Execution.SemeditBatching {
+		t.Fatal("batching leaked into baseline job")
+	}
+	if onByArm[ArmSemedit].ID == offByArm[ArmSemedit].ID || onByArm[ArmSemedit].PairID == offByArm[ArmSemedit].PairID {
+		t.Fatal("batching condition was omitted from semedit job or pair identity")
+	}
+	if onByArm[ArmBaseline].ID != offByArm[ArmBaseline].ID {
+		t.Fatal("baseline job identity changed with batching availability")
+	}
+}
+
 func assertPlannedSkillCondition(t *testing.T, promptVariant string) {
 	t.Helper()
 	dir := t.TempDir()

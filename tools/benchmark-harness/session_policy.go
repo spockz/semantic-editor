@@ -16,6 +16,7 @@ type AgentExecution struct {
 	StagedFollowups []StagedFollowup
 	Policy          SemeditArmRestriction
 	SemeditSkill    bool
+	SemeditBatching bool
 }
 
 type SemeditArmRestriction string
@@ -40,7 +41,7 @@ func WithSemeditArmRestriction(policy SemeditArmRestriction) RunnerOption {
 	return func(r *Runner) { r.semeditArmRestriction = policy }
 }
 
-func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant string, policy SemeditArmRestriction) (AgentExecution, error) {
+func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant string, policy SemeditArmRestriction, batching bool) (AgentExecution, error) {
 	if task == nil {
 		return AgentExecution{}, fmt.Errorf("resolve agent execution: task is nil")
 	}
@@ -51,7 +52,7 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 		return AgentExecution{}, err
 	}
 	result := &RunResult{Target: target, Arm: arm}
-	prompt, err := prepareAgentPromptWithPolicy(task, arm, variant, result, policy)
+	prompt, err := prepareAgentPromptWithPolicy(task, arm, variant, result, batching, policy)
 	if err != nil {
 		return AgentExecution{}, err
 	}
@@ -67,7 +68,7 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 			followup = strings.TrimSpace(followup + " " + steering + " When done, output DONE.")
 		}
 		if arm == ArmSemeditExplicit {
-			followup = strings.TrimSpace(followup + " Use the explicit semantic tool sequence from the initial prompt. Parallelize only independent read-only lookups; keep mutations serial or inside one ordered semantic_batch.")
+			followup = strings.TrimSpace(followup + explicitFollowupGuidance(batching))
 		}
 		followups = append(followups, followup)
 	}
@@ -97,7 +98,14 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 			staged = append(staged, StagedFollowup{TotalEdits: step.TotalEdits, Instruction: stagePrompt, Oracle: step.Oracle})
 		}
 	}
-	return AgentExecution{Task: task, Target: target, Arm: arm, Variant: variant, Prompt: prompt, Followups: followups, StagedFollowups: staged, Policy: policy}, nil
+	return AgentExecution{Task: task, Target: target, Arm: arm, Variant: variant, Prompt: prompt, Followups: followups, StagedFollowups: staged, Policy: policy, SemeditBatching: batching}, nil
+}
+
+func explicitFollowupGuidance(batching bool) string {
+	if batching {
+		return " Use the explicit semantic tool sequence from the initial prompt. Parallelize only independent read-only lookups; keep mutations serial or inside one ordered semantic_batch."
+	}
+	return " Use the explicit semantic tool sequence from the initial prompt. Parallelize only independent read-only lookups; perform mutations serially in the stated order."
 }
 
 func semeditRestrictionSteering(policy SemeditArmRestriction) (string, error) {

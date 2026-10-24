@@ -370,7 +370,7 @@ func (s *copilotSession) run(ctx context.Context, prompt string, result *RunResu
 			result.FirstEventToFirstToolCall = &toolValue
 		}
 	}
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	result.Turns = 1
 	result.InternalTurns = turn.tracker.internalTurns
 	result.InitialLoadTurns = turn.tracker.initialLoadTurns

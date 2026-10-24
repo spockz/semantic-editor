@@ -83,7 +83,7 @@ func parseAgyTranscript(data []byte, res *RunResult) error {
 	}
 	res.InitialLoadTurns = state.initialLoadTurns
 	res.MCPLoadTurns = state.mcpLoadTurns
-	res.ToolCount = len(res.ToolCalls)
+	refreshToolCallCounts(res)
 	refreshMCPVerified(res)
 	return nil
 }

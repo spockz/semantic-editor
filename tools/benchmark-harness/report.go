@@ -703,6 +703,12 @@ func renderInteractionComparisonRows(sb *strings.Builder, runs benchmarkComparis
 	sb.WriteString(formatMetricRowInt("Total Tool Invocations",
 		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
 		func(r *RunResult) int { return r.ToolCount }))
+	sb.WriteString(formatMetricRowInt("Failed Tool Invocations",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.FailedToolCallCount }))
+	sb.WriteString(formatMetricRowInt("Failed Semantic Tool Invocations",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.FailedSemanticToolCallCount }))
 }
 
 func renderTokenComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
@@ -1276,7 +1282,7 @@ func renderSemanticIntegrationReflection(sb *strings.Builder, title string, run 
 		return
 	}
 	reflection := run.SemanticIntegrationReflection
-	fmt.Fprintf(sb, "#### %s: Semedit Integration Feedback\n\n", title)
+	fmt.Fprintf(sb, "#### %s: Semedit Tooling Feedback\n\n", title)
 	sb.WriteString("Agent opinion based on this run; excluded from benchmark measurements.\n\n")
 	if reflection.Response != "" {
 		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))

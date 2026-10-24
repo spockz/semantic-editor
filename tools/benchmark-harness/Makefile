@@ -20,13 +20,14 @@ BENCH_RUN_STAMP := $(shell date -u '+%Y%m%dT%H%M%SZ')
 RUN_ID ?= run-$(BENCH_RUN_STAMP)
 RESUME ?= false
 SEMEDIT_SKILL ?= false
+SEMEDIT_BATCHING ?= false
 BENCH_RAM_SIZE ?= auto
 BENCH_RAM_ARGS ?=
 BENCH_RAM_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
 BENCH_RAM_DEFAULT = $(if $(filter darwin,$(BENCH_RAM_PLATFORM)),/Volumes/semedit-bench-ram,$(if $(filter linux,$(BENCH_RAM_PLATFORM)),$(shell if [ -d "/run/user/$$(id -u)" ]; then printf '/run/user/%s/semedit-bench-ram' "$$(id -u)"; else printf /mnt/semedit-bench-ram; fi)))
-# A managed marker selects RAM; the harness still verifies tmpfs and fails closed.
-BENCH_RAM_ROOT ?= $(if $(wildcard $(BENCH_RAM_DEFAULT)/.semedit-benchmark-ram),$(BENCH_RAM_DEFAULT))
-BENCH_MODCACHE ?= $(if $(BENCH_RAM_ROOT),$(GOMODCACHE))
+# Benchmark fixtures default to the managed RAM mount; the harness verifies tmpfs and fails closed.
+BENCH_RAM_ROOT ?= $(BENCH_RAM_DEFAULT)
+BENCH_MODCACHE ?= $(GOMODCACHE)
 BENCH_RAM_SCRIPT = $(REPO_ROOT)/tools/benchmark-harness/scripts/benchmark-ram-$(if $(filter darwin,$(BENCH_RAM_PLATFORM)),macos,linux).sh
 
 TARGET ?= codex/gpt-5.6-luna/medium
@@ -71,7 +72,7 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make bench-ram-estimate CONCURRENCY=2"
 	@echo "  make bench-ram-mount BENCH_RAM_SIZE=auto CONCURRENCY=2"
 	@echo "  make bench-smoke-swe BENCH_RAM_ROOT=/Volumes/semedit-bench-ram BENCH_MODCACHE=$(GOMODCACHE)"
-	@echo "  Managed RAM mounts at the platform default are selected automatically; BENCH_RAM_ROOT= selects SSD fixtures"
+	@echo "  Benchmark fixtures default to the platform RAM mount and fail if it is unavailable; BENCH_RAM_ROOT= selects SSD fixtures"
 	@echo "  make bench-full-swe REPEATS=10"
 	@echo "  make bench-smoke-saluki"
 	@echo "  make bench-full-saluki REPEATS=10"
@@ -137,6 +138,7 @@ bench-all: bench-go-env ## Run all benchmarks in small and large context with al
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
 		--semedit-skill="$(SEMEDIT_SKILL)" \
+		--semedit-batching="$(SEMEDIT_BATCHING)" \
 		--semedit-prewarm-verify="$(SEMEDIT_PREWARM_VERIFY)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \

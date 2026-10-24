@@ -860,11 +860,11 @@ func renderDocSemanticIntegrationFeedback(sb *strings.Builder, run *BenchRunResu
 		return
 	}
 	reflection := run.SemanticIntegrationReflection
-	sb.WriteString("**Semedit integration feedback (agent opinion, excluded from measurements):**\n\n")
+	sb.WriteString("**Semedit tooling feedback (agent opinion, excluded from measurements):**\n\n")
 	if reflection.Response != "" {
 		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))
 	}
 	if reflection.Error != "" {
-		fmt.Fprintf(sb, "<p><strong>Integration feedback unavailable:</strong> %s</p>\n\n", html.EscapeString(reflection.Error))
+		fmt.Fprintf(sb, "<p><strong>Tooling feedback unavailable:</strong> %s</p>\n\n", html.EscapeString(reflection.Error))
 	}
 }

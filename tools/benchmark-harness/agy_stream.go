@@ -387,7 +387,7 @@ func recordAgyStreamTurn(result *RunResult, cumulative, previous AgyResponse, tr
 	}
 	result.rawEvents = append(result.rawEvents, observed.rawEvents...)
 	result.ToolCalls = append(result.ToolCalls, observed.ToolCalls...)
-	result.ToolCount = len(result.ToolCalls)
+	refreshToolCallCounts(result)
 	result.InternalTurns = observed.InternalTurns
 	result.InitialLoadTurns = observed.InitialLoadTurns
 	result.MCPLoadTurns = observed.MCPLoadTurns

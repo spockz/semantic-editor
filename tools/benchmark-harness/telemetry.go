@@ -14,6 +14,22 @@ func appendToolCall(res *RunResult, call ToolCall) int {
 	return len(res.ToolCalls) - 1
 }
 
+func refreshToolCallCounts(res *RunResult) {
+	res.ToolCount = len(res.ToolCalls)
+	res.FailedToolCallCount = 0
+	res.FailedSemanticToolCallCount = 0
+	for _, call := range res.ToolCalls {
+		failed := call.TransportStatus == ToolCallStatusFailed || call.FunctionalStatus == ToolCallStatusFailed
+		if !failed {
+			continue
+		}
+		res.FailedToolCallCount++
+		if isSemanticTool(call.Name, call.Server) {
+			res.FailedSemanticToolCallCount++
+		}
+	}
+}
+
 func applyMCPStartupMetrics(res *RunResult, metrics *MCPStartupMetrics) {
 	if metrics == nil {
 		return
