@@ -13,29 +13,29 @@ stdout '"name":\s*"semantic_replace_body"'
 stdout '"name":\s*"semantic_batch"'
 
 stdin filtered.json
-exec semedit mcp --expose-tool-variant 'insert:function,insert:type'
+exec semedit mcp --enable-batching --expose-tool-variant 'insert:function,insert:type'
 stdout '"name":\s*"semantic_insert_function"'
 stdout '"name":\s*"semantic_insert_type"'
 ! stdout '"name":\s*"semantic_insert_decl"'
 
 stdin all-variants.json
-exec semedit mcp --expose-tool-variant '*:*'
+exec semedit mcp --enable-batching --expose-tool-variant '*:*'
 stdout '"name":\s*"semantic_insert_function"'
 stdout '"name":\s*"semantic_insert_field"'
 stdout '"name":\s*"semantic_replace_body"'
 
 stdin function-variants.json
-exec semedit mcp --expose-tool-variant '*:function'
+exec semedit mcp --enable-batching --expose-tool-variant '*:function'
 stdout '"name":\s*"semantic_insert_function"'
 stdout '"name":\s*"semantic_replace_body"'
 ! stdout '"name":\s*"semantic_insert_type"'
 
 stdin no-match.json
-! exec semedit mcp --expose-tool-variant 'remove:no_such_construct'
+! exec semedit mcp --enable-batching --expose-tool-variant 'remove:no_such_construct'
 stderr 'no registered|matched no'
 
 stdin malformed.json
-! exec semedit mcp --expose-tool-variant 'insert-function'
+! exec semedit mcp --enable-batching --expose-tool-variant 'insert-function'
 stderr 'invalid tool variant'
 
 -- base.json --

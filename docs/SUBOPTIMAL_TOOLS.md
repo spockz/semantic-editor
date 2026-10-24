@@ -50,6 +50,7 @@
 * Failure: Both Go edits applied, but automatic verification stopped because the configured Bash linter required explicit trust for the repository root.
 * Workaround: Re-run scoped verification with workspace trust enabled, then inspect the final source and tests.
 * Root cause: The batch implicitly ran all configured verification hooks, including a Bash source check unrelated to the Go-only edit, without the per-request workspace trust needed by that hook.
+
 ## 2026-10-24 semantic construct replacement rejected a grouped var declaration
 
 * Tool: `semantic_replace_construct`, kind `var`.
@@ -6697,6 +6698,7 @@ Every extracted attempt is listed separately. event is the complete recorded too
 * Observed failure: selecting the literal with discriminator `analysisTranscriptTurn` returned `literal selector matched 0 composites`; no edit was applied.
 * Workaround: add the `RawEvents` initializer field with a narrowly scoped source patch after locating the exact literal.
 * Root cause: the construct selector did not accept the Go type name as a matching discriminator for this composite literal.
+
 ## Current implementation session
 
 | Tool | Target | Observed failure | Workaround | Root cause |

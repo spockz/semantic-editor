@@ -1,10 +1,10 @@
 # Removal consumes prior caller overlays, supports a subsequent body edit, and preserves an earlier child when a later removal refuses.
 stdin input.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 ! stdout '"isError":true'
 stdout '"applied_working"'
 stdin refusal.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout 'removed parameter is used'
 cmp service.go .scratch/want/service.txt

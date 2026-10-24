@@ -1,13 +1,8 @@
 <!-- Defines which benchmark observations the harness derives mechanically and where agent interpretation remains necessary. -->
 # ADR-0077: Deterministic Benchmark Evidence Analysis
 
-## Status
-
-Accepted
-
-## Date
-
-2026-10-19
+* **Status**: Accepted
+* **Date**: 2026-10-19
 
 <!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
 | Key | Value |

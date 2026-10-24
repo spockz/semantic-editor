@@ -191,9 +191,9 @@ func TestDirectOperationUnknownParameterErrorIsActionable(t *testing.T) {
 }
 
 func TestRenameUnknownNewNameParameterDoesNotSuggestTo(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_rename")
 	if !ok {
-		t.Fatal("semantic_rename is not registered")
+		t.Fatal("refactor_rename is not registered")
 	}
 	_, err := entry.Parse(map[string]any{"symbol": "Value", "new_name": "RenamedValue"})
 	if err == nil {

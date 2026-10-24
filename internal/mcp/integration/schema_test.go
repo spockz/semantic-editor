@@ -151,7 +151,7 @@ func TestMCPBatchingFeatureToggleAdjustsCatalogAndRejectsCalls(t *testing.T) {
 	if _, ok := byName["semantic_batch"]; !ok {
 		t.Fatal("enabled catalog omitted semantic_batch")
 	}
-	rename := byName["semantic_rename"]
+	rename := byName["refactor_rename"]
 	if !strings.Contains(rename["description"].(string), "semantic_batch") {
 		t.Fatalf("enabled operation description omitted batch guidance: %v", rename["description"])
 	}

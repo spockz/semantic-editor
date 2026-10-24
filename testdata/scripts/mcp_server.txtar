@@ -1,9 +1,14 @@
-# Test MCP initialize and tools/list over stdio
+# tools/list via `exec semedit mcp --tool-profile full --live-reload --enable-batching` asserts `stdout '"name":\s*"refactor_encapsulate_field"'`, `stdout '"name":\s*"refactor_make_type_explicit"'`, `stdout '"name":\s*"refactor_promote_local_to_const"'`, `stdout '"name":\s*"semantic_search_adrs"'`, `stdout '"name":\s*"semantic_generate_adr_index"'`, `stdout '"name":\s*"semantic_batch"'`, and `stdout '"name":\s*"semantic_reload"'`.
 stdin input.json
 exec semedit mcp --tool-profile full --live-reload --enable-batching
 stdout '"name":\s*"semedit"'
 stdout '"name":\s*"refactor_rename"'
 stdout '"name":\s*"refactor_make_static"'
+stdout '"name":\s*"refactor_encapsulate_field"'
+stdout '"name":\s*"refactor_make_type_explicit"'
+stdout '"name":\s*"refactor_promote_local_to_const"'
+stdout '"name":\s*"semantic_search_adrs"'
+stdout '"name":\s*"semantic_generate_adr_index"'
 stdout '"name":\s*"semantic_verify"'
 stdout '"name":\s*"semantic_lookup"'
 stdout '"name":\s*"semantic_inspect_symbol"'
@@ -72,3 +77,12 @@ package main
 
 -- src/main/java/App.java --
 class App {}
+
+-- Cargo.toml --
+[package]
+name = "catalog-fixture"
+version = "0.1.0"
+edition = "2024"
+
+-- src/lib.rs --
+pub fn catalog_fixture() {}
