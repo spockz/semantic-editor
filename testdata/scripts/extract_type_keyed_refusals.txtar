@@ -1,0 +1,144 @@
+# WHY: Unsupported keyed layouts, scope capture, comments, directives, and overlapping rewrites leave all input bytes intact.
+cp .scratch/cases/comment.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'comments inside owner literals'
+cmp record.go .scratch/cases/comment.txt
+cp .scratch/cases/shadow.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'generated type "recordState" is shadowed'
+cmp record.go .scratch/cases/shadow.txt
+cp .scratch/cases/overlap.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'extraction edits overlap'
+cmp record.go .scratch/cases/overlap.txt
+cp .scratch/cases/nested.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'extraction edits overlap'
+cmp record.go .scratch/cases/nested.txt
+cp .scratch/cases/directive.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'source-line directives'
+cmp record.go .scratch/cases/directive.txt
+cp .scratch/cases/positional.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'unkeyed record literals'
+cmp record.go .scratch/cases/positional.txt
+cp .scratch/cases/alias.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'explicit selected owner type'
+cmp record.go .scratch/cases/alias.txt
+cp .scratch/cases/implicit.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'explicit selected owner type'
+cmp record.go .scratch/cases/implicit.txt
+cp .scratch/cases/valid.txt record.go
+! exec semedit refactor-extract-type --file record.go --symbol int --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'generated type "int" is shadowed'
+cmp record.go .scratch/cases/valid.txt
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state --expected-revision stale
+stderr 'expected_revision does not match'
+cmp record.go .scratch/cases/valid.txt
+cp .scratch/cases/use.txt use.go
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stderr 'referenced outside the selected file'
+cmp record.go .scratch/cases/valid.txt
+cmp use.go .scratch/cases/use.txt
+
+-- go.mod --
+module example.com/extracttypekeyedrefusal
+
+go 1.24
+-- .scratch/cases/comment.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+var value = record{first: 1 /* retain */, second: 2}
+-- .scratch/cases/shadow.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+func build() record {
+	type recordState = struct {
+		first int
+		second int
+	}
+	return record{first: 1, second: 2}
+}
+-- .scratch/cases/overlap.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+var original record
+var value = record{first: original.first, second: 2}
+-- .scratch/cases/nested.txt --
+package sample
+
+type record struct {
+	first *record
+	second int
+}
+
+var value = record{first: &record{second: 2}}
+-- .scratch/cases/directive.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+//line record.go:70
+var value = record{first: 1, second: 2}
+-- .scratch/cases/positional.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+var value = record{1, 2}
+-- .scratch/cases/valid.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+var value = record{first: 1, second: 2}
+-- .scratch/cases/alias.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+type alias = record
+var value = alias{first: 1, second: 2}
+-- .scratch/cases/implicit.txt --
+package sample
+
+type record struct {
+	first int
+	second int
+}
+
+var values = []record{{first: 1, second: 2}}
+-- .scratch/cases/use.txt --
+package sample
+
+var secondValue = record{first: 3, second: 4}

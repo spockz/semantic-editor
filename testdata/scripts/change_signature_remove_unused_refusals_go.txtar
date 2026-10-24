@@ -1,0 +1,138 @@
+# Refused removal preserves the target and every caller, including a safe caller preceding an unsafe sibling.
+cp service.go .scratch/service.txt
+cp calls.go .scratch/calls.txt
+! exec semedit refactor-change-signature --file service.go --symbol keep --expected-revision stale --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'expected_revision does not match'
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[]'
+stderr 'remove exactly one'
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"renamed","type":"int"}}]'
+stderr 'preserve surviving parameter'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/calls.txt
+
+cp .scratch/used-service.txt service.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'removed parameter is used'
+cmp service.go .scratch/used-service.txt
+cmp calls.go .scratch/calls.txt
+cp .scratch/captured-service.txt service.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'removed parameter is used'
+cmp service.go .scratch/captured-service.txt
+cmp calls.go .scratch/calls.txt
+cp .scratch/written-service.txt service.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'removed parameter is used'
+cmp service.go .scratch/written-service.txt
+cmp calls.go .scratch/calls.txt
+cp .scratch/service.txt service.go
+
+cp .scratch/variable-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'compiler-proven constant'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/variable-calls.txt
+cp .scratch/effect-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'compiler-proven constant'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/effect-calls.txt
+cp .scratch/indirect-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'function values and indirect callers are unsupported'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/indirect-calls.txt
+cp .scratch/comment-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'call comments are unsupported'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/comment-calls.txt
+cp .scratch/import-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'imported and not used'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/import-calls.txt
+cp .scratch/calls.txt calls.go
+cp .scratch/inactive.txt inactive_other.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'inactive source variant'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/calls.txt
+cmp inactive_other.go .scratch/inactive.txt
+rm inactive_other.go
+
+cp .scratch/nonscalar-service.txt service.go
+cp .scratch/nonscalar-calls.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol keep --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+stderr 'removed parameter must have a basic scalar type'
+cmp service.go .scratch/nonscalar-service.txt
+cmp calls.go .scratch/nonscalar-calls.txt
+
+-- go.mod --
+module example.com/removalrefusals
+
+go 1.24
+-- service.go --
+// WHY: Keep one safe direct caller in the target file so late caller refusals prove zero writes.
+package sample
+
+func keep(value int, legacy int) int { return value }
+func first() int { return keep(3, 1) }
+-- calls.go --
+// WHY: Supply independent caller evidence for an all-output refusal.
+package sample
+
+func second() int { return keep(4, 2) }
+-- .scratch/used-service.txt --
+package sample
+
+func keep(value int, legacy int) int { return value + legacy }
+func first() int { return keep(3, 1) }
+-- .scratch/captured-service.txt --
+package sample
+
+func keep(value int, legacy int) int { use := func() int { return legacy }; return value + use() }
+func first() int { return keep(3, 1) }
+-- .scratch/written-service.txt --
+package sample
+
+func keep(value int, legacy int) int { legacy = value; return value }
+func first() int { return keep(3, 1) }
+-- .scratch/variable-calls.txt --
+package sample
+
+func second(legacy int) int { return keep(4, legacy) }
+-- .scratch/effect-calls.txt --
+package sample
+
+func legacy() int { panic("must not be discarded") }
+func second() int { return keep(4, legacy()) }
+-- .scratch/indirect-calls.txt --
+package sample
+
+var indirect = keep
+-- .scratch/comment-calls.txt --
+package sample
+
+func second() int { return keep(4, 2 /* keep */) }
+-- .scratch/inactive.txt --
+//go:build semedit_removal_inactive
+
+package sample
+
+func inactive() int { return keep(5, 3) }
+-- .scratch/import-calls.txt --
+package sample
+
+import "time"
+
+func second() int { return keep(4, int(time.Second)) }
+-- .scratch/nonscalar-service.txt --
+package sample
+
+func keep(value int, legacy *int) int { return value }
+func first() int { return keep(3, nil) }
+-- .scratch/nonscalar-calls.txt --
+package sample
+
+func second() int { return keep(4, nil) }

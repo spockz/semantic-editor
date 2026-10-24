@@ -119,7 +119,7 @@ const (
 	toolFieldOutputSchema       = "outputSchema"
 	semanticInsertConstructTool = "semantic_insert_construct"
 	semanticExtractVariableTool = "semantic_extract_" + "variable"
-	semanticMoveConstructTool   = "semantic_move_construct"
+	semanticMoveConstructTool   = "refactor_move_declaration"
 	additionalPropertiesKey     = "additionalProperties"
 )
 
@@ -656,7 +656,7 @@ func (s *Server) buildToolCatalog(root string) ([]map[string]any, error) {
 		}
 		inputSchema := tool[toolFieldInputSchema].(map[string]any)
 		addWorkspaceRootInput(inputSchema)
-		if s.batchingEnabled && entry.Batchable {
+		if s.batchingEnabled && entry.Batchable && (!entry.ReadOnly || batchReadAllowedForLanguages(entry, activeLanguages)) {
 			batchable = append(batchable, entry)
 			tool[toolFieldDescription] = appendToolDescription(tool[toolFieldDescription].(string), "This operation can also run as an ordered step in semantic_batch.")
 			inputSchema[schemaDescriptionKey] = appendToolDescription(inputSchemaDescription(inputSchema), "The same arguments are accepted when this operation runs as a semantic_batch step.")
@@ -692,6 +692,13 @@ func (s *Server) buildToolCatalog(root string) ([]map[string]any, error) {
 	return tools, nil
 }
 
+func batchReadAllowedForLanguages(entry operation.Entry, languages []backend.LanguageID) bool {
+	if entry.Key != "lookup" {
+		return false
+	}
+	return slices.Contains(languages, backend.LanguageGo) || slices.Contains(languages, backend.LanguageJava) || slices.Contains(languages, backend.LanguageRust) || slices.Contains(languages, backend.LanguageScala)
+}
+
 func (s *Server) exposesEntry(entry operation.Entry) bool {
 	if s.toolProfile == "full" {
 		return true
@@ -704,22 +711,28 @@ func (s *Server) exposesEntry(entry operation.Entry) bool {
 }
 
 var baseToolKeys = map[string]bool{
-	"semantic_insert_construct":  true,
-	"semantic_replace_construct": true,
-	"semantic_remove_construct":  true,
-	semanticMoveConstructTool:    true,
-	"semantic_rename":            true,
-	"semantic_lookup":            true,
-	"semantic_inspect_symbol":    true,
-	"semantic_outline":           true,
-	"semantic_workspace_outline": true,
-	"semantic_find_references":   true,
-	"semantic_change_signature":  true,
-	"semantic_extract_function":  true,
-	"semantic_set_doc_comment":   true,
-	"semantic_verify":            true,
-	"semantic_snapshot":          true,
-	"semantic_undo":              true,
+	"semantic_insert_construct":   true,
+	"semantic_replace_construct":  true,
+	"semantic_remove_construct":   true,
+	semanticMoveConstructTool:     true,
+	"refactor_rename":             true,
+	"semantic_lookup":             true,
+	"semantic_inspect_symbol":     true,
+	"semantic_outline":            true,
+	"semantic_workspace_outline":  true,
+	"semantic_find_references":    true,
+	"refactor_change_signature":   true,
+	"refactor_extract_callable":   true,
+	"refactor_extract_value":      true,
+	"refactor_inline_callable":    true,
+	"refactor_inline_value":       true,
+	"refactor_move_file":          true,
+	"refactor_extract_interface":  true,
+	"refactor_implement_contract": true,
+	"semantic_set_doc_comment":    true,
+	"semantic_verify":             true,
+	"semantic_snapshot":           true,
+	"semantic_undo":               true,
 }
 
 func (s *Server) backendsForLanguages(languages []backend.LanguageID) []backend.Backend {
@@ -1527,7 +1540,7 @@ func (s *Server) dispatchStagedToolCall(ctx context.Context, root string, entry 
 			call.Ctx = operation.WithMutationObserver(call.Ctx, func(context.Context) error { return nil })
 		}
 	}
-	return requestServer.registry.Dispatch(call, entry.Key, raw)
+	return requestServer.registry.DispatchEntry(call, entry, raw)
 }
 
 func isStageControl(key string) bool {
@@ -1644,7 +1657,7 @@ func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessag
 		return
 	}
 	compactMoveFile := false
-	if entry.Key == "move_file" {
+	if entry.Key == "move_file" || entry.Key == "refactor_move_file" {
 		if edit, ok := operation.DiagnosticFileEditResult(result); ok {
 			text = moveFileResponseText(edit, fields["diagnostic_report"])
 			compactMoveFile = true

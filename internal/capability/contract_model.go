@@ -234,10 +234,12 @@ const (
 	FeatureScaffold
 	FeatureAssertions
 	FeatureRepairImports
-	FeatureStaging     FeatureSet = 1 << 19
-	FeaturePublication FeatureSet = 1 << 20
+	FeatureStaging        FeatureSet = 1 << 19
+	FeaturePublication    FeatureSet = 1 << 20
+	FeatureDecisionSearch FeatureSet = 1 << 21
+	FeatureDocumentIndex  FeatureSet = 1 << 22
 )
-const allFeatures = FeatureLookup | FeatureOutline | FeatureInspect | FeatureASTEdit | FeatureTypedRefactor | FeatureRename | FeatureFormat | FeatureOrganizeImports | FeatureDiagnostics | FeatureProjectHooks | FeatureCompile | FeatureTest | FeatureSnapshot | FeatureRestore | FeatureAddDependency | FeatureScaffold | FeatureAssertions | FeatureRepairImports | FeatureReferences | FeatureStaging | FeaturePublication
+const allFeatures = FeatureLookup | FeatureOutline | FeatureInspect | FeatureASTEdit | FeatureTypedRefactor | FeatureRename | FeatureFormat | FeatureOrganizeImports | FeatureDiagnostics | FeatureProjectHooks | FeatureCompile | FeatureTest | FeatureSnapshot | FeatureRestore | FeatureAddDependency | FeatureScaffold | FeatureAssertions | FeatureRepairImports | FeatureReferences | FeatureStaging | FeaturePublication | FeatureDecisionSearch | FeatureDocumentIndex
 
 // FeatureReferences reports references using the active module build scope.
 const FeatureReferences FeatureSet = 1 << 18
@@ -272,6 +274,8 @@ func (f FeatureSet) Descriptions() []string {
 		{uint64(FeatureReferences), "references"},
 		{uint64(FeatureStaging), "volatile staging"},
 		{uint64(FeaturePublication), "publication"},
+		{uint64(FeatureDecisionSearch), "decision search"},
+		{uint64(FeatureDocumentIndex), "document index"},
 	})
 }
 

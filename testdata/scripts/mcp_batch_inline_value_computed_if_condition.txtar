@@ -1,0 +1,45 @@
+# Inline a pure computed bool into the complete if condition after a buffered body replacement.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp condition.go .scratch/want/condition.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedif
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"condition.go","symbol":"ShouldProcess","body":"enabled := value != 0 \u0026\u0026 10/value > 1\nif enabled {\n\treturn true\n}\nreturn false"}},{"tool":"refactor_inline_value","params":{"file":"condition.go","symbol":"enabled","in_function":"ShouldProcess"}}]}}}
+-- condition.go --
+package condition
+
+func ShouldProcess(value int) bool {
+	return value > 0
+}
+-- .scratch/want/condition.go --
+package condition
+
+func ShouldProcess(value int) bool {
+	if value != 0 && 10/value > 1 {
+		return true
+	}
+	return false
+}
+-- condition_test.go --
+package condition
+
+import "testing"
+
+func TestShouldProcess(t *testing.T) {
+	for _, test := range []struct {
+		value int
+		want  bool
+	}{{value: 0, want: false}, {value: 5, want: true}, {value: 10, want: false}} {
+		if got := ShouldProcess(test.value); got != test.want {
+			t.Errorf("ShouldProcess(%d) = %t, want %t", test.value, got, test.want)
+		}
+	}
+}

@@ -1,0 +1,112 @@
+# Inline a pure computed scalar into its sole immediate direct go-call argument before goroutine start.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Build
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Combine
+stderr 'binding requires one argument to an immediate direct go call'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Method
+stderr 'inline call target must be a direct function name'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Dynamic
+stderr 'inline call target must resolve to a declared function or builtin'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedgo
+
+go 1.23
+-- calc.go --
+package calc
+
+type Count int
+
+var captured chan Count
+
+func capture(value Count) { captured <- value }
+
+type recorder struct{}
+
+func (recorder) record(Count) {}
+
+var receiver recorder
+
+func combine(Count, Count) {}
+
+func Build(seed Count) {
+	value := seed + 1
+	go capture(value)
+	seed = 99
+}
+
+func Combine(seed Count) {
+	value := seed + 1
+	go combine(seed, value)
+}
+
+func Method(seed Count) {
+	value := seed + 1
+	go receiver.record(value)
+}
+
+func Dynamic(callback func(Count), seed Count) {
+	value := seed + 1
+	go callback(value)
+}
+-- .scratch/want/calc.go --
+package calc
+
+type Count int
+
+var captured chan Count
+
+func capture(value Count) { captured <- value }
+
+type recorder struct{}
+
+func (recorder) record(Count) {}
+
+var receiver recorder
+
+func combine(Count, Count) {}
+
+func Build(seed Count) {
+	go capture(seed + 1)
+	seed = 99
+}
+
+func Combine(seed Count) {
+	value := seed + 1
+	go combine(seed, value)
+}
+
+func Method(seed Count) {
+	value := seed + 1
+	go receiver.record(value)
+}
+
+func Dynamic(callback func(Count), seed Count) {
+	value := seed + 1
+	go callback(value)
+}
+-- calc_test.go --
+package calc
+
+import (
+	"testing"
+	"time"
+)
+
+func TestBuildKeepsGoArgumentValue(t *testing.T) {
+	captured = make(chan Count, 1)
+	Build(5)
+	select {
+	case got := <-captured:
+		if got != 6 {
+			t.Fatalf("captured = %v, want 6", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("goroutine did not report its argument")
+	}
+}

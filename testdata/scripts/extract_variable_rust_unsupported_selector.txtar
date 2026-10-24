@@ -1,0 +1,21 @@
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol total --in-function run --discriminator '1 + 2' --construct-path invalid/path --expected-revision 0000000000000000000000000000000000000000000000000000000000000000
+stderr 'does not support construct_path'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-selector-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(1 + 2);
+}
+
+fn consume(value: i32) {}
+-- want/lib.rs --
+fn run() {
+    consume(1 + 2);
+}
+
+fn consume(value: i32) {}

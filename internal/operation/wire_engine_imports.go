@@ -269,7 +269,6 @@ var organizeImportsFileConsumers = []string{
 	semanticRemoveConstructToolName, semanticInsertCaseToolName, semanticInsertFunctionToolName,
 	semanticInsertTypeToolName, semanticInsertDeclToolName, semanticInsertDeclarationToolName,
 	semanticInsertConstructToolName, semanticReplaceDeclToolName, semanticExtractFunctionToolName,
-	semanticExtractConstantToolName,
 	semanticExtractVariableToolName, semanticInlineVariableToolName,
 	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticInspectConstructToolName, semanticAssertionModeToolName,
 }

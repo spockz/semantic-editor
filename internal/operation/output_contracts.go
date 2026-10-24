@@ -7,30 +7,34 @@ var discriminatorOutputConsumers = []string{
 }
 
 var functionOutputConsumers = []string{
-	"semantic_extract_constant", "semantic_extract_function", "semantic_extract_variable",
+	canonicalMakeTypeExplicitKey,
+	semanticExtractFunctionToolName, semanticExtractVariableToolName,
 	semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName,
 	semanticInspectConstructToolName, semanticRemoveConstructToolName, semanticReplaceConstructToolName,
 }
 
 var symbolOutputConsumers = []string{
-	"semantic_change_signature", semanticFindReferencesToolName, semanticInlineFunctionToolName,
-	"semantic_inline_variable", "semantic_inspect_symbol", "semantic_introduce_parameter",
-	"semantic_introduce_parameter_object", "semantic_lookup", "semantic_migrate_type",
+	canonicalMakeTypeExplicitKey,
+	canonicalChangeSignatureKey, semanticFindReferencesToolName, semanticInlineFunctionToolName,
+	semanticInlineVariableToolName, semanticInspectSymbolToolName, "refactor_introduce_parameter",
+	"refactor_introduce_parameter_object", semanticLookupToolName, semanticMigrateTypeToolName,
 	semanticMoveConstructToolName, semanticRemoveConstructToolName, semanticRenameToolName,
 	semanticReplaceBodyToolName, semanticReplaceConstructToolName, semanticReplaceDeclToolName,
+	canonicalMakeStaticKey,
 }
 
 var fileOutputConsumers = []string{
-	semanticAssertionModeToolName, "semantic_change_signature", semanticExtractConstantToolName,
+	canonicalMakeTypeExplicitKey,
+	semanticAssertionModeToolName, canonicalChangeSignatureKey,
 	semanticExtractFunctionToolName, semanticExtractVariableToolName, semanticFindReferencesToolName,
 	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticInsertCaseToolName,
 	semanticInsertConstructToolName, semanticInsertDeclToolName, semanticInsertDeclarationToolName,
 	semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInspectSymbolToolName,
 	semanticInspectConstructToolName,
-	"semantic_introduce_parameter", "semantic_introduce_parameter_object", "semantic_lookup",
+	"refactor_introduce_parameter", "refactor_introduce_parameter_object", semanticLookupToolName,
 	semanticMigrateTypeToolName, semanticMoveConstructToolName, semanticRemoveConstructToolName,
 	semanticRenameToolName, semanticReplaceBodyToolName, semanticReplaceConstructToolName,
-	"semantic_replace_decl", "semantic_verify",
+	"semantic_replace_decl", "semantic_verify", canonicalMakeStaticKey,
 }
 
 func outputContinuation(field string, role ParameterRole, consumers []string) OutputContinuation {

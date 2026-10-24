@@ -32,7 +32,7 @@ func extractionTargetValidator(key string, raw map[string]any, selectorKey strin
 				return err
 			}
 			return astedit.ValidateVariableExtractionTarget(ctx, resolveWorkPath(project.RootDir, project.File), request.InFunction, request.Symbol, astedit.ExtractVariableOptions{
-				Discriminator: request.Discriminator, ConstructPath: request.ConstructPath, ExpectedRevision: request.ExpectedRevision,
+				Discriminator: request.Discriminator, ConstructPath: request.ConstructPath, EndConstructPath: request.EndConstructPath, ExpectedRevision: request.ExpectedRevision,
 			})
 		}
 	}

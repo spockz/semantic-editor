@@ -411,7 +411,7 @@ func (m *stageManager) Drop(ctx context.Context, root, stepID string) (operation
 			return operation.StageReceipt{}, err
 		}
 		call := operation.CallContext{Ctx: sourcebuf.WithBuffer(ctx, candidate), WorkDir: state.key.root, Project: state.project, Registry: m.server.registry, Service: m.server.service, InBatch: true, DeferImports: true, DeferVerification: true, AllowedLanguages: m.server.enabledLanguages}
-		if _, err := m.server.registry.Dispatch(call, entry.Key, raw); err != nil {
+		if _, err := m.server.registry.DispatchEntry(call, entry, raw); err != nil {
 			return operation.StageReceipt{}, invalidateStagedView(ctx, fmt.Errorf("replay staged step %s: %w", step.id, operation.NativeTargetError(err)))
 		}
 		if err := base.MergeReadSetFrom(candidate); err != nil {
@@ -448,12 +448,13 @@ func (m *stageManager) Commit(ctx context.Context, root string, trusted, skipHoo
 		return operation.StageCommitResult{}, err
 	}
 	verifyOptions := map[string]any{trustWorkspaceField: trusted}
+	configurationOptions := make(map[string]any)
 	for _, step := range state.steps {
 		var raw map[string]any
 		if err := json.Unmarshal(step.params, &raw); err != nil {
 			return operation.StageCommitResult{}, fmt.Errorf("decode staged verification options: %w", err)
 		}
-		if err := mergeBatchVerificationOptions(verifyOptions, raw); err != nil {
+		if err := mergeBatchVerificationOptions(verifyOptions, configurationOptions, raw); err != nil {
 			return operation.StageCommitResult{}, err
 		}
 	}
@@ -623,7 +624,7 @@ func (m *stageManager) executeStagedOperation(ctx context.Context, state *stageS
 	call.InBatch = true
 	call.DeferImports = true
 	call.DeferVerification = true
-	value, err := m.server.registry.Dispatch(call, entry.Key, raw)
+	value, err := m.server.registry.DispatchEntry(call, entry, raw)
 	if err != nil {
 		return nil, invalidateStagedView(ctx, err)
 	}

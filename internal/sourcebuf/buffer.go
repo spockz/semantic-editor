@@ -66,6 +66,7 @@ type treeScope struct {
 	root, extensions string
 	exclusions       string
 	recursive        bool
+	sourceTree       bool
 }
 
 // ChangedPaths reports outputs whose working bytes differ from their disk preimages.
@@ -301,11 +302,6 @@ func (b *Buffer) MergeReadSetFrom(candidate *Buffer) error {
 			return fmt.Errorf("%w: source alias %s changed", ErrConflict, alias)
 		}
 	}
-	for root, files := range snapshot.trees {
-		if prior, ok := b.trees[root]; ok && !maps.Equal(prior, files) {
-			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root.root)
-		}
-	}
 	for path, state := range snapshot.files {
 		if prior, ok := b.files[path]; ok && !bytes.Equal(prior.original, state.original) {
 			return fmt.Errorf("%w: source preimage differs for %s", ErrConflict, path)
@@ -317,6 +313,10 @@ func (b *Buffer) MergeReadSetFrom(candidate *Buffer) error {
 		}
 	}
 	for root, files := range snapshot.trees {
+		if existing, ok := b.trees[root]; ok {
+			maps.Copy(existing, files)
+			continue
+		}
 		b.trees[root] = maps.Clone(files)
 	}
 	maps.Copy(b.aliases, snapshot.aliases)
@@ -327,7 +327,7 @@ func (b *Buffer) MergeReadSetFrom(candidate *Buffer) error {
 	return nil
 }
 
-// AssertDisk rejects changed source sets and disk preimages used by semantic analysis.
+// AssertDisk rejects changed disk preimages for files used by semantic analysis.
 func (b *Buffer) AssertDisk() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -376,7 +376,7 @@ func (b *Buffer) publishLocked(ctx context.Context) (published int, err error) {
 			file.Discard()
 		}
 		if published == 0 {
-			cleanupErr := removeUnpublishedDirectories(publication.createdDirs)
+			cleanupErr := b.removeUnpublishedDirectories(publication.createdDirs)
 			if cleanupErr != nil {
 				err = errors.Join(err, cleanupErr)
 			}
@@ -439,6 +439,7 @@ func (b *Buffer) createPublicationParents(path string, created map[string]bool, 
 			if ownedErr := b.recordOwnedNewFileParent(directory); ownedErr != nil {
 				return ownedErr
 			}
+			b.recordOwnedSourceDirectory(directory)
 			if !created[directory] {
 				*createdDirs = append(*createdDirs, directory)
 				created[directory] = true
@@ -483,11 +484,7 @@ func regularOutputDirectory(directory string) error {
 }
 
 func (b *Buffer) publishStaged(ctx context.Context, publication stagedPublication) (int, error) {
-	temporary := make([]string, 0, len(publication.files))
-	for _, file := range publication.files {
-		temporary = append(temporary, file.TemporaryPath())
-	}
-	if diskErr := b.assertDisk(temporary...); diskErr != nil {
+	if diskErr := b.assertDisk(); diskErr != nil {
 		return 0, diskErr
 	}
 	for index, file := range publication.files {
@@ -521,14 +518,15 @@ func (b *Buffer) recordPublishedFile(path string) error {
 	for root, files := range b.trees {
 		rel, relErr := filepath.Rel(root.root, path)
 		if relErr == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) &&
-			(root.recursive || filepath.Dir(path) == root.root) && root.includes(path) {
-			files[path] = true
+			(root.recursive || filepath.Dir(path) == root.root) && root.includes(path) &&
+			sourceSetDirectoryVisible(root, filepath.Dir(path)) {
+			files[sourceSetFileEntry(path)] = true
 		}
 	}
 	return nil
 }
 
-func removeUnpublishedDirectories(directories []string) error {
+func (b *Buffer) removeUnpublishedDirectories(directories []string) error {
 	slices.SortFunc(directories, func(left, right string) int {
 		leftDepth := strings.Count(left, string(filepath.Separator))
 		rightDepth := strings.Count(right, string(filepath.Separator))
@@ -541,11 +539,32 @@ func removeUnpublishedDirectories(directories []string) error {
 	for _, directory := range directories {
 		removeErr := os.Remove(directory)
 		if removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+			for scope, files := range b.trees {
+				if scope.sourceTree {
+					delete(files, sourceSetDirectoryEntry(directory))
+				}
+			}
 			continue
 		}
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("remove unpublished output directory %s: %w", directory, removeErr))
 	}
 	return cleanupErr
+}
+
+func (b *Buffer) recordOwnedSourceDirectory(directory string) {
+	for scope, files := range b.trees {
+		if !scope.sourceTree {
+			continue
+		}
+		relative, err := filepath.Rel(scope.root, directory)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || relative == "." {
+			continue
+		}
+		if !sourceSetDirectoryVisible(scope, directory) {
+			continue
+		}
+		files[sourceSetDirectoryEntry(directory)] = true
+	}
 }
 
 // AuthorizeWrites permits outputs beneath a root without reading unrelated files.
@@ -868,17 +887,27 @@ func Dirty(ctx context.Context, path string) bool {
 	return ok && !bytes.Equal(state.original, state.content)
 }
 
-// ObserveTree captures files and membership explicitly selected by a backend.
+// ObserveTree captures the files currently selected by a backend for analysis.
 func ObserveTree(ctx context.Context, root string, extensions ...string) error {
-	return observeTree(ctx, root, true, extensions)
+	return observeTree(ctx, root, true, false, extensions)
+}
+
+// ObserveSourceTree captures source files, directory entries, and symlink paths while retaining package vendor trees. New entries do not invalidate publication.
+func ObserveSourceTree(ctx context.Context, root string, extensions ...string) error {
+	return observeTree(ctx, root, true, true, extensions)
+}
+
+// ObserveSourceDirectory captures immediate source entries and child-directory membership. New entries do not invalidate publication.
+func ObserveSourceDirectory(ctx context.Context, root string, extensions ...string) error {
+	return observeTree(ctx, root, false, true, extensions)
 }
 
 // ObserveDirectory captures one package directory without selecting nested packages.
 func ObserveDirectory(ctx context.Context, root string, extensions ...string) error {
-	return observeTree(ctx, root, false, extensions)
+	return observeTree(ctx, root, false, false, extensions)
 }
 
-func observeTree(ctx context.Context, root string, recursive bool, extensions []string) error {
+func observeTree(ctx context.Context, root string, recursive, sourceTree bool, extensions []string) error {
 	buffer := FromContext(ctx)
 	if buffer == nil {
 		return nil
@@ -907,7 +936,7 @@ func observeTree(ctx context.Context, root string, recursive bool, extensions []
 	}
 	slices.Sort(filter)
 	filter = slices.Compact(filter)
-	scope := treeScope{root: root, extensions: strings.Join(slices.Compact(extensions), ","), recursive: recursive, exclusions: strings.Join(filter, "\x00")}
+	scope := treeScope{root: root, extensions: strings.Join(slices.Compact(extensions), ","), recursive: recursive, sourceTree: sourceTree, exclusions: strings.Join(filter, "\x00")}
 	if _, ok := buffer.trees[scope]; ok {
 		return nil
 	}
@@ -916,7 +945,11 @@ func observeTree(ctx context.Context, root string, recursive bool, extensions []
 		return err
 	}
 	for _, path := range slices.Sorted(maps.Keys(files)) {
-		if _, _, err := buffer.load(path); err != nil {
+		entryKind, entryPath := sourceSetEntry(path)
+		if entryKind != "file" {
+			continue
+		}
+		if _, _, err := buffer.load(entryPath); err != nil {
 			return err
 		}
 	}
@@ -981,6 +1014,24 @@ func Prepare(ctx context.Context, root string) (context.Context, *Buffer, bool, 
 		return nil, nil, false, fmt.Errorf("authorize buffered edit: %w", err)
 	}
 	return ctx, buffer, owned, nil
+}
+
+// ApplyAndPublish stages changes in the caller's buffer or publishes an owned buffer.
+// WHY: Language backends need one edit lifecycle without taking ownership of batch publication.
+func ApplyAndPublish(ctx context.Context, root, operation string, changes []Change) error {
+	if strings.TrimSpace(operation) == "" {
+		return fmt.Errorf("apply and publish buffered changes: operation context is required")
+	}
+	if err := Run(ctx, root, func(editCtx context.Context) error {
+		buffer := FromContext(editCtx)
+		if err := buffer.Apply(editCtx, changes); err != nil {
+			return fmt.Errorf("stage %s result: %w", operation, err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	return nil
 }
 
 func (b *Buffer) load(path string) (string, *fileState, error) {
@@ -1131,21 +1182,11 @@ func (b *Buffer) recordOwnedNewFileParent(directory string) error {
 	return nil
 }
 
-func (b *Buffer) assertDisk(ignored ...string) error {
+func (b *Buffer) assertDisk() error {
 	for path, expected := range b.aliases {
 		canonical, err := filepath.EvalSymlinks(path)
 		if err != nil || canonical != expected {
 			return fmt.Errorf("%w: source alias %s changed", ErrConflict, path)
-		}
-	}
-
-	for root, expected := range b.trees {
-		actual, err := sourceSet(root, ignored)
-		if err != nil {
-			return err
-		}
-		if !maps.Equal(actual, expected) {
-			return fmt.Errorf("%w: source set beneath %s changed", ErrConflict, root.root)
 		}
 	}
 	for _, path := range slices.Sorted(maps.Keys(b.files)) {
@@ -1217,13 +1258,26 @@ func sourceSet(scope treeScope, ignored []string) (map[string]bool, error) {
 			return fmt.Errorf("scan buffered source set: %w", err)
 		}
 		if entry.IsDir() {
-			if (SourceDirectoryFilter{exclusions: exclusions}).Skip(root, path) || (!scope.recursive && path != root) {
+			filter := SourceDirectoryFilter{exclusions: exclusions}
+			skip := filter.Skip(root, path)
+			if scope.sourceTree {
+				skip = filter.skipPackageArtifacts(root, path)
+			}
+			if skip {
+				return filepath.SkipDir
+			}
+			if scope.sourceTree {
+				files[sourceSetDirectoryEntry(path)] = true
+			}
+			if !scope.recursive && path != root {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if scope.includes(path) && !slices.Contains(ignored, path) {
-			files[path] = true
+		if scope.sourceTree && entry.Type()&os.ModeSymlink != 0 && !slices.Contains(ignored, path) {
+			files[sourceSetSymlinkEntry(path)] = true
+		} else if scope.includes(path) && !slices.Contains(ignored, path) {
+			files[sourceSetFileEntry(path)] = true
 		}
 		return nil
 	})
@@ -1231,6 +1285,54 @@ func sourceSet(scope treeScope, ignored []string) (map[string]bool, error) {
 		return nil, err
 	}
 	return files, nil
+}
+
+func sourceSetFileEntry(path string) string      { return "file\x00" + path }
+func sourceSetDirectoryEntry(path string) string { return "directory\x00" + path }
+func sourceSetSymlinkEntry(path string) string   { return "symlink\x00" + path }
+
+func sourceSetEntry(key string) (string, string) {
+	kind, path, ok := strings.Cut(key, "\x00")
+	if !ok {
+		return "file", key
+	}
+	return kind, path
+}
+
+func sourceSetDirectoryVisible(scope treeScope, directory string) bool {
+	relative, err := filepath.Rel(scope.root, directory)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return false
+	}
+	if !scope.recursive && directory != scope.root && filepath.Dir(directory) != scope.root {
+		return false
+	}
+	filter := SourceDirectoryFilter{exclusions: strings.Split(scope.exclusions, "\x00")}
+	for current := directory; current != scope.root; current = filepath.Dir(current) {
+		skip := filter.Skip(scope.root, current)
+		if scope.sourceTree {
+			skip = filter.skipPackageArtifacts(scope.root, current)
+		}
+		if skip {
+			return false
+		}
+	}
+	return true
+}
+
+func (filter SourceDirectoryFilter) skipPackageArtifacts(root, path string) bool {
+	if path == root {
+		return false
+	}
+	if slices.Contains(filter.exclusions, path) || sourcefiles.IsBenchmarkDataDirectory(path) {
+		return true
+	}
+	switch filepath.Base(path) {
+	case ".git", ".scratch":
+		return true
+	default:
+		return false
+	}
 }
 
 // SourceDirectoryFilter excludes generated runtime trees from source snapshots.

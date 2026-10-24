@@ -1,0 +1,24 @@
+# Java field extraction refuses in a batch before staging any source changes.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'java field extraction is unsupported'
+cmp src/Widget.java want/Widget.java
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"edits":[{"tool":"refactor_extract_value","params":{"language":"java","trust_workspace":true,"file":"src/Widget.java","symbol":"amount","kind":"field","in_function":"Widget.run()","discriminator":"1 + 2"}}]}}}
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    consume(1 + 2);
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    consume(1 + 2);
+  }
+}

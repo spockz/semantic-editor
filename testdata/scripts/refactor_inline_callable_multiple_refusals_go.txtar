@@ -1,0 +1,41 @@
+# WHY: Refusal contracts preserve caller bytes for ambiguous, stale, duplicate, and unsupported selected call contexts.
+! exec semedit refactor-inline-callable --file main.go --symbol adjust --call-site '{"file":"main.go","in_function":"RunAmbiguous","discriminator":"adjust()"}'
+stderr 'exactly one direct return call'
+cmp main.go .scratch/original.go
+! exec semedit refactor-inline-callable --file main.go --symbol adjust --call-site '{"file":"main.go","in_function":"Run","discriminator":"adjust()","expected_revision":"8f0d8561d596a3960e1fb22b0cd1e6c1df111a37cda5ff8ace3488e9518aba8c","occurrence_indices":[0,0]}'
+stderr 'unique'
+cmp main.go .scratch/original.go
+! exec semedit refactor-inline-callable --file main.go --symbol adjust --call-site '{"file":"main.go","in_function":"Run","discriminator":"adjust()","expected_revision":"0000000000000000000000000000000000000000000000000000000000000000","occurrence_indices":[0,1]}'
+stderr 'does not match captured caller source'
+cmp main.go .scratch/original.go
+
+-- go.mod --
+module example.com/inlinemultirefusal
+
+go 1.24
+-- main.go --
+package sample
+func adjust() int { return 1 }
+func Run() int {
+ first := adjust()
+ second := adjust()
+ return first + second
+}
+func RunAmbiguous() int {
+ if true { return 0 }
+ return adjust()
+ return adjust()
+}
+-- .scratch/original.go --
+package sample
+func adjust() int { return 1 }
+func Run() int {
+ first := adjust()
+ second := adjust()
+ return first + second
+}
+func RunAmbiguous() int {
+ if true { return 0 }
+ return adjust()
+ return adjust()
+}

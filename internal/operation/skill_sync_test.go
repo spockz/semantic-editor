@@ -3,6 +3,7 @@
 package operation_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	toolNameRegex   = regexp.MustCompile(`\b(semantic_[a-z0-9_]+|report_feedback)\b`)
+	toolNameRegex   = regexp.MustCompile(`\b((semantic|refactor)_[a-z0-9_]+|report_feedback)\b`)
 	backtickedRegex = regexp.MustCompile("`([^`]+)`")
 	kindValueRegex  = regexp.MustCompile(`kind:\s*"([^"]+)"`)
 	placeValueRegex = regexp.MustCompile(`placement:\s*"([^"]+)"`)
@@ -52,26 +53,44 @@ func TestSkillSchemaSynchronisation_NoUnknownToolsDocumented(t *testing.T) {
 
 	rootDir := findRepoRoot(t)
 	skillPath := filepath.Join(rootDir, "skills", "semedit", "SKILL.md")
-	content, err := os.ReadFile(skillPath)
-	if err != nil {
-		t.Fatalf("read %s: %v", skillPath, err)
+	referencesDir := filepath.Join(rootDir, "skills", "semedit", "references")
+	paths := []string{skillPath}
+	if err := filepath.WalkDir(referencesDir, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() && filepath.Ext(path) == ".md" {
+			paths = append(paths, path)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk skill references: %v", err)
 	}
 
 	registry := operation.DefaultRegistry()
-	matches := toolNameRegex.FindAllString(string(content), -1)
 	seen := make(map[string]bool)
-
-	for _, toolName := range matches {
-		if seen[toolName] {
-			continue
+	for _, path := range paths {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
 		}
-		seen[toolName] = true
+		matches := toolNameRegex.FindAllString(string(content), -1)
+		for _, toolName := range matches {
+			if seen[toolName] {
+				continue
+			}
+			seen[toolName] = true
 
-		if mcpProtocolTools[toolName] {
-			continue
-		}
-		if _, ok := registry.LookupMCP(toolName); !ok {
-			t.Errorf("skills/semedit/SKILL.md mentions unknown or unadvertised tool %q", toolName)
+			if mcpProtocolTools[toolName] {
+				continue
+			}
+			if _, ok := registry.LookupMCP(toolName); !ok {
+				relativePath, relErr := filepath.Rel(rootDir, path)
+				if relErr != nil {
+					t.Fatalf("resolve skill path %s: %v", path, relErr)
+				}
+				t.Errorf("%s mentions unknown or unadvertised tool %q", filepath.ToSlash(relativePath), toolName)
+			}
 		}
 	}
 }

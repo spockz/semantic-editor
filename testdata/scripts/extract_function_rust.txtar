@@ -1,0 +1,57 @@
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=1
+# Go master: extract_function.txtar. Rust currently accepts one direct call with literal-only arguments and verifies the rust-analyzer edit before staging.
+exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+stdout 'Extracted the Rust statement into a function through a rust-analyzer assist'
+stdout 'diagnostic_status: unavailable'
+cmp src/lib.rs want-lib.txt
+exec cp src/attributed.fixture src/lib.rs
+exec cp src/lib.rs before_attributed.txt
+! exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+stderr 'refuses files with unresolved imported or macro-expanded names'
+cmp src/lib.rs before_attributed.txt
+exec cp src/spaced_attribute.fixture src/lib.rs
+exec cp src/lib.rs before_spaced_attribute.txt
+! exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+stderr 'refuses files with unresolved imported or macro-expanded names'
+cmp src/lib.rs before_spaced_attribute.txt
+
+-- Cargo.toml --
+[package]
+name = "extract-function-fixture"
+version = "0.1.0"
+edition = "2021"
+build = false
+-- src/lib.rs --
+fn run() {
+    modify(1_i32 + 2_i32);
+}
+
+fn modify(value: i32) {}
+-- src/spaced_attribute.fixture --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+# /* comment */ [make_helpers] // emitted helpers
+struct Marker;
+
+fn consume(value: i32) {}
+-- want-lib.txt --
+fn run() {
+    extracted();
+}
+
+fn extracted() {
+    modify(1_i32 + 2_i32);
+}
+
+fn modify(value: i32) {}
+-- src/attributed.fixture --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+#[make_helpers] // emitted helpers
+struct Marker;
+
+fn consume(value: i32) {}

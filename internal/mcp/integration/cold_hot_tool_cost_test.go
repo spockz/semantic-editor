@@ -358,7 +358,7 @@ func (environment coldHotEnvironment) restore(tb testing.TB) {
 
 func coldHotResetSourceState(tb testing.TB, fixture managedMCPFixture, tool string, index int) {
 	switch tool {
-	case "semantic_rename":
+	case "refactor_rename":
 		from, _ := coldHotName(index)
 		source := "package sample\n\nfunc " + from + "() int { return 1 }\n"
 		coldHotWrite(tb, fixture.root, "value.go", source)
@@ -394,7 +394,7 @@ func coldHotToolCases() []coldHotTool {
 		{name: "file_outline", tool: "semantic_outline", cold: true, args: coldHotFixed(map[string]any{"path": "value.go"}), validate: coldHotBaseline("semantic_outline"), budget: 10 * time.Millisecond},
 		{name: "workspace_outline", tool: "semantic_workspace_outline", cold: true, args: coldHotFixed(map[string]any{"path": "."}), validate: coldHotBaseline("semantic_workspace_outline"), budget: 10 * time.Millisecond},
 		{name: "references", tool: "semantic_find_references", cold: true, args: coldHotFixed(map[string]any{"file": "value.go", "symbol": "Value"}), validate: coldHotBaseline("semantic_find_references"), budget: 10 * time.Millisecond},
-		{name: "rename", tool: "semantic_rename", cold: true, args: func(index int) map[string]any {
+		{name: "rename", tool: "refactor_rename", cold: true, args: func(index int) map[string]any {
 			from, to := coldHotName(index)
 			return map[string]any{"file": "value.go", "symbol": from, "to": to}
 		}, validate: coldHotRename, budget: time.Second},

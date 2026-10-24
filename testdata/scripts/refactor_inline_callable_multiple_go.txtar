@@ -1,0 +1,55 @@
+# WHY: Proves revision-bound selection inlines only the chosen Go calls, preserves call order, and emits the resulting event trace.
+exec semedit refactor-inline-callable --file main.go --symbol adjust --call-site '{"file":"main.go","in_function":"run","discriminator":"adjust()","expected_revision":"f5064fbdf3eb16bd06d69356d2cc6394133253a25a8786927fc87367958b4fc4","occurrence_indices":[0,1]}'
+stdout 'Successfully inlined 2 call sites'
+cmp main.go .scratch/want/main.go
+exec go run .
+stdout 'first:1,second:1,third:1'
+
+-- go.mod --
+module example.com/inlinemultiple
+
+go 1.24
+-- main.go --
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+func adjust() int { return 1 }
+
+func run() []string {
+	events := []string{}
+	first := adjust()
+	events = append(events, fmt.Sprintf("first:%d", first))
+	second := adjust()
+	events = append(events, fmt.Sprintf("second:%d", second))
+	third := adjust()
+	events = append(events, fmt.Sprintf("third:%d", third))
+	return events
+}
+
+func main() { fmt.Println(strings.Join(run(), ",")) }
+-- .scratch/want/main.go --
+package main
+
+import (
+	"fmt"
+	"strings"
+)
+
+func adjust() int { return 1 }
+
+func run() []string {
+	events := []string{}
+	first := int(1)
+	events = append(events, fmt.Sprintf("first:%d", first))
+	second := int(1)
+	events = append(events, fmt.Sprintf("second:%d", second))
+	third := adjust()
+	events = append(events, fmt.Sprintf("third:%d", third))
+	return events
+}
+
+func main() { fmt.Println(strings.Join(run(), ",")) }

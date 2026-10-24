@@ -1,0 +1,60 @@
+# Inline a pure scalar local into a go call in the same buffered body replacement.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp go.go .scratch/want/go.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedgo
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"go.go","symbol":"Launch","body":"value := input + 1\ngo capture(value)\ninput = 99"}},{"tool":"refactor_inline_value","params":{"file":"go.go","symbol":"value","in_function":"Launch"}}]}}}
+-- go.go --
+package gocall
+
+type Count int
+
+var captured chan Count
+
+func capture(value Count) { captured <- value }
+
+func Launch(input Count) {
+	return
+}
+-- .scratch/want/go.go --
+package gocall
+
+type Count int
+
+var captured chan Count
+
+func capture(value Count) { captured <- value }
+
+func Launch(input Count) {
+	go capture(input + 1)
+	input = 99
+}
+-- go_test.go --
+package gocall
+
+import (
+	"testing"
+	"time"
+)
+
+func TestLaunchKeepsGoArgumentValue(t *testing.T) {
+	captured = make(chan Count, 1)
+	Launch(5)
+	select {
+	case got := <-captured:
+		if got != 6 {
+			t.Fatalf("captured = %v, want 6", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("goroutine did not report its argument")
+	}
+}

@@ -1,0 +1,267 @@
+# Extract direct two-index slice-expression ranges with omitted and explicit bounds while preserving panic, iteration, and backing-array behavior.
+exec semedit refactor-extract-callable --file all.go --symbol walkAll --in-function WalkAll --kind function --start-line 4 --end-line 6
+cmp all.go want/all.go.txt
+exec semedit refactor-extract-callable --file from.go --symbol walkFrom --in-function WalkFrom --kind function --start-line 4 --end-line 6
+cmp from.go want/from.go.txt
+exec semedit refactor-extract-callable --file to.go --symbol walkTo --in-function WalkTo --kind function --start-line 4 --end-line 6
+cmp to.go want/to.go.txt
+exec semedit refactor-extract-callable --file bounded.go --symbol walkBounded --in-function WalkBounded --kind function --start-line 4 --end-line 6
+cmp bounded.go want/bounded.go.txt
+exec semedit refactor-extract-callable --file shadow.go --symbol walkShadow --in-function WalkShadow --kind function --start-line 4 --end-line 6
+cmp shadow.go want/shadow.go.txt
+exec semedit refactor-extract-callable --file mutation.go --symbol walkMutation --in-function WalkMutation --kind function --start-line 5 --end-line 10
+cmp mutation.go want/mutation.go.txt
+exec semedit refactor-extract-callable --file invalid.go --symbol walkInvalid --in-function WalkInvalid --kind function --start-line 4 --end-line 6
+cmp invalid.go want/invalid.go.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangesliceexpression
+
+go 1.23
+-- all.go --
+package sample
+
+func WalkAll(values Values) {
+	for index, value := range values[:] {
+		record("all", index, value, -1)
+	}
+}
+-- from.go --
+package sample
+
+func WalkFrom(values Values, low int) {
+	for index, value := range values[low:] {
+		record("from", index, value, low)
+	}
+}
+-- to.go --
+package sample
+
+func WalkTo(values Values, high int) {
+	for index, value := range values[:high] {
+		record("to", index, value, high)
+	}
+}
+-- bounded.go --
+package sample
+
+func WalkBounded(values Values, low, high int) {
+	for index, value := range values[low:high] {
+		record("bounded", index, value, low)
+	}
+}
+-- shadow.go --
+package sample
+
+func WalkShadow(values Values, low, high int) {
+	for low, value := range values[low:high] {
+		record("shadow", low, value, low)
+	}
+}
+-- mutation.go --
+package sample
+
+func WalkMutation(values Values, low, high int) {
+	alias = values[low:high]
+	for index, value := range values[low:high] {
+		if index == 0 {
+			mutateBacking()
+		}
+		record("mutation", index, value, low)
+	}
+}
+-- invalid.go --
+package sample
+
+func WalkInvalid(values Values, low, high int) {
+	for index, value := range values[low:high] {
+		record("invalid", index, value, low)
+	}
+}
+-- support.go --
+package sample
+
+type Values []int
+
+type Event struct {
+	Kind  string
+	Index int
+	Value int
+	Bound int
+}
+
+var events []Event
+var backing Values
+var alias Values
+var bodyEffects int
+
+func record(kind string, index, value, bound int) {
+	events = append(events, Event{Kind: kind, Index: index, Value: value, Bound: bound})
+	bodyEffects++
+}
+
+func mutateBacking() {
+	alias = alias[:1]
+	backing[3] = 99
+	alias = append(alias, 77)
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestSliceExpressionRangesPreserveGoBehavior(t *testing.T) {
+	events = nil
+	WalkAll(nil)
+	WalkAll(Values{})
+	if len(events) != 0 || bodyEffects != 0 {
+		t.Fatalf("nil and empty full slices: events=%v effects=%d", events, bodyEffects)
+	}
+
+	values := Values{100, 1, 2, 3, 4}
+	events = nil
+	WalkAll(values)
+	if !reflect.DeepEqual(events, []Event{{Kind: "all", Index: 0, Value: 100, Bound: -1}, {Kind: "all", Index: 1, Value: 1, Bound: -1}, {Kind: "all", Index: 2, Value: 2, Bound: -1}, {Kind: "all", Index: 3, Value: 3, Bound: -1}, {Kind: "all", Index: 4, Value: 4, Bound: -1}}) {
+		t.Fatalf("full-slice expression: %v", events)
+	}
+
+	events = nil
+	WalkFrom(values, 1)
+	if !reflect.DeepEqual(events, []Event{{Kind: "from", Index: 0, Value: 1, Bound: 1}, {Kind: "from", Index: 1, Value: 2, Bound: 1}, {Kind: "from", Index: 2, Value: 3, Bound: 1}, {Kind: "from", Index: 3, Value: 4, Bound: 1}}) {
+		t.Fatalf("omitted high bound: %v", events)
+	}
+
+	events = nil
+	WalkTo(values, 3)
+	if !reflect.DeepEqual(events, []Event{{Kind: "to", Index: 0, Value: 100, Bound: 3}, {Kind: "to", Index: 1, Value: 1, Bound: 3}, {Kind: "to", Index: 2, Value: 2, Bound: 3}}) {
+		t.Fatalf("omitted low bound: %v", events)
+	}
+
+	events = nil
+	WalkBounded(values, 1, 4)
+	if !reflect.DeepEqual(events, []Event{{Kind: "bounded", Index: 0, Value: 1, Bound: 1}, {Kind: "bounded", Index: 1, Value: 2, Bound: 1}, {Kind: "bounded", Index: 2, Value: 3, Bound: 1}}) {
+		t.Fatalf("explicit bounds and bound use in body: %v", events)
+	}
+
+	events = nil
+	WalkShadow(values, 1, 4)
+	if !reflect.DeepEqual(events, []Event{{Kind: "shadow", Index: 0, Value: 1, Bound: 0}, {Kind: "shadow", Index: 1, Value: 2, Bound: 1}, {Kind: "shadow", Index: 2, Value: 3, Bound: 2}}) {
+		t.Fatalf("bound name shadowed by range variable: %v", events)
+	}
+
+	backing = Values{100, 1, 2, 3, 4}
+	values = backing[1:5]
+	bodyEffects = 0
+	events = nil
+	WalkMutation(values, 1, 4)
+	wantMutation := []Event{{Kind: "mutation", Index: 0, Value: 2, Bound: 1}, {Kind: "mutation", Index: 1, Value: 77, Bound: 1}, {Kind: "mutation", Index: 2, Value: 4, Bound: 1}}
+	if !reflect.DeepEqual(events, wantMutation) || backing[3] != 77 || bodyEffects != 3 {
+		t.Fatalf("captured length/backing mutation: events=%v backing=%v effects=%d", events, backing, bodyEffects)
+	}
+
+	bodyEffects = 0
+	events = nil
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("invalid bounds did not panic")
+			}
+		}()
+		WalkInvalid(Values{1}, 0, 2)
+	}()
+	if bodyEffects != 0 || len(events) != 0 {
+		t.Fatalf("invalid bounds ran body effects: events=%v effects=%d", events, bodyEffects)
+	}
+}
+-- want/all.go.txt --
+package sample
+
+func WalkAll(values Values) {
+	walkAll(values)
+}
+
+func walkAll(values Values) {
+	for index, value := range values[:] {
+		record("all", index, value, -1)
+	}
+}
+-- want/from.go.txt --
+package sample
+
+func WalkFrom(values Values, low int) {
+	walkFrom(values, low)
+}
+
+func walkFrom(values Values, low int) {
+	for index, value := range values[low:] {
+		record("from", index, value, low)
+	}
+}
+-- want/to.go.txt --
+package sample
+
+func WalkTo(values Values, high int) {
+	walkTo(values, high)
+}
+
+func walkTo(values Values, high int) {
+	for index, value := range values[:high] {
+		record("to", index, value, high)
+	}
+}
+-- want/bounded.go.txt --
+package sample
+
+func WalkBounded(values Values, low, high int) {
+	walkBounded(values, low, high)
+}
+
+func walkBounded(values Values, low int, high int) {
+	for index, value := range values[low:high] {
+		record("bounded", index, value, low)
+	}
+}
+-- want/shadow.go.txt --
+package sample
+
+func WalkShadow(values Values, low, high int) {
+	walkShadow(values, low, high)
+}
+
+func walkShadow(values Values, low int, high int) {
+	for low, value := range values[low:high] {
+		record("shadow", low, value, low)
+	}
+}
+-- want/mutation.go.txt --
+package sample
+
+func WalkMutation(values Values, low, high int) {
+	alias = values[low:high]
+	walkMutation(values, low, high)
+}
+
+func walkMutation(values Values, low int, high int) {
+	for index, value := range values[low:high] {
+		if index == 0 {
+			mutateBacking()
+		}
+		record("mutation", index, value, low)
+	}
+}
+-- want/invalid.go.txt --
+package sample
+
+func WalkInvalid(values Values, low, high int) {
+	walkInvalid(values, low, high)
+}
+
+func walkInvalid(values Values, low int, high int) {
+	for index, value := range values[low:high] {
+		record("invalid", index, value, low)
+	}
+}

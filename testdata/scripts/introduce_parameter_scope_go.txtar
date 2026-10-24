@@ -1,7 +1,7 @@
 # The CLI resolves named and imported parameter types in the selected subpackage even when another package declares the same unexported name.
-exec semedit introduce-parameter --file service/service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
+exec semedit refactor-introduce-parameter --file service/service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
 stdout 'Replaced the selected constant expression'
-exec semedit introduce-parameter --file service/service.go --symbol transformImported --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"step","type":"imported.Mode"},"argument":"4"}]' --discriminator importedDefault
+exec semedit refactor-introduce-parameter --file service/service.go --symbol transformImported --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"step","type":"imported.Mode"},"argument":"4"}]' --discriminator importedDefault
 stdout 'Replaced the selected constant expression'
 cmp service/service.go .scratch/want/service.go
 cmp service/calls.go .scratch/want/calls.go

@@ -1,0 +1,24 @@
+! exec semedit refactor-extract-callable --file generic.go --symbol helper --in-function '(*Box).F' --kind method --start-line 6 --end-line 6
+stderr 'generic receiver method'
+cmp generic.go original/generic.go
+
+-- go.mod --
+module example.com/extractfunctiongenericreceiver
+
+go 1.23
+-- generic.go --
+package sample
+
+type Box[T any] struct{}
+
+func (b *Box[T]) F() {
+	println(1)
+}
+-- original/generic.go --
+package sample
+
+type Box[T any] struct{}
+
+func (b *Box[T]) F() {
+	println(1)
+}

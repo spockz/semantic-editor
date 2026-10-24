@@ -16,6 +16,15 @@ PACKAGE_CLOSURE_PLUGIN = $(GOBIN)/packageclosure.so
 MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
 VALE_VERSION ?= v3.22.0
 GOPLS_VERSION ?= v0.23.0
+ADR_TOOLS_VERSION ?= 3.0.0
+ADR_TOOLS_ROOT := $(CURDIR)/.scratch/tools/adr-tools-$(ADR_TOOLS_VERSION)
+BENCH_RAM_PLATFORM := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+BENCH_RAM_DEFAULT = $(if $(filter darwin,$(BENCH_RAM_PLATFORM)),/Volumes/semedit-bench-ram,$(if $(filter linux,$(BENCH_RAM_PLATFORM)),$(shell if [ -d "/run/user/$$(id -u)" ]; then printf '/run/user/%s/semedit-bench-ram' "$$(id -u)"; else printf /mnt/semedit-bench-ram; fi)))
+BENCH_RAM_ROOT ?= $(if $(wildcard $(BENCH_RAM_DEFAULT)/.semedit-benchmark-ram),$(BENCH_RAM_DEFAULT))
+TEST_TOOREXEC := $(CURDIR)/.scratch/bin/benchmark-harness
+MERMAID_VERSION ?= 12.2.0
+MARKED_VERSION ?= 17.0.1
+JSDOM_VERSION ?= 26.1.0
 # GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
 # Set it only in the top-level process so recursive make shares its jobserver.
 MAKE_JOBS ?= 12
@@ -24,7 +33,7 @@ MAKEFLAGS += -j$(MAKE_JOBS)
 endif
 
 ifeq ($(MAKELEVEL),0)
-export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
+export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(ADR_TOOLS_ROOT)/src:$(GOBIN):$(PATH)
 endif
 
 .DEFAULT_GOAL := check
@@ -38,18 +47,18 @@ go-env:
 ## Check targets
 ## ---------------------------------------------------------
 .PHONY: check
-check: lint-check test-core test-go-environment test-worktreecheck ## Run fast iterative checks (linting and core engine tests)
+check: adr-tools lint-check test-core test-go-environment test-worktreecheck ## Run fast iterative checks (linting and core engine tests)
 
 .PHONY: test-go-environment
 test-go-environment: ## Verify cache sharing and local state across Git worktrees
-	@bash tools/test-go-environment.sh
+	@bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" -- bash tools/test-go-environment.sh
 
 .PHONY: test-worktreecheck
 test-worktreecheck: ## Verify finished-worktree detection and safe local module cache cleanup
-	@bash tools/test-worktreecheck.sh
+	@bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" -- bash tools/test-worktreecheck.sh
 
 .PHONY: check-ci
-check-ci: lint vuln test-all verify-docs ## Run comprehensive checks (format, tidy, full linters, security, all tests, docs)
+check-ci: adr-tools lint vuln test-all verify-docs ## Run comprehensive checks (format, tidy, full linters, security, all tests, docs)
 
 ## Go source reader targets wait for source formatting and dependency updates; markdown and vale linting run independently.
 lint-go vuln test test-core test-harness test-all build-next: tidy
@@ -64,7 +73,7 @@ deps: go-env ## Download and verify module dependencies
 	go mod verify
 
 .PHONY: tools
-tools: go-env ## Install development tools (linters, formatters, scanners)
+tools: go-env adr-tools ## Install development tools (linters, formatters, scanners)
 	@echo "==> Installing development tools..."
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install mvdan.cc/gofumpt@latest
@@ -73,10 +82,29 @@ tools: go-env ## Install development tools (linters, formatters, scanners)
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/vale-cli/vale/v3/cmd/vale@$(VALE_VERSION)
 	@if command -v npm >/dev/null 2>&1; then \
-		npm install --prefix "$(CURDIR)/.scratch/tools" --no-save --package-lock=false --no-audit --no-fund markdownlint-cli2@$(MARKDOWNLINT_CLI2_VERSION); \
+		npm install --prefix "$(CURDIR)/.scratch/tools" --no-save --package-lock=false --no-audit --no-fund markdownlint-cli2@$(MARKDOWNLINT_CLI2_VERSION) mermaid@$(MERMAID_VERSION) marked@$(MARKED_VERSION) jsdom@$(JSDOM_VERSION); \
 	else \
 		echo "npm not installed. Install Node.js to install markdownlint-cli2 locally."; \
 		exit 1; \
+	fi
+
+.PHONY: adr-tools
+adr-tools: go-env ## Install the pinned ADR tooling used by repository-template CLI fixtures
+	@if [ -f "$(ADR_TOOLS_ROOT)/src/adr" ]; then \
+		chmod +x "$(ADR_TOOLS_ROOT)/src/adr" "$(ADR_TOOLS_ROOT)"/src/adr-* "$(ADR_TOOLS_ROOT)"/src/_adr*; \
+	fi
+	@if [ -x "$(ADR_TOOLS_ROOT)/src/adr" ]; then \
+		:; \
+	fi
+	@if [ ! -x "$(ADR_TOOLS_ROOT)/src/adr" ] && [ -e "$(ADR_TOOLS_ROOT)" ]; then \
+		echo "Incomplete adr-tools installation at $(ADR_TOOLS_ROOT). Remove it and retry." >&2; \
+		exit 1; \
+	fi
+	@if [ ! -e "$(ADR_TOOLS_ROOT)" ]; then \
+		temp_dir=$$(mktemp -d "$(CURDIR)/.scratch/tools/adr-tools.XXXXXX"); \
+	trap 'rm -rf "$$temp_dir"' EXIT; \
+	git clone --depth 1 --branch "$(ADR_TOOLS_VERSION)" https://github.com/npryce/adr-tools.git "$$temp_dir/source"; \
+		mv "$$temp_dir/source" "$(ADR_TOOLS_ROOT)"; \
 	fi
 
 ## ---------------------------------------------------------
@@ -91,7 +119,6 @@ fix: lint-fix ## Apply automatic Go and Markdown fixes and standard library mode
 .PHONY: lint-fix
 lint-fix: go-env fix-markdown build-golangci-lint ## Apply unambiguous fixes supplied by configured Go and Markdown linters
 	@echo "==> Applying Go linter fixes..."
-	"$(GOLANGCI_LINT)" run --enable-only packageclosure --issues-exit-code=0 ./...
 	"$(GOLANGCI_LINT)" run --disable=packageclosure --fix ./...
 
 .PHONY: fmt
@@ -126,26 +153,28 @@ tidy: fmt ## Ensure dependencies match source code
 ## Linting and Static Analysis
 ## ---------------------------------------------------------
 .PHONY: lint
-lint: lint-go lint-markdown lint-vale ## Run all static linters (golangci-lint, markdownlint-cli2, vale)
+lint: lint-go lint-markdown lint-vale lint-mermaid ## Run all static linters (golangci-lint, Markdown, Vale, and Mermaid)
 
 MARKDOWN_GLOBS := "docs/**/*.md" "skills/**/*.md" "tools/**/*.md" "*.md"
 VALE_TARGETS := docs skills tools *.md
 
 .PHONY: lint-check
-lint-check: go-env build-golangci-lint ## Run configured Go, Markdown, and Vale linters with automated fixes
+lint-check: tidy go-env ## Run configured Go, Markdown, and Vale linters after the shared fix pass
+	@$(MAKE) build-golangci-lint
+	@$(MAKE) lint-mermaid
 	@echo "==> Reporting package closure candidates (advisory)..."
 	"$(GOLANGCI_LINT)" run --enable-only packageclosure --issues-exit-code=0 ./...
-	@echo "==> Running blocking Go lint with fixes..."
-	"$(GOLANGCI_LINT)" run --disable=packageclosure --fix ./...
-	@echo "==> Running Markdown lint with fixes..."
+	@echo "==> Running read-only Go lint..."
+	"$(GOLANGCI_LINT)" run --disable=packageclosure ./...
+	@echo "==> Running read-only Markdown lint..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
 		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do \
 			if [[ "$$f" != data/benchmarks/results/* && "$$f" != data/benchmarks/archive/* && "$$f" != data/benchmarks/fixture-validation/* ]]; then [ -f "$$f" ] && echo "$$f"; fi; \
 		done || true); \
 		if [ -n "$$changed_md" ] && [ "$${CI:-}" != "true" ]; then \
-			echo "$$changed_md" | xargs markdownlint-cli2 --fix; \
+			echo "$$changed_md" | xargs markdownlint-cli2; \
 		else \
-			markdownlint-cli2 --fix $(MARKDOWN_GLOBS); \
+			markdownlint-cli2 $(MARKDOWN_GLOBS); \
 		fi; \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
@@ -216,6 +245,16 @@ lint-markdown: ## Run markdownlint-cli2
 		exit 1; \
 	fi
 
+.PHONY: lint-mermaid
+lint-mermaid: ## Validate Mermaid fences in Markdown using Mermaid's parser
+	@echo "==> Running Mermaid syntax checks..."
+	@if ! command -v node >/dev/null 2>&1; then \
+		echo "Node.js not installed. Run 'make tools' with Node.js available." >&2; \
+		exit 1; \
+	fi
+	node --test tools/validate-mermaid.test.mjs
+	rg --files -g '*.md' -g '!testdata/**' -0 | xargs -0 node tools/validate-mermaid.mjs
+
 .PHONY: fix-markdown
 fix-markdown: ## Apply automatic markdownlint-cli2 fixes
 	@echo "==> Applying Markdown linter fixes..."
@@ -248,13 +287,18 @@ vuln: go-env ## Run vulnerability security check
 ## ---------------------------------------------------------
 ## Testing
 ## ---------------------------------------------------------
-.PHONY: test test-core
+.PHONY: test test-core test-toolexec
 test: test-core ## Alias for test-core
 
-test-core: go-env test-package-closure test-wrap-up-transcript ## Run core engine unit tests excluding benchmark-harness
+test-toolexec: go-env ## Build the macOS tmpfs linker refresh hook used by Go tests
+	@if [ "$(BENCH_RAM_PLATFORM)" = darwin ]; then \
+		mkdir -p "$(dir $(TEST_TOOREXEC))"; \
+		bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" -- go build -o "$(TEST_TOOREXEC)" ./tools/benchmark-harness; \
+	fi
+
+test-core: adr-tools go-env test-toolexec test-package-closure test-wrap-up-transcript ## Run core engine unit tests excluding benchmark-harness
 	@echo "==> Running core engine tests..."
-	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
-	go test $$CORE_PACKAGES
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- bash -c 'go test $$(go list ./... | grep -v github.com/spockz/semantic-editor/tools/benchmark-harness)'
 
 .PHONY: test-mcp-functional test-mcp-integration
 test-mcp-functional: go-env ## Run fast MCP functional tests without black-box server workflows
@@ -264,28 +308,27 @@ test-mcp-integration: go-env ## Run black-box MCP server and protocol tests
 	go test ./internal/mcp/integration
 
 .PHONY: test-package-closure
-test-package-closure: go-env ## Test the custom package-closure linter module
-	cd tools/package-closure && go test ./...
+test-package-closure: go-env test-toolexec ## Test the custom package-closure linter module
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- bash -c 'cd tools/package-closure && go test ./...'
 
 .PHONY: test-wrap-up-transcript
 test-wrap-up-transcript: ## Test wrap-up transcript extraction and pagination
-	python3 -B -m unittest discover -s skills/wrap-up/scripts -p 'test_*.py'
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" -- python3 -B -m unittest discover -s skills/wrap-up/scripts -p 'test_*.py'
 
 .PHONY: test-race
-test-race: go-env ## Run core engine unit tests with race detector
+test-race: go-env test-toolexec ## Run core engine unit tests with race detector
 	@echo "==> Running core engine tests with race detector..."
-	@CORE_PACKAGES=$$(go list ./... | grep -v 'github.com/spockz/semantic-editor/tools/benchmark-harness'); \
-	go test -race -shuffle=on -cover -v $$CORE_PACKAGES
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- bash -c 'go test -race -shuffle=on -cover -v $$(go list ./... | grep -v github.com/spockz/semantic-editor/tools/benchmark-harness)'
 
 .PHONY: test-harness
-test-harness: go-env ## Run benchmark harness tests
+test-harness: go-env test-toolexec ## Run benchmark harness tests
 	@echo "==> Running benchmark harness tests..."
-	go test -shuffle=on -cover ./tools/benchmark-harness/...
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- go test -shuffle=on -cover ./tools/benchmark-harness/...
 
 .PHONY: test-all
-test-all: go-env ## Run all unit and race tests including benchmark-harness
+test-all: adr-tools go-env test-toolexec ## Run all unit and race tests including benchmark-harness
 	@echo "==> Running full test suite with race detector..."
-	go test -race -shuffle=on -cover -v ./...
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- go test -race -shuffle=on -cover -v ./...
 
 .PHONY: FORCE
 FORCE:
@@ -315,19 +358,19 @@ bench-mcp-gopls: go-env ## Attribute warm edits on the synthetic and repository 
 	go test -v ./internal/mcp -run '^$$' -bench '^BenchmarkMCPGoplsCallAttribution$$' -benchtime="$(GOPLS_CALL_SAMPLES)x" -count=1 -timeout=10m $(if $(strip $(GOPLS_TRACE)),-trace="$(GOPLS_TRACE)") $(if $(strip $(GOPLS_CPU_PROFILE)),-cpuprofile="$(GOPLS_CPU_PROFILE)" -o .scratch/mcp-gopls-profile.test)
 
 .PHONY: test-short
-test-short: go-env ## Run short test suite without long-running tests
+test-short: adr-tools go-env test-toolexec ## Run short test suite without long-running tests
 	@echo "==> Running short tests..."
-	go test -short ./...
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- go test -short ./...
 
 .PHONY: test-property-full
-test-property-full: go-env ## Run comprehensive 100-check property tests
+test-property-full: go-env test-toolexec ## Run comprehensive 100-check property tests
 	@echo "==> Running full property tests (100 checks)..."
-	RAPID_CHECKS=100 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- env RAPID_CHECKS=100 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
 
 .PHONY: test-fuzz
-test-fuzz: go-env ## Run deep 1000-check metamorphic property fuzzing
+test-fuzz: go-env test-toolexec ## Run deep 1000-check metamorphic property fuzzing
 	@echo "==> Running deep property fuzzing (1000 checks)..."
-	RAPID_CHECKS=1000 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
+	bash tools/run-with-test-tmp.sh --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(TEST_TOOREXEC)" -- env RAPID_CHECKS=1000 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
 
 ## ---------------------------------------------------------
 ## Build and Clean

@@ -1,0 +1,26 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=1
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol K --in-function run --discriminator '1_i32 + 2_i32'
+stderr 'unsupported rust code action request'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-unicode-collision-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    let K = 10;
+    consume(1_i32 + 2_i32);
+    consume(K);
+}
+
+fn consume(value: i32) {}
+-- want/lib.rs --
+fn run() {
+    let K = 10;
+    consume(1_i32 + 2_i32);
+    consume(K);
+}
+
+fn consume(value: i32) {}

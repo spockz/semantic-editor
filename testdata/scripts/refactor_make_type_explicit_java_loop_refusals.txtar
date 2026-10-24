@@ -1,0 +1,27 @@
+# Locals inside while and do bodies are outside the native type-expansion scope; refusal preserves every source byte.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=1 SEMEDIT_JAVA_ORGANIZE=1
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.whileLoop()' --symbol total --expected-revision fedb2633bd6363bb84c70fdb0fef3a745d80aa45c5344061b4401477cd53853d
+stderr 'unsupported binding scope'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.doLoop()' --symbol total --expected-revision fedb2633bd6363bb84c70fdb0fef3a745d80aa45c5344061b4401477cd53853d
+stderr 'unsupported binding scope'
+cmp src/Service.java original.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Service.java --
+class Service {
+  int whileLoop() { while (true) { var total = 1; break; } return 0; }
+  int doLoop() { do { var total = 1; } while (false); return 0; }
+}
+-- original.java --
+class Service {
+  int whileLoop() { while (true) { var total = 1; break; } return 0; }
+  int doLoop() { do { var total = 1; } while (false); return 0; }
+}

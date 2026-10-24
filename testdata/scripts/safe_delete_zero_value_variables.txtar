@@ -1,0 +1,69 @@
+# Safe deletion accepts only explicit-type, no-initializer package variables whose zero value has no observable use.
+exec semedit remove-construct --file vars.go --kind var --symbol zeroRecord --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file vars.go --kind var --symbol zeroRecords --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file vars.go --kind var --symbol zeroTable --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file vars.go --kind var --symbol zeroPointer --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file vars.go --kind var --symbol zeroInterface --safe-delete
+stdout 'Safe deletion checks run'
+cmp vars.go .scratch/want/vars.go
+exec go test ./...
+
+! exec semedit remove-construct --file vars.go --kind var --symbol effectfulRecord --safe-delete
+stderr 'initializer is not proven to be effect-free'
+! exec semedit remove-construct --file vars.go --kind var --symbol groupedZero --safe-delete
+stderr 'initializer is not proven to be effect-free'
+! exec semedit remove-construct --file vars.go --kind var --symbol groupedRecord --safe-delete
+stderr 'shared value spec'
+cmp vars.go .scratch/want/vars.go
+
+-- go.mod --
+module example.com/safedeletezerovars
+
+go 1.24
+
+-- vars.go --
+package sample
+
+type record struct { Value int }
+var zeroRecord record
+var zeroRecords []record
+var zeroTable map[string]record
+var zeroPointer *record
+var zeroInterface any
+var effectfulRecord record = makeRecord()
+var initCalls int
+func makeRecord() record { initCalls++; return record{} }
+var groupedRecord, groupedOther record
+var (
+	groupedZero record
+)
+
+-- vars_test.go --
+package sample
+
+import "testing"
+
+func TestEffectfulInitializerStillRunsOnce(t *testing.T) {
+	if initCalls != 1 {
+		t.Fatalf("retained initialization = %d", initCalls)
+	}
+}
+
+-- .scratch/want/vars.go --
+package sample
+
+type record struct{ Value int }
+
+var effectfulRecord record = makeRecord()
+var initCalls int
+
+func makeRecord() record { initCalls++; return record{} }
+
+var groupedRecord, groupedOther record
+var (
+	groupedZero record
+)

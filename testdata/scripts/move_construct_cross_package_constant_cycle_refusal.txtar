@@ -1,0 +1,36 @@
+# Moving a referenced constant must refuse when rewriting its source package import would create a cycle.
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol RetryWindow --placement file_end
+stderr 'import cycle'
+cmp legacy/limits.go .scratch/_want/legacy.go
+cmp api/limits.go .scratch/_want/api.go
+
+-- go.mod --
+module example.com/constantcyclerefusal
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+const RetryWindow = 180
+
+func Local() int { return RetryWindow }
+func Helper() int { return 1 }
+-- api/limits.go --
+package api
+
+import "example.com/constantcyclerefusal/legacy"
+
+func Existing() int { return legacy.Helper() }
+-- .scratch/_want/legacy.go --
+package legacy
+
+const RetryWindow = 180
+
+func Local() int { return RetryWindow }
+func Helper() int { return 1 }
+-- .scratch/_want/api.go --
+package api
+
+import "example.com/constantcyclerefusal/legacy"
+
+func Existing() int { return legacy.Helper() }

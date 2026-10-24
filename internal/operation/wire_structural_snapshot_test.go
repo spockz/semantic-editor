@@ -123,6 +123,10 @@ type structuralFieldFixture struct {
 func newStructuralFieldFixture(t *testing.T) structuralFieldFixture {
 	t.Helper()
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("canonicalize structural field workspace: %v", err)
+	}
 	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/fieldselector\n\ngo 1.24\n")
 	path := filepath.Join(root, "types.go")
 	before := []byte("package fieldselector\n\ntype t struct {\n\texisting int\n}\n")
@@ -157,5 +161,70 @@ func assertSourceBytes(t *testing.T, path string, want []byte, detail string) {
 	}
 	if string(after) != string(want) {
 		t.Fatalf("%s: %q", detail, after)
+	}
+}
+
+func TestStructuralSnapshotRechecksLocalReplacementInputs(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	appRoot := filepath.Join(workspace, "app")
+	depRoot := filepath.Join(workspace, "dep")
+	for _, dir := range []string{appRoot, depRoot} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("create module directory %q: %v", dir, err)
+		}
+	}
+	writeFixtureFile(t, filepath.Join(appRoot, "go.mod"), "module example.com/app\n\ngo 1.24\n\nrequire example.com/dep v0.0.0\nreplace example.com/dep => ../dep\n")
+	writeFixtureFile(t, filepath.Join(appRoot, "main.go"), "package app\n\nimport \"example.com/dep\"\n\nfunc Value() int { return dep.Value() }\n")
+	depManifest := filepath.Join(depRoot, "go.mod")
+	beforeDepManifest := "module example.com/dep\n\ngo 1.24\n"
+	writeFixtureFile(t, depManifest, beforeDepManifest)
+	depSource := filepath.Join(depRoot, "dep.go")
+	beforeDepSource := "package dep\n\nimport _ \"embed\"\n\n//go:embed message.txt\nvar message string\n\nfunc Value() int { return len(message) }\n"
+	writeFixtureFile(t, depSource, beforeDepSource)
+	depAsset := filepath.Join(depRoot, "message.txt")
+	beforeDepAsset := "inventory\n"
+	writeFixtureFile(t, depAsset, beforeDepAsset)
+	appRoot, err := filepath.Abs(appRoot)
+	if err != nil {
+		t.Fatalf("resolve app module path: %v", err)
+	}
+	snapshot, err := prepareStructuralSnapshot(context.Background(), CallContext{WorkDir: appRoot}, "main.go")
+	if err != nil {
+		t.Fatalf("prepare structural snapshot: %v", err)
+	}
+	for _, path := range []string{depSource, depManifest, depAsset} {
+		if _, captured := snapshot.Sources[path]; !captured {
+			t.Fatalf("local replacement input %q was not recorded in the structural snapshot", path)
+		}
+	}
+	output := snapshot.Sources[snapshot.File]
+	writeFixtureFile(t, depSource, "package dep\n\nimport _ \"embed\"\n\n//go:embed message.txt\nvar message string\n\nfunc Value() int { return len(message) + 1 }\n")
+	assertStructuralOutputRefused(t, snapshot, output, "local replacement source drift")
+	writeFixtureFile(t, depSource, beforeDepSource)
+	if err := snapshot.Buffer.AssertDisk(); err != nil {
+		t.Fatalf("restore local replacement source preimage: %v", err)
+	}
+	writeFixtureFile(t, depManifest, "module example.com/dep\n\ngo 1.25\n")
+	assertStructuralOutputRefused(t, snapshot, output, "local replacement manifest drift")
+	writeFixtureFile(t, depManifest, beforeDepManifest)
+	if err := snapshot.Buffer.AssertDisk(); err != nil {
+		t.Fatalf("restore local replacement manifest preimage: %v", err)
+	}
+	writeFixtureFile(t, depAsset, "inventory replenished\n")
+	assertStructuralOutputRefused(t, snapshot, output, "local replacement embedded asset drift")
+}
+
+func assertStructuralOutputRefused(t *testing.T, snapshot *structuralSnapshot, output []byte, scenario string) {
+	t.Helper()
+	if _, err := snapshot.applyOutput(output); err == nil || !strings.Contains(err.Error(), "revalidate structural read set") {
+		t.Fatalf("applyOutput after %s = %v, want captured-input refusal", scenario, err)
+	}
+	after, err := os.ReadFile(snapshot.File)
+	if err != nil {
+		t.Fatalf("read target after %s: %v", scenario, err)
+	}
+	if string(after) != string(output) {
+		t.Fatalf("target changed after %s: %q", scenario, after)
 	}
 }

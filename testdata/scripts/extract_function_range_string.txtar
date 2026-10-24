@@ -1,0 +1,92 @@
+# Extract string range iteration with byte indexes, rune decoding, local exits, and shadowed owner bindings.
+exec semedit refactor-extract-callable --file service.go --symbol walk --in-function Run --kind function --start-line 10 --end-line 20
+stdout 'symbol: walk'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangestring
+
+go 1.23
+-- service.go --
+package sample
+
+import "fmt"
+
+var events []string
+
+func Run(input string) {
+	index := 77
+	value := "outer"
+	for index, value := range input {
+		if value == '~' {
+			record("skip")
+			continue
+		}
+		if value == '!' {
+			record("stop")
+			break
+		}
+		record(fmt.Sprintf("%d:%c", index, value))
+	}
+	record(fmt.Sprintf("outer:%d:%s", index, value))
+}
+
+func record(event string) { events = append(events, event) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesStringRangeSemantics(t *testing.T) {
+	tests := []struct {
+		input string
+		want  []string
+	}{
+		{"", []string{"outer:77:outer"}},
+		{"ab", []string{"0:a", "1:b", "outer:77:outer"}},
+		{"AéB", []string{"0:A", "1:é", "3:B", "outer:77:outer"}},
+		{string([]byte{0xff, 'A'}), []string{"0:�", "1:A", "outer:77:outer"}},
+		{"a~b", []string{"0:a", "skip", "2:b", "outer:77:outer"}},
+		{"x!y", []string{"0:x", "stop", "outer:77:outer"}},
+	}
+	for _, test := range tests {
+		events = nil
+		Run(test.input)
+		if !reflect.DeepEqual(events, test.want) {
+			t.Fatalf("Run(%q) events = %v, want %v", test.input, events, test.want)
+		}
+	}
+}
+-- want/service.go --
+package sample
+
+import "fmt"
+
+var events []string
+
+func Run(input string) {
+	index := 77
+	value := "outer"
+	walk(input)
+	record(fmt.Sprintf("outer:%d:%s", index, value))
+}
+
+func walk(input string) {
+	for index, value := range input {
+		if value == '~' {
+			record("skip")
+			continue
+		}
+		if value == '!' {
+			record("stop")
+			break
+		}
+		record(fmt.Sprintf("%d:%c", index, value))
+	}
+}
+
+func record(event string) { events = append(events, event) }

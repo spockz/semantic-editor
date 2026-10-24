@@ -1,0 +1,24 @@
+# Refuse dynamic package-variable initializers before changing either file.
+! exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol RetryWindow --placement file_end
+stderr 'compile-time constant initializer'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+
+-- go.mod --
+module example.com/variablemoverefusal
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+func load() int { return 180 }
+var RetryWindow = load()
+-- api/state.go --
+package api
+-- .scratch/want/legacy.go --
+package legacy
+
+func load() int { return 180 }
+var RetryWindow = load()
+-- .scratch/want/api.go --
+package api

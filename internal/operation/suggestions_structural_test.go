@@ -20,7 +20,7 @@ func TestStructuralSuggestionsRetryThroughNativePlans(t *testing.T) {
 		{"set_doc_comment", "symbol", "ParseConfig", map[string]any{"scope": "declaration", "symbol": "ParseConfg", "comment": "ParseConfig reads settings."}},
 		{"insert_field", "in_type", "settings", map[string]any{"in_type": "settngs", "symbol": "settings.timeout", "source": "timeout int", "placement": "type_end"}},
 		{"insert_construct", "in_declaration", "routes", map[string]any{"kind": "element", "in_declaration": "routez", "discriminator": "map[string]int{}", "source": "\"ready\": 1"}},
-		{"extract_type", "in_type", "settings", map[string]any{"in_type": "settngs", "symbol": "measurements", "field": "metrics", "members": []any{map[string]any{"file": "source.go", "symbol": "settings.value"}}}},
+		{"refactor_extract_type", "in_type", "settings", map[string]any{"in_type": "settngs", "symbol": "measurements", "field": "metrics", "members": []any{map[string]any{"file": "source.go", "symbol": "settings.value"}}}},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			cc, buffer := suggestionFixture(t, map[string]string{

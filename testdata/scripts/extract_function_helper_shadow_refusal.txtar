@@ -1,0 +1,89 @@
+# Reject a generated helper call that would bind to a same-named owner parameter.
+! exec semedit refactor-extract-callable --file update.go --symbol helper --in-function Update --kind function --start-line 4 --end-line 4
+stderr 'shadowed at the replacement site'
+cmp update.go original/update.go
+! exec semedit refactor-extract-callable --file alias.go --symbol helper --in-function UpdateAlias --kind function --start-line 5 --end-line 5
+stderr 'shadowed at the replacement site'
+cmp alias.go original/alias.go
+! exec semedit refactor-extract-callable --file labeled.go --symbol helper --in-function UpdateLabeled --kind function --start-line 6 --end-line 6
+stderr 'shadowed at the replacement site'
+cmp labeled.go original/labeled.go
+exec semedit refactor-extract-callable --file later.go --symbol helper --in-function UpdateLater --kind function --start-line 4 --end-line 4
+cmp later.go want/later.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionshadow
+
+go 1.23
+-- update.go --
+package sample
+
+func Update(helper func(int) int, value int) int {
+	value = value + 1
+	return helper(value)
+}
+-- original/update.go --
+package sample
+
+func Update(helper func(int) int, value int) int {
+	value = value + 1
+	return helper(value)
+}
+-- alias.go --
+package sample
+
+func UpdateAlias(value int) int {
+	type helper = int
+	value = value + 1
+	return value
+}
+-- original/alias.go --
+package sample
+
+func UpdateAlias(value int) int {
+	type helper = int
+	value = value + 1
+	return value
+}
+-- labeled.go --
+package sample
+
+func UpdateLabeled(value int) int {
+	goto L
+L: helper := func(next int) int { return next + 100 }
+	value = value + 1
+	_ = helper
+	return value
+}
+-- original/labeled.go --
+package sample
+
+func UpdateLabeled(value int) int {
+	goto L
+L: helper := func(next int) int { return next + 100 }
+	value = value + 1
+	_ = helper
+	return value
+}
+-- later.go --
+package sample
+
+func UpdateLater(value int) int {
+	value = value + 1
+	helper := func(next int) int { return next + 100 }
+	return helper(value)
+}
+-- want/later.go --
+package sample
+
+func UpdateLater(value int) int {
+	value = helper(value)
+	helper := func(next int) int { return next + 100 }
+	return helper(value)
+}
+
+func helper(value int) int {
+	value = value + 1
+	return value
+}

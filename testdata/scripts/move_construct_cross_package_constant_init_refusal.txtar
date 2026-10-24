@@ -1,0 +1,30 @@
+# Moving a referenced constant must reuse the existing changed-import-graph initialization proof.
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol RetryWindow --placement file_end
+stderr 'package initialization function'
+cmp legacy/limits.go .scratch/_want/legacy.go
+cmp api/limits.go .scratch/_want/api.go
+
+-- go.mod --
+module example.com/constantinitrefusal
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+const RetryWindow = 180
+
+func Local() int { return RetryWindow }
+-- api/limits.go --
+package api
+
+func init() {}
+-- .scratch/_want/legacy.go --
+package legacy
+
+const RetryWindow = 180
+
+func Local() int { return RetryWindow }
+-- .scratch/_want/api.go --
+package api
+
+func init() {}

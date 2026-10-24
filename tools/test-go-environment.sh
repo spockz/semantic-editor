@@ -3,8 +3,7 @@
 set -euo pipefail
 
 repo=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
-mkdir -p -- "$repo/.scratch"
-fixture=$(mktemp -d "$repo/.scratch/go-environment.XXXXXX")
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/go-environment.XXXXXX")
 trap 'rm -rf -- "$fixture"' EXIT
 cat > "$fixture/probe.mk" <<'MAKE'
 cache-probe:

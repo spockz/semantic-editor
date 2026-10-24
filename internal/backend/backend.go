@@ -74,19 +74,19 @@ const (
 	LanguageAuto LanguageID = "auto"
 	// LanguageGo selects the built-in Go backend.
 	LanguageGo LanguageID = "go"
-	// LanguageRust selects the read-only Rust lookup backend.
+	// LanguageRust selects the Rust language backend.
 	LanguageRust LanguageID = "rust"
-	// LanguageJava selects the read-only Java lookup backend.
+	// LanguageJava selects the Java language backend.
 	LanguageJava LanguageID = "java"
-	// LanguageScala selects the read-only Scala lookup backend.
+	// LanguageScala selects the Scala language backend.
 	LanguageScala LanguageID = "scala"
 	// LanguageHaskell selects the trusted standalone Haskell lookup backend.
 	LanguageHaskell LanguageID = "haskell"
 	// LanguageKotlin selects the trusted read-only Kotlin backend.
 	LanguageKotlin LanguageID = "kotlin"
-	// LanguageBash identifies shell sources for detection; no backend is registered yet.
+	// LanguageBash selects the registered, read-only Bash language backend.
 	LanguageBash LanguageID = "bash"
-	// LanguageMake identifies Make sources for detection; no backend is registered yet.
+	// LanguageMake selects the registered, read-only Make language backend.
 	LanguageMake LanguageID = "make"
 )
 
@@ -120,7 +120,7 @@ const (
 	OperationExtractVariable Operation = "extract_variable"
 	// OperationInlineVariable inlines one selected local declaration.
 	OperationInlineVariable Operation = "inline_variable"
-	// OperationInlineFunction inlines one selected Java invocation.
+	// OperationInlineFunction inlines one selected direct callable invocation.
 	OperationInlineFunction Operation = "inline_function"
 	// OperationImplementContract generates missing methods for an implemented Java interface.
 	OperationImplementContract Operation = "implement_contract"
@@ -128,6 +128,9 @@ const (
 	OperationExtractFunction Operation = "extract_function"
 	// OperationExtractConstant extracts one selected compile-time expression into a constant.
 	OperationExtractConstant Operation = "extract_constant"
+	// OperationPromoteLocalToConst promotes one bounded Rust local to a constant.
+	OperationPromoteLocalToConst Operation = "promote_local_to_const"
+
 	// OperationMoveConstruct moves one existing syntax construct.
 	OperationMoveConstruct Operation = "move_construct"
 	// OperationChangeSignature updates a Java method signature and resolved call sites.
@@ -310,9 +313,7 @@ type Constraint = capability.Constraint
 // LanguageMatrix is an alias for capability.LanguageMatrix.
 type LanguageMatrix = capability.LanguageMatrix
 
-// MatrixProvider is an optional extension of Backend. Backends that implement it
-// expose their declarative LanguageMatrix so that cmd/docgen can build capability
-// documentation from the registry rather than from hardcoded tables.
+// MatrixProvider exposes adapter-owned capability metadata. The operation registry is the source of truth for public operation support.
 type MatrixProvider interface {
 	CapabilityMatrix() capability.LanguageMatrix
 }

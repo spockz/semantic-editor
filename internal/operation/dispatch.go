@@ -28,6 +28,14 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 	if !ok {
 		return nil, fmt.Errorf("dispatch %q: %w", key, ErrUnknownOperation)
 	}
+	return r.DispatchEntry(cc, entry, raw)
+}
+
+// DispatchEntry invokes one resolved operation entry through the shared validation path.
+func (r *Registry) DispatchEntry(cc CallContext, entry Entry, raw map[string]any) (any, error) {
+	if r == nil {
+		return nil, fmt.Errorf("dispatch %q: %w", entry.Key, ErrUnknownOperation)
+	}
 	ctx := cc.Ctx
 	if ctx == nil {
 		ctx = context.Background()

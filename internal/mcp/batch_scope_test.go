@@ -16,7 +16,7 @@ import (
 )
 
 func TestSelectBatchGoPatternsIncludesTransitiveAndTestOnlyImporters(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	write := func(relative, contents string) {
 		t.Helper()
 		path := filepath.Join(root, relative)
@@ -56,8 +56,34 @@ func coldBatchGoScope(t *testing.T) context.Context {
 	return godiagnostics.WithSessionManager(t.Context(), manager)
 }
 
+func canonicalBatchScopeTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestBatchRejectsConflictingBackendConfigurationWithoutForwardingItToVerify(t *testing.T) {
+	verifyOptions := make(map[string]any)
+	configurationOptions := make(map[string]any)
+	if err := mergeBatchVerificationOptions(verifyOptions, configurationOptions, map[string]any{"metals_bin": "/metals/one", "java_bin": "/java"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := verifyOptions["metals_bin"]; exists {
+		t.Fatal("Metals runtime configuration must not be forwarded to semantic_verify")
+	}
+	if got := verifyOptions["java_bin"]; got != "/java" {
+		t.Fatalf("semantic_verify java_bin = %v, want /java", got)
+	}
+	if err := mergeBatchVerificationOptions(verifyOptions, configurationOptions, map[string]any{"metals_bin": "/metals/two"}); err == nil {
+		t.Fatal("conflicting Metals executables were accepted across batch children")
+	}
+}
+
 func TestSelectBatchGoPatternsFallsBackWithoutCachedGraph(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/scope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +98,7 @@ func TestSelectBatchGoPatternsFallsBackWithoutCachedGraph(t *testing.T) {
 
 func TestSelectBatchGoPatternsOmitsUneditedNestedModule(t *testing.T) {
 	t.Setenv("GOPROXY", "off")
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	write := func(relative, contents string) {
 		t.Helper()
 		path := filepath.Join(root, relative)
@@ -102,7 +128,7 @@ func TestSelectBatchGoPatternsOmitsUneditedNestedModule(t *testing.T) {
 }
 
 func TestSelectBatchGoPatternsSelectsEditedNestedModuleReverseImporters(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	write := func(relative, contents string) {
 		t.Helper()
 		path := filepath.Join(root, relative)
@@ -159,7 +185,7 @@ func cacheBatchGoScope(t *testing.T, root string) context.Context {
 }
 
 func TestReconcilePublishedGoScopeFallsBackWhenPackageInputsChange(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/scope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +207,7 @@ func TestReconcilePublishedGoScopeFallsBackWhenPackageInputsChange(t *testing.T)
 }
 
 func TestReconcilePublishedGoScopeKeepsExplicitScaffoldTarget(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalBatchScopeTempDir(t)
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/scope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

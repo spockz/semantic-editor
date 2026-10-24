@@ -43,6 +43,74 @@ func TestNormalizeConstructKindInputAliases(t *testing.T) {
 	}
 }
 
+func TestNativeRefactorBatchEligibility(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	cases := []struct {
+		language backend.LanguageID
+		key      string
+		file     string
+	}{
+		{backend.LanguageRust, "refactor_rename", "src/lib.rs"},
+		{backend.LanguageRust, "refactor_extract_value", "src/lib.rs"},
+		{backend.LanguageRust, "refactor_extract_callable", "src/lib.rs"},
+		{backend.LanguageRust, "refactor_inline_callable", "src/lib.rs"},
+		{backend.LanguageRust, "refactor_inline_value", "src/lib.rs"},
+		{backend.LanguageRust, "refactor_promote_local_to_const", "src/lib.rs"},
+		{backend.LanguageScala, "refactor_extract_value", "src/Thing.scala"},
+		{backend.LanguageScala, "refactor_extract_callable", "src/Thing.scala"},
+	}
+	for _, test := range cases {
+		t.Run(string(test.language)+"/"+test.key, func(t *testing.T) {
+			entry, ok := registry.LookupKey(test.key)
+			if !ok {
+				t.Fatalf("operation %q is not registered", test.key)
+			}
+			raw := make(map[string]any, len(entry.ExampleRaw)+2)
+			maps.Copy(raw, entry.ExampleRaw)
+			raw["file"] = test.file
+			raw["language"] = string(test.language)
+			switch test.key {
+			case "refactor_extract_value":
+				raw["in_function"] = "run"
+				if test.language == backend.LanguageRust {
+					raw["discriminator"] = "1_i32 + 2_i32"
+				} else {
+					raw["discriminator"] = "1 + 2"
+				}
+			case "refactor_extract_callable":
+				raw["symbol"] = "extracted"
+				raw["in_function"] = "run"
+				raw["kind"] = "function"
+				raw["start_line"], raw["end_line"] = 2, 2
+			case "refactor_inline_callable":
+				callSiteInput, ok := raw["call_site"].(map[string]any)
+				if !ok {
+					t.Fatal("inline-callable example has no call_site object")
+				}
+				callSite := maps.Clone(callSiteInput)
+				callSite["file"] = test.file
+				callSite["in_function"] = "run"
+				callSite["discriminator"] = raw["symbol"].(string) + "()"
+				raw["call_site"] = callSite
+			case "refactor_inline_value":
+				raw["in_function"] = "run"
+			case "refactor_promote_local_to_const":
+				raw["symbol"] = "retry_limit"
+				raw["in_function"] = "run"
+			}
+			eligible, err := entry.SupportsBufferedBatch(operation.CallContext{
+				Project: backend.ProjectContext{Language: test.language},
+			}, raw)
+			if err != nil {
+				t.Fatalf("SupportsBufferedBatch() error = %v", err)
+			}
+			if !eligible {
+				t.Fatal("SupportsBufferedBatch() = false, want shared-overlay eligibility")
+			}
+		})
+	}
+}
+
 func TestInsertConstructRegistersCanonicalElementVocabulary(t *testing.T) {
 	registry := operation.DefaultRegistry()
 	entry, ok := registry.LookupKey("insert_construct")

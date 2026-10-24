@@ -1,0 +1,96 @@
+# This archive proves that zero-valued package variables with predeclared composite types can move while all references retain one storage identity.
+exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol Cache --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol Config --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol Done --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go run ./cmd/check
+
+-- go.mod --
+module example.com/zerocompositemove
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+var Cache map[string]int
+
+var Config struct {
+	Enabled bool
+	Timeout int
+}
+
+var Done chan struct{}
+
+func Read() map[string]int { return Cache }
+func Write(key string, value int) { Cache[key] = value }
+func Pointer() *map[string]int { return &Cache }
+-- api/state.go --
+package api
+
+import "example.com/zerocompositemove/legacy"
+
+func Existing() map[string]int { return legacy.Cache }
+func Pointer() *map[string]int { return &legacy.Cache }
+-- caller/use.go --
+package caller
+
+import "example.com/zerocompositemove/legacy"
+
+func Read() map[string]int { return legacy.Cache }
+func Write(key string, value int) { legacy.Cache[key] = value }
+func Pointer() *map[string]int { return &legacy.Cache }
+-- cmd/check/main.go --
+package main
+
+import (
+	"example.com/zerocompositemove/api"
+	"example.com/zerocompositemove/caller"
+)
+
+func main() {
+	*caller.Pointer() = make(map[string]int)
+	caller.Write("attempts", 3)
+	if api.Existing()["attempts"] != 3 || caller.Read()["attempts"] != 3 {
+		panic("moved map variable lost shared storage")
+	}
+	if api.Pointer() != caller.Pointer() {
+		panic("references no longer address the same moved variable")
+	}
+}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/zerocompositemove/api"
+
+func Read() map[string]int        { return api.Cache }
+func Write(key string, value int) { api.Cache[key] = value }
+func Pointer() *map[string]int    { return &api.Cache }
+-- .scratch/want/api.go --
+package api
+
+func Existing() map[string]int { return Cache }
+func Pointer() *map[string]int { return &Cache }
+
+var Cache map[string]int
+
+var Config struct {
+	Enabled bool
+	Timeout int
+}
+
+var Done chan struct{}
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/zerocompositemove/api"
+
+func Read() map[string]int { return api.Cache }
+func Write(key string, value int) {
+	api.Cache[key] = value
+}
+func Pointer() *map[string]int { return &api.Cache }

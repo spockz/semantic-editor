@@ -49,7 +49,7 @@ func TestStagedRenameSuggestionsFollowDropAndAbort(t *testing.T) {
 		return structured
 	}
 	call(1, "semantic_stage", map[string]any{})
-	renamed := call(2, "semantic_rename", map[string]any{"symbol": "ParseConfig", "to": "ReadConfig", "file": "main.go"})
+	renamed := call(2, "refactor_rename", map[string]any{"symbol": "ParseConfig", "to": "ReadConfig", "file": "main.go"})
 	stageReceipt, _ := content(renamed)["stage_receipt"].(map[string]any)
 	stepID, _ := stageReceipt["step_id"].(string)
 	if stepID == "" {
@@ -57,7 +57,7 @@ func TestStagedRenameSuggestionsFollowDropAndAbort(t *testing.T) {
 	}
 	assertSuggestion := func(id int, want string) {
 		t.Helper()
-		response := call(id, "semantic_rename", map[string]any{"symbol": "ParseConfg", "to": fmt.Sprintf("Retry%d", id), "file": "main.go"})
+		response := call(id, "refactor_rename", map[string]any{"symbol": "ParseConfg", "to": fmt.Sprintf("Retry%d", id), "file": "main.go"})
 		candidates, _ := content(response)["suggestions"].([]any)
 		if len(candidates) == 0 {
 			t.Fatalf("missing suggestion for overlay state %q: %#v", want, response)
@@ -85,13 +85,13 @@ func TestStagedRenameSuggestionsFollowDropAndAbort(t *testing.T) {
 func assertDiscardedReplaySuggestions(t *testing.T, call func(int, string, map[string]any) map[string]any, content func(map[string]any) map[string]any, assertSuggestion func(int, string)) {
 	t.Helper()
 	call(8, "semantic_stage", map[string]any{})
-	first := call(9, "semantic_rename", map[string]any{"symbol": "ParseConfig", "to": "ParseConfg", "file": "main.go"})
+	first := call(9, "refactor_rename", map[string]any{"symbol": "ParseConfig", "to": "ParseConfg", "file": "main.go"})
 	firstReceipt, _ := content(first)["stage_receipt"].(map[string]any)
 	firstStep, _ := firstReceipt["step_id"].(string)
 	if firstStep == "" {
 		t.Fatalf("first chain rename omitted receipt: %#v", first)
 	}
-	call(10, "semantic_rename", map[string]any{"symbol": "ParseConfg", "to": "ReadConfig", "file": "main.go"})
+	call(10, "refactor_rename", map[string]any{"symbol": "ParseConfg", "to": "ReadConfig", "file": "main.go"})
 	failedDrop := content(call(11, "semantic_stage_drop", map[string]any{"step_id": firstStep}))
 	if failedDrop["error"] == nil || failedDrop["suggestions"] != nil {
 		t.Fatalf("discarded replay alternatives escaped: %#v", failedDrop)

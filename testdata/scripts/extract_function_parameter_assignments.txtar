@@ -1,0 +1,347 @@
+# Preserve runtime order, first-write output order, and write-only parameter forwarding.
+exec semedit refactor-extract-callable --file update.go --symbol updateValues --in-function Update --kind function --start-line 12 --end-line 14
+stdout 'symbol: updateValues'
+cmp update.go want/update.go
+exec semedit refactor-extract-callable --file overwrite.go --symbol replaceToken --in-function Overwrite --kind function --start-line 4 --end-line 4
+stdout 'symbol: replaceToken'
+cmp overwrite.go want/overwrite.go
+exec semedit refactor-extract-callable --file local.go --symbol assignLocal --in-function LocalAssignmentTarget --kind function --start-line 5 --end-line 5
+stdout 'symbol: assignLocal'
+cmp local.go want/local.go
+exec semedit refactor-extract-callable --file slice.go --symbol appendValue --in-function SliceAssignmentTarget --kind function --start-line 4 --end-line 4
+stdout 'symbol: appendValue'
+cmp slice.go want/slice.go
+exec semedit refactor-extract-callable --file mixed.go --symbol assignMixed --in-function MixedAssignment --kind function --start-line 4 --end-line 5
+stdout 'symbol: assignMixed'
+cmp mixed.go want/mixed.go
+exec semedit refactor-extract-callable --file named.go --symbol addDuration --in-function AddDuration --kind function --start-line 7 --end-line 7
+stdout 'symbol: addDuration'
+exec semedit refactor-extract-callable --file named.go --symbol replacePointer --in-function ReplacePointer --kind function --start-line 23 --end-line 23
+stdout 'symbol: replacePointer'
+cmp named.go want/named.go
+exec semedit refactor-extract-callable --file tuple.go --symbol swapValues --in-function TupleAssignment --kind function --start-line 4 --end-line 4
+stdout 'symbol: swapValues'
+cmp tuple.go want/tuple.go
+! exec semedit refactor-extract-callable --file refusal.go --symbol badCompound --in-function Compound --kind function --start-line 40 --end-line 40
+stderr 'only short declarations and plain assignments are supported'
+cmp refusal.go original/refusal.go
+! exec semedit refactor-extract-callable --file refusal.go --symbol badAddress --in-function Addressed --kind function --start-line 16 --end-line 16
+stderr 'address-taken values'
+cmp refusal.go original/refusal.go
+! exec semedit refactor-extract-callable --file refusal.go --symbol badCapture --in-function Captured --kind function --start-line 23 --end-line 23
+stderr 'closure-captured values'
+cmp refusal.go original/refusal.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionparameterassignments
+
+go 1.23
+-- update.go --
+package sample
+
+import "strings"
+
+var events []string
+
+func first(label string) string { events = append(events, "first"); return label + " " }
+func increment(count int) int { events = append(events, "increment"); return count + 1 }
+func last(label string) string { events = append(events, "last"); return strings.TrimSpace(label) }
+
+func Update(count int, label string) (string, int) {
+	label = first(label)
+	count = increment(count)
+	label = last(label)
+	return label, count
+}
+-- want/update.go --
+package sample
+
+import "strings"
+
+var events []string
+
+func first(label string) string { events = append(events, "first"); return label + " " }
+func increment(count int) int   { events = append(events, "increment"); return count + 1 }
+func last(label string) string  { events = append(events, "last"); return strings.TrimSpace(label) }
+
+func Update(count int, label string) (string, int) {
+	label, count = updateValues(count, label)
+	return label, count
+}
+
+func updateValues(count int, label string) (string, int) {
+	label = first(label)
+	count = increment(count)
+	label = last(label)
+	return label, count
+}
+-- overwrite.go --
+package sample
+
+func Overwrite(token string) string {
+	token = "fresh"
+	return token
+}
+-- local.go --
+package sample
+
+func LocalAssignmentTarget() {
+	local := 0
+	local = 1
+	println(local)
+}
+-- want/local.go --
+package sample
+
+func LocalAssignmentTarget() {
+	local := 0
+	local = assignLocal()
+	println(local)
+}
+
+func assignLocal() int {
+	var local int
+	local = 1
+	return local
+}
+-- slice.go --
+package sample
+
+func SliceAssignmentTarget(values []int) {
+	values = append(values, 1)
+	println(values)
+}
+-- want/slice.go --
+package sample
+
+func SliceAssignmentTarget(values []int) {
+	values = appendValue(values)
+	println(values)
+}
+
+func appendValue(values []int) []int {
+	values = append(values, 1)
+	return values
+}
+-- mixed.go --
+package sample
+
+func MixedAssignment(value int) {
+	local := 1
+	value = 2
+	println(local, value)
+}
+-- want/mixed.go --
+package sample
+
+func MixedAssignment(value int) {
+	local, value := assignMixed()
+	println(local, value)
+}
+
+func assignMixed() (int, int) {
+	var value int
+	local := 1
+	value = 2
+	return local, value
+}
+-- tuple.go --
+package sample
+
+func TupleAssignment(left, right int) {
+	left, right = right, left
+	println(left, right)
+}
+-- want/tuple.go --
+package sample
+
+func TupleAssignment(left, right int) {
+	left, right = swapValues(left, right)
+	println(left, right)
+}
+
+func swapValues(left int, right int) (int, int) {
+	left, right = right, left
+	return left, right
+}
+-- want/overwrite.go --
+package sample
+
+func Overwrite(token string) string {
+	token = replaceToken()
+	return token
+}
+
+func replaceToken() string {
+	var token string
+	token = "fresh"
+	return token
+}
+-- update_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestAssignmentExtractionPreservesRuntimeBehavior(t *testing.T) {
+	events = nil
+	label, count := Update(4, " hi")
+	if label != "hi" || count != 5 {
+		t.Fatalf("Update() = (%q, %d), want (%q, %d)", label, count, "hi", 5)
+	}
+	if want := []string{"first", "increment", "last"}; !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %v, want %v", events, want)
+	}
+	if got := Overwrite("old"); got != "fresh" {
+		t.Fatalf("Overwrite() = %q, want %q", got, "fresh")
+	}
+	if got := AddDuration(3, 4); got != 7 {
+		t.Fatalf("AddDuration() = %d, want 7", got)
+	}
+	if got := ReplacePointer(&State{}, &State{Count: 9}); got.Count != 9 {
+		t.Fatalf("ReplacePointer() = %#v, want Count 9", got)
+	}
+}
+-- refusal.go --
+package sample
+
+func LocalTarget() {
+	local := 0
+	local = 1
+	println(local)
+}
+
+func UnsupportedType(values []int) {
+	values = values
+	println(values)
+}
+
+func Addressed(value int) {
+	ptr := &value
+	value = 1
+	println(value)
+	_ = ptr
+}
+
+func Captured(value int) {
+	use := func() { println(value) }
+	value = 1
+	println(value)
+	_ = use
+}
+
+func Mixed(value int) {
+	local := 1
+	value = 2
+	println(local, value)
+}
+
+func Tuple(left, right int) {
+	left, right = 1, 2
+	println(left, right)
+}
+
+func Compound(value int) {
+	value += 1
+	println(value)
+}
+-- original/refusal.go --
+package sample
+
+func LocalTarget() {
+	local := 0
+	local = 1
+	println(local)
+}
+
+func UnsupportedType(values []int) {
+	values = values
+	println(values)
+}
+
+func Addressed(value int) {
+	ptr := &value
+	value = 1
+	println(value)
+	_ = ptr
+}
+
+func Captured(value int) {
+	use := func() { println(value) }
+	value = 1
+	println(value)
+	_ = use
+}
+
+func Mixed(value int) {
+	local := 1
+	value = 2
+	println(local, value)
+}
+
+func Tuple(left, right int) {
+	left, right = 1, 2
+	println(left, right)
+}
+
+func Compound(value int) {
+	value += 1
+	println(value)
+}
+-- named.go --
+package sample
+
+type Duration int64
+
+func AddDuration(total Duration, step Duration) Duration {
+	var current Duration
+	current = total + step
+	println(current)
+	return current
+}
+
+type State struct {
+	Count int
+}
+
+func ReplacePointer(state *State, replacement *State) *State {
+	state = replacement
+	println(state.Count)
+	return state
+}
+-- want/named.go --
+package sample
+
+type Duration int64
+
+func AddDuration(total Duration, step Duration) Duration {
+	var current Duration
+	current = addDuration(total, step)
+	println(current)
+	return current
+}
+
+func addDuration(total Duration, step Duration) Duration {
+	var current Duration
+	current = total + step
+	return current
+}
+
+type State struct {
+	Count int
+}
+
+func ReplacePointer(state *State, replacement *State) *State {
+	state = replacePointer(replacement)
+	println(state.Count)
+	return state
+}
+
+func replacePointer(replacement *State) *State {
+	var state *State
+	state = replacement
+	return state
+}

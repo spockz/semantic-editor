@@ -1,0 +1,59 @@
+# Move an exported scalar alias across packages and preserve every typed use through the CLI contract.
+exec semedit refactor-move-declaration --file legacy/count.go --destination-file api/api.go --symbol Count --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/count.go .scratch/_want/legacy/count.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+exec go test ./...
+
+-- go.mod --
+module example.com/typecrossalias
+
+go 1.23
+
+-- legacy/count.go --
+package legacy
+
+type Count = int
+type Other int
+
+func Add(left Count, right int) Count { return Count(left + right) }
+-- api/api.go --
+package api
+
+import "example.com/typecrossalias/legacy"
+
+func Existing(value legacy.Count) legacy.Count { return value }
+-- caller/use.go --
+package caller
+
+import "example.com/typecrossalias/legacy"
+
+func Use(value legacy.Count, retained legacy.Other) legacy.Count { return legacy.Count(value + int(retained)) }
+-- .scratch/_want/legacy/count.go --
+package legacy
+
+import "example.com/typecrossalias/api"
+
+type Other int
+
+func Add(left api.Count, right int) api.Count {
+	return api.Count(left + right)
+}
+-- .scratch/_want/api/api.go --
+package api
+
+func Existing(value Count) Count { return value }
+
+type Count = int
+-- .scratch/_want/caller/use.go --
+package caller
+
+import (
+	"example.com/typecrossalias/api"
+	"example.com/typecrossalias/legacy"
+)
+
+func Use(value api.Count, retained legacy.Other) api.Count {
+	return api.Count(value + int(retained))
+}

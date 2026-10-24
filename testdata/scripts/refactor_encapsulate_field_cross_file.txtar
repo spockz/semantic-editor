@@ -1,0 +1,170 @@
+# Rewrite typed references across package files and use an existing import alias for the accessor type.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --symbol config.timeout --getter timeoutValue --setter setTimeoutValue --destination-file accessors.go
+cmp callers.go want/callers.txt
+cmp accessors.go want/accessors.txt
+exec cp order_test.want order_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldcrossfile
+
+go 1.24
+-- config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+-- callers.go --
+package sample
+
+import "time"
+
+func readTimeout(c *config) time.Duration { return c.timeout }
+func writeTimeout(c *config, value time.Duration) { c.timeout = value }
+func writeNil(trace *[]string) {
+	var c *config
+	c.timeout = next(trace)
+}
+func redirect(current **config, trace *[]string) time.Duration {
+	*trace = append(*trace, "rhs")
+	*current = &config{timeout: 5}
+	return 7
+}
+func writeRedirect(initial *config, trace *[]string) (*config, *config) {
+	c := initial
+	old := c
+	c.timeout = redirect(&c, trace)
+	return old, c
+}
+func writeReceiverParameter(c *config, receiver *config) {
+	c.timeout = nextValue(receiver)
+}
+func writeFieldFrom(c *config, other *config) {
+	c.timeout = other.timeout
+}
+func nextValue(receiver *config) time.Duration { return receiver.timeout }
+func next(trace *[]string) time.Duration {
+	*trace = append(*trace, "rhs")
+	return 1
+}
+type unrelated struct { timeout time.Duration }
+func readUnrelated(value *unrelated) time.Duration { return value.timeout }
+-- accessors.go --
+package sample
+
+import clock "time"
+
+var _ clock.Duration
+-- want/callers.txt --
+package sample
+
+import "time"
+
+func readTimeout(c *config) time.Duration { return c.timeoutValue() }
+func writeTimeout(c *config, value time.Duration) { {
+	receiver := c
+	receiver.setTimeoutValue(value)
+} }
+func writeNil(trace *[]string) {
+	var c *config
+	{
+		receiver := c
+		receiver.setTimeoutValue(next(trace))
+	}
+}
+func redirect(current **config, trace *[]string) time.Duration {
+	*trace = append(*trace, "rhs")
+	*current = &config{timeout: 5}
+	return 7
+}
+func writeRedirect(initial *config, trace *[]string) (*config, *config) {
+	c := initial
+	old := c
+	{
+		receiver := c
+		receiver.setTimeoutValue(redirect(&c, trace))
+	}
+	return old, c
+}
+func writeReceiverParameter(c *config, receiver *config) {
+	{
+		receiver1 := c
+		receiver1.setTimeoutValue(nextValue(receiver))
+	}
+}
+func writeFieldFrom(c *config, other *config) {
+	{
+		receiver := c
+		receiver.setTimeoutValue(other.timeoutValue())
+	}
+}
+func nextValue(receiver *config) time.Duration { return receiver.timeoutValue() }
+func next(trace *[]string) time.Duration {
+	*trace = append(*trace, "rhs")
+	return 1
+}
+type unrelated struct { timeout time.Duration }
+func readUnrelated(value *unrelated) time.Duration { return value.timeout }
+-- want/accessors.txt --
+package sample
+
+import clock "time"
+
+var _ clock.Duration
+
+func (receiver *config) timeoutValue() clock.Duration         { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value clock.Duration) { receiver.timeout = value }
+-- order_test.want --
+package sample
+
+import "testing"
+
+func TestNilReceiverEvaluatesRightHandSideBeforePanic(t *testing.T) {
+	var trace []string
+	panicked := false
+	func() {
+		defer func() { panicked = recover() != nil }()
+		writeNil(&trace)
+	}()
+	if !panicked {
+		t.Fatal("writeNil() did not panic for a nil receiver")
+	}
+	if len(trace) != 1 || trace[0] != "rhs" {
+		t.Fatalf("right-hand-side trace = %v, want [rhs]", trace)
+	}
+}
+
+func TestAssignmentCapturesReceiverBeforeRightHandSide(t *testing.T) {
+	initial := &config{}
+	var trace []string
+	old, current := writeRedirect(initial, &trace)
+	if old != initial || old.timeoutValue() != 7 || current == old || current.timeoutValue() != 5 {
+		t.Fatalf("old/current receiver state = %#v / %#v, want old=7 and redirected=5", old, current)
+	}
+	if len(trace) != 1 || trace[0] != "rhs" {
+		t.Fatalf("right-hand-side trace = %v, want one evaluation", trace)
+	}
+}
+
+func TestAssignmentDoesNotShadowRightHandSideReceiver(t *testing.T) {
+	target := &config{timeout: 1}
+	source := &config{timeout: 9}
+	writeReceiverParameter(target, source)
+	if target.timeoutValue() != 9 || source.timeoutValue() != 9 {
+		t.Fatalf("target/source values = %d/%d, want 9/9", target.timeoutValue(), source.timeoutValue())
+	}
+}
+
+func TestAssignmentCanReadAnotherEncapsulatedField(t *testing.T) {
+	target := &config{timeout: 1}
+	source := &config{timeout: 9}
+	writeFieldFrom(target, source)
+	if target.timeoutValue() != 9 || source.timeoutValue() != 9 {
+		t.Fatalf("target/source values = %d/%d, want 9/9", target.timeoutValue(), source.timeoutValue())
+	}
+}

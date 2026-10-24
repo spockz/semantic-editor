@@ -1,0 +1,107 @@
+# Keep extracted declarations in owner scope when later code only writes them.
+exec semedit refactor-extract-callable --file reassign.go --symbol extractReassign --in-function ReassignAfterExtract --kind function --start-line 4 --end-line 5
+stdout 'symbol: extractReassign'
+cmp reassign.go want/reassign.go
+exec semedit refactor-extract-callable --file increment.go --symbol extractIncrement --in-function IncrementAfterExtract --kind function --start-line 4 --end-line 5
+stdout 'symbol: extractIncrement'
+cmp increment.go want/increment.go
+exec semedit refactor-extract-callable --file compound.go --symbol extractCompound --in-function CompoundAfterExtract --kind function --start-line 4 --end-line 5
+stdout 'symbol: extractCompound'
+cmp compound.go want/compound.go
+exec semedit refactor-extract-callable --file mixed.go --symbol extractMixed --in-function MixedRedeclarationAfterExtract --kind function --start-line 4 --end-line 5
+stdout 'symbol: extractMixed'
+cmp mixed.go want/mixed.go
+exec go test .
+
+-- go.mod --
+module example.com/extractlaterwrites
+
+go 1.23
+-- reassign.go --
+package sample
+
+func ReassignAfterExtract() {
+	x := 1
+	println(x)
+	x = 2
+}
+-- want/reassign.go --
+package sample
+
+func ReassignAfterExtract() {
+	x := extractReassign()
+	_ = x
+	x = 2
+}
+
+func extractReassign() int {
+	x := 1
+	println(x)
+	return x
+}
+-- increment.go --
+package sample
+
+func IncrementAfterExtract() {
+	x := 3
+	println(x)
+	x++
+}
+-- want/increment.go --
+package sample
+
+func IncrementAfterExtract() {
+	x := extractIncrement()
+	x++
+}
+
+func extractIncrement() int {
+	x := 3
+	println(x)
+	return x
+}
+-- compound.go --
+package sample
+
+func CompoundAfterExtract() {
+	x := 3
+	println(x)
+	x += 2
+}
+-- want/compound.go --
+package sample
+
+func CompoundAfterExtract() {
+	x := extractCompound()
+	x += 2
+}
+
+func extractCompound() int {
+	x := 3
+	println(x)
+	return x
+}
+-- mixed.go --
+package sample
+
+func MixedRedeclarationAfterExtract() {
+	x := 1
+	println(x)
+	x, y := 2, 3
+	println(y)
+}
+-- want/mixed.go --
+package sample
+
+func MixedRedeclarationAfterExtract() {
+	x := extractMixed()
+	_ = x
+	x, y := 2, 3
+	println(y)
+}
+
+func extractMixed() int {
+	x := 1
+	println(x)
+	return x
+}

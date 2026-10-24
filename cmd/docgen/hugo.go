@@ -347,7 +347,7 @@ semedit lookup --file api/server.go --symbol Server.Start
 Rename the resolved symbol across the workspace:
 
 ~~~console
-semedit rename --file api/server.go --symbol Server.Start --to Serve
+semedit refactor-rename --file api/server.go --symbol Server.Start --to Serve
 ~~~
 
 ## Connect an MCP client

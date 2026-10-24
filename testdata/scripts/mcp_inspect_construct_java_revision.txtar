@@ -1,0 +1,31 @@
+# Java MCP construct inspection returns a full-file revision beside its paths.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"construct_path":"if\[0\]"'
+stdout '"end_construct_path":"if\[0\]"'
+stdout '"expected_revision":"b5c48c4b73d36dee9cce54d060e46602e5118ebdca5cdd28c1def2db8d1c6bf1"'
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_construct","arguments":{"language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls","file":"src/Widget.java","in_function":"Widget.run","kind":"if","discriminator":"ready()"}}}
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_linux/.keep --
+placeholder
+
+-- tools/jdtls/config_win/.keep --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    if (ready()) { work(); } else { miss(); }
+  }
+}

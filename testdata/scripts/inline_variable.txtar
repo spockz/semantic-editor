@@ -1,21 +1,21 @@
 # Exercise literal inlining through the public CLI and refuse unsafe values and conversion-name bindings.
 mkdir .scratch
 cp calc.go .scratch/calc_before.go
-! exec semedit inline-variable --file calc.go --symbol value --in-function LocalAlias
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function LocalAlias
 stderr 'cannot inline "value": default type name int is shadowed by a local or package binding or import'
 cmp calc.go .scratch/calc_before.go
-exec semedit inline-variable --file calc.go --symbol value --in-function Compute
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Compute
 cmp calc.go want/calc.go
-! exec semedit inline-variable --file calc.go --symbol result --in-function Compute
-stderr 'initializer must be a literal expression'
+! exec semedit refactor-inline-value --file calc.go --symbol result --in-function Compute
+stderr 'computed initializer must contain only scalar literals'
 cmp calc.go want/calc.go
-! exec semedit inline-variable --file calc.go --symbol typed --in-function Compute
+! exec semedit refactor-inline-value --file calc.go --symbol typed --in-function Compute
 stderr 'explicitly typed declarations require preserving their declared type'
 cmp calc.go want/calc.go
-! exec semedit inline-variable --file calc.go --symbol shadowed --in-function Shadow
+! exec semedit refactor-inline-value --file calc.go --symbol shadowed --in-function Shadow
 stderr 'default type name int is shadowed'
 cmp calc.go want/calc.go
-! exec semedit inline-variable --file sibling/calc.go --symbol value --in-function Compute
+! exec semedit refactor-inline-value --file sibling/calc.go --symbol value --in-function Compute
 stderr 'default type name int is shadowed'
 cmp sibling/calc.go expected/sibling.go
 exec go test ./...

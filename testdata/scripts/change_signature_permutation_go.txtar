@@ -1,0 +1,129 @@
+# Constant argument permutations retain their original parameter pairing and runtime types across ordinary and test callers.
+exec go test ./...
+exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stdout 'Updated the function signature and every proven direct caller'
+cmp calls.go .scratch/want/calls.txt
+cmp more.go .scratch/want/more.txt
+exec semedit refactor-change-signature --file service.go --symbol describe --parameters '[{"source_index":1,"parameter":{"name":"label","type":"string"}},{"source_index":0,"parameter":{"name":"value","type":"any"}}]'
+exec semedit refactor-change-signature --file service.go --symbol rounded --parameters '[{"source_index":1,"parameter":{"name":"digit","type":"int"}},{"source_index":0,"parameter":{"name":"value","type":"float32"}}]'
+exec semedit refactor-change-signature --file service.go --symbol grouped --parameters '[{"source_index":2,"parameter":{"name":"_","type":"string"}},{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol builtins --parameters '[{"source_index":1,"parameter":{"name":"length","type":"int"}},{"source_index":0,"parameter":{"name":"size","type":"uintptr"}}]'
+exec semedit refactor-change-signature --file service.go --symbol unused --parameters '[{"source_index":1,"parameter":{"name":"label","type":"string"}},{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+cmp service.go .scratch/want/service.txt
+cmp service_test.go .scratch/want/service_test.txt
+cmp odd.go .scratch/want/odd.txt
+exec go test ./...
+-- go.mod --
+module example.com/permutation
+
+go 1.24
+-- service.go --
+package sample
+
+import "fmt"
+
+type count int
+const named count = 3
+const folded = 1 + 2
+
+func combine(left, right int) int { return left*100 + right }
+func describe(value any, label string) string { return fmt.Sprintf("%T:%v:%s", value, value, label) }
+func rounded(value float32, digit int) float32 { return value*10 + float32(digit) }
+func grouped(left, right int, _ string) int { return left*100 + right }
+func builtins(size uintptr, length int) int { return int(size)*10 + length }
+func unused(value int, label string) {}
+-- calls.go --
+package sample
+
+func first() int { return combine(folded, 7) }
+-- more.go --
+package sample
+
+func second() int { return combine(9, (2 + 3)) }
+-- odd.go --
+package sample
+
+func unrelated( )int{return 9}
+-- service_test.go --
+package sample
+
+import (
+	"testing"
+	"unsafe"
+)
+
+func TestBehavior(t *testing.T) {
+	if got := first(); got != 307 { t.Errorf("first = %d", got) }
+	if got := second(); got != 905 { t.Errorf("second = %d", got) }
+	if got := combine(4, 8); got != 408 { t.Errorf("combine = %d", got) }
+	if got := describe(1, "// ordinary string /*"); got != "int:1:// ordinary string /*" { t.Errorf("interface = %s", got) }
+	if got := describe(named, "named"); got != "sample.count:3:named" { t.Errorf("named = %s", got) }
+	{
+		type local int
+		const value local = 5
+		if got := describe(value, "first"); got != "sample.local:5:first" { t.Errorf("first local = %s", got) }
+	}
+	{
+		type local int
+		const value local = 6
+		if got := describe(value, "second"); got != "sample.local:6:second" { t.Errorf("second local = %s", got) }
+	}
+	if got := rounded(1.00000001, 2); got != 12 { t.Errorf("rounded = %v", got) }
+	if got := grouped(6, 4, "blank"); got != 604 { t.Errorf("grouped = %d", got) }
+	if got := builtins(unsafe.Sizeof(int64(0)), len("ab")); got != 82 { t.Errorf("builtins = %d", got) }
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int { return combine(7, folded) }
+-- .scratch/want/more.txt --
+package sample
+
+func second() int { return combine((2 + 3), 9) }
+-- .scratch/want/service.txt --
+package sample
+
+import "fmt"
+
+type count int
+const named count = 3
+const folded = 1 + 2
+
+func combine(right int, left int) int { return left*100 + right }
+func describe(label string, value any) string { return fmt.Sprintf("%T:%v:%s", value, value, label) }
+func rounded(digit int, value float32) float32 { return value*10 + float32(digit) }
+func grouped(_ string, right int, left int) int { return left*100 + right }
+func builtins(length int, size uintptr) int { return int(size)*10 + length }
+func unused(label string, value int) {}
+-- .scratch/want/service_test.txt --
+package sample
+
+import (
+	"testing"
+	"unsafe"
+)
+
+func TestBehavior(t *testing.T) {
+	if got := first(); got != 307 { t.Errorf("first = %d", got) }
+	if got := second(); got != 905 { t.Errorf("second = %d", got) }
+	if got := combine(8, 4); got != 408 { t.Errorf("combine = %d", got) }
+	if got := describe("// ordinary string /*", 1); got != "int:1:// ordinary string /*" { t.Errorf("interface = %s", got) }
+	if got := describe("named", named); got != "sample.count:3:named" { t.Errorf("named = %s", got) }
+	{
+		type local int
+		const value local = 5
+		if got := describe("first", value); got != "sample.local:5:first" { t.Errorf("first local = %s", got) }
+	}
+	{
+		type local int
+		const value local = 6
+		if got := describe("second", value); got != "sample.local:6:second" { t.Errorf("second local = %s", got) }
+	}
+	if got := rounded(2, 1.00000001); got != 12 { t.Errorf("rounded = %v", got) }
+	if got := grouped("blank", 4, 6); got != 604 { t.Errorf("grouped = %d", got) }
+	if got := builtins(len("ab"), unsafe.Sizeof(int64(0))); got != 82 { t.Errorf("builtins = %d", got) }
+}
+-- .scratch/want/odd.txt --
+package sample
+
+func unrelated( )int{return 9}

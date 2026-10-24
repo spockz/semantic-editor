@@ -440,7 +440,7 @@ func executeCommand(cmd *cobra.Command, workDir string, registry *operation.Regi
 	if err != nil {
 		return err
 	}
-	result, err := registry.Dispatch(cc, entry.Key, raw)
+	result, err := registry.DispatchEntry(cc, entry, raw)
 	if err != nil {
 		return reportCommandFailure(cmd, entry, err)
 	}

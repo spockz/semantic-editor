@@ -43,7 +43,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 		buffered, err := entry.SupportsBufferedBatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Project: backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust}, Registry: s.registry, Service: s.service, AllowedLanguages: s.enabledLanguages}, raw)
 		if err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, BatchResult{}, err))
+			response.Results = append(response.Results, batchEntryResult(entry.MCPName, BatchResult{}, err))
 			return buffer, err
 		}
 		editCtx := sourcebuf.WithBuffer(ctx, buffer)
@@ -55,7 +55,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 			editCtx = operation.WithSuggestionHistory(sourcebuf.WithoutBuffer(ctx), retainedHistory)
 		}
 		result, err := s.executeBatchEdit(editCtx, batchEntry)
-		response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, err))
+		response.Results = append(response.Results, batchEntryResult(entry.MCPName, result, err))
 		if err != nil {
 			response.Status = "error"
 			return buffer, err

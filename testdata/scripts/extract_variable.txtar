@@ -1,10 +1,10 @@
 # Extract one exact typed argument expression and refuse ambiguous selection without writes.
-exec semedit extract-variable --file api/render.go --symbol total --in-function Render --discriminator 'count + 1'
+exec semedit refactor-extract-value --file api/render.go --symbol total --in-function Render --discriminator 'count + 1'
 stdout 'symbol: total'
 stdout 'in_function: Render'
 stdout 'discriminator: count \+ 1\.'
 cmp api/render.go want/api/render.go
-! exec semedit extract-variable --file api/ambiguous.go --symbol value --in-function RenderAmbiguous --discriminator 'count'
+! exec semedit refactor-extract-value --file api/ambiguous.go --symbol value --in-function RenderAmbiguous --discriminator 'count'
 stderr 'expression selection is ambiguous'
 cmp api/ambiguous.go original/api/ambiguous.go
 exec go test ./api

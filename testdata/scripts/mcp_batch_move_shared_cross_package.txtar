@@ -63,7 +63,7 @@ package untouched
 
 func Preserve( )int{return 8}
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"caller/use.go","source":"func Unsaved() string { return legacy.MoveMe(\" unsaved \") }"}},{"tool":"semantic_move_construct","params":{"file":"legacy/source.go","destination_file":"legacy/spare.go","symbol":"MoveMe"}},{"tool":"semantic_move_construct","params":{"file":"legacy/spare.go","destination_file":"api/dest.go","symbol":"MoveMe"}},{"tool":"semantic_rename","params":{"file":"api/dest.go","symbol":"MoveMe","to":"Final"}},{"tool":"semantic_replace_body","params":{"file":"api/dest.go","symbol":"Final","body":"return strings.TrimSpace(value) + \"!\""}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"caller/use.go","source":"func Unsaved() string { return legacy.MoveMe(\" unsaved \") }"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/source.go","destination_file":"legacy/spare.go","symbol":"MoveMe"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/spare.go","destination_file":"api/dest.go","symbol":"MoveMe"}},{"tool":"refactor_rename","params":{"file":"api/dest.go","symbol":"MoveMe","to":"Final"}},{"tool":"semantic_replace_body","params":{"file":"api/dest.go","symbol":"Final","body":"return strings.TrimSpace(value) + \"!\""}}]}}}
 -- .scratch/want/source.go --
 package legacy
 

@@ -11,7 +11,7 @@ module example.com/extractconstantbatch
 
 go 1.23
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return 3 * 60"}},{"tool":"semantic_extract_constant","params":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3 * 60"}},{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return retryWindow"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return 3 * 60 + 3 * 60 + 3 * 60"}},{"tool":"refactor_extract_value","params":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3*60","kind":"constant","occurrence_indices":[0,2],"expected_revision":"098f637d9009a90881617e32ab772e700229f733f19ad560e38409e5faf9cfaa"}},{"tool":"refactor_rename","params":{"file":"retry.go","symbol":"retryWindow","to":"retryDuration"}}]}}}
 -- retry.go --
 package retry
 
@@ -20,7 +20,7 @@ func Retry() int { return 1 }
 package retry
 
 func Retry() int {
-	return retryWindow
+	return retryDuration + 3*60 + retryDuration
 }
 
-const retryWindow int = 3 * 60
+const retryDuration = 3 * 60

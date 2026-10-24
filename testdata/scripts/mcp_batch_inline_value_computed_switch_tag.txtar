@@ -1,0 +1,47 @@
+# Inline a pure computed scalar into a complete expression-switch tag after a buffered body replacement.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp switch.go .scratch/want/switch.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedswitch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"switch.go","symbol":"Classify","body":"code := input + 1\nswitch code {\ncase 2:\n\treturn \"second\"\ndefault:\n\treturn \"other\"\n}"}},{"tool":"refactor_inline_value","params":{"file":"switch.go","symbol":"code","in_function":"Classify"}}]}}}
+-- switch.go --
+package switchtag
+
+func Classify(input int) string {
+	return "before"
+}
+-- .scratch/want/switch.go --
+package switchtag
+
+func Classify(input int) string {
+	switch input + 1 {
+	case 2:
+		return "second"
+	default:
+		return "other"
+	}
+}
+-- switch_test.go --
+package switchtag
+
+import "testing"
+
+func TestClassify(t *testing.T) {
+	for _, test := range []struct {
+		input int
+		want  string
+	}{{input: 1, want: "second"}, {input: 4, want: "other"}} {
+		if got := Classify(test.input); got != test.want {
+			t.Errorf("Classify(%d) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}

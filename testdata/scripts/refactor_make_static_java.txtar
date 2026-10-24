@@ -1,0 +1,40 @@
+# Java make-static captures a signature-changing, multi-file refactoring and returns its new method identity.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_MAKE_STATIC=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit refactor-make-static --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --symbol 'Service.count()'
+stdout 'Made the Java method static through the JDT LS Make Static action'
+stdout 'Service.count\(Service\)'
+cmp src/Service.java want/Service.java
+cmp src/Caller.java want/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Service.java --
+package sample;
+class Service {
+  int count() { return 1; }
+}
+-- src/Caller.java --
+package sample;
+class Caller {
+  int value = new Service().count();
+}
+
+-- want/Service.java --
+package sample;
+class Service {
+  static int count(Service receiver) { return 1; }
+}
+-- want/Caller.java --
+package sample;
+class Caller {
+  int value = Service.count(new Service());
+}
+

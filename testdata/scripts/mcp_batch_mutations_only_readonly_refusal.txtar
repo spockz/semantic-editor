@@ -1,0 +1,20 @@
+# A raw batch request cannot bypass the mutations-only profile's read-only tool exclusion.
+stdin input.json
+exec semedit mcp --profile mutations-only --tool-profile full
+stdout 'not batchable or unavailable in the active profile: semantic_lookup'
+cmp main.go .scratch/want/main.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_lookup","params":{"file":"main.go","symbol":"Existing"}}]}}}
+-- go.mod --
+module example.com/profilebatch
+
+go 1.24
+-- main.go --
+package sample
+
+func Existing() {}
+-- .scratch/want/main.go --
+package sample
+
+func Existing() {}

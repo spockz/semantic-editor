@@ -36,8 +36,11 @@ gopls versions, and sample count alongside every result.
 ## Existing move capabilities
 
 Go `semantic_move_construct` relocates declarations within or between files.
-Cross-package movement supports exported free functions within one module, subject
-to reference completeness, dependency, build-constraint, and type-check guards. It
+Cross-package movement supports exported functions, standalone constants, aliases
+whose type expressions use only predeclared type names, zero-valued variables with
+predeclared structural types, and bounded defined-type groups within one module,
+subject to reference completeness, test-reference, dependency, build-constraint,
+method-set, initialization, and type-check guards. It
 does not provide a general file relocation or package migration operation. Java
 public-type rename can rename its file within the package; Java type moves can
 update the package and references. Keep these separate benchmark scenarios.

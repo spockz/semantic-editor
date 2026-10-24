@@ -1,0 +1,41 @@
+# Refuse effectful channel expressions and channel values captured inside the extracted body.
+! exec semedit refactor-extract-callable --file service.go --symbol walkFactory --in-function FactoryOperand --kind function --start-line 4 --end-line 4
+stderr 'channel operand must be a local receive-capable channel identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol walkReference --in-function BodyReference --kind function --start-line 8 --end-line 8
+stderr 'cannot copy non-scalar owner input "values"'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangechannelrefusals
+
+go 1.23
+-- service.go --
+package sample
+
+func FactoryOperand() {
+	for value := range nextValues() { record(value) }
+}
+
+func BodyReference(values <-chan int) {
+	for value := range values { recordChannel(values, value) }
+}
+
+func nextValues() <-chan int { return make(chan int) }
+func record(int) {}
+func recordChannel(<-chan int, int) {}
+-- original/service.go --
+package sample
+
+func FactoryOperand() {
+	for value := range nextValues() { record(value) }
+}
+
+func BodyReference(values <-chan int) {
+	for value := range values { recordChannel(values, value) }
+}
+
+func nextValues() <-chan int { return make(chan int) }
+func record(int) {}
+func recordChannel(<-chan int, int) {}

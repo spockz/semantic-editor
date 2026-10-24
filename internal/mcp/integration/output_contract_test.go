@@ -162,7 +162,7 @@ func compileToolOutputSchema(t *testing.T, schemas map[string]json.RawMessage, n
 }
 
 func assertRenameOutputSchema(t *testing.T, schemas map[string]json.RawMessage) {
-	schema := compileToolOutputSchema(t, schemas, "semantic_rename")
+	schema := compileToolOutputSchema(t, schemas, "refactor_rename")
 	diagnostics := map[string]any{"net_delta": 0, "introduced": []any{}, "resolved": []any{}}
 	success := map[string]any{"status": "renamed", "application_state": "persisted", "diagnostics": diagnostics, "active_count": 0}
 	known := map[string]any{

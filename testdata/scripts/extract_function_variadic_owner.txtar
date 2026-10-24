@@ -1,0 +1,20 @@
+! exec semedit refactor-extract-callable --file variadic.go --symbol printFirst --in-function PrintFirst --kind function --start-line 4 --end-line 4
+stderr 'variadic function'
+cmp variadic.go original/variadic.go
+
+-- go.mod --
+module example.com/extractfunctionvariadic
+
+go 1.23
+-- variadic.go --
+package sample
+
+func PrintFirst(values ...int) {
+	println(values[0])
+}
+-- original/variadic.go --
+package sample
+
+func PrintFirst(values ...int) {
+	println(values[0])
+}

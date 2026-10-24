@@ -1,0 +1,43 @@
+# Reject alias moves that would change a target identity or depend on a local named type.
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Count --placement file_end
+stderr 'changes the resolved target type'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp api/api.go .scratch/_want/api/api.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol LocalAlias --placement file_end
+stderr 'non-predeclared type dependency'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp api/api.go .scratch/_want/api/api.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol PrivateRecord --placement file_end
+stderr 'changes the resolved target type'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossaliasrefusals
+
+go 1.23
+
+-- legacy/types.go --
+package legacy
+
+type Count = int
+type localNumber int
+type LocalAlias = localNumber
+type PrivateRecord = struct{ id string }
+-- api/api.go --
+package api
+
+type int int64
+-- .scratch/_want/legacy/types.go --
+package legacy
+
+type Count = int
+type localNumber int
+type LocalAlias = localNumber
+type PrivateRecord = struct{ id string }
+-- .scratch/_want/api/api.go --
+package api
+
+type int int64

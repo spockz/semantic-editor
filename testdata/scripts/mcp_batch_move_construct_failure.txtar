@@ -58,15 +58,15 @@ func Value() int { return 7 }
 
 func Other() int { return Value() }
 -- partial.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"dest.go","package":"batchfailure"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"dest.go","symbol":"Value"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"missing.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"dest.go","package":"batchfailure"}},{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"dest.go","symbol":"Value"}},{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"missing.go","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- malformed.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"malformed.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"malformed.go","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- wrong.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"wrong.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"wrong.go","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- cross.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"other/dest.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"other/dest.go","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- non-go.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"notes.txt","symbol":"Other"}}],"auto_organize_imports":true}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"source.go","destination_file":"notes.txt","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- .scratch/malformed.txt --
 package batchfailure
 

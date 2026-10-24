@@ -224,6 +224,11 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 	return buf.Bytes(), nil
 }
 
+// AddExplicitImports edits imports in an in-memory source candidate without publishing it.
+func AddExplicitImports(filePath string, src []byte, entries []string) ([]byte, error) {
+	return applyExplicitImports(filePath, src, ImportOptions{Add: entries})
+}
+
 func removeExplicitImports(fileNode *ast.File, paths []string) {
 	if len(paths) == 0 {
 		return

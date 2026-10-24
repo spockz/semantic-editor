@@ -1,0 +1,25 @@
+# Refuse an external field type when the accessor destination has no usable import, without changing either source.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp config.go before-config.txt
+exec cp accessors.go before-accessors.txt
+! exec semedit refactor-encapsulate-field --file config.go --symbol config.timeout --getter timeoutValue --setter setTimeoutValue --destination-file accessors.go --auto-organize-imports=false
+stderr 'does not import field type package'
+cmp config.go before-config.txt
+cmp accessors.go before-accessors.txt
+exec go test
+
+-- go.mod --
+module example.com/encapsulatefieldmissingimport
+
+go 1.24
+-- config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+-- accessors.go --
+package sample

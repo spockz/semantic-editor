@@ -1,10 +1,10 @@
 # target_symbol is only meaningful for relative placement and must never be ignored.
-! exec semedit move-construct --file direct.go --symbol MoveMe --target-symbol Anchor
+! exec semedit refactor-move-declaration --file direct.go --symbol MoveMe --target-symbol Anchor
 stderr 'target_symbol requires before_symbol or after_symbol'
 cmp direct.go .scratch/want/direct.go
 
 # A relative target remains a supported placement.
-exec semedit move-construct --file direct.go --symbol MoveMe --placement before_symbol --target-symbol Anchor
+exec semedit refactor-move-declaration --file direct.go --symbol MoveMe --placement before_symbol --target-symbol Anchor
 cmp direct.go .scratch/want/direct-relative.go
 
 # Batch parameter preflight rejects the invalid child before any edit dispatches.
@@ -33,7 +33,7 @@ func BatchFirst() {}
 
 func BatchMoveMe() {}
 -- batch.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"batch.go","symbol":"BatchFirst","placement":"before_symbol","target_symbol":"BatchAnchor"}},{"tool":"semantic_move_construct","params":{"file":"batch.go","symbol":"BatchMoveMe","target_symbol":"BatchAnchor"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"batch.go","symbol":"BatchFirst","placement":"before_symbol","target_symbol":"BatchAnchor"}},{"tool":"refactor_move_declaration","params":{"file":"batch.go","symbol":"BatchMoveMe","target_symbol":"BatchAnchor"}}]}}}
 -- .scratch/want/direct.go --
 package movetarget
 

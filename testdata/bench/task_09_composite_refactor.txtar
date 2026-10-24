@@ -6,7 +6,7 @@ contexts:
   - large
 prompt_variants:
   default: "In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports."
-  explicit: "In parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return &Config{Host: \"localhost\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\"file\":\"config/config.go\"}. Preserve Addr behavior."
+  explicit: "In parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: refactor_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return &Config{Host: \"localhost\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\"file\":\"config/config.go\"}. Preserve Addr behavior."
 interactive_followups:
   - "Rename the Config field from Port to ListenPort and update its uses, including Addr. Addr must continue to format the configured Host and port; unrelated Port fields in other packages are outside this change."
   - "DefaultConfig() *Config should return a non-nil configuration with Host set to `localhost` and ListenPort set to 8080, so its Addr() is `localhost:8080` without caller initialization."

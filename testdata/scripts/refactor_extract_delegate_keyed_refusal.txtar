@@ -1,0 +1,29 @@
+# WHY: Field-only keyed literal support must not expand delegate extraction's independent use proof.
+! exec semedit refactor-extract-delegate --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"}]' --field state --method read
+stderr 'non-selector use'
+cmp record.go .scratch/want/record.go
+
+-- go.mod --
+module example.com/extractdelegatekeyedrefusal
+
+go 1.24
+-- record.go --
+package sample
+
+type record struct {
+	first int
+}
+
+var value = record{first: 1}
+
+func (r *record) read() int { return r.first }
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	first int
+}
+
+var value = record{first: 1}
+
+func (r *record) read() int { return r.first }

@@ -1,0 +1,37 @@
+# Select a contiguous Go statement range with revision-bound AST paths.
+exec semedit inspect-construct --file service.go --in-function emit --kind statement/expression --discriminator 'Print(1)'
+stdout '"construct_path": "1"'
+stdout '"expected_revision": "c33d42825b15b8b8d819a7186c5e11c3f48dde985a612b6d4d897762e0d0ab88"'
+exec semedit refactor-extract-callable --file service.go --symbol writeTail --in-function emit --kind function --construct-path 1 --end-construct-path 2 --expected-revision c33d42825b15b8b8d819a7186c5e11c3f48dde985a612b6d4d897762e0d0ab88
+cmp service.go want_service.txt
+
+-- go.mod --
+module example.com/constructpath
+
+go 1.24
+-- service.go --
+package sample
+
+func emit() {
+	Print(0)
+	Print(1)
+	Print(2)
+	Print(3)
+}
+
+func Print(int) {}
+-- want_service.txt --
+package sample
+
+func emit() {
+	Print(0)
+	writeTail()
+	Print(3)
+}
+
+func writeTail() {
+	Print(1)
+	Print(2)
+}
+
+func Print(int) {}

@@ -1,0 +1,33 @@
+# Refuses a method whose parameter would shadow the generated wrapper's nil check.
+! exec semedit refactor-extract-delegate --file counter.go --symbol counterState --in-type counter --members '[{"file":"counter.go","symbol":"counter.value"}]' --field state --method increment
+stderr 'shadows nil required by the generated wrapper'
+cmp counter.go want/counter.go
+
+-- go.mod --
+module example.com/refactordelegatenil
+
+go 1.24
+-- counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) increment(nil bool) {
+	if nil {
+		c.value++
+	}
+}
+-- want/counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) increment(nil bool) {
+	if nil {
+		c.value++
+	}
+}

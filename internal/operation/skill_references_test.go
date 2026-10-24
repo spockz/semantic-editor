@@ -3,6 +3,7 @@
 package operation_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -73,6 +74,29 @@ func assertLanguageReferenceFile(t *testing.T, lang backend.LanguageID, referenc
 	expectedLink := "references/" + refFileName
 	if !strings.Contains(skillMainText, expectedLink) {
 		t.Errorf("main SKILL.md does not contain link to %s", expectedLink)
+	}
+
+	detailsDir := filepath.Join(referencesDir, strings.TrimSuffix(refFileName, filepath.Ext(refFileName)))
+	if _, statErr := os.Stat(detailsDir); statErr == nil {
+		err := filepath.WalkDir(detailsDir, func(path string, entry fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || filepath.Ext(path) != ".md" {
+				return nil
+			}
+			additional, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return readErr
+			}
+			text += "\n" + string(additional)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("read language reference details for %s: %v", lang, err)
+		}
+	} else if !os.IsNotExist(statErr) {
+		t.Fatalf("inspect language reference details for %s: %v", lang, statErr)
 	}
 
 	assertLanguageToolsMentioned(t, lang, refFileName, text, registry)

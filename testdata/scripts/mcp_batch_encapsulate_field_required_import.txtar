@@ -1,0 +1,47 @@
+# Keep required accessor imports in the validated batch candidate while deferring final import cleanup.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_encapsulate_field"'
+stdout '"status":"applied_working"'
+stdout '"tool":"refactor_rename"'
+exec gofmt -w .scratch/want/accessors.go
+cmp config.go .scratch/want/config.go
+cmp accessors.go .scratch/want/accessors.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldbatchimport
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_encapsulate_field","params":{"file":"config.go","destination_file":"accessors.go","symbol":"config.timeout","getter":"timeoutValue","setter":"setTimeoutValue","auto_organize_imports":true}},{"tool":"refactor_rename","params":{"file":"accessors.go","symbol":"timeoutValue","to":"duration"}}]}}}
+-- config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+
+func (c *config) read() time.Duration { return c.timeout }
+-- accessors.go --
+package sample
+-- .scratch/want/config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+
+func (c *config) read() time.Duration { return c.duration() }
+-- .scratch/want/accessors.go --
+package sample
+
+import time "time"
+
+func (receiver *config) duration() time.Duration         { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value time.Duration) { receiver.timeout = value }

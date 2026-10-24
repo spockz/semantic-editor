@@ -4,9 +4,10 @@ package operation
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/capability"
-	"strings"
 )
 
 // Description renders the registered language contracts for public help and tool discovery.
@@ -50,6 +51,7 @@ func (r *Registry) installLanguageContracts() error {
 }
 
 func registeredLanguageContract(key string, language backend.LanguageID) (capability.OperationContract, bool) {
+	key = backendOperationKey(key)
 	if key == "workspace_outline" && (language == backend.LanguageGo || language == backend.LanguageJava) {
 		return autoOperationContract(key)
 	}
@@ -59,6 +61,14 @@ func registeredLanguageContract(key string, language backend.LanguageID) (capabi
 	case backend.LanguageAuto:
 		return autoOperationContract(key)
 	case backend.LanguageJava:
+		if key == "make_static" || key == "make_type_explicit" {
+			scope := capability.ScopeSelectedFile
+			return singleContract(capability.VariantSelectedFile, scope,
+				contractRequirements(scope, capability.RequireWorkspaceTrust, capability.RequireJavaRoot, capability.RequireJDTLS, capability.RequireJava21, capability.RequireExactSelector, capability.RequireSourceStable),
+				capability.FeatureTypedRefactor|capability.FeatureFormat|capability.FeatureOrganizeImports|capability.FeatureDiagnostics,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
 		if key == "move_construct" {
 			scope := capability.ScopeSelectedFile
 			return singleContract(capability.VariantSelectedFile, scope,
@@ -98,6 +108,16 @@ func autoOperationContract(key string) (capability.OperationContract, bool) {
 		return singleContract(0, scope,
 			contractRequirements(scope, capability.RequireSourceStable),
 			capability.FeatureOutline, capability.GuaranteeReadOnly, allFaultSupport()), true
+	case "search_adrs":
+		scope := capability.ScopeWorkspacePaths
+		return singleContract(0, scope,
+			contractRequirements(scope, capability.RequireSourceStable),
+			capability.FeatureDecisionSearch, capability.GuaranteeReadOnly, allFaultSupport()), true
+	case "generate_adr_index":
+		scope := capability.ScopeWorkspacePaths
+		return singleContract(0, scope,
+			contractRequirements(scope, capability.RequireSourceStable, capability.RequireWritableDestination),
+			capability.FeatureDocumentIndex, capability.GuaranteeAtomicWrites, allFaultSupport()), true
 	case capability.OpVerify:
 		fileScope, scopeScope := capability.ScopeSelectedFile, capability.ScopeSelectedScope
 		features := capability.FeatureDiagnostics | capability.FeatureProjectHooks
@@ -230,7 +250,25 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 		return singleContract(capability.VariantSelectedFile, scope, mutation, capability.FeatureASTEdit|capability.FeatureFormat,
 			capability.GuaranteeASTEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryNormalization)), true
-	case "extract_variable":
+	case (backendExtractValueOperation):
+		if language == backend.LanguageRust {
+			refactor := append(append([]capability.Requirement{}, requirements...),
+				capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope},
+				capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			return singleContract(capability.VariantSelectedFile, scope, refactor,
+				capability.FeatureTypedRefactor,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
+		if language == backend.LanguageScala {
+			refactor := append(append([]capability.Requirement{}, requirements...),
+				capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope},
+				capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			return singleContract(capability.VariantSelectedFile, scope, refactor,
+				capability.FeatureTypedRefactor,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -238,7 +276,27 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
 			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
-	case "extract_function":
+	case "promote_local_to_const":
+		if language != backend.LanguageRust {
+			return capability.OperationContract{}, false
+		}
+		refactor := append(append([]capability.Requirement{}, requirements...),
+			capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope},
+			capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+		return singleContract(capability.VariantSelectedFile, scope, refactor,
+			capability.FeatureTypedRefactor,
+			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+	case (backendExtractFunctionOperation):
+		if language == backend.LanguageRust || language == backend.LanguageScala {
+			refactor := append(append([]capability.Requirement{}, requirements...),
+				capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope},
+				capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			return singleContract(capability.VariantSelectedFile, scope, refactor,
+				capability.FeatureTypedRefactor,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -254,7 +312,16 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
 			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
-	case "inline_variable":
+	case (backendInlineValueOperation):
+		if language == backend.LanguageRust {
+			refactor := append(append([]capability.Requirement{}, requirements...),
+				capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope},
+				capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			return singleContract(capability.VariantSelectedFile, scope, refactor,
+				capability.FeatureTypedRefactor,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -263,6 +330,13 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
 	case "inline_function":
+		if language == backend.LanguageRust {
+			refactor := append(append([]capability.Requirement{}, requirements...), capability.Requirement{Kind: capability.RequireExactSelector, Scope: scope}, capability.Requirement{Kind: capability.RequireSourceStable, Scope: scope})
+			return singleContract(capability.VariantSelectedFile, scope, refactor,
+				capability.FeatureTypedRefactor,
+				capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites,
+				conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
+		}
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -278,7 +352,7 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 		return singleContract(capability.VariantSelectedFile, capability.ScopeServerScope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
 			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
-	case "implement_contract":
+	case (backendImplementContractOperation):
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -286,7 +360,7 @@ func externalOperationContract(key string, language backend.LanguageID) (capabil
 		return singleContract(capability.VariantSelectedFile, scope, refactor, capability.FeatureTypedRefactor|capability.FeatureFormat,
 			capability.GuaranteeServerEdit|capability.GuaranteeAtomicWrites|capability.GuaranteeDiagnostics,
 			conditionalFaultSupport(capability.RecoveryServerAnalysis)), true
-	case "extract_interface":
+	case (backendExtractInterfaceOperation):
 		if language != backend.LanguageJava {
 			return capability.OperationContract{}, false
 		}
@@ -616,7 +690,7 @@ func goTypedOperationContract(key string) (capability.OperationContract, bool) {
 	case "extract_constant":
 		local.Preconditions = append(local.Preconditions, capability.Requirement{Kind: capability.RequireTestVariants, Scope: packageScope})
 		return typedContract(local), true
-	case "extract_function", "extract_variable", "inline_variable":
+	case (backendExtractFunctionOperation), (backendExtractValueOperation), (backendInlineValueOperation):
 		return typedContract(local), true
 	case capability.OpFindReferences:
 		references := contractVariant(capability.VariantSelectedFile, moduleScope,
@@ -625,10 +699,12 @@ func goTypedOperationContract(key string) (capability.OperationContract, bool) {
 			capability.FeatureReferences, capability.GuaranteeReadOnly|capability.GuaranteeModuleProof,
 			moduleProofFaultSupport())
 		return typedContract(references), true
-	case "inline_function", "migrate_type", "change_signature", "introduce_parameter",
-		"introduce_parameter_object", "extract_interface", "implement_contract":
+	case encapsulateFieldOperation:
 		return typedContract(moduleMutation), true
-	case "insert_field", "extract_type", "set_doc_comment":
+	case "inline_function", "migrate_type", "change_signature", "introduce_parameter",
+		"introduce_parameter_object", (backendExtractInterfaceOperation), (backendImplementContractOperation):
+		return typedContract(moduleMutation), true
+	case "insert_field", "extract_type", "extract_delegate", "set_doc_comment":
 		structuralRequirements := append(contractRequirements(moduleScope, capability.RequireModuleSnapshot, capability.RequireTestVariants),
 			capability.Requirement{Kind: capability.RequireExactSelector, Scope: packageScope},
 			capability.Requirement{Kind: capability.RequireBoundedSource, Scope: packageScope},

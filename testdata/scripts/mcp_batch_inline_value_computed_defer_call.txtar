@@ -1,0 +1,52 @@
+# Inline a pure scalar local into a defer call in the same buffered body replacement.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp defer.go .scratch/want/defer.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputeddefer
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"defer.go","symbol":"Record","body":"value := input + 2\ndefer record(value)\ninput = 99"}},{"tool":"refactor_inline_value","params":{"file":"defer.go","symbol":"value","in_function":"Record"}}]}}}
+-- defer.go --
+package defercall
+
+type Count int
+
+var seen []Count
+
+func record(value Count) { seen = append(seen, value) }
+
+func Record(input Count) {
+	return
+}
+-- .scratch/want/defer.go --
+package defercall
+
+type Count int
+
+var seen []Count
+
+func record(value Count) { seen = append(seen, value) }
+
+func Record(input Count) {
+	defer record(input + 2)
+	input = 99
+}
+-- defer_test.go --
+package defercall
+
+import "testing"
+
+func TestRecordKeepsDeferredArgumentValue(t *testing.T) {
+	seen = nil
+	Record(5)
+	if len(seen) != 1 || seen[0] != 7 {
+		t.Fatalf("seen = %v, want [7]", seen)
+	}
+}

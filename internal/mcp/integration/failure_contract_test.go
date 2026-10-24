@@ -98,7 +98,7 @@ func TestMCPRejectedConstructsPreserveSource(t *testing.T) {
 		{
 			name:    "ignored_move_target",
 			source:  "package audit\n\ntype Request struct { ID string }\n\nfunc Normalize(value string) string { return value }\n",
-			tool:    "semantic_move_construct",
+			tool:    "refactor_move_declaration",
 			params:  map[string]any{"file": "source.go", "symbol": "Request", "target_symbol": "Request.RequestID"},
 			message: "target_symbol requires before_symbol or after_symbol",
 		},
@@ -287,16 +287,18 @@ func failureScenarioDescriptions() map[string]string {
 	return map[string]string{
 		"semantic_add_build_dependency":       "invalid module path",
 		"semantic_assertion_mode":             "missing Go test source",
-		"semantic_change_signature":           "missing symbol selector",
-		"semantic_extract_constant":           "missing source file",
-		"semantic_extract_function":           "missing source file",
-		"semantic_extract_interface":          "missing source file",
-		"semantic_extract_type":               "missing source file",
-		"semantic_extract_variable":           "missing source file",
+		"refactor_change_signature":           "missing symbol selector",
+		"refactor_encapsulate_field":          "missing source file",
+		"refactor_extract_callable":           "missing source file",
+		"refactor_extract_interface":          "missing source file",
+		"refactor_extract_type":               "missing source file",
+		"refactor_extract_delegate":           "missing source file",
+		"refactor_extract_value":              "missing source file",
 		"semantic_find_references":            "unmatched symbol",
-		"semantic_implement_contract":         "missing source file",
-		"semantic_inline_function":            "missing source file",
-		"semantic_inline_variable":            "missing source file",
+		"semantic_generate_adr_index":         "missing ADR directory marker",
+		"refactor_implement_contract":         "missing source file",
+		"refactor_inline_callable":            "missing source file",
+		"refactor_inline_value":               "missing source file",
 		"semantic_insert_case":                "unmatched enclosing-function selector",
 		"semantic_insert_construct":           "missing source file",
 		"semantic_insert_decl":                "missing source file",
@@ -305,16 +307,16 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_insert_function":            "missing source file",
 		"semantic_insert_type":                "missing source file",
 		"semantic_inspect_symbol":             "unmatched symbol",
-		"semantic_introduce_parameter":        "unmatched function selector",
-		"semantic_introduce_parameter_object": "unmatched function selector",
+		"refactor_introduce_parameter":        "unmatched function selector",
+		"refactor_introduce_parameter_object": "unmatched function selector",
 		"semantic_lookup":                     "unmatched symbol",
-		"semantic_migrate_type":               "missing source file",
-		"semantic_move_construct":             "unmatched source selector",
-		"semantic_move_file":                  "missing source file",
+		"refactor_migrate_type":               "missing source file",
+		"refactor_move_declaration":           "unmatched source selector",
+		"refactor_move_file":                  "missing source file",
 		"semantic_organize_imports":           "missing source file",
 		"semantic_outline":                    "missing source path",
 		"semantic_remove_construct":           "unmatched enclosing-function selector",
-		"semantic_rename":                     "unmatched symbol",
+		"refactor_rename":                     "unmatched symbol",
 		"semantic_replace_body":               "missing source file",
 		"semantic_replace_construct":          "unmatched enclosing-function selector",
 		"semantic_replace_decl":               "missing source file",
@@ -326,6 +328,7 @@ func failureScenarioDescriptions() map[string]string {
 		"semantic_stage_drop":                 "no active retained stage with an opaque step selector",
 		"semantic_commit":                     "no active retained stage",
 		"semantic_snapshot":                   "missing snapshot path",
+		"semantic_search_adrs":                "missing ADR directory marker",
 		"semantic_undo":                       "nonexistent snapshot id",
 		"semantic_verify":                     "missing verification path",
 		"semantic_workspace_outline":          "missing directory path",
@@ -490,7 +493,7 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 	case "semantic_snapshot":
 		args["label"] = ""
 		args["paths"] = []string{"missing.go"}
-	case "semantic_move_file":
+	case "refactor_move_file":
 		args["file"] = "missing.go"
 		args["destination_file"] = "destination.go"
 	case "semantic_undo":
@@ -510,7 +513,7 @@ func applyFailureArgumentOverrides(args map[string]any, tool string) {
 		args["package"] = "infer"
 	case "semantic_batch":
 		args["edits"] = []any{map[string]any{
-			"tool":   "semantic_rename",
+			"tool":   "refactor_rename",
 			"params": map[string]any{"symbol": "MissingSymbol", "to": "RenamedSymbol", "language": "go"},
 		}}
 	case "report_feedback":
@@ -542,7 +545,7 @@ func applyStageAndInspectionFailureOverrides(args map[string]any, tool string) b
 
 func applySelectorFailureOverrides(args map[string]any, tool string) bool {
 	switch tool {
-	case "semantic_rename":
+	case "refactor_rename":
 		args["symbol"] = "MissingSymbol"
 		args["to"] = "RenamedSymbol"
 		args["language"] = "go"
@@ -559,7 +562,7 @@ func applySelectorFailureOverrides(args map[string]any, tool string) bool {
 		if tool == "semantic_insert_case" {
 			args["case"] = "case \"missing\":\n\treturn"
 		}
-	case "semantic_move_construct":
+	case "refactor_move_declaration":
 		args["file"] = "main.go"
 		args["symbol"] = "MissingSymbol"
 	case "semantic_assertion_mode":

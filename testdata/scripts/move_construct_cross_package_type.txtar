@@ -1,0 +1,93 @@
+# Cross-package type movement preserves direct methods, references, method selections, and interface satisfaction.
+exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+exec go test ./...
+
+-- go.mod --
+module example.com/typecross
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+type Widget struct { Value int }
+
+func (Widget) ValueMethod() int { return 1 }
+
+func (_ Widget) Copy(value int) int { _ = value; local := value; return local }
+
+func (Widget) AnonymousField() int {
+	value := struct{ Outer struct{ X int } }{Outer: struct{ X int }{X: 3}}
+	return value.Outer.X
+}
+
+func (w *Widget) PointerMethod() int { return w.Value }
+func Local() int { return Widget{}.ValueMethod() }
+func LocalMethodExpression() func(Widget) int { return Widget.ValueMethod }
+
+-- api/api.go --
+package api
+
+-- caller/use.go --
+package caller
+
+import "example.com/typecross/legacy"
+
+type valueAPI interface { ValueMethod() int }
+type pointerAPI interface { PointerMethod() int }
+
+func verifyInterfaces() {
+	var _ valueAPI = legacy.Widget{}
+	var _ pointerAPI = (*legacy.Widget)(nil)
+}
+
+func Call(w *legacy.Widget) int { return w.PointerMethod() }
+func MethodValue(w *legacy.Widget) func() int { return w.PointerMethod }
+func MethodExpression() func(*legacy.Widget) int { return (*legacy.Widget).PointerMethod }
+
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+import "example.com/typecross/api"
+
+func Local() int { return api.Widget{}.ValueMethod() }
+func LocalMethodExpression() func(api.Widget) int {
+	return api.Widget.ValueMethod
+}
+-- .scratch/_want/api/api.go --
+package api
+
+type Widget struct{ Value int }
+
+func (Widget) ValueMethod() int { return 1 }
+
+func (_ Widget) Copy(value int) int { _ = value; local := value; return local }
+
+func (Widget) AnonymousField() int {
+	value := struct{ Outer struct{ X int } }{Outer: struct{ X int }{X: 3}}
+	return value.Outer.X
+}
+
+func (w *Widget) PointerMethod() int { return w.Value }
+-- .scratch/_want/caller/use.go --
+package caller
+
+import "example.com/typecross/api"
+
+type valueAPI interface{ ValueMethod() int }
+type pointerAPI interface{ PointerMethod() int }
+
+func verifyInterfaces() {
+	var _ valueAPI = api.Widget{}
+	var _ pointerAPI = (*api.Widget)(nil)
+}
+
+func Call(w *api.Widget) int               { return w.PointerMethod() }
+func MethodValue(w *api.Widget) func() int { return w.PointerMethod }
+func MethodExpression() func(*api.Widget) int {
+	return (*api.Widget).PointerMethod
+}

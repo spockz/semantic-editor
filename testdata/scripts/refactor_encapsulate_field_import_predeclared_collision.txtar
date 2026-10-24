@@ -1,0 +1,39 @@
+# Generated import aliases avoid shadowing predeclared names used by the destination file.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --destination-file accessors.go --symbol config.failure --getter failureValue --setter setFailure
+exec gofmt -w want-accessors.txt
+cmp accessors.go want-accessors.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatepredeclared
+
+go 1.24
+-- error/error.go --
+package error
+
+type Failure struct{ Message string }
+-- config.go --
+package sample
+
+import "example.com/encapsulatepredeclared/error"
+
+type config struct {
+	failure error.Failure
+}
+
+func (c *config) read() any { return c.failure }
+-- accessors.go --
+package sample
+
+func existing() error { return nil }
+-- want-accessors.txt --
+package sample
+
+import error2 "example.com/encapsulatepredeclared/error"
+
+func existing() error { return nil }
+
+func (receiver *config) failureValue() error2.Failure         { return receiver.failure }
+func (receiver *config) setFailure(value error2.Failure) { receiver.failure = value }

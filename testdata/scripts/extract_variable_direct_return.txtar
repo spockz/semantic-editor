@@ -1,0 +1,250 @@
+# Extract direct and nested return expressions without changing result values, dynamic types, or deferred behavior.
+exec semedit refactor-extract-value --file return.go --symbol selected --in-function RenderDeferred --kind variable --discriminator 'count[0] + 1'
+exec semedit refactor-extract-value --file return.go --symbol selected --in-function RenderDefers --kind variable --discriminator 'count + 1'
+cmp return.go want/return.go
+exec semedit refactor-extract-value --file named.go --symbol selected --in-function RenderNamed --kind variable --discriminator value
+cmp named.go want/named.go
+exec semedit refactor-extract-value --file panic.go --symbol selected --in-function RenderIndex --kind variable --discriminator 'values[index]'
+cmp panic.go want/panic.go
+exec semedit refactor-extract-value --file nested.go --symbol selected --in-function RenderBranch --kind variable --discriminator 'count + 1'
+cmp nested.go want/nested.go
+exec semedit refactor-extract-value --file ambiguous_nested.go --symbol selected --in-function RenderNestedAmbiguous --kind variable --discriminator 'count + 1' --construct-path 0.0.0 --expected-revision 81823568276e2282c3ef869895d511ccb49def0e66549a06e87807d45e6e0158
+cmp ambiguous_nested.go want/ambiguous_nested.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderMultipleResults --kind variable --discriminator 'count + 1'
+stderr 'only one whole return expression is supported'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderMultipleNamedResults --kind variable --discriminator 'pair(count)'
+stderr 'exactly one named or unnamed owner result'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderBlankResult --kind variable --discriminator 'count + 1'
+stderr 'exactly one named or unnamed owner result'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderTuple --kind variable --discriminator 'pair(count)'
+stderr 'exactly one named or unnamed owner result'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderNested --kind variable --discriminator 'count + 1'
+stderr 'no supported call argument, assignment RHS, return expression, or complete if condition'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderUntyped --kind variable --discriminator '1 + 2'
+stderr 'return expression must contain a resolved typed Go input'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1'
+stderr 'expression selection is ambiguous'
+cmp ambiguous.go original/ambiguous.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1' --construct-path 1 --expected-revision stale
+stderr 'selected source revision mismatch'
+cmp ambiguous.go original/ambiguous.go
+exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1' --construct-path 1 --expected-revision ebda4da0bba457c1f2cc0fed169759ba4b82badb78120aa810d25961089a9f94
+cmp ambiguous.go want/ambiguous.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablereturn
+
+go 1.24
+-- nested.go --
+package render
+
+func RenderBranch(count int) int {
+	if count > 0 {
+		return count + 1
+	}
+	return count
+}
+-- want/nested.go --
+package render
+
+func RenderBranch(count int) int {
+	if count > 0 {
+		selected := count + 1
+		return selected
+	}
+	return count
+}
+-- ambiguous_nested.go --
+package render
+
+func RenderNestedAmbiguous(count int) int {
+	if count > 0 {
+		return count + 1
+	}
+	return count + 1
+}
+-- want/ambiguous_nested.go --
+package render
+
+func RenderNestedAmbiguous(count int) int {
+	if count > 0 {
+		selected := count + 1
+		return selected
+	}
+	return count + 1
+}
+-- return.go --
+package render
+
+func RenderDeferred(count []int) int {
+	defer func() { count[0] += 10 }()
+	return count[0] + 1
+}
+
+var deferredOrder []int
+
+func RenderDefers(count int) int {
+	deferredOrder = append(deferredOrder, 1)
+	defer func() { deferredOrder = append(deferredOrder, 3) }()
+	defer func() { deferredOrder = append(deferredOrder, 2) }()
+	return count + 1
+}
+-- want/return.go --
+package render
+
+func RenderDeferred(count []int) int {
+	defer func() { count[0] += 10 }()
+	selected := count[0] + 1
+	return selected
+}
+
+var deferredOrder []int
+
+func RenderDefers(count int) int {
+	deferredOrder = append(deferredOrder, 1)
+	defer func() { deferredOrder = append(deferredOrder, 3) }()
+	defer func() { deferredOrder = append(deferredOrder, 2) }()
+	selected := count + 1
+	return selected
+}
+-- named.go --
+package render
+
+type Metric int
+
+func RenderNamed(value Metric) any {
+	return value
+}
+-- want/named.go --
+package render
+
+type Metric int
+
+func RenderNamed(value Metric) any {
+	selected := value
+	return selected
+}
+-- panic.go --
+package render
+
+var recoveredPanics int
+
+func RenderIndex(values []int, index int) int {
+	defer func() {
+		if recover() != nil {
+			recoveredPanics++
+		}
+	}()
+	return values[index]
+}
+-- want/panic.go --
+package render
+
+var recoveredPanics int
+
+func RenderIndex(values []int, index int) int {
+	defer func() {
+		if recover() != nil {
+			recoveredPanics++
+		}
+	}()
+	selected := values[index]
+	return selected
+}
+-- refusals.go --
+package render
+
+func pair(value int) (int, int) { return value, value }
+
+func RenderMultipleResults(count int) (int, int) { return count + 1, count + 2 }
+func RenderMultipleNamedResults(count int) (first, second int) { return pair(count) }
+func RenderBlankResult(count int) (_ int) { return count + 1 }
+func RenderNested(count int) int {
+	compute := func() int { return count + 1 }
+	return compute()
+}
+func RenderUntyped() int { return 1 + 2 }
+func RenderTuple(count int) (int, int) { return pair(count) }
+
+func RenderNaked(value int) (result int) {
+	result = value
+	return
+}
+-- original/refusals.go --
+package render
+
+func pair(value int) (int, int) { return value, value }
+
+func RenderMultipleResults(count int) (int, int) { return count + 1, count + 2 }
+func RenderMultipleNamedResults(count int) (first, second int) { return pair(count) }
+func RenderBlankResult(count int) (_ int) { return count + 1 }
+func RenderNested(count int) int {
+	compute := func() int { return count + 1 }
+	return compute()
+}
+func RenderUntyped() int { return 1 + 2 }
+func RenderTuple(count int) (int, int) { return pair(count) }
+
+func RenderNaked(value int) (result int) {
+	result = value
+	return
+}
+-- ambiguous.go --
+package render
+
+func consume(int) {}
+
+func RenderAmbiguous(count int) int {
+	consume(count + 1)
+	return count + 1
+}
+-- original/ambiguous.go --
+package render
+
+func consume(int) {}
+
+func RenderAmbiguous(count int) int {
+	consume(count + 1)
+	return count + 1
+}
+-- want/ambiguous.go --
+package render
+
+func consume(int) {}
+
+func RenderAmbiguous(count int) int {
+	consume(count + 1)
+	selected := count + 1
+	return selected
+}
+-- return_test.go --
+package render
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestReturnExtractionPreservesEvaluationAndDefers(t *testing.T) {
+	count := []int{2}
+	if got := RenderDeferred(count); got != 3 || count[0] != 12 {
+		t.Fatalf("RenderDeferred() = %d with count %d, want result 3 and deferred count 12", got, count[0])
+	}
+	if got := RenderNamed(Metric(7)); got != Metric(7) || reflect.TypeOf(got) != reflect.TypeOf(Metric(0)) {
+		t.Fatalf("RenderNamed() = %v (%T), want Metric(7)", got, got)
+	}
+	deferredOrder = nil
+	if got := RenderDefers(4); got != 5 || !reflect.DeepEqual(deferredOrder, []int{1, 2, 3}) {
+		t.Fatalf("RenderDefers() = %d with order %v, want result 5 and order [1 2 3]", got, deferredOrder)
+	}
+	if got := RenderIndex(nil, 0); got != 0 || recoveredPanics != 1 {
+		t.Fatalf("RenderIndex() = %d with recovered panics %d, want result 0 and one recovery", got, recoveredPanics)
+	}
+}

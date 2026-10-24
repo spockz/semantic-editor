@@ -407,7 +407,7 @@ func soleWrappedMember(lang *gts.Language, root *gts.Node) (*gts.Node, error) {
 		}
 		for childIndex := range class.NamedChildCount() {
 			body := class.NamedChild(childIndex)
-			if body.Type(lang) != "class_body" {
+			if body.Type(lang) != javaNodeClassBody {
 				continue
 			}
 			var members []*gts.Node
@@ -447,7 +447,7 @@ func declarationIdentity(source []byte) (string, []string, error) {
 			continue
 		}
 		for childIndex := range child.NamedChildCount() {
-			if candidate := child.NamedChild(childIndex); candidate.Type(lang) == "class_body" {
+			if candidate := child.NamedChild(childIndex); candidate.Type(lang) == javaNodeClassBody {
 				classBody = candidate
 				break
 			}
@@ -665,7 +665,7 @@ func RenameJavaIdentifiersInRange(source []byte, start, end int, oldName, newNam
 			return
 		}
 		nodeStart, nodeEnd := int(node.StartByte()), int(node.EndByte())
-		if (node.Type(language) == javaNodeIdentifier || node.Type(language) == "type_identifier") && nodeStart >= start && nodeEnd <= end && string(source[nodeStart:nodeEnd]) == oldName {
+		if (node.Type(language) == javaNodeIdentifier || node.Type(language) == javaNodeTypeIdentifier) && nodeStart >= start && nodeEnd <= end && string(source[nodeStart:nodeEnd]) == oldName {
 			positions = append(positions, [2]int{nodeStart, nodeEnd})
 		}
 		for index := range node.NamedChildCount() {
@@ -1294,3 +1294,154 @@ func IsPublicTopLevelType(source []byte, name string) (bool, error) {
 	}
 	return typeCount == 1 && selectedPublic, nil
 }
+
+// JavaImportDeclaration preserves the source and CST boundaries of one import.
+type JavaImportDeclaration struct {
+	Text       []byte
+	Identity   string
+	Start      int
+	End        int
+	RemovalEnd int
+}
+
+// JavaImportSet describes top-level imports and a safe insertion boundary.
+type JavaImportSet struct {
+	Declarations           []JavaImportDeclaration
+	InsertionOffset        int
+	InsertionWhitespaceEnd int
+	InsertionBlankLine     bool
+	HasPackage             bool
+}
+
+// ParseJavaImports reads top-level Java import declarations and their insertion point.
+func ParseJavaImports(source []byte) (JavaImportSet, error) {
+	lang, root, err := parse(source)
+	if err != nil {
+		return JavaImportSet{}, err
+	}
+	var imports JavaImportSet
+	packageInsertionOffset, lastImportOffset := 0, -1
+	packageChildIndex, lastImportChildIndex := -1, -1
+	for index := range root.NamedChildCount() {
+		child := root.NamedChild(index)
+		start, end := int(child.StartByte()), int(child.EndByte())
+		if start < 0 || end < start || end > len(source) {
+			return JavaImportSet{}, fmt.Errorf("java top-level node range [%d,%d) is outside source", start, end)
+		}
+		switch child.Type(lang) {
+		case "package_declaration":
+			imports.HasPackage = true
+			packageInsertionOffset = end
+			packageChildIndex = index
+		case "import_declaration":
+			identity, identityErr := javaImportNodeIdentity(source, lang, child)
+			if identityErr != nil {
+				return JavaImportSet{}, fmt.Errorf("parse java import at byte %d: %w", start, identityErr)
+			}
+			removalEnd := javaImportRemovalEnd(source, root, index, end)
+			imports.Declarations = append(imports.Declarations, JavaImportDeclaration{
+				Text:       bytes.Clone(source[start:end]),
+				Identity:   identity,
+				Start:      start,
+				End:        end,
+				RemovalEnd: removalEnd,
+			})
+			lastImportOffset = end
+			lastImportChildIndex = index
+		}
+	}
+	setJavaImportInsertionBoundary(source, root, &imports, packageInsertionOffset, packageChildIndex, lastImportOffset, lastImportChildIndex)
+	return imports, nil
+}
+
+func javaImportNodeIdentity(source []byte, lang *gts.Language, node *gts.Node) (string, error) {
+	tokens := javaImportNodeTokens(source, lang, node)
+	if len(tokens) < 2 || tokens[0] != "import" {
+		return "", fmt.Errorf("unexpected import tokens %q", tokens)
+	}
+	isStatic := tokens[1] == "static"
+	nameStart := 1
+	if isStatic {
+		nameStart++
+	}
+	nameEnd := len(tokens)
+	if tokens[nameEnd-1] == ";" {
+		nameEnd--
+	}
+	if nameEnd <= nameStart {
+		return "", fmt.Errorf("import has no qualified name")
+	}
+	return JavaImportIdentity(strings.Join(tokens[nameStart:nameEnd], ""), isStatic), nil
+}
+
+func javaImportNodeTokens(source []byte, lang *gts.Language, node *gts.Node) []string {
+	if strings.Contains(node.Type(lang), "comment") {
+		return nil
+	}
+	if node.ChildCount() == 0 {
+		start, end := int(node.StartByte()), int(node.EndByte())
+		if start < 0 || end < start || end > len(source) {
+			return nil
+		}
+		return []string{string(source[start:end])}
+	}
+	var tokens []string
+	for index := range node.ChildCount() {
+		tokens = append(tokens, javaImportNodeTokens(source, lang, node.Child(index))...)
+	}
+	return tokens
+}
+
+func javaImportRemovalEnd(source []byte, root *gts.Node, index, end int) int {
+	if index+1 < root.NamedChildCount() {
+		nextStart := int(root.NamedChild(index + 1).StartByte())
+		if nextStart >= end && nextStart <= len(source) && len(bytes.TrimSpace(source[end:nextStart])) == 0 {
+			return nextStart
+		}
+	} else if len(bytes.TrimSpace(source[end:])) == 0 {
+		return len(source)
+	}
+	return end
+}
+
+func setJavaImportInsertionBoundary(source []byte, root *gts.Node, imports *JavaImportSet, packageOffset, packageIndex, lastImportOffset, lastImportIndex int) {
+	imports.InsertionOffset = packageOffset
+	boundaryChildIndex := packageIndex
+	if lastImportOffset >= 0 {
+		imports.InsertionOffset = lastImportOffset
+		boundaryChildIndex = lastImportIndex
+	}
+	imports.InsertionWhitespaceEnd = imports.InsertionOffset
+	if imports.InsertionOffset == 0 {
+		return
+	}
+	if boundaryChildIndex >= 0 && boundaryChildIndex+1 < root.NamedChildCount() {
+		imports.InsertionWhitespaceEnd = int(root.NamedChild(boundaryChildIndex + 1).StartByte())
+	} else {
+		imports.InsertionWhitespaceEnd = len(source)
+	}
+	if imports.InsertionWhitespaceEnd < imports.InsertionOffset || imports.InsertionWhitespaceEnd > len(source) {
+		imports.InsertionWhitespaceEnd = imports.InsertionOffset
+		return
+	}
+	gap := source[imports.InsertionOffset:imports.InsertionWhitespaceEnd]
+	if len(bytes.TrimSpace(gap)) != 0 {
+		imports.InsertionWhitespaceEnd = imports.InsertionOffset
+		return
+	}
+	imports.InsertionBlankLine = bytes.Count(gap, []byte("\n")) > 1
+}
+
+// JavaImportIdentity returns a token-boundary-safe identity for a qualified import name.
+func JavaImportIdentity(name string, isStatic bool) string {
+	prefix := "ordinary:"
+	if isStatic {
+		prefix = "static:"
+	}
+	return prefix + strings.Join(strings.Split(name, "."), "\x00.\x00")
+}
+
+const (
+	javaNodeClassBody      = "class_body"
+	javaNodeTypeIdentifier = "type_identifier"
+)

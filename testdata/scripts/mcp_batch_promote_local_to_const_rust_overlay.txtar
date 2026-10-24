@@ -1,0 +1,37 @@
+env SEMEDIT_TEST_RUST_PROMOTE_LOCAL_TO_CONST=batch
+stdin input.json
+exec semedit mcp
+stdout '"operation":"refactor_promote_local_to_const"'
+cmp src/main.rs .scratch/want-main.rs
+
+-- Cargo.toml --
+[package]
+name = "rust-promote-local-to-const-batch-fixture"
+version = "0.1.0"
+edition = "2021"
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_promote_local_to_const","params":{"language":"rust","file":"src/main.rs","symbol":"retry_limit","in_function":"run","trust_workspace":true}},{"tool":"refactor_promote_local_to_const","params":{"language":"rust","file":"src/main.rs","symbol":"batch_limit","in_function":"run_again","trust_workspace":true}}]}}}
+-- src/main.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+
+fn run_again() {
+    let batch_limit: i32 = 8;
+    consume(batch_limit);
+}
+
+fn consume(value: i32) {}
+-- .scratch/want-main.rs --
+fn run() {
+    const RETRY_LIMIT: i32 = 7;
+    consume(RETRY_LIMIT);
+}
+
+fn run_again() {
+    const BATCH_LIMIT: i32 = 8;
+    consume(BATCH_LIMIT);
+}
+
+fn consume(value: i32) {}

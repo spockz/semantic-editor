@@ -92,7 +92,7 @@ func TestMCPGoStageCommitKeepsPublicationRepair(t *testing.T) {
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_stage","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":"value.go","source":"func Added() int { return 2 }"}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_commit","arguments":{"skip_hooks":true}}}`,
-		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"value.go","symbol":"Added","to":"Renamed"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"refactor_rename","arguments":{"file":"value.go","symbol":"Added","to":"Renamed"}}}`,
 	}, "\n") + "\n"
 	var output bytes.Buffer
 	err := mcptest.NewServer(t, "full", fixture.root, &output).Serve(t.Context(), strings.NewReader(input))

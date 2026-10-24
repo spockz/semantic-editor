@@ -1,0 +1,22 @@
+! exec semedit refactor-extract-callable --file api/recover.go --symbol extracted --in-function Recover --kind function --start-line 4 --end-line 4
+stderr 'direct recover\(\) calls'
+cmp api/recover.go original/api/recover.go
+
+-- api/recover.go --
+package api
+
+func Recover(value int) {
+	value = ((recover)()).(int)
+	sink(value)
+}
+
+func sink(value int) {}
+-- original/api/recover.go --
+package api
+
+func Recover(value int) {
+	value = ((recover)()).(int)
+	sink(value)
+}
+
+func sink(value int) {}

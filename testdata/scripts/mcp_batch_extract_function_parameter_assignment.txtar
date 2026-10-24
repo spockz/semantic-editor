@@ -1,0 +1,45 @@
+# Keep an assignment extraction and later helper rename in one unpublished batch overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+! stdout '"isError":true'
+cmp update.go .scratch/want/update.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionassignmentbatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"refactor_extract_callable","params":{"file":"update.go","symbol":"updateValue","in_function":"Update","kind":"function","start_line":4,"end_line":4}},{"tool":"refactor_rename","params":{"file":"update.go","symbol":"updateValue","to":"adjustValue"}}]}}}
+-- update.go --
+package sample
+
+func Update(count int) int {
+	count = count + 1
+	return count
+}
+-- .scratch/want/update.go --
+package sample
+
+func Update(count int) int {
+	count = adjustValue(count)
+	return count
+}
+
+func adjustValue(count int) int {
+	count = count + 1
+	return count
+}
+-- update_test.go --
+package sample
+
+import "testing"
+
+func TestUpdate(t *testing.T) {
+	if got := Update(4); got != 5 {
+		t.Fatalf("Update() = %d, want 5", got)
+	}
+}

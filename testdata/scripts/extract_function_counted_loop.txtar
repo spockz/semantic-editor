@@ -1,0 +1,85 @@
+# Extract a complete counted loop and prove zero, one, and multiple-iteration behavior with local break and continue.
+exec semedit refactor-extract-callable --file service.go --symbol dispatch --in-function Run --kind function --start-line 8 --end-line 18
+stdout 'symbol: dispatch'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractcountedloop
+
+go 1.23
+-- service.go --
+package sample
+
+import "fmt"
+
+var events []string
+
+func Run(limit int, stopAt int) {
+	for i := 0; i < limit; i++ {
+		if i == 1 {
+			record("skip")
+			continue
+		}
+		if i == stopAt {
+			record("stop")
+			break
+		}
+		record(fmt.Sprint(i))
+	}
+	record("done")
+}
+
+func record(event string) { events = append(events, event) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesCountedLoopPaths(t *testing.T) {
+	for _, test := range []struct {
+		limit   int
+		stopAt  int
+		want    []string
+	}{
+		{limit: 0, stopAt: 3, want: []string{"done"}},
+		{limit: 1, stopAt: 3, want: []string{"0", "done"}},
+		{limit: 5, stopAt: 3, want: []string{"0", "skip", "2", "stop", "done"}},
+	} {
+		events = nil
+		Run(test.limit, test.stopAt)
+		if !reflect.DeepEqual(events, test.want) {
+			t.Fatalf("Run(%d, %d) events = %v, want %v", test.limit, test.stopAt, events, test.want)
+		}
+	}
+}
+-- want/service.go --
+package sample
+
+import "fmt"
+
+var events []string
+
+func Run(limit int, stopAt int) {
+	dispatch(limit, stopAt)
+	record("done")
+}
+
+func dispatch(limit int, stopAt int) {
+	for i := 0; i < limit; i++ {
+		if i == 1 {
+			record("skip")
+			continue
+		}
+		if i == stopAt {
+			record("stop")
+			break
+		}
+		record(fmt.Sprint(i))
+	}
+}
+
+func record(event string) { events = append(events, event) }

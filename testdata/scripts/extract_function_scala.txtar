@@ -1,0 +1,104 @@
+# Scala callable extraction follows Metals' method-local action, validates its two edits, and renames the generated helper.
+env SEMEDIT_TEST_SCALA_EXTRACT_CALLABLE=1
+exec semedit refactor-extract-callable --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Thing.scala --symbol logWork --in-function run --kind function --start-line 3 --end-line 5
+stdout 'symbol: logWork'
+cmp Thing.scala expected.scala
+exec semedit refactor-extract-callable --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Single.scala --symbol oneCall --in-function run --kind function --start-line 3 --end-line 3
+cmp Single.scala single_expected.scala
+exec semedit lookup --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Thing.scala --symbol logWork
+stdout 'method logWork'
+exec cp Thing.scala after_extract.scala
+! exec semedit refactor-extract-callable --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Shadow.scala --symbol logWork --in-function run --kind function --start-line 4 --end-line 4
+stderr 'shadowed by an owner-local binding'
+cmp Shadow.scala shadow_expected.scala
+env SEMEDIT_TEST_SCALA_CALLABLE_EDIT_MODE=foreign
+! exec semedit refactor-extract-callable --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Foreign.scala --symbol logWork --in-function run --kind function --start-line 3 --end-line 3
+stderr 'exactly 2 edits in the selected file'
+cmp Foreign.scala foreign_expected.scala
+! exec semedit refactor-extract-callable --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file Keyword.scala --symbol logWork --in-function run --kind function --start-line 3 --end-line 3
+stderr 'direct-call statement'
+cmp Keyword.scala keyword_expected.scala
+
+-- go.mod --
+module example.com/scalacallable
+
+go 1.23
+-- Thing.scala --
+object Thing {
+  def run(): Unit = {
+    consume(1 + 2)
+    consume(3)
+    consume(4 + 5)
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- Single.scala --
+object Single {
+  def run(): Unit = {
+    consume(9)
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- single_expected.scala --
+object Single {
+  def run(): Unit = {
+    def oneCall(): Unit =
+      consume(9)
+
+    oneCall()
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- expected.scala --
+object Thing {
+  def run(): Unit = {
+    def logWork(): Unit = {
+      consume(1 + 2)
+      consume(3)
+      consume(4 + 5)
+    }
+
+    logWork()
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- Shadow.scala --
+object Thing {
+  def run(): Unit = {
+    val consume: Int => Unit = _ => ()
+    consume(1 + 2)
+  }
+}
+-- shadow_expected.scala --
+object Thing {
+  def run(): Unit = {
+    val consume: Int => Unit = _ => ()
+    consume(1 + 2)
+  }
+}
+-- Foreign.scala --
+object Thing {
+  def run(): Unit = {
+    consume(1 + 2)
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- foreign_expected.scala --
+object Thing {
+  def run(): Unit = {
+    consume(1 + 2)
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- Keyword.scala --
+object Thing {
+  def run(): Unit = {
+    return(1)
+  }
+}
+-- keyword_expected.scala --
+object Thing {
+  def run(): Unit = {
+    return(1)
+  }
+}

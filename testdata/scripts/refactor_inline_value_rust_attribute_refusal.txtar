@@ -1,0 +1,26 @@
+env SEMEDIT_TEST_RUST_INLINE_VALUE=1
+! exec semedit refactor-inline-value --language rust --trust-workspace --file src/lib.rs --symbol value --in-function run
+stderr 'rust inline refuses files with unresolved imported or macro-expanded names because equivalence cannot be proven'
+cmp src/lib.rs original/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "inline-value-attribute-refusal"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+#[instrument]
+fn run() {
+    let value = 42_i32;
+    consume(value, value);
+}
+
+fn consume(left: i32, right: i32) {}
+-- original/lib.rs --
+#[instrument]
+fn run() {
+    let value = 42_i32;
+    consume(value, value);
+}
+
+fn consume(left: i32, right: i32) {}

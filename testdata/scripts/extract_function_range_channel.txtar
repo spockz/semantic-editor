@@ -1,0 +1,77 @@
+# Extract a receive-capable channel range and preserve receives, local exits, and channel identity.
+exec semedit refactor-extract-callable --file service.go --symbol visit --in-function Run --kind function --start-line 6 --end-line 11
+stdout 'symbol: visit'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangechannel
+
+go 1.23
+-- service.go --
+package sample
+
+var events []int
+
+func Run(values <-chan int) {
+	for value := range values {
+		if value == 3 {
+			break
+		}
+		record(value)
+	}
+}
+
+func record(value int) { events = append(events, value) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesChannelRangeBehavior(t *testing.T) {
+	values := make(chan int, 4)
+	for _, value := range []int{1, 2, 3, 4} {
+		values <- value
+	}
+	close(values)
+	events = nil
+	Run(values)
+	if !reflect.DeepEqual(events, []int{1, 2}) {
+		t.Fatalf("events = %v, want [1 2]", events)
+	}
+	if remaining := <-values; remaining != 4 {
+		t.Fatalf("remaining value = %d, want 4", remaining)
+	}
+}
+
+func TestRunPreservesClosedEmptyChannel(t *testing.T) {
+	values := make(chan int)
+	close(values)
+	events = nil
+	Run(values)
+	if len(events) != 0 {
+		t.Fatalf("events = %v, want no receives", events)
+	}
+}
+-- want/service.go --
+package sample
+
+var events []int
+
+func Run(values <-chan int) {
+	visit(values)
+}
+
+func visit(values <-chan int) {
+	for value := range values {
+		if value == 3 {
+			break
+		}
+		record(value)
+	}
+}
+
+func record(value int) { events = append(events, value) }

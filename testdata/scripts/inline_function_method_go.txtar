@@ -1,0 +1,152 @@
+# WHY: Exercises safe Go receiver-method inlining and proves unsupported selection and declaration shapes leave source unchanged.
+exec semedit refactor-inline-callable --file main.go --symbol Counter.Value --call-site '{"file":"main.go","in_function":"Run","discriminator":"counter.Value()"}'
+stdout 'Successfully inlined one call'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol Counter.Value --call-site '{"file":"main.go","in_function":"RunEffectful","discriminator":"newCounter().Value()"}'
+stderr 'inline method call requires a direct caller-parameter receiver'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol ValueCounter.Value --call-site '{"file":"main.go","in_function":"RunIndirect","discriminator":"counter.Value()"}'
+stderr 'inline method call requires a direct caller-parameter receiver'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol NamedCounter.Value --call-site '{"file":"main.go","in_function":"RunNamed","discriminator":"counter.Value()"}'
+stderr 'inline methods require one unnamed result'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol ExternalCounter.Value --call-site '{"file":"main.go","in_function":"RunBodyless","discriminator":"counter.Value()"}'
+stderr 'inline callee declaration has no body'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol Counter.Value --call-site '{"file":"main.go","in_function":"RunMethodValue","discriminator":"value()"}'
+stderr 'call_site.discriminator must select exactly one direct return call'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol Counter.Value --call-site '{"file":"main.go","in_function":"RunInterface","discriminator":"reader.Value()"}'
+stderr 'call_site.discriminator must select exactly one direct return call'
+cmp main.go .scratch/want/main.go
+! exec semedit refactor-inline-callable --file main.go --symbol Counter.Value --call-site '{"file":"main.go","in_function":"RunAmbiguous","discriminator":"counter.Value()"}'
+stderr 'call_site.discriminator selects multiple direct return calls'
+cmp main.go .scratch/want/main.go
+
+-- go.mod --
+module example.com/inlinemethod
+
+go 1.24
+-- main.go --
+package sample
+
+type Counter struct{}
+
+func (*Counter) Value() int { return 7 }
+
+type ValueCounter int
+
+func (ValueCounter) Value() int { return 9 }
+
+type NamedCounter struct{}
+
+func (*NamedCounter) Value() (result int) { return 11 }
+
+type ExternalCounter struct{}
+
+func (*ExternalCounter) Value() int
+
+type ValueReader interface {
+	Value() int
+}
+
+func newCounter() *Counter { return &Counter{} }
+
+func Run(counter *Counter) int {
+	return counter.Value()
+}
+
+func RunEffectful() int {
+	return newCounter().Value()
+}
+
+func RunIndirect(counter *ValueCounter) int {
+	return counter.Value()
+}
+
+func RunNamed(counter *NamedCounter) int {
+	return counter.Value()
+}
+
+func RunBodyless(counter *ExternalCounter) int {
+	return counter.Value()
+}
+
+func RunMethodValue(counter *Counter) int {
+	value := counter.Value
+	return value()
+}
+
+func RunInterface(reader ValueReader) int {
+	return reader.Value()
+}
+
+func RunAmbiguous(flag bool, counter *Counter) int {
+	if flag {
+		return 0
+	}
+	return counter.Value()
+	return counter.Value()
+}
+-- .scratch/want/main.go --
+package sample
+
+type Counter struct{}
+
+func (*Counter) Value() int { return 7 }
+
+type ValueCounter int
+
+func (ValueCounter) Value() int { return 9 }
+
+type NamedCounter struct{}
+
+func (*NamedCounter) Value() (result int) { return 11 }
+
+type ExternalCounter struct{}
+
+func (*ExternalCounter) Value() int
+
+type ValueReader interface {
+	Value() int
+}
+
+func newCounter() *Counter { return &Counter{} }
+
+func Run(counter *Counter) int {
+	return int(7)
+}
+
+func RunEffectful() int {
+	return newCounter().Value()
+}
+
+func RunIndirect(counter *ValueCounter) int {
+	return counter.Value()
+}
+
+func RunNamed(counter *NamedCounter) int {
+	return counter.Value()
+}
+
+func RunBodyless(counter *ExternalCounter) int {
+	return counter.Value()
+}
+
+func RunMethodValue(counter *Counter) int {
+	value := counter.Value
+	return value()
+}
+
+func RunInterface(reader ValueReader) int {
+	return reader.Value()
+}
+
+func RunAmbiguous(flag bool, counter *Counter) int {
+	if flag {
+		return 0
+	}
+	return counter.Value()
+	return counter.Value()
+}

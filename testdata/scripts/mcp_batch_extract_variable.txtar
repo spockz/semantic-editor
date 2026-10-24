@@ -2,7 +2,7 @@
 stdin input.json
 exec semedit mcp --enable-batching
 stdout '"isError":false'
-stdout '"operation":"extract_variable"'
+stdout '"operation":"refactor_extract_value"'
 stdout '"status":"applied_working"'
 ! stdout '"continuations":'
 ! stdout '"isError":true'
@@ -14,26 +14,26 @@ module example.com/extractvariablebatch
 
 go 1.24
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_extract_variable","params":{"file":"render.go","symbol":"distanceValue","in_function":"Render","discriminator":"distance"}},{"tool":"semantic_rename","params":{"file":"render.go","symbol":"distanceValue","to":"namedValue"}},{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"namedValue := distance; consume(namedValue, distance); consume(distance, distance)"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"distanceValue","in_function":"Render","discriminator":"distance"}},{"tool":"refactor_rename","params":{"file":"render.go","symbol":"distanceValue","to":"namedValue"}},{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"namedValue := distance; consume(namedValue, 0); consume(distance, 0)"}}]}}}
 -- render.go --
 package render
 
 type Distance int
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func Render(distance Distance) {
-	consume(distance, distance)
+	consume(distance, 0)
 }
 -- .scratch/want/render.go --
 package render
 
 type Distance int
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func Render(distance Distance) {
 	namedValue := distance
-	consume(namedValue, distance)
-	consume(distance, distance)
+	consume(namedValue, 0)
+	consume(distance, 0)
 }

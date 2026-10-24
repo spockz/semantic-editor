@@ -1,0 +1,32 @@
+# An earlier buffered edit that captures an input remains published after repeated-expression extraction refuses it.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'nested function'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeatedrefusal
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"defer func() { _ = count }(); Sink(count + 1, count + 1)"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","discriminator":"count+1"}}]}}}
+-- render.go --
+package render
+
+func Sink(first, second int) {}
+
+func Render(count int) {
+	Sink(count, count)
+}
+-- .scratch/want/render.go --
+package render
+
+func Sink(first, second int) {}
+
+func Render(count int) {
+	defer func() { _ = count }()
+	Sink(count+1, count+1)
+}

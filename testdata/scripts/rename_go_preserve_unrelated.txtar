@@ -1,5 +1,5 @@
 # Standalone Go rename normalizes its changed files while preserving unrelated source bytes.
-exec semedit rename --file config.go --symbol Config.Port --to ListenPort
+exec semedit refactor-rename --file config.go --symbol Config.Port --to ListenPort
 cmp config.go want-imports-config.txt
 cmp read.go want-imports-read.txt
 cmp client/read.go want-imports-client-read.txt
@@ -133,4 +133,4 @@ func TestRead(t *testing.T) {
 }
 -- rename-plain.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"config.go","symbol":"Config.ListenPort","to":"BoundPort","auto_organize_imports":false}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"refactor_rename","arguments":{"file":"config.go","symbol":"Config.ListenPort","to":"BoundPort","auto_organize_imports":false}}}

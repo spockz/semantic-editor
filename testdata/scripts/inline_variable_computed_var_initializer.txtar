@@ -1,0 +1,73 @@
+# Inline a computed scalar into a following local var initializer and refuse unsupported declaration shapes.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function LocalTarget
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function PackageShadow
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Grouped
+stderr 'one immediate ungrouped var declaration'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedvar
+
+go 1.23
+-- calc.go --
+package calc
+
+const seed = 5
+
+func LocalTarget(input int) int {
+	value := input + 2
+	var result int = value
+	return result
+}
+
+func PackageShadow() int {
+	value := seed + 2
+	var seed = value
+	return seed
+}
+
+func Grouped(input int) int {
+	value := input + 1
+	var (
+		result = value
+	)
+	return result
+}
+-- .scratch/want/calc.go --
+package calc
+
+const seed = 5
+
+func LocalTarget(input int) int {
+	var result int = input + 2
+	return result
+}
+
+func PackageShadow() int {
+	var seed = seed + 2
+	return seed
+}
+
+func Grouped(input int) int {
+	value := input + 1
+	var (
+		result = value
+	)
+	return result
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestInlineVarInitializer(t *testing.T) {
+	if got := LocalTarget(5); got != 7 {
+		t.Errorf("LocalTarget(5) = %d, want 7", got)
+	}
+	if got := PackageShadow(); got != 7 {
+		t.Errorf("PackageShadow() = %d, want 7", got)
+	}
+}

@@ -26,7 +26,7 @@ This operation keeps methods on the original type. It does not move methods, syn
 
 ## Invariants
 
-**Scoped supersession by [ADR-0107](0107-bounded-go-keyed-literal-type-extraction.md):** Field-only extraction now permits a bounded contiguous run of explicitly keyed same-file owner initializers. The historical keyed-use refusal below remains in force for delegate extraction and literal shapes outside ADR-0107.
+**Scoped supersession by [ADR-0094](0094-bounded-go-keyed-literal-type-extraction.md):** Field-only extraction now permits a bounded contiguous run of explicitly keyed same-file owner initializers. The historical keyed-use refusal below remains in force for delegate extraction and literal shapes outside ADR-0087.
 
 * Member inputs identify exact `{file, symbol}` fields from the selected owner. Source declarations used for edits are rebound to the parsed selected-file syntax, and selector rewrites require the exact selected Go field object.
 * The proof is fail-closed for keyed or non-selector field uses, address-taking including parenthesized selectors, cross-file or external consumers, exported API exposure, generated or build-variant files, embedded or grouped fields, selected fields with tags or comments, and owner declarations with same-line trailing comments.

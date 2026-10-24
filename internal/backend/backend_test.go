@@ -415,7 +415,7 @@ func assertLanguageCapabilityMatrix(t *testing.T, svc *backend.Service, lang bac
 }
 
 func capabilityOperationMapping() map[string]backend.Operation {
-	return map[string]backend.Operation{"rename": backend.OperationRename, "lookup": backend.OperationLookup, "verify": backend.OperationVerify, "organize_imports": backend.OperationOrganizeImports}
+	return map[string]backend.Operation{"refactor_rename": backend.OperationRename, "lookup": backend.OperationLookup, "verify": backend.OperationVerify, "organize_imports": backend.OperationOrganizeImports, "refactor_extract_value": backend.OperationExtractVariable, "refactor_extract_callable": backend.OperationExtractFunction}
 }
 
 func assertMatrixOperationsSupported(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix, caps backend.Capabilities, opMapping map[string]backend.Operation) {
@@ -433,7 +433,7 @@ func assertMatrixOperationsSupported(t *testing.T, lang backend.LanguageID, matr
 
 func assertRuntimeOperationsDeclared(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix, caps backend.Capabilities, opMapping map[string]backend.Operation) {
 	t.Helper()
-	for _, runtimeOp := range []backend.Operation{backend.OperationLookup, backend.OperationRename, backend.OperationVerify} {
+	for _, runtimeOp := range []backend.Operation{backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationExtractVariable, backend.OperationExtractFunction} {
 		if !caps.Supports(runtimeOp) {
 			continue
 		}

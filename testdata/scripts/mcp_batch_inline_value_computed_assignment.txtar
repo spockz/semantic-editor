@@ -1,0 +1,53 @@
+# Verify a computed local can be inlined into its immediate simple assignment inside a buffered batch.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp calc.go .scratch/want/calc.go
+cmp types.go .scratch/want/types.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedassignment
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_construct","params":{"file":"types.go","kind":"type","symbol":"Count","source":"type Count int"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Build"}}]}}}
+-- types.go --
+package calc
+
+type Count struct{ Value int }
+-- calc.go --
+package calc
+
+func Build(seed Count) Count {
+	value := seed + 2
+	total = value
+	return total
+}
+
+var total Count
+-- .scratch/want/types.go --
+package calc
+
+type Count int
+-- .scratch/want/calc.go --
+package calc
+
+func Build(seed Count) Count {
+	total = seed + 2
+	return total
+}
+
+var total Count
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuild(t *testing.T) {
+	if got := Build(5); got != 7 {
+		t.Fatalf("Build(5) = %d, want 7", got)
+	}
+}

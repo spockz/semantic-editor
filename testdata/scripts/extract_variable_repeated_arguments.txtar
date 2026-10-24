@@ -1,0 +1,366 @@
+# Coalesce exact repeated call arguments only when typed scalar inputs remain stable.
+exec semedit refactor-extract-value --file pair.go --symbol pairValue --in-function RenderPair --kind variable --discriminator 'count + 1'
+cmp pair.go want/pair.go
+exec semedit refactor-extract-value --file triple.go --symbol tripleValue --in-function RenderTriple --kind variable --discriminator 'count+1'
+cmp triple.go want/triple.go
+exec semedit refactor-extract-value --file named.go --symbol namedValue --in-function RenderNamed --kind variable --discriminator 'count + 1'
+cmp named.go want/named.go
+exec semedit refactor-extract-value --file divide.go --symbol quotient --in-function RenderDivide --kind variable --discriminator '10/divisor'
+cmp divide.go want/divide.go
+exec semedit refactor-extract-value --file shift.go --symbol shifted --in-function RenderShift --kind variable --discriminator 'base<<shift'
+cmp shift.go want/shift.go
+! exec semedit refactor-extract-value --file mutable.go --symbol selected --in-function RenderMutable --kind variable --discriminator 'values[index]'
+stderr 'stable scalar expression'
+cmp mutable.go original/mutable.go
+! exec semedit refactor-extract-value --file escaped.go --symbol selected --in-function RenderEscaped --kind variable --discriminator 'count + 1'
+stderr 'escapes through its address'
+cmp escaped.go original/escaped.go
+! exec semedit refactor-extract-value --file captured.go --symbol selected --in-function RenderCaptured --kind variable --discriminator 'count + 1'
+stderr 'nested function'
+cmp captured.go original/captured.go
+! exec semedit refactor-extract-value --file implicit_call.go --symbol selected --in-function RenderImplicitCall --kind variable --discriminator 'count+1'
+stderr 'escapes through its address'
+cmp implicit_call.go original/implicit_call.go
+! exec semedit refactor-extract-value --file implicit_value.go --symbol selected --in-function RenderImplicitValue --kind variable --discriminator 'count+1'
+stderr 'escapes through its address'
+cmp implicit_value.go original/implicit_value.go
+! exec semedit refactor-extract-value --file context.go --symbol selected --in-function RenderContext --kind variable --discriminator '1<<shift'
+stderr 'may depend on call context'
+cmp context.go original/context.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1'
+stderr 'expression selection is ambiguous'
+cmp ambiguous.go original/ambiguous.go
+exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1' --construct-path 0 --expected-revision 8f89d8254d5b0780d940c61f620e584ab71834e80521683a290a76237a6a4094
+cmp ambiguous.go want/ambiguous.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeated
+
+go 1.24
+-- pair.go --
+package render
+
+var pairValues [2]int
+
+func pairSink(left, right int) {
+	pairValues = [2]int{left, right}
+}
+
+func RenderPair(count int) {
+	pairSink(count + 1, count + 1)
+}
+-- want/pair.go --
+package render
+
+var pairValues [2]int
+
+func pairSink(left, right int) {
+	pairValues = [2]int{left, right}
+}
+
+func RenderPair(count int) {
+	pairValue := count + 1
+	pairSink(pairValue, pairValue)
+}
+-- triple.go --
+package render
+
+var tripleValues [3]int
+
+func tripleSink(first, _ int, second, _ int, third int) {
+	tripleValues = [3]int{first, second, third}
+}
+
+func RenderTriple(count int) {
+	tripleSink(count+1, 0, count+1, 2, count+1)
+}
+-- want/triple.go --
+package render
+
+var tripleValues [3]int
+
+func tripleSink(first, _ int, second, _ int, third int) {
+	tripleValues = [3]int{first, second, third}
+}
+
+func RenderTriple(count int) {
+	tripleValue := count + 1
+	tripleSink(tripleValue, 0, tripleValue, 2, tripleValue)
+}
+-- named.go --
+package render
+
+type Count int
+
+var namedValues [2]Count
+
+func namedSink(left, right Count) {
+	namedValues = [2]Count{left, right}
+}
+
+func RenderNamed(count Count) {
+	namedSink(count + 1, count + 1)
+}
+-- want/named.go --
+package render
+
+type Count int
+
+var namedValues [2]Count
+
+func namedSink(left, right Count) {
+	namedValues = [2]Count{left, right}
+}
+
+func RenderNamed(count Count) {
+	namedValue := count + 1
+	namedSink(namedValue, namedValue)
+}
+-- divide.go --
+package render
+
+var divideCalls, divideDefers int
+
+func divideSink(first, second, third int) {
+	divideCalls++
+}
+
+func RenderDivide(divisor int) {
+	defer func() { divideDefers++ }()
+	divideSink(10/divisor, 0, 10/divisor)
+}
+-- want/divide.go --
+package render
+
+var divideCalls, divideDefers int
+
+func divideSink(first, second, third int) {
+	divideCalls++
+}
+
+func RenderDivide(divisor int) {
+	defer func() { divideDefers++ }()
+	quotient := 10 / divisor
+	divideSink(quotient, 0, quotient)
+}
+-- shift.go --
+package render
+
+var shiftCalls, shiftDefers int
+
+func shiftSink(first, second, third int) {
+	shiftCalls++
+}
+
+func RenderShift(base, shift int) {
+	defer func() { shiftDefers++ }()
+	shiftSink(base<<shift, 0, base<<shift)
+}
+-- want/shift.go --
+package render
+
+var shiftCalls, shiftDefers int
+
+func shiftSink(first, second, third int) {
+	shiftCalls++
+}
+
+func RenderShift(base, shift int) {
+	defer func() { shiftDefers++ }()
+	shifted := base << shift
+	shiftSink(shifted, 0, shifted)
+}
+-- mutable.go --
+package render
+
+func mutableSink(first, second int) {}
+
+func RenderMutable(values []int, index int) {
+	mutableSink(values[index], values[index])
+}
+-- original/mutable.go --
+package render
+
+func mutableSink(first, second int) {}
+
+func RenderMutable(values []int, index int) {
+	mutableSink(values[index], values[index])
+}
+-- escaped.go --
+package render
+
+func escapedSink(first, second int) {}
+func keepAddress(*int) {}
+
+func RenderEscaped(count int) {
+	keepAddress(&count)
+	escapedSink(count + 1, count + 1)
+}
+-- original/escaped.go --
+package render
+
+func escapedSink(first, second int) {}
+func keepAddress(*int) {}
+
+func RenderEscaped(count int) {
+	keepAddress(&count)
+	escapedSink(count + 1, count + 1)
+}
+-- captured.go --
+package render
+
+func capturedSink(first, second int) {}
+
+func RenderCaptured(count int) {
+	defer func() { _ = count }()
+	capturedSink(count + 1, count + 1)
+}
+-- original/captured.go --
+package render
+
+func capturedSink(first, second int) {}
+
+func RenderCaptured(count int) {
+	defer func() { _ = count }()
+	capturedSink(count + 1, count + 1)
+}
+-- context.go --
+package render
+
+func contextSink(int, uint64) {}
+
+func RenderContext(shift uint) {
+	contextSink(1<<shift, 1<<shift)
+}
+-- original/context.go --
+package render
+
+func contextSink(int, uint64) {}
+
+func RenderContext(shift uint) {
+	contextSink(1<<shift, 1<<shift)
+}
+-- ambiguous.go --
+package render
+
+func ambiguousSink(first, second int) {}
+
+func RenderAmbiguous(count int) {
+	ambiguousSink(count + 1, count + 1)
+	ambiguousSink(count + 1, count + 1)
+}
+-- original/ambiguous.go --
+package render
+
+func ambiguousSink(first, second int) {}
+
+func RenderAmbiguous(count int) {
+	ambiguousSink(count + 1, count + 1)
+	ambiguousSink(count + 1, count + 1)
+}
+-- want/ambiguous.go --
+package render
+
+func ambiguousSink(first, second int) {}
+
+func RenderAmbiguous(count int) {
+	selected := count + 1
+	ambiguousSink(selected, selected)
+	ambiguousSink(count+1, count+1)
+}
+-- implicit_call.go --
+package render
+
+type EscapingCount int
+
+var savedCount *EscapingCount
+
+func (count *EscapingCount) Escape() { savedCount = count }
+func implicitCallSink(EscapingCount, EscapingCount) {}
+
+func RenderImplicitCall(count EscapingCount) {
+	count.Escape()
+	implicitCallSink(count+1, count+1)
+}
+-- original/implicit_call.go --
+package render
+
+type EscapingCount int
+
+var savedCount *EscapingCount
+
+func (count *EscapingCount) Escape() { savedCount = count }
+func implicitCallSink(EscapingCount, EscapingCount) {}
+
+func RenderImplicitCall(count EscapingCount) {
+	count.Escape()
+	implicitCallSink(count+1, count+1)
+}
+-- implicit_value.go --
+package render
+
+type EscapingValue int
+
+var savedEscape func()
+
+func (count *EscapingValue) Escape() {}
+func implicitValueSink(EscapingValue, EscapingValue) {}
+
+func RenderImplicitValue(count EscapingValue) {
+	savedEscape = count.Escape
+	implicitValueSink(count+1, count+1)
+}
+-- original/implicit_value.go --
+package render
+
+type EscapingValue int
+
+var savedEscape func()
+
+func (count *EscapingValue) Escape() {}
+func implicitValueSink(EscapingValue, EscapingValue) {}
+
+func RenderImplicitValue(count EscapingValue) {
+	savedEscape = count.Escape
+	implicitValueSink(count+1, count+1)
+}
+-- repeated_test.go --
+package render
+
+import "testing"
+
+func TestRepeatedArguments(t *testing.T) {
+	RenderPair(4)
+	if pairValues != [2]int{5, 5} {
+		t.Fatalf("pair arguments = %v", pairValues)
+	}
+	RenderTriple(4)
+	if tripleValues != [3]int{5, 5, 5} {
+		t.Fatalf("triple arguments = %v", tripleValues)
+	}
+	RenderNamed(Count(4))
+	if namedValues != [2]Count{5, 5} {
+		t.Fatalf("named arguments = %v", namedValues)
+	}
+
+	assertPanic := func(call func()) {
+		t.Helper()
+		panicked := false
+		func() {
+			defer func() { panicked = recover() != nil }()
+			call()
+		}()
+		if !panicked {
+			t.Fatal("call did not panic")
+		}
+	}
+	assertPanic(func() { RenderDivide(0) })
+	if divideCalls != 0 || divideDefers != 1 {
+		t.Fatalf("division effects = calls %d, defers %d", divideCalls, divideDefers)
+	}
+	assertPanic(func() { RenderShift(1, -1) })
+	if shiftCalls != 0 || shiftDefers != 1 {
+		t.Fatalf("shift effects = calls %d, defers %d", shiftCalls, shiftDefers)
+	}
+}

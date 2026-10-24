@@ -1,0 +1,27 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=1
+# Go master: extract_variable_multiple_args.txtar. Rust deliberately refuses extraction here because moving one call argument can change evaluation order.
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol extractedValue --in-function run --discriminator 'first()'
+stderr 'suffixed integer expression as the sole argument'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-evaluation-order-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(first(), second());
+}
+
+fn consume(left: i32, right: i32) {}
+fn first() -> i32 { 1 }
+fn second() -> i32 { 2 }
+-- want/lib.rs --
+fn run() {
+    consume(first(), second());
+}
+
+fn consume(left: i32, right: i32) {}
+fn first() -> i32 { 1 }
+fn second() -> i32 { 2 }

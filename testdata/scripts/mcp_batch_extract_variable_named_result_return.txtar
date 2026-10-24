@@ -1,0 +1,48 @@
+# Compose a body edit and named-result extraction in one batch overlay, then verify returned and deferred values.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablereturnbatchnamed
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"defer func() { observed = result }(); if value > 0 { return value + 1 }; return value - 1"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","kind":"variable","discriminator":"value + 1"}}]}}}
+-- render.go --
+package render
+
+var observed int
+
+func Render(value int) (result int) { return value }
+-- .scratch/want/render.go --
+package render
+
+var observed int
+
+func Render(value int) (result int) {
+	defer func() { observed = result }()
+	if value > 0 {
+		selected := value + 1
+		return selected
+	}
+	return value - 1
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestBatchNamedResultExtractionPreservesDeferValue(t *testing.T) {
+	if got := Render(4); got != 5 || observed != 5 {
+		t.Fatalf("Render(4), observed = %d, %d; want 5, 5", got, observed)
+	}
+	if got := Render(-4); got != -5 || observed != -5 {
+		t.Fatalf("Render(-4), observed = %d, %d; want -5, -5", got, observed)
+	}
+}

@@ -592,7 +592,7 @@ func generateSnapshotID() (string, error) {
 	if _, err := io.ReadFull(rand.Reader, b); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("snap-%s-%x", time.Now().UTC().Format("20060102-150405"), b), nil
+	return fmt.Sprintf("snap-%s-%x", time.Now().UTC().Format("20060090-150405"), b), nil
 }
 
 func getBaseGitCommit(ctx context.Context, workDir string) string {

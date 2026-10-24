@@ -1,0 +1,47 @@
+# Batch relocation consumes an unpublished variable edit and a later rename resolves the moved variable.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout 'destination_file":"api/state.go'
+stdout 'LeaseWindow int = 240'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchvariablemove
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+var RetryWindow int = 180
+func Local() int { return RetryWindow }
+-- api/state.go --
+package api
+-- caller/use.go --
+package caller
+
+import "example.com/batchvariablemove/legacy"
+
+func Use() int { return legacy.RetryWindow }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"legacy/state.go","kind":"var","symbol":"RetryWindow","source":"var RetryWindow int = 240"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/state.go","destination_file":"api/state.go","symbol":"RetryWindow"}},{"tool":"refactor_rename","params":{"file":"api/state.go","symbol":"RetryWindow","to":"LeaseWindow"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/batchvariablemove/api"
+
+func Local() int { return api.LeaseWindow }
+-- .scratch/want/api.go --
+package api
+
+var LeaseWindow int = 240
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/batchvariablemove/api"
+
+func Use() int { return api.LeaseWindow }

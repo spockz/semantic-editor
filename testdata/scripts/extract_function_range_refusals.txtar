@@ -1,0 +1,139 @@
+# Refuse unsupported range assignments, operands, types, and non-scalar owner inputs without changing source.
+! exec semedit refactor-extract-callable --file service.go --symbol assignmentRange --in-function AssignmentHeader --kind function --start-line 7 --end-line 7
+stderr 'short-declared iteration bindings'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol effectfulRange --in-function EffectfulOperand --kind function --start-line 11 --end-line 11
+stderr 'pure scalar operand'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol arrayRange --in-function ArrayOperand --kind function --start-line 15 --end-line 15
+stderr 'local slice/map identifiers'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol sliceExtraUse --in-function SliceExtraUse --kind function --start-line 19 --end-line 19
+stderr 'cannot copy non-scalar owner input "values"'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol aggregateSlice --in-function AggregateSlice --kind function --start-line 23 --end-line 23
+stderr 'slice element type must be scalar'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol localSlice --in-function LocalSlice --kind function --start-line 31 --end-line 31
+stderr 'nameable from a package helper'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol globalSlice --in-function GlobalSlice --kind function --start-line 35 --end-line 35
+stderr 'local or parameter slice identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol fieldSlice --in-function FieldSlice --kind function --start-line 41 --end-line 41
+stderr 'local or parameter slice identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol nonScalarInput --in-function NonScalarOwnerInput --kind function --start-line 45 --end-line 45
+stderr 'cannot copy non-scalar owner input "payload"'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangerefusals
+
+go 1.23
+
+-- service.go --
+package sample
+
+var shared []int
+
+func AssignmentHeader(source []int) {
+	var index, value int
+	for index, value = range source { consumeSliceValue(index, value) }
+}
+
+func EffectfulOperand() {
+	for index, value := range nextString() { println(index, value) }
+}
+
+func ArrayOperand(values [2]int) {
+	for index, value := range values { println(index, value) }
+}
+
+func SliceExtraUse(values []int) {
+	for index, value := range values { consumeSlice(values); consumeSliceValue(index, value) }
+}
+
+func AggregateSlice(values []Payload) {
+	for index, value := range values { consumePayload(index, value) }
+}
+
+type Payload struct{}
+
+func LocalSlice() {
+	type Entries []int
+	entries := Entries{1}
+	for index, value := range entries { consumeSliceValue(index, value) }
+}
+
+func GlobalSlice() {
+	for index, value := range shared { consumeSliceValue(index, value) }
+}
+
+type Holder struct { values []int }
+
+func FieldSlice(holder Holder) {
+	for index, value := range holder.values { consumeSliceValue(index, value) }
+}
+
+func NonScalarOwnerInput(input string, payload Payload) {
+	for index := range input { consumePayload(index, payload) }
+}
+
+func consumePayload(int, Payload) {}
+func consumeSlice([]int) {}
+func consumeSliceValue(int, int) {}
+func nextString() string { return "" }
+-- original/service.go --
+package sample
+
+var shared []int
+
+func AssignmentHeader(source []int) {
+	var index, value int
+	for index, value = range source { consumeSliceValue(index, value) }
+}
+
+func EffectfulOperand() {
+	for index, value := range nextString() { println(index, value) }
+}
+
+func ArrayOperand(values [2]int) {
+	for index, value := range values { println(index, value) }
+}
+
+func SliceExtraUse(values []int) {
+	for index, value := range values { consumeSlice(values); consumeSliceValue(index, value) }
+}
+
+func AggregateSlice(values []Payload) {
+	for index, value := range values { consumePayload(index, value) }
+}
+
+type Payload struct{}
+
+func LocalSlice() {
+	type Entries []int
+	entries := Entries{1}
+	for index, value := range entries { consumeSliceValue(index, value) }
+}
+
+func GlobalSlice() {
+	for index, value := range shared { consumeSliceValue(index, value) }
+}
+
+type Holder struct { values []int }
+
+func FieldSlice(holder Holder) {
+	for index, value := range holder.values { consumeSliceValue(index, value) }
+}
+
+func NonScalarOwnerInput(input string, payload Payload) {
+	for index := range input { consumePayload(index, payload) }
+}
+
+func consumePayload(int, Payload) {}
+func consumeSlice([]int) {}
+func consumeSliceValue(int, int) {}
+func nextString() string { return "" }

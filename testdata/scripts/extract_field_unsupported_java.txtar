@@ -1,0 +1,19 @@
+# Java field extraction remains unavailable until its native edit shape has a safe contract.
+! exec semedit refactor-extract-value --language java --trust-workspace --file src/Widget.java --symbol amount --kind field --in-function Widget.run() --discriminator '1 + 2'
+stderr 'java field extraction is unsupported'
+cmp src/Widget.java want/Widget.java
+
+-- src/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    consume(1 + 2);
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  void run() {
+    consume(1 + 2);
+  }
+}

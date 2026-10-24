@@ -1,0 +1,22 @@
+# A typo correction is not suggested when the replacement signature does not typecheck.
+env SEMEDIT_SUGGESTIONS=generic
+cp service.go original.txt
+! exec semedit refactor-change-signature --file service.go --symbol proces --parameters '[{"source_index":0,"parameter":{"name":"x","type":"int"}},{"parameter":{"name":"mode","type":"missingType"},"argument":"0"}]'
+! stderr 'Suggested target: process'
+cmp service.go original.txt
+
+-- go.mod --
+module example.com/suggestionssignatureinvalidtype
+go 1.23
+
+-- service.go --
+package config
+
+func process(x int) {}
+func procesx(x string) {}
+
+-- original.txt --
+package config
+
+func process(x int) {}
+func procesx(x string) {}

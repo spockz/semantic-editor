@@ -1,7 +1,7 @@
 # Alias-preserving field type migrations accept the current buffered file revision between batch children.
 stdin input.json
 exec semedit mcp --enable-batching --live-reload
-! stdout '"name"\s*:\s*"semantic_migrate_type"'
+! stdout '"name"\s*:\s*"refactor_migrate_type"'
 ! stdout '"isError":true'
 stdout '"status":"applied_working"'
 cmp settings.go .scratch/want/settings.go
@@ -23,7 +23,7 @@ type Settings struct {
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_migrate_type","params":{"file":"settings.go","symbol":"Settings.timeout","type":"Duration"}},{"tool":"semantic_migrate_type","params":{"file":"settings.go","symbol":"Settings.retry","type":"Duration","expected_revision":"7e2df98974e5b9dea477a2224b136d43bc8c4e1782fdf1fca934f1c5684a6694"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_migrate_type","params":{"file":"settings.go","symbol":"Settings.timeout","type":"Duration"}},{"tool":"refactor_migrate_type","params":{"file":"settings.go","symbol":"Settings.retry","type":"Duration","expected_revision":"7e2df98974e5b9dea477a2224b136d43bc8c4e1782fdf1fca934f1c5684a6694"}}]}}}
 -- .scratch/want/settings.go --
 package sample
 

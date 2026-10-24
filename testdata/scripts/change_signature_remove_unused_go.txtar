@@ -1,0 +1,128 @@
+# Remove one unused scalar formal without moving evaluation of any surviving argument or changing surviving bindings.
+exec go test ./...
+exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":0,"parameter":{"name":"left","type":"int"}},{"source_index":2,"parameter":{"name":"right","type":"int"}}]'
+stdout 'Updated the function signature and every proven direct caller'
+exec semedit refactor-change-signature --file service.go --symbol head --parameters '[{"source_index":1,"parameter":{"name":"value","type":"int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol tail --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol single --parameters '[]'
+exec semedit refactor-change-signature --file service.go --symbol shadow --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol grouped --parameters '[{"source_index":0,"parameter":{"name":"left","type":"int"}},{"source_index":2,"parameter":{"name":"right","type":"int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol blank --parameters '[]'
+exec semedit refactor-change-signature --file service.go --symbol unused --parameters '[]'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cmp service_test.go .scratch/want/service-test.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/removesignature
+
+go 1.24
+-- service.go --
+// WHY: Keep obsolete scalar API metadata separate from the values that determine the result.
+package sample
+
+var events []string
+
+func step(label string, value int) int {
+	events = append(events, label)
+	return value
+}
+
+func combine(left int, legacy string, right int) int { return left*100 + right }
+func head(legacy int, value int) int { return value }
+func tail(value int, legacy bool) int { return value }
+func single(legacy int) int { return 9 }
+func blank(_ int) int { return 5 }
+func unused(legacy int) {}
+func grouped(left, legacy, right int) int { return left*100 + right }
+func shadow(value int, legacy int) int {
+	{
+		legacy := value
+		_ = legacy
+	}
+	return value
+}
+-- calls.go --
+// WHY: Exercise unchanged effectful survivors at a caller outside the declaration file.
+package sample
+
+func first() int { return combine(step("left", 3), "old", step("right", 7)) }
+-- service_test.go --
+// WHY: Pin surviving argument evaluation order and all supported parameter positions before and after migration.
+package sample
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestEvaluationOrder(t *testing.T) {
+	events = nil
+	if got := first(); got != 307 {
+		t.Errorf("first = %d", got)
+	}
+	if got := strings.Join(events, ","); got != "left,right" {
+		t.Errorf("events = %s", got)
+	}
+}
+
+func TestSurvivingValues(t *testing.T) {
+	if head(123, 9) != 9 || tail(4, true) != 4 || single(1) != 9 || blank(0) != 5 || shadow(8, 0) != 8 || grouped(4, 0, 5) != 405 {
+		t.Error("surviving values changed")
+	}
+}
+-- .scratch/want/service.txt --
+// WHY: Keep obsolete scalar API metadata separate from the values that determine the result.
+package sample
+
+var events []string
+
+func step(label string, value int) int {
+	events = append(events, label)
+	return value
+}
+
+func combine(left int, right int) int { return left*100 + right }
+func head(value int) int { return value }
+func tail(value int) int { return value }
+func single() int { return 9 }
+func blank() int { return 5 }
+func unused() {}
+func grouped(left int, right int) int { return left*100 + right }
+func shadow(value int) int {
+	{
+		legacy := value
+		_ = legacy
+	}
+	return value
+}
+-- .scratch/want/calls.txt --
+// WHY: Exercise unchanged effectful survivors at a caller outside the declaration file.
+package sample
+
+func first() int { return combine(step("left", 3), step("right", 7)) }
+-- .scratch/want/service-test.txt --
+// WHY: Pin surviving argument evaluation order and all supported parameter positions before and after migration.
+package sample
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestEvaluationOrder(t *testing.T) {
+	events = nil
+	if got := first(); got != 307 {
+		t.Errorf("first = %d", got)
+	}
+	if got := strings.Join(events, ","); got != "left,right" {
+		t.Errorf("events = %s", got)
+	}
+}
+
+func TestSurvivingValues(t *testing.T) {
+	if head(9) != 9 || tail(4) != 4 || single() != 9 || blank() != 5 || shadow(8) != 8 || grouped(4, 5) != 405 {
+		t.Error("surviving values changed")
+	}
+}

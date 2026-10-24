@@ -1,0 +1,42 @@
+# Earlier staged changes publish after an unsafe struct inline refuses; later children do not run.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'struct field values must be basic literals or predeclared true/false'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinestructrefusal
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"calc.go","symbol":"Marker","body":"return 2"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Build"}},{"tool":"semantic_replace_body","params":{"file":"calc.go","symbol":"Marker","body":"return 99"}}]}}}
+-- calc.go --
+package calc
+
+type Result struct{ Count int }
+
+func Marker() int { return 1 }
+
+func Build() any {
+	value := Result{Count: next()}
+	return value
+}
+
+func next() int { return 3 }
+-- .scratch/want/calc.go --
+package calc
+
+type Result struct{ Count int }
+
+func Marker() int {
+	return 2
+}
+
+func Build() any {
+	value := Result{Count: next()}
+	return value
+}
+
+func next() int { return 3 }

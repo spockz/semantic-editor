@@ -1,0 +1,43 @@
+# Refuse effectful and non-integer maximum bounds in buffered extraction without changing the source.
+mkdir .scratch
+cp effectful/service.go .scratch/effectful.go
+cp noninteger/service.go .scratch/noninteger.go
+stdin effectful.json
+exec semedit mcp
+stdout '"isError":true'
+cmp effectful/service.go .scratch/effectful.go
+stdin noninteger.json
+exec semedit mcp
+stdout '"isError":true'
+cmp noninteger/service.go .scratch/noninteger.go
+
+-- go.mod --
+module example.com/mcpbatchrangeslicefullrefusals
+
+go 1.23
+-- effectful.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"effectful/service.go","symbol":"walkEffectful","in_function":"WalkEffectful","kind":"function","start_line":4,"end_line":6}}]}}}
+-- noninteger.json --
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"noninteger/service.go","symbol":"walkNonInteger","in_function":"WalkNonInteger","kind":"function","start_line":4,"end_line":6}}]}}}
+-- effectful/service.go --
+package sample
+
+func WalkEffectful(values []int) {
+	for index := range values[:1:nextBound()] {
+		consume(index)
+	}
+}
+
+func nextBound() int { return 1 }
+
+func consume(int) {}
+-- noninteger/service.go --
+package sample
+
+func WalkNonInteger(values []int, max float64) {
+	for index := range values[:1:max] {
+		consume(index)
+	}
+}
+
+func consume(int) {}

@@ -1,10 +1,10 @@
 # A misspelled extraction owner is suggested without changing source; retry keeps the requested variable name.
 env SEMEDIT_SUGGESTIONS=generic
 cp source.go original.txt
-! exec semedit extract-variable --file source.go --symbol total --in-function Rennder --discriminator 'count + 1'
+! exec semedit refactor-extract-value --file source.go --symbol total --in-function Rennder --discriminator 'count + 1'
 stderr 'Suggested target: Render'
 cmp source.go original.txt
-exec semedit extract-variable --file source.go --symbol total --in-function Render --discriminator 'count + 1'
+exec semedit refactor-extract-value --file source.go --symbol total --in-function Render --discriminator 'count + 1'
 stdout 'symbol: total'
 cmp source.go want/source.go
 

@@ -1,0 +1,79 @@
+# Extract from same-package and external-package Go test variants.
+exec semedit refactor-extract-callable --file internal_test.go --symbol checkInternal --in-function TestInternal --kind function --start-line 6 --end-line 6
+stdout 'symbol: checkInternal'
+cmp internal_test.go want/internal_test.go
+exec semedit refactor-extract-callable --file external_test.go --symbol checkExternal --in-function TestExternal --kind function --start-line 10 --end-line 10
+stdout 'symbol: checkExternal'
+cmp external_test.go want/external_test.go
+exec go test .
+
+-- go.mod --
+module example.com/extracttestfile
+
+go 1.23
+-- service.go --
+package sample
+
+func Value() int { return 2 }
+-- internal_test.go --
+package sample
+
+import "testing"
+
+func TestInternal(t *testing.T) {
+	value := Value()
+	if value != 2 {
+		t.Fatal(value)
+	}
+}
+-- want/internal_test.go --
+package sample
+
+import "testing"
+
+func TestInternal(t *testing.T) {
+	value := checkInternal()
+	if value != 2 {
+		t.Fatal(value)
+	}
+}
+
+func checkInternal() int {
+	value := Value()
+	return value
+}
+-- external_test.go --
+package sample_test
+
+import (
+	"testing"
+
+	"example.com/extracttestfile"
+)
+
+func TestExternal(t *testing.T) {
+	value := sample.Value()
+	if value != 2 {
+		t.Fatal(value)
+	}
+}
+-- want/external_test.go --
+package sample_test
+
+import (
+	"testing"
+
+	"example.com/extracttestfile"
+)
+
+func TestExternal(t *testing.T) {
+	value := checkExternal()
+	if value != 2 {
+		t.Fatal(value)
+	}
+}
+
+func checkExternal() int {
+	value := sample.Value()
+	return value
+}

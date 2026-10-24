@@ -326,10 +326,13 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 }
 
 func registerStructuralPlanOps(registry *Registry) error {
-	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertFieldStructuralDef(), extractTypeStructuralDef()} {
+	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertFieldStructuralDef(), extractTypeStructuralDef(), extractDelegateStructuralDef()} {
 		if err := Register(registry, definition); err != nil {
 			return fmt.Errorf("register structural plan %q: %w", definition.Key, err)
 		}
+	}
+	if err := Register(registry, encapsulateFieldDef()); err != nil {
+		return fmt.Errorf("register Go field encapsulation: %w", err)
 	}
 	return nil
 }

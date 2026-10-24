@@ -1,0 +1,47 @@
+# Encapsulating an imported field type adds the required import to the accessor destination.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --destination-file accessors.go --symbol config.timeout --getter timeoutValue --setter setTimeoutValue
+cmp accessors.go want-accessors.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulateimport
+
+go 1.24
+-- config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+
+func (c *config) read() time.Duration {
+	return c.timeout
+}
+-- accessors.go --
+//go:build !encapsulate_import_test
+
+// Copyright 2026 Example Corp.
+
+package sample
+
+// existingHelper documents a declaration in the accessor destination.
+func existingHelper() {}
+
+-- want-accessors.txt --
+//go:build !encapsulate_import_test
+
+// Copyright 2026 Example Corp.
+
+package sample
+
+import time "time"
+
+// existingHelper documents a declaration in the accessor destination.
+func existingHelper() {}
+
+func (receiver *config) timeoutValue() time.Duration         { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value time.Duration) { receiver.timeout = value }

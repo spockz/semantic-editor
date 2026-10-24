@@ -1,0 +1,26 @@
+# Inline a literal while preserving a non-adjacent comment later in the function.
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Compute
+cmp calc.go want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomment
+
+go 1.23
+-- calc.go --
+package calc
+
+func Compute() {
+	value := 42
+	println(value)
+	// preserve this comment
+	println("done")
+}
+-- want/calc.go --
+package calc
+
+func Compute() {
+	println(int(42))
+	// preserve this comment
+	println("done")
+}

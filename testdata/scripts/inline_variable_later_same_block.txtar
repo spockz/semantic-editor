@@ -1,0 +1,69 @@
+# Inline later same-block literal uses without crossing control flow and preserve surrounding call order.
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Compute
+cmp calc.go want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol guarded --in-function Guarded
+stderr 'control-flow boundary separates the declaration and its use'
+cmp calc.go want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinelatersameblock
+
+go 1.23
+-- calc.go --
+package calc
+
+var events []int
+
+func record(value int) { events = append(events, value) }
+
+func Compute() int {
+	value := 42
+	record(1)
+	record(value)
+	return value
+}
+
+func Guarded() {
+	guarded := 9
+	if true { record(0) }
+	record(guarded)
+}
+
+func reset() { events = nil }
+-- want/calc.go --
+package calc
+
+var events []int
+
+func record(value int) { events = append(events, value) }
+
+func Compute() int {
+	record(1)
+	record(int(42))
+	return int(42)
+}
+
+func Guarded() {
+	guarded := 9
+	if true {
+		record(0)
+	}
+	record(guarded)
+}
+
+func reset() { events = nil }
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestComputePreservesValueAndCallOrder(t *testing.T) {
+	reset()
+	if got := Compute(); got != 42 {
+		t.Fatalf("Compute() = %d, want 42", got)
+	}
+	if len(events) != 2 || events[0] != 1 || events[1] != 42 {
+		t.Fatalf("events = %v, want [1 42]", events)
+	}
+}

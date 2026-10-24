@@ -53,8 +53,8 @@ func TestLiveCodexAppServerKeepsMCPAcrossHints(t *testing.T) {
 	target := Target{Harness: string(HarnessCodex), Model: "gpt-6-luna", Effort: "medium"}
 	threadID := ""
 	for index, prompt := range []string{
-		"Call semedit semantic_rename once to rename function Existing in main.go to Renamed. Do not run shell commands or call other tools. Then answer done.",
-		"Follow-up: call semedit semantic_rename once to rename function Renamed in main.go back to Existing. Do not run shell commands or call other tools. Then answer done.",
+		"Call semedit refactor_rename once to rename function Existing in main.go to Renamed. Do not run shell commands or call other tools. Then answer done.",
+		"Follow-up: call semedit refactor_rename once to rename function Renamed in main.go back to Existing. Do not run shell commands or call other tools. Then answer done.",
 	} {
 		result := &RunResult{Target: target, Arm: ArmSemeditAgentic}
 		id, runErr := provider.run(ctx, workDir, target, prompt, result, threadID)

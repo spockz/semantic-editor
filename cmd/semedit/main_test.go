@@ -118,7 +118,69 @@ func TestMain(m *testing.M) {
 		"haskell-language-server-wrapper": runFakeHLS,
 		"kotlin-language-server":          runFakeKotlin,
 		"maven":                           runFakeMaven,
+		"materialize-mcp-input":           materializeMCPInput,
 	})
+}
+
+func materializeMCPInput() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "materialize-mcp-input requires one file path")
+		os.Exit(2)
+	}
+	path := os.Args[1]
+	data, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "read MCP input %s: %v\n", path, err)
+		os.Exit(2)
+	}
+	for placeholder, variable := range map[string]string{
+		"@JAVA_BIN@":   "SEMEDIT_TEST_JAVA",
+		"@METALS_BIN@": "SEMEDIT_TEST_METALS",
+		"@MCP_ROOT@":   "SEMEDIT_TEST_MCP_ROOT",
+	} {
+		if !bytes.Contains(data, []byte(placeholder)) {
+			continue
+		}
+		value := os.Getenv(variable)
+		if value == "" {
+			fmt.Fprintf(os.Stderr, "%s is not set\n", variable)
+			os.Exit(2)
+		}
+		data, err = replaceJSONPlaceholder(data, placeholder, value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encode %s: %v\n", variable, err)
+			os.Exit(2)
+		}
+	}
+	if err := os.WriteFile("input.expanded.json", data, 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "write expanded MCP input: %v\n", err)
+		os.Exit(2)
+	}
+}
+
+func replaceJSONPlaceholder(data []byte, placeholder, value string) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode placeholder value: %w", err)
+	}
+	return bytes.ReplaceAll(data, []byte(placeholder), encoded[1:len(encoded)-1]), nil
+}
+
+func TestMaterializeMCPInputEscapesJSONPlaceholders(t *testing.T) {
+	value := `path/with "quotes" and \\slashes`
+	data, err := replaceJSONPlaceholder([]byte(`{"rootPath":"@MCP_ROOT@"}`), "@MCP_ROOT@", value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var request struct {
+		RootPath string `json:"rootPath"`
+	}
+	if err := json.Unmarshal(data, &request); err != nil {
+		t.Fatalf("materialized input is invalid JSON: %v", err)
+	}
+	if request.RootPath != value {
+		t.Fatalf("materialized root = %q, want %q", request.RootPath, value)
+	}
 }
 
 func getGoWorkHash(startDir string) (string, string, bool) {
@@ -146,7 +208,7 @@ func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: repoPath("testdata", "scripts"),
 		Setup: func(env *testscript.Env) error {
-			for _, key := range []string{"GOPATH", "GOCACHE", "GOROOT", "HOME", "GOBIN", "GOENV", "GOMODCACHE", "GOTMPDIR", "GOWORK", "GOPLSCACHE"} {
+			for _, key := range []string{"GOPATH", "GOCACHE", "GOROOT", "HOME", "GOBIN", "GOENV", "GOMODCACHE", "GOTMPDIR", "GOFLAGS", "GOWORK", "GOPLSCACHE"} {
 				if val := os.Getenv(key); val != "" {
 					env.Vars = append(env.Vars, key+"="+val)
 				}

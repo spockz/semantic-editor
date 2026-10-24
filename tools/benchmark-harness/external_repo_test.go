@@ -570,12 +570,15 @@ func loadAndCheckMultiSWERecipe(t *testing.T, taskID string) *Task {
 	if !ok || !strings.Contains(outside, "semantic_batch") {
 		t.Fatal("explicit prompt must request one semantic_batch JSON payload")
 	}
-	for _, tool := range []string{"semantic_lookup", "semantic_inspect_symbol", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_construct", "semantic_insert_function", "semantic_insert_decl", "semantic_replace_decl", "semantic_remove_construct", "semantic_move_construct", "semantic_organize_imports"} {
+	for _, tool := range []string{"semantic_lookup", "semantic_inspect_symbol", "refactor_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_construct", "semantic_insert_function", "semantic_insert_decl", "semantic_replace_decl", "semantic_remove_construct", "semantic_move_construct", "semantic_organize_imports"} {
 		if strings.Contains(outside, tool) {
 			t.Fatalf("explicit prompt requests separate %s outside its batch", tool)
 		}
 	}
 	evidence := readMultiSWERecipeEvidence(t, taskID)
+	if taskID == "grpc__grpc-go-2735" {
+		evidence = canonicalizeHistoricalRenameRecipe(t, evidence)
+	}
 	if canonicalJSON(payload) != canonicalJSON(string(evidence)) {
 		t.Fatal("explicit prompt JSON payload differs from durable batch_call evidence")
 	}
@@ -586,6 +589,42 @@ func loadAndCheckMultiSWERecipe(t *testing.T, taskID string) *Task {
 	}
 	assertPortableMultiSWERecipe(t, payload)
 	return task
+}
+
+// This archived recipe predates the public rename name migration; keep its captured evidence intact while comparing it with today's fixture.
+func canonicalizeHistoricalRenameRecipe(t *testing.T, evidence []byte) []byte {
+	t.Helper()
+	var recipe map[string]json.RawMessage
+	if err := json.Unmarshal(evidence, &recipe); err != nil {
+		t.Fatalf("decode historical batch recipe: %v", err)
+	}
+	var edits []map[string]json.RawMessage
+	if err := json.Unmarshal(recipe["edits"], &edits); err != nil {
+		t.Fatalf("decode historical batch edits: %v", err)
+	}
+	for _, edit := range edits {
+		var tool string
+		if err := json.Unmarshal(edit["tool"], &tool); err != nil {
+			t.Fatalf("decode historical batch tool: %v", err)
+		}
+		if tool == "semantic_rename" {
+			canonicalTool, err := json.Marshal("refactor_rename")
+			if err != nil {
+				t.Fatalf("encode canonical historical rename tool: %v", err)
+			}
+			edit["tool"] = canonicalTool
+		}
+	}
+	encodedEdits, err := json.Marshal(edits)
+	if err != nil {
+		t.Fatalf("encode canonical historical batch edits: %v", err)
+	}
+	recipe["edits"] = encodedEdits
+	canonical, err := json.Marshal(recipe)
+	if err != nil {
+		t.Fatalf("encode canonical historical batch recipe: %v", err)
+	}
+	return canonical
 }
 
 func readMultiSWERecipeEvidence(t *testing.T, taskID string) []byte {

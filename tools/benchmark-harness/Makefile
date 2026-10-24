@@ -107,9 +107,9 @@ list-benchmarks: bench-go-env ## List all available benchmark tasks and prompt v
 bench-list: list-benchmarks ## Alias for list-benchmarks
 
 .PHONY: bench-test
-bench-test: bench-go-env ## Run unit and oracle tests for benchmark harness
+bench-test: bench-go-env bench-build ## Run unit and oracle tests for benchmark harness
 	@echo "==> Testing benchmark harness..."
-	cd "$(REPO_ROOT)" && go test -v ./tools/benchmark-harness
+	bash "$(REPO_ROOT)/tools/run-with-test-tmp.sh" --ram-root "$(BENCH_RAM_ROOT)" --toolexec "$(REPO_ROOT)/.scratch/bin/benchmark-harness" -- bash -c 'cd "$(REPO_ROOT)" && go test -v ./tools/benchmark-harness'
 
 .PHONY: bench-build
 bench-build: bench-go-env ## Compile standalone benchmark harness binary (.scratch/bin/benchmark-harness)

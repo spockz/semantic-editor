@@ -1,0 +1,31 @@
+# Moving a method whose len call resolves to the predeclared builtin must refuse a package len shadow.
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stderr 'changes identifier binding for "len"'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrosslenshadow
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+type Widget int
+
+func (Widget) Count() int { return len([]int{1}) }
+-- api/api.go --
+package api
+
+func len([]int) int { return 0 }
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+type Widget int
+
+func (Widget) Count() int { return len([]int{1}) }
+-- .scratch/_want/api/api.go --
+package api
+
+func len([]int) int { return 0 }

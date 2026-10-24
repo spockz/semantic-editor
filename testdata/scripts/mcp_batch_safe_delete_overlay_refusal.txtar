@@ -1,4 +1,4 @@
-# A safe-delete child must analyze references inserted into the current batch overlay and preserve prior child edits on refusal.
+# A safe-delete struct child must analyze references inserted into the current batch overlay and preserve prior child edits on refusal.
 stdin input.json
 exec semedit mcp --enable-batching --live-reload
 stdout '"status":"error"'
@@ -12,19 +12,19 @@ go 1.24
 -- decls.go --
 package sample
 
-func obsolete() {}
+type obsoleteRecord struct{}
 func keep() {}
 -- added.go --
 package sample
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Use() { obsolete() }"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"function","symbol":"obsolete","safe_delete":true}}]}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Use() { _ = obsoleteRecord{} }"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"type","symbol":"obsoleteRecord","safe_delete":true}}]}}}
 -- .scratch/want/decls.go --
 package sample
 
-func obsolete() {}
+type obsoleteRecord struct{}
 func keep() {}
 -- .scratch/want/added.go --
 package sample
 
-func Use() { obsolete() }
+func Use() { _ = obsoleteRecord{} }

@@ -1,0 +1,61 @@
+# Build a channel range in the batch overlay, extract it, then test the published helper behavior.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpbatchrangechannel
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"Run","body":"for value := range values {\n\trecord(value)\n}"}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visit","in_function":"Run","kind":"function","start_line":6,"end_line":8}}]}}}
+-- service.go --
+package sample
+
+var events []int
+
+func Run(values <-chan int) {
+	return
+}
+
+func record(value int) { events = append(events, value) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesChannelRangeBehavior(t *testing.T) {
+	values := make(chan int, 3)
+	values <- 1
+	values <- 2
+	values <- 3
+	close(values)
+	events = nil
+	Run(values)
+	if !reflect.DeepEqual(events, []int{1, 2, 3}) {
+		t.Fatalf("events = %v, want [1 2 3]", events)
+	}
+}
+-- .scratch/want/service.go --
+package sample
+
+var events []int
+
+func Run(values <-chan int) {
+	visit(values)
+}
+
+func visit(values <-chan int) {
+	for value := range values {
+		record(value)
+	}
+}
+
+func record(value int) { events = append(events, value) }

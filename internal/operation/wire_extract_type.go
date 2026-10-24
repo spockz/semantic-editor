@@ -22,7 +22,7 @@ import (
 	"golang.org/x/tools/go/packages"
 )
 
-const extractTypeToolName = "semantic_extract_type"
+const extractTypeToolName = "refactor_extract_type"
 
 var errExtractFieldNotFound = errors.New("field is absent from syntax")
 
@@ -41,7 +41,7 @@ func extractTypeStructuralDef() Def[map[string]any, structuralPlanResult] {
 		structuralStringParam("symbol", "Target: caller-chosen fresh private simple name for the extracted struct type.", true, false, RoleTarget),
 		structuralStringParam("in_type", "Selector: existing private, non-generic struct declared in file; copy from the matching inspection continuation.", true, true, RoleSelector,
 			"semantic_inspect_symbol.result.continuations[].in_type"),
-		{Name: "members", JSONName: "members", CLIName: "members", Type: ParamArray, Description: "Selector: non-empty ordered array of exact {file, symbol} identities such as {\"file\":\"cache.go\",\"symbol\":\"cache.entries\"}; each selects one direct private field on in_type in file. New names are supplied separately.", Required: true, Role: RoleSelector,
+		{Name: "members", JSONName: "members", CLIName: "members", Type: ParamArray, Description: "Selector: non-empty contiguous run of exact {file, symbol} field identities, listed in declaration order, such as {\"file\":\"cache.go\",\"symbol\":\"cache.entries\"}; each selects one direct private field on in_type in file. New names are supplied separately.", Required: true, Role: RoleSelector,
 			Schema: &ValueSchema{Kind: SchemaArray, Items: &member, MinItems: &minimum}},
 		structuralStringParam("field", "Replacement: caller-chosen fresh private simple field name for the new composed value on in_type.", true, false, RoleValue),
 		structuralStringParam("expected_revision", "Precondition: optional opaque full-file revision from the same live inspection continuation as file and in_type; stale values are refused.", false, true, RoleTarget,
@@ -54,8 +54,8 @@ func extractTypeStructuralDef() Def[map[string]any, structuralPlanResult] {
 		OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: properties["symbol"], Role: RoleTarget, Consumers: []string{semanticInspectSymbolToolName}},
 	)
 	return structuralPlanDef(structuralPlanSpec{
-		Key: "extract_type", CLIName: "extract-type", MCPName: extractTypeToolName,
-		Summary: "Use this tool instead of manually editing the owner struct and its selectors to move selected direct private fields from one private same-package Go struct into a new composed private struct. Select exact fields with typed {file, symbol} members; choose fresh symbol and field names. The source and extracted type stay in the same file. It rewrites only typed direct field selectors in that file. Generated files, keyed or address-taken uses, cross-file or external consumers, selected tags or comments, owner trailing comments, reflection or unsafe imports, embedded or grouped fields, generic or exported owners, and build variants are refused. Methods stay on the original type, so this operation does not change interface implementations or method sets. The complete overlay is typechecked before one buffered edit; all required source inputs must be available before execution.",
+		Key: "refactor_extract_type", CLIName: "refactor-extract-type", MCPName: extractTypeToolName,
+		Summary: ("Use this tool instead of manually editing a private Go struct, its selectors, and its keyed initializers to extract one contiguous declaration-ordered run of direct private fields into a fresh same-file composed private type. Typed selectors are rewritten in that file. Keyed literals of the explicit owner type may group one contiguous source-order run of selected keys; value-expression bytes and evaluation count are preserved, along with Go-specified ordering of function calls, method calls, and receives. Go leaves the relative order of ordinary operands such as variable reads and indexing unspecified; this tool does not promise a compiler-specific schedule. Omitted zero fields are preserved. Interleaved keys, shadowed generated types, overlapping edits, literal comments or source-line directives, positional literals, address-taking, cross-file uses, exported API exposure, selected tags or comments, owner trailing comments, reflection or unsafe imports, embedded or grouped fields, generic or exported owners, and build variants refuse. Methods stay on the owner. The complete overlay is typechecked before one buffered edit; batch inputs are static."),
 		Params:  params, Output: &output,
 		ExampleRaw: map[string]any{"file": "cache.go", "symbol": "cacheState", "in_type": "cache", "members": []any{map[string]any{"file": "cache.go", "symbol": "cache.entries"}}, "field": "state"},
 		Plan:       planExtractType,
@@ -69,7 +69,7 @@ func extractTypeStructuralDef() Def[map[string]any, structuralPlanResult] {
 
 func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 	inType, newType, fieldName := stringParam(raw, "in_type"), stringParam(raw, "symbol"), stringParam(raw, "field")
-	selection, err := prepareExtractTypeSelection(snapshot, raw, inType, newType, fieldName)
+	selection, err := prepareExtractTypeSelection(snapshot, raw, inType, newType, fieldName, true)
 	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
@@ -84,7 +84,7 @@ type extractTypeSelection struct {
 	Selected  []extractTypeField
 }
 
-func prepareExtractTypeSelection(snapshot *structuralSnapshot, raw map[string]any, inType, newType, fieldName string) (extractTypeSelection, error) {
+func prepareExtractTypeSelection(snapshot *structuralSnapshot, raw map[string]any, inType, newType, fieldName string, allowKeyed bool) (extractTypeSelection, error) {
 	if err := validateFreshPrivateIdentifier("symbol", newType); err != nil {
 		return extractTypeSelection{}, err
 	}
@@ -121,7 +121,7 @@ func prepareExtractTypeSelection(snapshot *structuralSnapshot, raw map[string]an
 	if selectionErr != nil {
 		return extractTypeSelection{}, selectionErr
 	}
-	if err := proveExtractTypeUses(snapshot, owner, selected); err != nil {
+	if err := proveExtractTypeUses(snapshot, owner, selected, allowKeyed); err != nil {
 		return extractTypeSelection{}, err
 	}
 	return extractTypeSelection{Owner: owner, TypeName: typeName, NewType: newType, FieldName: fieldName, Selected: selected}, nil
@@ -151,8 +151,12 @@ func buildExtractTypeSourcePlan(snapshot *structuralSnapshot, selection extractT
 	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
-	fieldEdits = append(fieldEdits, useEdits...)
-	edits := fieldEdits
+	literalEdits, err := extractTypeKeyedLiteralEdits(snapshot, selection)
+	if err != nil {
+		return astedit.SourcePlan{}, err
+	}
+	edits := slices.Concat(fieldEdits, useEdits, literalEdits)
+
 	fields := renderExtractTypeFields(fieldLines, newline)
 	insertAt := fset.Position(ownerGroup.End()).Offset
 	typeText := []byte(newline + newline + "type " + selection.NewType + " struct {" + newline + fields + "}")
@@ -162,8 +166,7 @@ func buildExtractTypeSourcePlan(snapshot *structuralSnapshot, selection extractT
 		return astedit.SourcePlan{}, err
 	}
 	return astedit.SourcePlan{
-		Source:         updated,
-		Selection:      astedit.PlanSelection{Kind: "type", Owner: selection.TypeName, Target: selection.NewType},
+		Source: updated, Selection: astedit.PlanSelection{Kind: "type", Owner: selection.TypeName, Target: selection.NewType},
 		RequiredProofs: []astedit.ProofRequirement{astedit.ProofCompleteSourceSet, astedit.ProofTypedMemberSet, astedit.ProofUnkeyedLiteralSet},
 		Changed:        !bytes.Equal(source, updated),
 	}, nil
@@ -221,11 +224,11 @@ func extractTypeReferenceEdits(snapshot *structuralSnapshot, selection extractTy
 }
 
 func appendExtractTypeFileReferences(snapshot *structuralSnapshot, selection extractTypeSelection, pkg *packages.Package, syntax *ast.File, seenUse map[int]bool, edits *[]sourceEdit) error {
-	path, err := filepath.Abs(pkg.Fset.Position(syntax.Pos()).Filename)
+	location, err := extractTypeLocation(pkg.Fset, syntax.Pos())
 	if err != nil {
-		return fmt.Errorf("resolve extraction package source: %w", err)
+		return err
 	}
-	if path != snapshot.File {
+	if location.file != snapshot.File {
 		return nil
 	}
 	ast.Inspect(syntax, func(node ast.Node) bool {
@@ -237,7 +240,7 @@ func appendExtractTypeFileReferences(snapshot *structuralSnapshot, selection ext
 		if !isSelectedExtractField(selection.Selected, selected) {
 			return true
 		}
-		offset := pkg.Fset.Position(selector.X.End()).Offset
+		offset := pkg.Fset.PositionFor(selector.X.End(), false).Offset
 		if !seenUse[offset] {
 			*edits = append(*edits, sourceEdit{start: offset, end: offset, text: []byte("." + selection.FieldName)})
 			seenUse[offset] = true
@@ -305,6 +308,7 @@ func parseExtractTypeMembers(raw any, snapshot *structuralSnapshot, owner *packa
 	}
 	selected := make([]extractTypeField, 0, len(items))
 	seen := map[*types.Var]bool{}
+	previousIndex := -1
 	for index, item := range items {
 		target, ok := item.(map[string]any)
 		if !ok {
@@ -329,6 +333,9 @@ func parseExtractTypeMembers(raw any, snapshot *structuralSnapshot, owner *packa
 		if field.Exported() || field.Type() == nil || seen[field] {
 			return nil, fmt.Errorf("members[%d] must select a distinct direct private named field", index)
 		}
+		if previousIndex >= 0 && indexInStruct != previousIndex+1 {
+			return nil, fmt.Errorf("selected fields must be contiguous and ordered as declared in %q", typeName)
+		}
 		ident, err := exactExtractFieldIdent(snapshot, owner, typeName, name)
 		if err != nil {
 			return nil, err
@@ -341,6 +348,7 @@ func parseExtractTypeMembers(raw any, snapshot *structuralSnapshot, owner *packa
 			return nil, fmt.Errorf("field %q must be a single untagged declaration without comments", name)
 		}
 		seen[field] = true
+		previousIndex = indexInStruct
 		selected = append(selected, extractTypeField{name: name, object: field, ident: ident, decl: decl})
 	}
 	return selected, nil
@@ -444,24 +452,33 @@ func enclosingExtractField(owner *packages.Package, ident *ast.Ident) (*ast.Fiel
 	return nil, fmt.Errorf("selected field declaration is unavailable")
 }
 
-func proveExtractTypeUses(snapshot *structuralSnapshot, owner *packages.Package, fields []extractTypeField) error {
-	positions := map[string]bool{}
+func proveExtractTypeUses(snapshot *structuralSnapshot, owner *packages.Package, fields []extractTypeField, allowKeyed bool) error {
+	positions := make(map[extractTypeSourceLocation]bool)
 	for _, selected := range fields {
-		positions[fmt.Sprintf("%s:%d", snapshot.File, owner.Fset.Position(selected.ident.Pos()).Offset)] = true
+		location, err := extractTypeLocation(owner.Fset, selected.ident.Pos())
+		if err != nil {
+			return err
+		}
+		positions[location] = true
 	}
 	for _, pkg := range snapshot.Packages {
-		if err := proveExtractTypePackageUses(snapshot, pkg, positions); err != nil {
+		if err := proveExtractTypePackageUses(snapshot, pkg, positions, allowKeyed); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func proveExtractTypePackageUses(snapshot *structuralSnapshot, pkg *packages.Package, positions map[string]bool) error {
+func proveExtractTypePackageUses(snapshot *structuralSnapshot, pkg *packages.Package, positions map[extractTypeSourceLocation]bool, allowKeyed bool) error {
 	if pkg.TypesInfo == nil || pkg.Fset == nil {
 		return nil
 	}
 	selectors, addressTaken := collectExtractTypeSelectorUses(pkg.Syntax)
+	if allowKeyed {
+		for identifier := range collectExtractTypeKeyedUses(pkg.Syntax) {
+			selectors[identifier] = true
+		}
+	}
 	for ident, object := range pkg.TypesInfo.Uses {
 		field, ok := object.(*types.Var)
 		if !ok || !field.IsField() {
@@ -521,13 +538,12 @@ func extractSelectorAddressTaken(selector *ast.SelectorExpr, stack []ast.Node) b
 	return false
 }
 
-func validateExtractTypeFieldUse(snapshot *structuralSnapshot, pkg *packages.Package, ident *ast.Ident, field *types.Var, positions map[string]bool, selectors, addressTaken map[*ast.Ident]bool) error {
-	declaration := pkg.Fset.Position(field.Pos())
-	declarationPath, err := filepath.Abs(declaration.Filename)
+func validateExtractTypeFieldUse(snapshot *structuralSnapshot, pkg *packages.Package, ident *ast.Ident, field *types.Var, positions map[extractTypeSourceLocation]bool, selectors, addressTaken map[*ast.Ident]bool) error {
+	declaration, err := extractTypeLocation(pkg.Fset, field.Pos())
 	if err != nil {
-		return fmt.Errorf("resolve selected field declaration path: %w", err)
+		return err
 	}
-	if !positions[fmt.Sprintf("%s:%d", declarationPath, declaration.Offset)] {
+	if !positions[declaration] {
 		return nil
 	}
 	if !selectors[ident] {
@@ -536,11 +552,11 @@ func validateExtractTypeFieldUse(snapshot *structuralSnapshot, pkg *packages.Pac
 	if addressTaken[ident] {
 		return fmt.Errorf("selected field %q is address-taken, which is outside this layout proof", field.Name())
 	}
-	usePath, err := filepath.Abs(pkg.Fset.Position(ident.Pos()).Filename)
+	use, err := extractTypeLocation(pkg.Fset, ident.Pos())
 	if err != nil {
-		return fmt.Errorf("resolve selected field use path: %w", err)
+		return err
 	}
-	if usePath != snapshot.File {
+	if use.file != snapshot.File {
 		return fmt.Errorf("selected field %q is referenced outside the selected file", field.Name())
 	}
 	return nil

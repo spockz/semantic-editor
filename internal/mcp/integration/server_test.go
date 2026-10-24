@@ -177,7 +177,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 		toolNames[tool.Name] = true
 	}
 	for _, required := range []string{
-		"semantic_rename",
+		"refactor_rename",
 		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_add_build_dependency",
@@ -514,7 +514,7 @@ func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
 		}
 		return response.Result.Structured
 	}
-	extracted := call("semantic_extract_interface", map[string]any{
+	extracted := call("refactor_extract_interface", map[string]any{
 		"file": "api/store.go", "in_type": "Store", "symbol": "StoreAPI", "destination_file": "api/contracts.go",
 		"receiver_kind": "pointer", "members": []map[string]string{{"file": "api/store.go", "symbol": "(*Store).Read"}},
 	})
@@ -526,7 +526,7 @@ func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
 	if !ok || contractFile != "api/contracts.go" {
 		t.Fatalf("extract contract_file selector = %#v, want api/contracts.go", extracted["contract_file"])
 	}
-	consumer := call("semantic_implement_contract", map[string]any{
+	consumer := call("refactor_implement_contract", map[string]any{
 		"file": "api/store.go", "symbol": "Consumer", "contract": contract, "contract_file": contractFile,
 		"destination_file": "api/methods.go", "receiver_kind": "pointer", "body_policy": "panic_stub",
 	})
@@ -550,7 +550,7 @@ func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package renamecontinuation\n\nfunc Hello() string { return \"ok\" }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	renameInput := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_rename\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Hello\",\"to\":\"Welcome\"}}}\n", root)
+	renameInput := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"refactor_rename\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Hello\",\"to\":\"Welcome\"}}}\n", root)
 	var renameOut bytes.Buffer
 	if err := mcptest.NewServer(t, "full", root, &renameOut).Serve(t.Context(), strings.NewReader(renameInput)); err != nil {
 		t.Fatal(err)
@@ -623,7 +623,7 @@ func TestMCPAmbiguousRenameKeepsCandidateRowsOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_rename\",\"arguments\":{\"symbol\":\"Serve\",\"to\":\"Run\"}}}\n", root)
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"refactor_rename\",\"arguments\":{\"symbol\":\"Serve\",\"to\":\"Run\"}}}\n", root)
 	var out bytes.Buffer
 	if err := mcptest.NewServer(t, "full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
@@ -1136,7 +1136,7 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 	}
 	tools := listToolsAt(t, root)
 	for _, tool := range tools {
-		if tool["name"] != "semantic_rename" {
+		if tool["name"] != "refactor_rename" {
 			continue
 		}
 		input := tool["inputSchema"].(map[string]any)
@@ -1144,20 +1144,20 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 		want := []any{"auto", "go", "rust"}
 		got := language["enum"].([]any)
 		if len(got) != len(want) {
-			t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+			t.Fatalf("refactor_rename language enum = %#v, want %#v", got, want)
 		}
 		for i := range want {
 			if got[i] != want[i] {
-				t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+				t.Fatalf("refactor_rename language enum = %#v, want %#v", got, want)
 			}
 		}
 		description, _ := language["description"].(string)
 		if !strings.Contains(description, "Rust requires a selected .rs file") {
-			t.Fatalf("semantic_rename.language description does not explain Rust file selection: %q", description)
+			t.Fatalf("refactor_rename.language description does not explain Rust file selection: %q", description)
 		}
 		return
 	}
-	t.Fatal("tools/list omitted semantic_rename for a Go+Rust workspace")
+	t.Fatal("tools/list omitted refactor_rename for a Go+Rust workspace")
 }
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
@@ -1194,7 +1194,7 @@ func TestMCPForwardsJavaMavenImportToLookupAndRename(t *testing.T) {
 			method := "semantic_lookup"
 			if operation == "rename" {
 				args += `,"to":"Gadget"`
-				method = "semantic_rename"
+				method = "refactor_rename"
 			}
 			args += `}`
 			input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`+"\n", method, args)
@@ -1807,7 +1807,7 @@ func TestReportFeedbackReturnsStructuredLocalDraft(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte(originalLog), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	arguments := `{"intent":"Rename a public function","interface":"mcp","command":"semantic_rename","parameters":{"symbol":"OldName","to":"NewName"},"observed_result":"The declaration changed but a reference did not.","unexpected_reason":"The rename should update all supported references.","manual_touchups":"None"}`
+	arguments := `{"intent":"Rename a public function","interface":"mcp","command":"refactor_rename","parameters":{"symbol":"OldName","to":"NewName"},"observed_result":"The declaration changed but a reference did not.","unexpected_reason":"The rename should update all supported references.","manual_touchups":"None"}`
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_feedback","arguments":` + arguments + `}}` + "\n"
 	var out bytes.Buffer
 	if err := mcptest.NewServer(t, "full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
@@ -1843,10 +1843,10 @@ func TestReportFeedbackReturnsStructuredLocalDraft(t *testing.T) {
 	if result.Status != "draft_only" || result.Date == "" {
 		t.Fatalf("feedback result status/date = %q/%q", result.Status, result.Date)
 	}
-	if result.Report.Command != "semantic_rename" || result.Report.Parameters["symbol"] != "OldName" {
+	if result.Report.Command != "refactor_rename" || result.Report.Parameters["symbol"] != "OldName" {
 		t.Errorf("feedback command details = %#v", result.Report)
 	}
-	for _, phrase := range []string{"Rename a public function", "semantic_rename", "The declaration changed", "The rename should update", "Manual touch-ups", "Review this draft for accuracy and sensitive content", "manually posting it as a GitHub issue", "not been saved or posted"} {
+	for _, phrase := range []string{"Rename a public function", "refactor_rename", "The declaration changed", "The rename should update", "Manual touch-ups", "Review this draft for accuracy and sensitive content", "manually posting it as a GitHub issue", "not been saved or posted"} {
 		if !strings.Contains(result.Markdown, phrase) {
 			t.Errorf("feedback draft is missing %q", phrase)
 		}
@@ -2255,7 +2255,7 @@ func TestMCPActionableOutputHasNoSecondFormatterReport(t *testing.T) {
 		{"semantic_lookup", map[string]any{"file": "main.go", "symbol": "Value"}, "Value"},
 		{"semantic_inspect_symbol", map[string]any{"file": "main.go", "symbol": "Value"}, "inspection_bytes"},
 		{"semantic_find_references", map[string]any{"file": "main.go", "symbol": "Value"}, "Critical result"},
-		{"semantic_rename", map[string]any{"file": "main.go", "symbol": "Value", "to": "Renamed"}, "active_count"},
+		{"refactor_rename", map[string]any{"file": "main.go", "symbol": "Value", "to": "Renamed"}, "active_count"},
 		{"semantic_verify", map[string]any{"path": ".", "language": "go"}, "coverage"},
 	}
 	for _, call := range calls {
@@ -2348,15 +2348,15 @@ func mcpSessionReuseCalls() []mcpRefactoringCall {
 	return []mcpRefactoringCall{
 		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
 		{"semantic_verify", map[string]any{"workspace_root": "nested", "path": ".", "language": "go", "check_only": true}},
-		{"semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
-		{"semantic_extract_function", map[string]any{"file": "value.go", "symbol": "emitOne", "in_function": "Emit", "kind": "function", "start_line": 6, "end_line": 6}},
-		{"semantic_extract_variable", map[string]any{"file": "value.go", "symbol": "total", "in_function": "Render", "discriminator": "count + 1"}},
-		{"semantic_inline_variable", map[string]any{"file": "value.go", "symbol": "local", "in_function": "Renamed"}},
-		{"semantic_move_construct", map[string]any{"file": "value.go", "destination_file": "moved.go", "symbol": "emitOne"}},
+		{"refactor_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
+		{"refactor_extract_callable", map[string]any{"file": "value.go", "symbol": "emitOne", "in_function": "Emit", "kind": "function", "start_line": 6, "end_line": 6}},
+		{"refactor_extract_value", map[string]any{"file": "value.go", "symbol": "total", "in_function": "Render", "discriminator": "count + 1"}},
+		{"refactor_inline_value", map[string]any{"file": "value.go", "symbol": "local", "in_function": "Renamed"}},
+		{"refactor_move_declaration", map[string]any{"file": "value.go", "destination_file": "moved.go", "symbol": "emitOne"}},
 		{"semantic_batch", map[string]any{"auto_organize_imports": true, "edits": []map[string]any{
 			{"tool": "semantic_replace_body", "params": map[string]any{"file": "moved.go", "symbol": "emitOne", "body": "Print(3)"}},
-			{"tool": "semantic_rename", "params": map[string]any{"file": "moved.go", "symbol": "emitOne", "to": "emitThree"}},
-			{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Value"}},
+			{"tool": "refactor_rename", "params": map[string]any{"file": "moved.go", "symbol": "emitOne", "to": "emitThree"}},
+			{"tool": "refactor_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Value"}},
 		}}},
 		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
 	}
@@ -2372,7 +2372,7 @@ func encodeMCPRefactoringRequests(t *testing.T, calls []mcpRefactoringCall) enco
 	moveID := 0
 	for index, call := range calls {
 		requestID := index + 2
-		if call.name == "semantic_move_construct" {
+		if call.name == "refactor_move_declaration" {
 			moveID = requestID
 		}
 		request := map[string]any{"jsonrpc": "2.0", "id": requestID, "method": "tools/call", "params": map[string]any{"name": call.name, "arguments": call.arguments}}
@@ -2543,7 +2543,7 @@ func assertMCPActionableResponse(t *testing.T, raw []byte, tool, want string) {
 	if !strings.Contains(text, want) {
 		t.Fatalf("requested answer missing: %s", text)
 	}
-	if tool != "semantic_rename" && strings.Contains(text, "\n\n") {
+	if tool != "refactor_rename" && strings.Contains(text, "\n\n") {
 		t.Fatalf("second formatter report retained: %s", text)
 	}
 	if tool == "semantic_inspect_symbol" {
@@ -2552,7 +2552,7 @@ func assertMCPActionableResponse(t *testing.T, raw []byte, tool, want string) {
 			t.Fatalf("inspection content or canonical structured result is incorrect: content=%q structured=%#v", text, inspection)
 		}
 	}
-	if tool != "semantic_rename" {
+	if tool != "refactor_rename" {
 		return
 	}
 	result := response.Result.Structured["result"].(map[string]any)

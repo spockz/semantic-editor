@@ -1,0 +1,41 @@
+# Moving recover out of the directly deferred owner method changes panic recovery semantics.
+! exec semedit refactor-extract-delegate --file counter.go --symbol counterState --in-type counter --members '[{"file":"counter.go","symbol":"counter.value"}]' --field state --method Add
+stderr 'moving builtin recover changes deferred-panic behavior'
+cmp counter.go .scratch/want/counter.go
+
+-- go.mod --
+module example.com/refactordelegaterecover
+
+go 1.24
+-- counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) Add(delta int) int {
+	defer func() {
+		if recover() != nil {
+			_ = c.value + delta
+		}
+	}()
+	c.value += delta
+	return c.value
+}
+-- .scratch/want/counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) Add(delta int) int {
+	defer func() {
+		if recover() != nil {
+			_ = c.value + delta
+		}
+	}()
+	c.value += delta
+	return c.value
+}

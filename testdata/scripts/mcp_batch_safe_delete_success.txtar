@@ -1,8 +1,8 @@
-# A buffered batch may insert an unrelated declaration before safely deleting an unreferenced private function.
+# A buffered batch may insert an unrelated declaration before safely deleting an unreferenced private struct.
 stdin input.json
 exec semedit mcp --enable-batching --live-reload
 stdout '"status":"ok"'
-! stdout '"symbol":"obsolete"'
+! stdout '"symbol":"obsoleteRecord"'
 cmp decls.go .scratch/want/decls_after_batch.go
 cmp added.go .scratch/want/added.go
 exec semedit replace-body --file decls.go --symbol keep --body 'return 3'
@@ -17,13 +17,13 @@ go 1.24
 -- decls.go --
 package sample
 
-func obsolete() {}
+type obsoleteRecord struct{ Count int }
 func keep() int { return 1 }
 -- added.go --
 package sample
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Added() {}"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"function","symbol":"obsolete","safe_delete":true}}]}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Added() {}"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"type","symbol":"obsoleteRecord","safe_delete":true}}]}}}
 -- .scratch/want/decls_after_batch.go --
 package sample
 

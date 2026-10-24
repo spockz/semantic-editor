@@ -1,0 +1,40 @@
+# Interface shapes in moved method signatures remain paired across package boundaries.
+exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+exec go test ./...
+
+-- go.mod --
+module example.com/typecrossinterfacesignature
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+type Widget int
+
+func (Widget) Value() any { return 1 }
+
+func (Widget) Accept(value any) {}
+
+func (Widget) Record() struct{ X int } { return struct{ X int }{X: 1} }
+
+func (Widget) AcceptContract(value interface{ Ping() }) {}
+-- api/api.go --
+package api
+-- .scratch/_want/legacy/widget.go --
+package legacy
+-- .scratch/_want/api/api.go --
+package api
+
+type Widget int
+
+func (Widget) Value() any { return 1 }
+
+func (Widget) Accept(value any) {}
+
+func (Widget) Record() struct{ X int } { return struct{ X int }{X: 1} }
+
+func (Widget) AcceptContract(value interface{ Ping() }) {}

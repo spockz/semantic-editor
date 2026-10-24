@@ -56,7 +56,8 @@ func refreshMCPVerified(res *RunResult) {
 
 func isSemanticTool(name, server string) bool {
 	cleanServer := strings.ToLower(strings.Trim(server, "\""))
-	return cleanServer == "semedit" || strings.HasPrefix(semanticToolBaseName(name), "semantic_")
+	baseName := semanticToolBaseName(name)
+	return cleanServer == "semedit" || strings.HasPrefix(baseName, "semantic_") || strings.HasPrefix(baseName, "refactor_")
 }
 
 func hasJSONValue(raw json.RawMessage) bool {

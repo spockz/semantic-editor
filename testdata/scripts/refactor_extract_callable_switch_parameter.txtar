@@ -1,0 +1,111 @@
+# Extract one switch-case assignment to a named parameter and preserve the
+# unselected clause. Refuse parameter writes without a later read and receiver writes.
+exec semedit inspect-construct --file service.go --in-function Adjust --kind statement/expression --discriminator 'count = count + 2'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "a99309b7f435a26e78aa0bdd867f76178d9ab5a89b1cdd61d285cfc953bb4cd0"'
+exec semedit refactor-extract-callable --file service.go --symbol addCount --in-function Adjust --kind function --construct-path 0.0.0 --expected-revision a99309b7f435a26e78aa0bdd867f76178d9ab5a89b1cdd61d285cfc953bb4cd0
+cmp service.go want/service.go
+exec semedit inspect-construct --file unread.go --in-function AssignWithoutRead --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "d071c2db9f0662da15cc8c17b6a58520cdd1c1a501a507f6958162313a2dcbe5"'
+! exec semedit refactor-extract-callable --file unread.go --symbol updateWithoutRead --in-function AssignWithoutRead --kind function --construct-path 0.0.0 --expected-revision d071c2db9f0662da15cc8c17b6a58520cdd1c1a501a507f6958162313a2dcbe5
+stderr 'target must be read after the switch'
+cmp unread.go original/unread.go
+exec semedit inspect-construct --file receiver.go --in-function Counter.Run --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "c1f49d2bd21baa361425fc43ed71ef11495328b2daceb4d853221422c67d2704"'
+! exec semedit refactor-extract-callable --file receiver.go --symbol updateReceiver --in-function Counter.Run --kind function --construct-path 0.0.0 --expected-revision c1f49d2bd21baa361425fc43ed71ef11495328b2daceb4d853221422c67d2704
+stderr 'does not support the owner receiver'
+cmp receiver.go original/receiver.go
+exec go test ./...
+
+-- go.mod --
+module example.com/switchparameter
+
+go 1.24
+-- service.go --
+package sample
+
+func Adjust(mode int, count int) int {
+	switch mode {
+	case 1:
+		count = count + 2
+	default:
+		count = count + 9
+	}
+	return count
+}
+-- want/service.go --
+package sample
+
+func Adjust(mode int, count int) int {
+	switch mode {
+	case 1:
+		count = addCount(count)
+	default:
+		count = count + 9
+	}
+	return count
+}
+
+func addCount(count int) int {
+	count = count + 2
+	return count
+}
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestSwitchParameterExtraction(t *testing.T) {
+	if got := Adjust(1, 5); got != 7 {
+		t.Fatalf("Adjust(1, 5) = %d, want 7", got)
+	}
+	if got := Adjust(0, 5); got != 14 {
+		t.Fatalf("Adjust(0, 5) = %d, want 14", got)
+	}
+}
+-- unread.go --
+package sample
+
+func AssignWithoutRead(enabled bool, count int) {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	println("finished")
+}
+-- original/unread.go --
+package sample
+
+func AssignWithoutRead(enabled bool, count int) {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	println("finished")
+}
+-- receiver.go --
+package sample
+
+type Counter int
+
+func (count Counter) Run(enabled bool) Counter {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- original/receiver.go --
+package sample
+
+type Counter int
+
+func (count Counter) Run(enabled bool) Counter {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}

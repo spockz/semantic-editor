@@ -1,0 +1,50 @@
+# Use sibling type facts from the overlay, inline, and verify batch formatting finalization.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp calc.go .scratch/want/calc.go
+cmp types.go .scratch/want/types.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinestructreturn
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_construct","params":{"file":"types.go","kind":"type","symbol":"Result","source":"type Result struct { Count int; Ready bool; Omitted int }"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Build"}}]}}}
+-- types.go --
+package calc
+
+type Result struct { Count *int }
+-- calc.go --
+package calc
+
+func Build() any {
+	value := Result{Count: 0XFF, Ready: true, Omitted: 1E3}
+	return value
+}
+-- .scratch/want/types.go --
+package calc
+
+type Result struct {
+	Count   int
+	Ready   bool
+	Omitted int
+}
+-- .scratch/want/calc.go --
+package calc
+
+func Build() any {
+	return Result{Count: 0xFF, Ready: true, Omitted: 1e3}
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuild(t *testing.T) {
+	got, ok := Build().(Result)
+	if !ok || got != (Result{Count: 255, Ready: true, Omitted: 1000}) { t.Fatalf("Build() = %#v", Build()) }
+}

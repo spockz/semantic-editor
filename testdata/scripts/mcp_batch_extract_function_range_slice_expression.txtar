@@ -1,0 +1,61 @@
+# Extract a bounded slice-expression range in a batch overlay and preserve source bounds, shadowing, and runtime slice behavior.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpbatchrangesliceexpression
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visit","in_function":"Run","kind":"function","start_line":8,"end_line":10}}]}}}
+-- service.go --
+package sample
+
+type Values []int
+
+var seen []int
+
+func Run(values Values, low, high int) {
+	for low, value := range values[low:high] {
+		record(low, value)
+	}
+}
+
+func record(index, value int) { seen = append(seen, index*10+value) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestBatchExtractedBoundedSliceRange(t *testing.T) {
+	seen = nil
+	Run(Values{100, 1, 2, 3, 4}, 1, 4)
+	if !reflect.DeepEqual(seen, []int{1, 12, 23}) {
+		t.Fatalf("seen = %v, want [1 12 23]", seen)
+	}
+}
+-- .scratch/want/service.go --
+package sample
+
+type Values []int
+
+var seen []int
+
+func Run(values Values, low, high int) {
+	visit(values, low, high)
+}
+
+func visit(values Values, low int, high int) {
+	for low, value := range values[low:high] {
+		record(low, value)
+	}
+}
+
+func record(index, value int) { seen = append(seen, index*10+value) }

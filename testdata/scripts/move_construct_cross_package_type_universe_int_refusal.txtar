@@ -1,0 +1,33 @@
+# Moving Widget into a package that declares int must preserve the universe int binding.
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stderr 'changes identifier binding for "int"'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossintshadow
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+type Widget int
+
+func (Widget) Value() string { return "" }
+-- api/api.go --
+package api
+
+type int string
+
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+type Widget int
+
+func (Widget) Value() string { return "" }
+-- .scratch/_want/api/api.go --
+package api
+
+type int string
+

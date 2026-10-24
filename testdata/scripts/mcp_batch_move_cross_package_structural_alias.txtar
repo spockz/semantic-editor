@@ -1,0 +1,54 @@
+# This archive proves a staged alias type edit flows through a cross-package move and rename in one MCP buffer.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout 'destination_file":"api/api.go'
+cmp legacy/types.go .scratch/want/legacy.go
+cmp api/api.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchstructuralalias
+
+go 1.23
+-- legacy/types.go --
+package legacy
+
+type Entries = []int
+
+func Local(value Entries) Entries { return value }
+-- api/api.go --
+package api
+-- caller/use.go --
+package caller
+
+import "example.com/batchstructuralalias/legacy"
+
+func Use(value legacy.Entries) legacy.Entries { return legacy.Local(value) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"legacy/types.go","kind":"type","symbol":"Entries","source":"type Entries = map[string]int"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/types.go","destination_file":"api/api.go","symbol":"Entries"}},{"tool":"refactor_rename","params":{"file":"api/api.go","symbol":"Entries","to":"Index"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/batchstructuralalias/api"
+
+func Local(value api.Index) api.Index {
+	return value
+}
+-- .scratch/want/api.go --
+package api
+
+type Index = map[string]int
+-- .scratch/want/caller.go --
+package caller
+
+import (
+	"example.com/batchstructuralalias/api"
+	"example.com/batchstructuralalias/legacy"
+)
+
+func Use(value api.Index) api.Index {
+	return legacy.Local(value)
+}

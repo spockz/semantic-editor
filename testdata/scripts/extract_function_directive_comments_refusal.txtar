@@ -1,0 +1,45 @@
+# Refuse directive relocation and comments outside the selected range without mutation.
+! exec semedit refactor-extract-callable --file service.go --symbol movedDirective --in-function WithDirective --kind function --start-line 4 --end-line 6
+stderr 'directive comments cannot be moved'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol movedOutside --in-function WithOutsideComment --kind function --start-line 11 --end-line 12
+stderr 'comments outside the selected region'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractcommentsrefusal
+
+go 1.23
+-- service.go --
+package sample
+
+func WithDirective(value int) {
+	record(value)
+	//go:generate echo $GOLINE
+	record(value + 1)
+}
+
+func WithOutsideComment(value int) {
+	// This comment is outside the selected range.
+	record(value)
+	record(value + 1)
+}
+
+func record(int) {}
+-- original/service.go --
+package sample
+
+func WithDirective(value int) {
+	record(value)
+	//go:generate echo $GOLINE
+	record(value + 1)
+}
+
+func WithOutsideComment(value int) {
+	// This comment is outside the selected range.
+	record(value)
+	record(value + 1)
+}
+
+func record(int) {}

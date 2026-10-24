@@ -1,0 +1,48 @@
+# Refuse effects, mutable global reads, and changed local dependencies without changing bytes.
+mkdir .scratch
+cp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Effect
+stderr 'computed initializer must contain only scalar literals'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Changed
+stderr 'binding requires an immediate direct return'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Global
+stderr 'variable inputs must be owner parameters or local bindings'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Indexed
+stderr 'computed initializer must contain only scalar literals'
+cmp calc.go .scratch/before.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedrefusal
+
+go 1.23
+-- calc.go --
+package calc
+
+var global = 1
+
+func next() int { return 2 }
+
+func Effect() int {
+	value := next()
+	return value
+}
+
+func Changed(seed int) int {
+	value := seed + 1
+	seed++
+	return value
+}
+
+func Global() int {
+	value := global + 1
+	return value
+}
+
+func Indexed(seed []int) int {
+	value := seed[0] + 1
+	return value
+}

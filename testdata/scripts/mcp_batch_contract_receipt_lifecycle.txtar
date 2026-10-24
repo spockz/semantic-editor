@@ -12,7 +12,7 @@ module example.com/contract-lifecycle
 
 go 1.27.1
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_extract_interface","params":{"file":"store.go","in_type":"Store","symbol":"StoreAPI","destination_file":"contracts.go","receiver_kind":"pointer","members":[{"file":"store.go","symbol":"(*Store).Read"}]}},{"tool":"semantic_remove_construct","params":{"file":"contracts.go","kind":"type","symbol":"StoreAPI"}},{"tool":"semantic_insert_type","params":{"file":"contracts.go","source":"type StoreAPI interface { Write() error }"}},{"tool":"semantic_rename","params":{"file":"contracts.go","symbol":"StoreAPI","to":"ReplacementAPI"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_interface","params":{"file":"store.go","in_type":"Store","symbol":"StoreAPI","destination_file":"contracts.go","receiver_kind":"pointer","members":[{"file":"store.go","symbol":"(*Store).Read"}]}},{"tool":"semantic_remove_construct","params":{"file":"contracts.go","kind":"type","symbol":"StoreAPI"}},{"tool":"semantic_insert_type","params":{"file":"contracts.go","source":"type StoreAPI interface { Write() error }"}},{"tool":"refactor_rename","params":{"file":"contracts.go","symbol":"StoreAPI","to":"ReplacementAPI"}}]}}}
 -- store.go --
 package sample
 

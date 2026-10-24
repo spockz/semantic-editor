@@ -16,7 +16,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
-func javaCodeActionFileRevisions(cc CallContext, result *backend.CodeActionResult) ([]FileRevision, []FileRevision, error) {
+func codeActionFileRevisions(cc CallContext, result *backend.CodeActionResult) ([]FileRevision, []FileRevision, error) {
 	if result == nil || len(result.Files) == 0 {
 		return nil, nil, fmt.Errorf("java code action returned no workspace file edits")
 	}
@@ -25,7 +25,7 @@ func javaCodeActionFileRevisions(cc CallContext, result *backend.CodeActionResul
 	for _, file := range result.Files {
 		relative, err := relativeWorkPath(cc.WorkDir, file.File)
 		if err != nil {
-			return nil, nil, fmt.Errorf("derive Java refactoring receipt path for %q: %w", file.File, err)
+			return nil, nil, fmt.Errorf("derive code action receipt path for %q: %w", file.File, err)
 		}
 		readSet = append(readSet, FileRevision{Path: relative, Revision: structuralRevision(file.Before)})
 		if !bytes.Equal(file.Before, file.After) {
@@ -39,8 +39,18 @@ func runExtractVariableJavaWithReceipt(ctx context.Context, cc CallContext, req 
 	return runJavaExpressionExtraction(ctx, cc, req, backend.OperationExtractVariable, "refactor.extract.variable", "Extracted the Java expression into a local variable through JDT LS.")
 }
 
+func runExtractValueJavaWithReceipt(ctx context.Context, cc CallContext, req ExtractVariableReq) (ExtractionResult, error) {
+	if req.Kind == "constant" {
+		return runExtractConstantJavaWithReceipt(ctx, cc, extractConstantRequest(req))
+	}
+	if req.Kind == "field" {
+		return ExtractionResult{}, fmt.Errorf("java field extraction is unsupported because JDT LS produces mutable instance fields with method-local assignments")
+	}
+	return runExtractVariableJavaWithReceipt(ctx, cc, req)
+}
+
 func runExtractConstantJavaWithReceipt(ctx context.Context, cc CallContext, req ExtractConstantReq) (ExtractionResult, error) {
-	variableReq := ExtractVariableReq(req)
+	variableReq := ExtractVariableReq{Project: req.Project, File: req.File, Symbol: req.Symbol, Kind: "constant", InFunction: req.InFunction, Discriminator: req.Discriminator, ConstructPath: req.ConstructPath, ExpectedRevision: req.ExpectedRevision}
 	return runJavaExpressionExtraction(ctx, cc, variableReq, backend.OperationExtractConstant, "refactor.extract.constant", "Extracted the Java expression into a constant through JDT LS.")
 }
 
@@ -70,7 +80,7 @@ func runInlineVariableJavaWithReceipt(ctx context.Context, cc CallContext, req I
 	}
 	result, err := service.ApplyCodeAction(ctx, backend.CodeActionRequest{
 		Operation: backend.OperationInlineVariable, Project: project, File: file,
-		Range: offsetJavaRange(method.Range, candidate.Range), Kind: "refactor.inline",
+		Range: offsetJavaRange(method.Range, candidate.Range), Kind: backend.CodeActionInlineKind,
 		ExpectedRevision: structuralRevision(source),
 	})
 	if err != nil {
@@ -85,7 +95,7 @@ func runInlineVariableJavaWithReceipt(ctx context.Context, cc CallContext, req I
 	}
 	relative = filepath.ToSlash(relative)
 	revision := structuralRevision(result.After)
-	readSet, planned, err := javaCodeActionFileRevisions(cc, result)
+	readSet, planned, err := codeActionFileRevisions(cc, result)
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -153,7 +163,7 @@ func runExtractFunctionJavaWithReceipt(ctx context.Context, cc CallContext, req 
 	}
 	relative = filepath.ToSlash(relative)
 	revision := structuralRevision(result.After)
-	readSet, planned, err := javaCodeActionFileRevisions(cc, result)
+	readSet, planned, err := codeActionFileRevisions(cc, result)
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -174,7 +184,7 @@ func runExtractFunctionJavaWithReceipt(ctx context.Context, cc CallContext, req 
 
 func runJavaExpressionExtraction(ctx context.Context, cc CallContext, req ExtractVariableReq, operation backend.Operation, kind, detail string) (ExtractionResult, error) {
 	if err := javacst.ValidateJavaIdentifier(req.Symbol); err != nil {
-		return ExtractionResult{}, fmt.Errorf("invalid extracted local name: %w", err)
+		return ExtractionResult{}, fmt.Errorf("invalid extracted value name: %w", err)
 	}
 	service := cc.Service
 	if service == nil {
@@ -220,7 +230,7 @@ func runJavaExpressionExtraction(ctx context.Context, cc CallContext, req Extrac
 	}
 	relative = filepath.ToSlash(relative)
 	revision := structuralRevision(result.After)
-	readSet, planned, err := javaCodeActionFileRevisions(cc, result)
+	readSet, planned, err := codeActionFileRevisions(cc, result)
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -309,4 +319,18 @@ func offsetJavaRange(base, relative backend.Range) backend.Range {
 		return position
 	}
 	return backend.Range{Start: add(base.Start, relative.Start), End: add(base.Start, relative.End)}
+}
+
+func finalizeJavaMethodActionOutput[Req any](cc CallContext, _ Req, result ExtractionResult) (ExtractionResult, error) {
+	if len(result.Draft.Continuations) != 1 || result.Draft.Continuations[0].Symbol == "" {
+		return ExtractionResult{}, fmt.Errorf("java method action requires one resolved post-edit method continuation")
+	}
+	receipt, err := finalizeCallReceipt(cc.Ctx, cc, cc.WorkDir, result.Draft, func(_ context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
+		return candidate, true, nil
+	})
+	if err != nil {
+		return ExtractionResult{}, fmt.Errorf("finalize Java method action receipt: %w", err)
+	}
+	result.Receipt = receipt
+	return result, nil
 }

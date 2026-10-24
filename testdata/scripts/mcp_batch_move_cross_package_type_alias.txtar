@@ -1,0 +1,58 @@
+# Move an alias after an unpublished RHS edit, then rename it and verify all package references.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout 'destination_file":"api/types.go'
+stdout 'type Units = int64'
+cmp legacy/types.go .scratch/want/legacy.go
+cmp api/types.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchtypealias
+
+go 1.23
+-- legacy/types.go --
+package legacy
+
+type Count = int
+
+func Local(value Count) Count { return Count(value + 1) }
+-- api/types.go --
+package api
+
+import "example.com/batchtypealias/legacy"
+
+func Existing(value legacy.Count) legacy.Count { return value }
+-- caller/use.go --
+package caller
+
+import "example.com/batchtypealias/legacy"
+
+func Use(value legacy.Count) legacy.Count { return legacy.Count(value + 2) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"legacy/types.go","kind":"type","symbol":"Count","source":"type Count = int64"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/types.go","destination_file":"api/types.go","symbol":"Count"}},{"tool":"refactor_rename","params":{"file":"api/types.go","symbol":"Count","to":"Units"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/batchtypealias/api"
+
+func Local(value api.Units) api.Units {
+	return api.Units(value + 1)
+}
+-- .scratch/want/api.go --
+package api
+
+func Existing(value Units) Units { return value }
+
+type Units = int64
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/batchtypealias/api"
+
+func Use(value api.Units) api.Units {
+	return api.Units(value + 2)
+}

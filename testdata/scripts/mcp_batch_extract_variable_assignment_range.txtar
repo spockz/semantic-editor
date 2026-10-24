@@ -1,0 +1,52 @@
+# Apply a direct assignment range extraction in the shared buffer, then rename its local and verify the final runtime result.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableassignmentrangebatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"adjusted","in_function":"Render","kind":"variable","discriminator":"input + 1","construct_path":"2","end_construct_path":"3","expected_revision":"8b5245d142b4a6c55913b3a75823a4c6d38eea63e5706069f47691ab89954e37"}},{"tool":"refactor_rename","params":{"file":"render.go","symbol":"adjusted","to":"reused"}}]}}}
+-- render.go --
+package render
+
+var result int
+
+func Render(input int) {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	result = first + second
+}
+-- .scratch/want/render.go --
+package render
+
+var result int
+
+func Render(input int) {
+	var first int
+	var second int
+	reused := input + 1
+	first = reused
+	second = reused
+	result = first + second
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestBatchAssignmentRangePreservesRuntimeResult(t *testing.T) {
+	Render(4)
+	if result != 10 {
+		t.Fatalf("result = %d, want 10", result)
+	}
+}

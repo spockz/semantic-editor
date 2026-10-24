@@ -1,0 +1,55 @@
+# Moving a method dependency changes the package import graph while packages have initialization effects.
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stderr 'refuses package initialization function'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossinitorder
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+import (
+	"example.com/typecrossinitorder/dependency"
+	"example.com/typecrossinitorder/state"
+)
+
+type Widget int
+
+func (Widget) Value() int { return dependency.Value() }
+
+func init() { state.Read() }
+-- api/api.go --
+package api
+-- dependency/dependency.go --
+package dependency
+
+import "example.com/typecrossinitorder/state"
+
+func init() { state.Set() }
+func Value() int { return 1 }
+-- state/state.go --
+package state
+
+var initialized bool
+
+func Set() { initialized = true }
+func Read() bool { return initialized }
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+import (
+	"example.com/typecrossinitorder/dependency"
+	"example.com/typecrossinitorder/state"
+)
+
+type Widget int
+
+func (Widget) Value() int { return dependency.Value() }
+
+func init() { state.Read() }
+-- .scratch/_want/api/api.go --
+package api

@@ -1,0 +1,57 @@
+# Extract a nested statement range through the shared batch overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/nestedextractbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"addCount","in_function":"Emit","kind":"function","construct_path":"1.0.0","end_construct_path":"1.0.1","expected_revision":"60663ee998eee2df4d2cd297f943581cf03388ca3272ab486189b23780ea548d"}}]}}}
+-- service.go --
+package sample
+
+func Emit(enabled bool) int {
+	count := 0
+	if enabled {
+		count = count + 1
+		count = count + 2
+	}
+	return count
+}
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestEmit(t *testing.T) {
+	for _, test := range []struct {
+		enabled bool
+		want    int
+	}{{true, 3}, {false, 0}} {
+		if got := Emit(test.enabled); got != test.want {
+			t.Errorf("Emit(%v) = %d, want %d", test.enabled, got, test.want)
+		}
+	}
+}
+-- want/service.go --
+package sample
+
+func Emit(enabled bool) int {
+	count := 0
+	if enabled {
+		count = addCount(count)
+	}
+	return count
+}
+
+func addCount(count int) int {
+	count = count + 1
+	count = count + 2
+	return count
+}

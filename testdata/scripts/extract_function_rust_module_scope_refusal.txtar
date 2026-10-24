@@ -1,0 +1,40 @@
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=1
+exec cp src/lib.rs before_mod.rs
+! exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 4 --end-line 4
+stderr 'rust callable extraction currently requires a single-source Cargo package'
+cmp src/lib.rs before_mod.rs
+exec cp src/part.rs before_part.rs
+! exec semedit refactor-extract-callable --language rust --trust-workspace --file src/part.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+stderr 'rust callable extraction requires a conventional crate-root source file so cross-file name effects are bounded'
+cmp src/part.rs before_part.rs
+
+-- Cargo.toml --
+[package]
+name = "rust-module-scope-refusal"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+mod child;
+
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}
+-- src/child.rs --
+use super::*;
+use self::other::*;
+
+mod other {
+    pub fn extracted() {}
+}
+
+fn call_existing() {
+    extracted();
+}
+-- src/part.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}

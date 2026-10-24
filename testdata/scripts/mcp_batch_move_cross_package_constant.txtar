@@ -1,0 +1,48 @@
+# Batch relocation consumes an unpublished typed-value edit and exposes the moved declaration to a later rename.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout 'destination_file":"api/limits.go'
+stdout 'RetryDelay int64 = 240'
+cmp legacy/limits.go .scratch/want/legacy.go
+cmp api/limits.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchconstantmove
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+const RetryWindow = 180
+
+func Local() int64 { return RetryWindow }
+-- api/limits.go --
+package api
+-- caller/use.go --
+package caller
+
+import "example.com/batchconstantmove/legacy"
+
+func Use() int64 { return legacy.RetryWindow }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"legacy/limits.go","kind":"const","symbol":"RetryWindow","source":"const RetryWindow int64 = 240"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/limits.go","destination_file":"api/limits.go","symbol":"RetryWindow"}},{"tool":"refactor_rename","params":{"file":"api/limits.go","symbol":"RetryWindow","to":"RetryDelay"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/batchconstantmove/api"
+
+func Local() int64 { return api.RetryDelay }
+-- .scratch/want/api.go --
+package api
+
+const RetryDelay int64 = 240
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/batchconstantmove/api"
+
+func Use() int64 { return api.RetryDelay }

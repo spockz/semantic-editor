@@ -1,0 +1,51 @@
+# Distinct type packages with the same declared name receive distinct generated aliases.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --destination-file accessors.go --symbol config.sources --getter sourcesValue --setter setSources --auto-organize-imports=true
+cmp accessors.go want-accessors.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatealiascollision
+
+go 1.24
+-- config.go --
+package sample
+
+import (
+	"math/rand"
+	randv2 "math/rand/v2"
+)
+
+type config struct {
+	sources struct {
+		legacy  *rand.Rand
+		current *randv2.Rand
+	}
+}
+
+func (c *config) read() any {
+	return c.sources
+}
+-- accessors.go --
+package sample
+-- want-accessors.txt --
+package sample
+
+import (
+	rand "math/rand"
+	rand2 "math/rand/v2"
+)
+
+func (receiver *config) sourcesValue() struct {
+	legacy  *rand.Rand
+	current *rand2.Rand
+} {
+	return receiver.sources
+}
+func (receiver *config) setSources(value struct {
+	legacy  *rand.Rand
+	current *rand2.Rand
+}) {
+	receiver.sources = value
+}

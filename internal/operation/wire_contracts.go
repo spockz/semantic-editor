@@ -19,20 +19,20 @@ import (
 
 const (
 	contractFileField             = "contract_file"
-	contractImplementTool         = "semantic_implement_contract"
+	contractImplementTool         = "refactor_implement_contract"
 	contractInspectTool           = "semantic_inspect_symbol"
-	contractRenameTool            = "semantic_rename"
+	contractRenameTool            = "refactor_rename"
 	replaceBodyTool               = "semantic_replace_body"
-	sourceContractExtractFile     = "semantic_extract_interface.result.receipt.continuations[].file"
-	sourceContractExtractSymbol   = "semantic_extract_interface.result.receipt.continuations[].symbol"
-	sourceContractImplementFile   = "semantic_implement_contract.result.receipt.continuations[].file"
-	sourceContractImplementSymbol = "semantic_implement_contract.result.receipt.continuations[].symbol"
-	sourceExtractedContractFile   = "semantic_extract_interface.contract_file"
-	sourceExtractedContract       = "semantic_extract_interface.contract"
-	sourceConcreteTargetFile      = "semantic_implement_contract.result.type_target.file"
-	sourceConcreteTargetSymbol    = "semantic_implement_contract.result.type_target.symbol"
-	sourceGeneratedMethodFile     = "semantic_implement_contract.result.generated_methods[].file"
-	sourceGeneratedMethodSymbol   = "semantic_implement_contract.result.generated_methods[].symbol"
+	sourceContractExtractFile     = "refactor_extract_interface.result.receipt.continuations[].file"
+	sourceContractExtractSymbol   = "refactor_extract_interface.result.receipt.continuations[].symbol"
+	sourceContractImplementFile   = "refactor_implement_contract.result.receipt.continuations[].file"
+	sourceContractImplementSymbol = "refactor_implement_contract.result.receipt.continuations[].symbol"
+	sourceExtractedContractFile   = "refactor_extract_interface.contract_file"
+	sourceExtractedContract       = "refactor_extract_interface.contract"
+	sourceConcreteTargetFile      = "refactor_implement_contract.result.type_target.file"
+	sourceConcreteTargetSymbol    = "refactor_implement_contract.result.type_target.symbol"
+	sourceGeneratedMethodFile     = "refactor_implement_contract.result.generated_methods[].file"
+	sourceGeneratedMethodSymbol   = "refactor_implement_contract.result.generated_methods[].symbol"
 )
 
 var extractInterfaceParams = append([]ParameterContract{
@@ -48,8 +48,8 @@ var extractInterfaceParams = append([]ParameterContract{
 var implementContractParams = append([]ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: existing Go source file declaring the concrete type", Required: true, Role: RoleSelector},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: exact named concrete type to receive missing methods; this is an existing declaration", Required: true, Role: RoleTarget},
-	{Name: "contract", CLIName: "contract", JSONName: "contract", Type: ParamString, Description: "Selector: exact interface name copied from semantic_extract_interface.contract", Required: true, Role: RoleSelector, SourceFields: []string{sourceExtractedContract}},
-	{Name: contractFileField, CLIName: "contract-file", JSONName: contractFileField, Type: ParamString, Description: "Selector: interface file copied from semantic_extract_interface.contract_file; defaults to file", Role: RoleSelector, SourceFields: []string{sourceExtractedContractFile}},
+	{Name: "contract", CLIName: "contract", JSONName: "contract", Type: ParamString, Description: "Selector: exact interface name copied from refactor_extract_interface.contract", Required: true, Role: RoleSelector, SourceFields: []string{sourceExtractedContract}},
+	{Name: contractFileField, CLIName: "contract-file", JSONName: contractFileField, Type: ParamString, Description: "Selector: interface file copied from refactor_extract_interface.contract_file; defaults to file", Role: RoleSelector, SourceFields: []string{sourceExtractedContractFile}},
 	{Name: contractDestinationFileField, CLIName: "destination-file", JSONName: contractDestinationFileField, Type: ParamString, Description: "Target: existing same-package Go file receiving generated methods; defaults to file", Role: RoleTarget},
 	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: exact receiver method set for generated methods", Required: true, Enums: []string{"pointer", "value"}, Role: RolePolicy},
 	{Name: "body_policy", CLIName: "body-policy", JSONName: "body_policy", Type: ParamString, Description: "Policy: generated missing methods use explicit panic_stub bodies", Required: true, Enums: []string{"panic_stub"}, Role: RolePolicy},
@@ -383,7 +383,7 @@ func finalizeContractOutput(cc CallContext, _ map[string]any, result contractOut
 		return contractOutput{}, fmt.Errorf("finalize contract edit receipt: %w", err)
 	}
 	result.Receipt = receipt
-	if result.Operation == contractImplementTool {
+	if result.Operation == canonicalImplementContractName {
 		for _, continuation := range receipt.Continuations {
 			if continuation.Symbol == result.Symbol {
 				target := continuation

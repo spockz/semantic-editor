@@ -39,6 +39,60 @@ func TestSelectJavaCodeActionPrefersSingleOccurrenceExtraction(t *testing.T) {
 	if err != nil || action.Title != "Extract to local variable" {
 		t.Fatalf("selected action = %#v, err = %v", action, err)
 	}
+
+	raw = json.RawMessage(`[{"title":"Disabled extract","kind":"refactor.extract.variable","disabled":{"reason":"not applicable"}},{"title":"Enabled extract","kind":"refactor.extract.variable"}]`)
+	action, err = selectJavaCodeAction(raw, "refactor.extract.variable")
+	if err != nil || action.Title != "Enabled extract" {
+		t.Fatalf("selected action = %#v, err = %v", action, err)
+	}
+
+	raw = json.RawMessage(`[{"title":"Disabled extract","kind":"refactor.extract.variable","disabled":{"reason":"not applicable"}}]`)
+	if _, err := selectJavaCodeAction(raw, "refactor.extract.variable"); err == nil || !strings.Contains(err.Error(), "only disabled actions") {
+		t.Fatalf("disabled-only actions error = %v", err)
+	}
+}
+
+func TestSelectJavaChangedMethodSourceRange(t *testing.T) {
+	source := []byte("class Service { void send(int id) {}\nvoid send(int id, boolean retry) {}\n}")
+	oneArg := "int"
+	twoArgs := "int, boolean"
+	method := func(signature string, start, end backend.Position) backend.ReadSymbol {
+		return backend.ReadSymbol{Kind: "method", QualifiedName: "Service.send", Signature: &signature, Range: backend.Range{Start: start, End: end}}
+	}
+	startLine1 := backend.Position{Line: 0, Character: 16}
+	endLine1 := backend.Position{Line: 0, Character: 36}
+	startLine2 := backend.Position{Line: 1, Character: 0}
+	endLine2 := backend.Position{Line: 1, Character: 35}
+	t.Run("overloads select expected parameter count", func(t *testing.T) {
+		got, err := selectJavaChangedMethodSourceRange(source, []backend.ReadSymbol{method(oneArg, startLine1, endLine1), method(twoArgs, startLine2, endLine2)}, 2, "", "found %d", "invalid range")
+		if err != nil || got.start != len("class Service { void send(int id) {}\n") || got.end != len(source)-2 {
+			t.Fatalf("range = %#v, err = %v", got, err)
+		}
+	})
+	t.Run("zero matches", func(t *testing.T) {
+		_, err := selectJavaChangedMethodSourceRange(source, []backend.ReadSymbol{method(oneArg, startLine1, endLine1)}, 3, "", "found %d", "invalid range")
+		if err == nil || err.Error() != "found 0" {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("multiple matches", func(t *testing.T) {
+		_, err := selectJavaChangedMethodSourceRange(source, []backend.ReadSymbol{method(oneArg, startLine1, endLine1), method("String", startLine2, endLine2)}, 1, "", "found %d", "invalid range")
+		if err == nil || err.Error() != "found 2" {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("invalid range", func(t *testing.T) {
+		_, err := selectJavaChangedMethodSourceRange(source, []backend.ReadSymbol{method(oneArg, endLine1, startLine1)}, 1, "", "found %d", "invalid range")
+		if err == nil || err.Error() != "invalid range" {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("parameter object rejects same-count wrong type", func(t *testing.T) {
+		_, err := selectJavaChangedMethodSourceRange(source, []backend.ReadSymbol{method("OtherRequest", startLine1, endLine1)}, 1, "SendRequest", "found %d for %q", "invalid range")
+		if err == nil || err.Error() != `found 0 for "SendRequest"` {
+			t.Fatalf("error = %v", err)
+		}
+	})
 }
 
 func (s *moveStaticMemberTestSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -144,7 +198,7 @@ func (*workspaceCodeActionSession) WaitDiagnostics(context.Context, string, int)
 func (*workspaceCodeActionSession) Close() error { return nil }
 
 func TestApplyCodeActionStagesMultiFileWorkspaceEdit(t *testing.T) {
-	root := t.TempDir()
+	root := backend.CanonicalWorkspaceRoot(t.TempDir())
 	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte("<project/>\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

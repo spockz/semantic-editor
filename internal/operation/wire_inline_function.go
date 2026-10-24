@@ -20,15 +20,14 @@ import (
 
 const (
 	semanticLookupToolName            = "semantic_lookup"
-	semanticRenameToolName            = "semantic_rename"
-	semanticMoveConstructToolName     = "semantic_move_construct"
+	semanticRenameToolName            = "refactor_rename"
+	semanticMoveConstructToolName     = "refactor_move_declaration"
 	semanticReplaceDeclToolName       = "semantic_replace_decl"
-	semanticExtractFunctionToolName   = "semantic_extract_function"
-	semanticExtractConstantToolName   = "semantic_extract_constant"
-	semanticExtractVariableToolName   = "semantic_extract_variable"
-	semanticInlineVariableToolName    = "semantic_inline_variable"
-	semanticInlineFunctionToolName    = "semantic_inline_function"
-	semanticMigrateTypeToolName       = "semantic_migrate_type"
+	semanticExtractFunctionToolName   = "refactor_extract_callable"
+	semanticExtractVariableToolName   = "refactor_extract_value"
+	semanticInlineVariableToolName    = "refactor_inline_value"
+	semanticInlineFunctionToolName    = "refactor_inline_callable"
+	semanticMigrateTypeToolName       = "refactor_migrate_type"
 	semanticReplaceBodyToolName       = "semantic_replace_body"
 	semanticInspectSymbolToolName     = "semantic_inspect_symbol"
 	semanticAssertionModeToolName     = "semantic_assertion_mode"
@@ -45,10 +44,11 @@ const (
 
 // InlineFunctionCallSite selects one caller-side expression for function inlining.
 type InlineFunctionCallSite struct {
-	File             string
-	InFunction       string
-	Discriminator    string
-	ExpectedRevision string
+	File              string
+	InFunction        string
+	Discriminator     string
+	OccurrenceIndices []int
+	ExpectedRevision  string
 }
 
 // InlineFunctionReq requests one bounded direct Go call expansion.
@@ -69,6 +69,7 @@ func (r *InlineFunctionReq) SetProjectContext(project backend.ProjectContext) { 
 // SemanticEditRes keeps the human-readable diff and typed receipt draft through finalization.
 type SemanticEditRes struct {
 	Diff             string
+	InlineCount      int
 	Delta            pipeline.DiagnosticDelta
 	DiagnosticStatus string
 	Draft            EditReceiptDraft
@@ -79,17 +80,23 @@ type SemanticEditRes struct {
 var inlineFunctionCallSiteSchema = ValueSchema{
 	Kind: SchemaObject,
 	Properties: map[string]ValueSchema{
-		"file":               {Kind: SchemaString},
-		"in_function":        {Kind: SchemaString},
-		wireDiscriminator:    {Kind: SchemaString},
-		wireExpectedRevision: {Kind: SchemaString},
+		"file":                {Kind: SchemaString},
+		"in_function":         {Kind: SchemaString},
+		wireDiscriminator:     {Kind: SchemaString},
+		wireExpectedRevision:  {Kind: SchemaString},
+		wireOccurrenceIndices: {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaInteger}, MinItems: inlineFunctionOccurrenceMin()},
 	},
 	Required: []string{"file", "in_function", wireDiscriminator},
 }
 
+func inlineFunctionOccurrenceMin() *int {
+	minimum := 2
+	return &minimum
+}
+
 var inlineFunctionParams = append([]ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file that declares the free function being inlined", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticInlineFunctionToolName + ".result.continuations[].file"}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: unqualified free-function name to inline; the declaration is preserved", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticInlineFunctionToolName + ".result.continuations[].symbol"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing source file that declares the free function being inlined", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticInlineFunctionToolName + ".result.continuations[].file"}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: Go accepts a free-function name or receiver-qualified method such as Counter.Value; copy the qualified symbol from semantic_lookup. Java and Rust accept the exact callable symbol returned by their backend. The declaration is preserved.", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticInlineFunctionToolName + ".result.continuations[].symbol"}},
 	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol, a resolved rename continuation, or an inline-function continuation for the callee file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticInlineFunctionToolName + ".result.continuations[].expected_revision", sourceRenameExpectedRevision}},
 	{Name: "call_site", CLIName: "call-site", JSONName: "call_site", Type: ParamObject, Description: "Selector: closed caller-selected current call site with file, in_function, and exact discriminator. Copy file, in_function, and optional expected_revision from same-named semantic_inspect_symbol continuation fields. The discriminator is the exact direct call expression visible in the inspected owner body.", Required: true, Role: RoleSelector, Schema: &inlineFunctionCallSiteSchema},
 }, readProjectParams...)
@@ -134,6 +141,19 @@ func parseInlineFunction(raw map[string]any) (InlineFunctionReq, error) {
 		}
 		req.CallSite.ExpectedRevision = revision
 	}
+	if value, exists := callSite[wireOccurrenceIndices]; exists {
+		indices, parseErr := parseConstantOccurrenceIndices(map[string]any{wireOccurrenceIndices: value})
+		if parseErr != nil {
+			return req, fmt.Errorf("call_site: %w", parseErr)
+		}
+		if len(indices) < 2 {
+			return req, fmt.Errorf("call_site.occurrence_indices must select at least two occurrences")
+		}
+		if req.CallSite.ExpectedRevision == "" {
+			return req, fmt.Errorf("call_site.expected_revision is required with occurrence_indices")
+		}
+		req.CallSite.OccurrenceIndices = indices
+	}
 	if req.Project, err = parseReadProject(raw, req.CallSite.File); err != nil {
 		return req, err
 	}
@@ -150,6 +170,10 @@ func validateInlineCallSite(raw map[string]any, language backend.LanguageID) err
 	for name := range raw {
 		switch name {
 		case "file", "in_function", wireDiscriminator, wireExpectedRevision:
+		case wireOccurrenceIndices:
+			if language != backend.LanguageGo {
+				return fmt.Errorf("call_site.occurrence_indices is supported only for Go")
+			}
 		default:
 			return fmt.Errorf("call_site has unknown field %q", name)
 		}
@@ -172,7 +196,7 @@ func runInlineFunction(ctx context.Context, cc CallContext, req InlineFunctionRe
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	plan, err := astedit.PlanInlineFunctionOverlay(ctx, cc.WorkDir, req.File, req.Symbol, astedit.InlineFunctionOptions{
 		CallerFile: req.CallSite.File, InFunction: req.CallSite.InFunction, Discriminator: req.CallSite.Discriminator,
-		CallerRevision: req.CallSite.ExpectedRevision, CalleeRevision: req.ExpectedRevision,
+		OccurrenceIndices: req.CallSite.OccurrenceIndices, CallerRevision: req.CallSite.ExpectedRevision, CalleeRevision: req.ExpectedRevision,
 	})
 	if err != nil {
 		return SemanticEditRes{}, err
@@ -186,7 +210,7 @@ func runInlineFunction(ctx context.Context, cc CallContext, req InlineFunctionRe
 		calleeRevision = revisionHex(plan.Change.After)
 	}
 	callerRevision := revisionHex(plan.Change.After)
-	draft, err := semanticEditDraft(cc.WorkDir, "inline-function", plan, []SymbolTarget{
+	draft, err := semanticEditDraft(cc.WorkDir, (backendInlineFunctionOperation), plan, []SymbolTarget{
 		{File: absoluteToWorkPath(cc.WorkDir, calleePath), Symbol: req.Symbol, ExpectedRevision: &calleeRevision},
 		{File: absoluteToWorkPath(cc.WorkDir, plan.Change.Path), Symbol: req.CallSite.InFunction, ExpectedRevision: &callerRevision},
 	})
@@ -197,19 +221,30 @@ func runInlineFunction(ctx context.Context, cc CallContext, req InlineFunctionRe
 		return SemanticEditRes{}, err
 	}
 	delta, diagnosticStatus := finishDelta()
-	return SemanticEditRes{Diff: plan.Diff, Delta: delta, DiagnosticStatus: diagnosticStatus, Draft: draft}, nil
+	inlineCount := len(req.CallSite.OccurrenceIndices)
+	if inlineCount == 0 {
+		inlineCount = 1
+	}
+	return SemanticEditRes{Diff: plan.Diff, InlineCount: inlineCount, Delta: delta, DiagnosticStatus: diagnosticStatus, Draft: draft}, nil
 }
 
 func inlineFunctionDef() Def[InlineFunctionReq, SemanticEditRes] {
 	receiptSchema := EditReceiptSchema()
 	return Def[InlineFunctionReq, SemanticEditRes]{
-		Key:     "inline_function",
-		Summary: "Use this tool instead of text editing to inline one selected call site. Go supports one direct zero-argument call to a same-package free function whose body is a single literal return. Java resolves the selected method call in call_site and delegates one refactor.inline action to JDT LS. The callee declaration remains in place.",
-		Params:  inlineFunctionParams, Level: LevelFile, CLIName: "inline-function", MCPName: semanticInlineFunctionToolName,
+		Key:     "refactor_inline_callable",
+		Summary: "Use this tool instead of text editing to inline selected direct call sites. Go supports one direct zero-argument call to a same-package free function or concrete method declared in any active package file; revision-bound occurrence_indices additionally select multiple exact matching free-function calls in supported contexts. Method calls require a direct caller-parameter receiver and no receiver indirection. Java and Rust support one call site only. The callee declaration remains in place.",
+		Params:  inlineFunctionParams, Level: LevelFile, CLIName: "refactor-inline-callable", MCPName: semanticInlineFunctionToolName,
 		Parse:    parseInlineFunction,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineFunctionReq) (SemanticEditRes, error){backend.LanguageGo: runInlineFunction, backend.LanguageJava: runInlineFunctionJava},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineFunctionReq) (SemanticEditRes, error){backend.LanguageGo: runInlineFunction, backend.LanguageJava: runInlineFunctionJava, backend.LanguageRust: runInlineFunctionRust},
 		Format: func(res SemanticEditRes) (string, error) {
+			count := res.InlineCount
+			if count == 0 {
+				count = 1
+			}
 			text := "Successfully inlined one call. diagnostic_status: " + res.DiagnosticStatus + "."
+			if count > 1 {
+				text = fmt.Sprintf("Successfully inlined %d call sites. diagnostic_status: %s.", count, res.DiagnosticStatus)
+			}
 			if res.DiagnosticStatus == "changed" {
 				text = AppendDiagnosticDelta(text, res.Delta)
 			}
@@ -249,6 +284,9 @@ func finalizeInlineFunctionOutput(cc CallContext, req InlineFunctionReq, res Sem
 	if req.Project.Language == backend.LanguageJava {
 		cc.Project = effectiveProject(cc, req.Project)
 		return finalizeJavaInlineFunctionOutput(cc, res)
+	}
+	if req.Project.Language == backend.LanguageRust {
+		return finalizeRustInlineFunctionOutput(cc, req, res)
 	}
 	return finalizeSemanticEditResult(cc, res)
 }

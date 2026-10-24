@@ -1,0 +1,30 @@
+# This archive ensures composite zero-value moves refuse package-qualified type dependencies before changing either package.
+! exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol Registry --placement file_end
+stderr 'non-predeclared type dependency'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+
+-- go.mod --
+module example.com/zerocompositedependency
+
+go 1.23
+-- model/model.go --
+package model
+
+type Config struct { Enabled bool }
+-- legacy/state.go --
+package legacy
+
+import "example.com/zerocompositedependency/model"
+
+var Registry map[string]model.Config
+-- api/state.go --
+package api
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/zerocompositedependency/model"
+
+var Registry map[string]model.Config
+-- .scratch/want/api.go --
+package api

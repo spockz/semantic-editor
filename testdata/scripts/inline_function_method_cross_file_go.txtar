@@ -1,0 +1,51 @@
+# WHY: Proves cross-file concrete method inlining preserves nil-receiver behavior, dynamic result type, and untouched sources.
+cp callee.go .scratch/before-callee.go
+cp sibling.go .scratch/before-sibling.go
+exec semedit refactor-inline-callable --file callee.go --symbol Counter.Value --call-site '{"file":"caller.go","in_function":"Run","discriminator":"counter.Value()"}'
+stdout 'Successfully inlined one call'
+cmp caller.go .scratch/want/caller.go
+cmp callee.go .scratch/before-callee.go
+cmp sibling.go .scratch/before-sibling.go
+cp .scratch/caller_test.txt caller_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinemethodcrossfile
+
+go 1.24
+-- callee.go --
+package sample
+
+type Counter struct{}
+
+func (*Counter) Value() float64 { return 7 }
+-- caller.go --
+package sample
+
+func Run(counter *Counter) any {
+	return counter.Value()
+}
+-- sibling.go --
+package sample
+
+// Preserve this formatting.
+var untouched =    1
+-- .scratch/caller_test.txt --
+package sample
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	for _, counter := range []*Counter{nil, {}} {
+		got := Run(counter)
+		if value, ok := got.(float64); !ok || value != 7 {
+			t.Fatalf("Run(%p) = %#v (%T), want float64(7)", counter, got, got)
+		}
+	}
+}
+-- .scratch/want/caller.go --
+package sample
+
+func Run(counter *Counter) any {
+	return float64(7)
+}

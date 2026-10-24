@@ -1,0 +1,236 @@
+# Refuse unsupported struct initializer and use shapes without changing any bytes.
+mkdir .scratch
+cp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Effectful
+stderr 'struct field values'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function VariableRead
+stderr 'struct field values'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Conversion
+stderr 'struct field values'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function ReferenceField
+stderr 'every struct field'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function NestedField
+stderr 'every struct field'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Positional
+stderr 'keyed fields'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Imported
+stderr 'same-package'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Generic
+stderr 'nongeneric'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Slice
+stderr 'named struct'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Map
+stderr 'named struct'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Pointer
+stderr 'computed initializer must have a resolved scalar type'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Explicit
+stderr 'explicitly typed'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function InferredVar
+stderr 'inferred :='
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function ExtraUse
+stderr 'sole direct argument'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Indirect
+stderr 'immediate direct return'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Later
+stderr 'immediate direct return'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Branch
+stderr 'immediate direct return'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Closure
+stderr 'immediate direct return'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Write
+stderr 'simple identifier'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function DeclarationComment
+stderr 'adjacent comment'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function LiteralComment
+stderr 'comments or directives'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function ReturnComment
+stderr 'own source line'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Directive
+stderr 'adjacent comment'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function BoolShadow
+stderr 'predeclared true/false'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Named
+stderr 'one unnamed result'
+cmp calc.go .scratch/before.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Tuple
+stderr 'one unnamed result'
+cmp calc.go .scratch/before.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinestructrefusal
+
+go 1.23
+-- calc.go --
+package calc
+
+import "image"
+
+type Result struct { Count int; Ready bool }
+type Reference struct { Count int; Ref *int }
+type Nested struct { Count int; Child struct { Ready bool } }
+type GenericResult[T any] struct { Count int }
+func next() int { return 1 }
+
+func Effectful() any {
+	value := Result{Count: next()}
+	return value
+}
+func VariableRead() any {
+	count := 1
+	value := Result{Count: count}
+	return value
+}
+
+func Conversion() any {
+	value := Result{Count: int(1)}
+	return value
+}
+
+func ReferenceField() any {
+	value := Reference{Count: 1}
+	return value
+}
+
+func NestedField() any {
+	value := Nested{Count: 1}
+	return value
+}
+
+func Positional() any {
+	value := Result{1, true}
+	return value
+}
+
+func Imported() any {
+	value := image.Point{X: 1}
+	return value
+}
+
+func Generic() any {
+	value := GenericResult[int]{Count: 1}
+	return value
+}
+
+func Slice() any {
+	value := []int{1}
+	return value
+}
+
+func Map() any {
+	value := map[string]int{"count": 1}
+	return value
+}
+
+func Pointer() any {
+	value := &Result{Count: 1}
+	return value
+}
+
+func Explicit() any {
+	var value Result = Result{Count: 1}
+	return value
+}
+
+func InferredVar() any {
+	var value = Result{Count: 1}
+	return value
+}
+
+func ExtraUse() any {
+	value := Result{Count: 1}
+	println(value.Count)
+	return value
+}
+
+func Indirect() any {
+	value := Result{Count: 1}
+	return &value
+}
+
+func Later() any {
+	value := Result{Count: 1}
+	println(1)
+	return value
+}
+
+func Branch() any {
+	value := Result{Count: 1}
+	if true { return value }
+	return nil
+}
+
+func Closure() any {
+	value := Result{Count: 1}
+	return func() any { return value }
+}
+
+func Write() any {
+	value := Result{Count: 1}
+	value.Count = 2
+	return value
+}
+
+func DeclarationComment() any {
+	// keep
+	value := Result{Count: 1}
+	return value
+}
+
+func LiteralComment() any {
+	value := Result{Count: /* keep */ 1}
+	return value
+}
+
+func ReturnComment() any {
+	value := Result{Count: 1}
+	return value // keep
+}
+
+func Directive() any {
+	value := Result{Count: 1}
+	//line source.go:100
+	return value
+}
+
+func BoolShadow() any {
+	true := false
+	value := Result{Ready: true}
+	return value
+}
+
+func Named() (result any) {
+	value := Result{Count: 1}
+	return value
+}
+
+func Tuple() (any, int) {
+	value := Result{Count: 1}
+	return value, 1
+}
+
+

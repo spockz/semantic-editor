@@ -1,0 +1,53 @@
+# Extract a descending inclusive counted loop and verify that its zero boundary is preserved.
+exec semedit refactor-extract-callable --file service.go --symbol visitDown --in-function Run --kind function --start-line 6 --end-line 8
+stdout 'symbol: visitDown'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractdescending
+
+go 1.23
+-- service.go --
+package sample
+
+var visited []int
+
+func Run(limit int) {
+	for i := limit; i >= 0; i-- {
+		record(i)
+	}
+}
+
+func record(value int) { visited = append(visited, value) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunVisitsZeroAndStops(t *testing.T) {
+	visited = nil
+	Run(2)
+	if want := []int{2, 1, 0}; !reflect.DeepEqual(visited, want) {
+		t.Fatalf("visited = %v, want %v", visited, want)
+	}
+}
+-- want/service.go --
+package sample
+
+var visited []int
+
+func Run(limit int) {
+	visitDown(limit)
+}
+
+func visitDown(limit int) {
+	for i := limit; i >= 0; i-- {
+		record(i)
+	}
+}
+
+func record(value int) { visited = append(visited, value) }

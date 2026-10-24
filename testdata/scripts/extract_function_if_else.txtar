@@ -1,0 +1,83 @@
+# Extract one complete typed scalar if/else statement with ordinary comments and preserve runtime branches.
+exec semedit refactor-extract-callable --file service.go --symbol dispatch --in-function Run --kind function --start-line 7 --end-line 15
+stdout 'symbol: dispatch'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractifelse
+
+go 1.23
+-- service.go --
+package sample
+
+var events []string
+var effectCount int
+
+func Run(enabled bool) {
+	if enabled { // choose only one branch
+		// Keep this explanation with the enabled branch.
+		record("enabled")
+		record(nextEvent())
+	} else {
+		/* Keep this explanation with the disabled branch. */
+		record("disabled")
+		record(nextEvent())
+	}
+} // Keep this comment attached to Run.
+// Keep this documentation attached to reset.
+func reset() { events = nil; effectCount = 0 }
+func nextEvent() string { effectCount++; events = append(events, "effect"); return "next" }
+func record(event string) { events = append(events, event) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesBothBranches(t *testing.T) {
+	for _, test := range []struct {
+		enabled bool
+		want    []string
+	}{
+		{enabled: true, want: []string{"enabled", "effect", "next"}},
+		{enabled: false, want: []string{"disabled", "effect", "next"}},
+	} {
+		reset()
+		Run(test.enabled)
+		if !reflect.DeepEqual(events, test.want) {
+			t.Fatalf("Run(%v) events = %v, want %v", test.enabled, events, test.want)
+		}
+		if effectCount != 1 {
+			t.Fatalf("Run(%v) effectCount = %d, want 1", test.enabled, effectCount)
+		}
+	}
+}
+-- want/service.go --
+package sample
+
+var events []string
+var effectCount int
+
+func Run(enabled bool) {
+	dispatch(enabled)
+} // Keep this comment attached to Run.
+
+func dispatch(enabled bool) {
+	if enabled { // choose only one branch
+		// Keep this explanation with the enabled branch.
+		record("enabled")
+		record(nextEvent())
+	} else {
+		/* Keep this explanation with the disabled branch. */
+		record("disabled")
+		record(nextEvent())
+	}
+}
+
+// Keep this documentation attached to reset.
+func reset()              { events = nil; effectCount = 0 }
+func nextEvent() string   { effectCount++; events = append(events, "effect"); return "next" }
+func record(event string) { events = append(events, event) }

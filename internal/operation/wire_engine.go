@@ -293,6 +293,12 @@ func registerEngineOps(registry *Registry) error {
 		if err := Register(registry, inlineVariableDef()); err != nil {
 			return err
 		}
+		if err := Register(registry, makeStaticDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, makeTypeExplicitDef()); err != nil {
+			return err
+		}
 		if err := Register(registry, migrateTypeDef()); err != nil {
 			return err
 		}

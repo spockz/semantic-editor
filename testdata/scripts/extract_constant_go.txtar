@@ -1,14 +1,17 @@
 # Extract one exact compile-time expression and refuse duplicate or runtime selections without writes.
-exec semedit extract-constant --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60'
+! exec semedit refactor-extract-value --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60' --kind constant --construct-path bogus --expected-revision bd59f787f3b95e57423031c260abcdb6227a41a751a9bb9e3f6213a7fa2adb61
+stderr 'construct_path is not supported for Go constant extraction'
+cmp retry.go original/retry.go
+exec semedit refactor-extract-value --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60' --kind constant
 stdout 'symbol: retryWindow'
 cmp retry.go want/retry.go
-! exec semedit extract-constant --file duplicate.go --symbol duration --in-function Duplicate --discriminator '3 * 60'
+! exec semedit refactor-extract-value --file duplicate.go --symbol duration --in-function Duplicate --discriminator '3 * 60' --kind constant
 stderr 'matched 2 current expressions'
 cmp duplicate.go original/duplicate.go
-! exec semedit extract-constant --file localcollision.go --symbol value --in-function LocalCollision --discriminator '3 * 60'
+! exec semedit refactor-extract-value --file localcollision.go --symbol value --in-function LocalCollision --discriminator '3 * 60' --kind constant
 stderr 'declared in the selected function or method'
 cmp localcollision.go original/localcollision.go
-! exec semedit extract-constant --file runtime.go --symbol total --in-function Runtime --discriminator 'value + 1'
+! exec semedit refactor-extract-value --file runtime.go --symbol total --in-function Runtime --discriminator 'value + 1' --kind constant
 stderr 'not a resolved Go constant expression'
 cmp runtime.go original/runtime.go
 exec go test ./...
@@ -18,6 +21,12 @@ module example.com/extractconstant
 
 go 1.23
 -- retry.go --
+package retry
+
+func Retry() int {
+	return 3 * 60
+}
+-- original/retry.go --
 package retry
 
 func Retry() int {

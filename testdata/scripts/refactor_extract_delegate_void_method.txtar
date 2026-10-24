@@ -1,0 +1,62 @@
+# Moves a void pointer method into the delegate and preserves its runtime behavior.
+exec semedit refactor-extract-delegate --file counter.go --symbol counterState --in-type counter --members '[{"file":"counter.go","symbol":"counter.value"}]' --field state --method Increment
+cmp counter.go .scratch/want/counter.go
+exec go test ./...
+
+-- go.mod --
+module example.com/refactordelegatevoid
+
+go 1.24
+-- counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) Increment() {
+	c.value++
+}
+
+func (c *counter) Value() int {
+	return c.value
+}
+-- counter_test.go --
+package sample
+
+import "testing"
+
+func TestVoidDelegateMethod(t *testing.T) {
+	c := &counter{}
+	c.Increment()
+	c.Increment()
+	if c.Value() != 2 {
+		t.Fatalf("Value() = %d, want 2", c.Value())
+	}
+}
+-- .scratch/want/counter.go --
+package sample
+
+type counter struct {
+	state counterState
+}
+
+type counterState struct {
+	value int
+}
+
+func (c *counterState) Increment() {
+	c.value++
+}
+
+func (c *counter) Increment() {
+	var delegate *counterState
+	if c != nil {
+		delegate = &c.state
+	}
+	delegate.Increment()
+}
+
+func (c *counter) Value() int {
+	return c.state.value
+}

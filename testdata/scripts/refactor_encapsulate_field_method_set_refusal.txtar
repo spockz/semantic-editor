@@ -1,0 +1,30 @@
+# Refuse accessor names that would collide with owner or interface method sets before writing.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.direct --getter getDirect --setter setDirect
+stderr 'already exists on the selected owner'
+cmp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.value --getter getValue --setter setValue
+stderr 'occurs in an interface method set'
+cmp owner.go before-owner.txt
+
+-- go.mod --
+module example.com/encapsulatefieldmethodset
+
+go 1.24
+-- owner.go --
+package sample
+
+type owner struct {
+	direct int
+	value int
+}
+
+func (*owner) getDirect() int { return 1 }
+
+type setter interface {
+	setValue()
+}
+
+func read(value *owner) int { return value.value }

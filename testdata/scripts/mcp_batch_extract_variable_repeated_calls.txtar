@@ -1,0 +1,60 @@
+# Extract one expression across an explicit direct-call range in an overlay, then rename the resulting local.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeatedcallsbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","kind":"variable","discriminator":"count + step","construct_path":"0","end_construct_path":"1","expected_revision":"f8bafca5cf8f53c24544e698361f1c19c044ed91ad7af65c079f187d40ac4bb4"}},{"tool":"refactor_rename","params":{"file":"render.go","symbol":"selected","to":"repeatedValue"}}]}}}
+-- render.go --
+package render
+
+var values [4]int
+var calls int
+
+func Sink(first, second int) {
+	values[calls*2] = first
+	values[calls*2+1] = second
+	calls++
+}
+
+func Render(count, step int) {
+	Sink(count + step, 0)
+	Sink(0, count + step)
+}
+-- .scratch/want/render.go --
+package render
+
+var values [4]int
+var calls int
+
+func Sink(first, second int) {
+	values[calls*2] = first
+	values[calls*2+1] = second
+	calls++
+}
+
+func Render(count, step int) {
+	repeatedValue := count + step
+	Sink(repeatedValue, 0)
+	Sink(0, repeatedValue)
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestRepeatedCallBatch(t *testing.T) {
+	Render(4, 1)
+	if values != [4]int{5, 0, 0, 5} {
+		t.Fatalf("call arguments = %v", values)
+	}
+}

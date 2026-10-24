@@ -1,0 +1,146 @@
+# Extract a typed, side-effect-free assignment RHS and refuse unsupported assignments without writes.
+exec semedit refactor-extract-value --file render.go --symbol adjusted --in-function Render --discriminator 'step + 1'
+cmp render.go want/render.go
+exec semedit refactor-extract-value --file mixed.go --symbol selected --in-function RenderMixed --discriminator 'count + 1'
+cmp mixed.go want/mixed.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --discriminator 'count + 1'
+stderr 'expression selection is ambiguous'
+cmp ambiguous.go original/ambiguous.go
+! exec semedit refactor-extract-value --file refusals.go --symbol adjusted --in-function RenderShort --discriminator 'count + 1'
+stderr 'one target and one value'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol adjusted --in-function RenderMulti --discriminator 'count + 1'
+stderr 'one target and one value'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol adjusted --in-function RenderEffect --discriminator 'count + compute()'
+stderr 'side-effect-free'
+cmp refusals.go original/refusals.go
+! exec semedit refactor-extract-value --file refusals.go --symbol adjusted --in-function RenderQualifiedConstant --discriminator 'math.Pi'
+stderr 'typed Go input'
+cmp refusals.go original/refusals.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableassignment
+
+go 1.24
+-- render.go --
+package render
+
+func Render(count int) {
+	step := count
+	var total int
+	total = step + 1
+	_ = total
+}
+-- want/render.go --
+package render
+
+func Render(count int) {
+	step := count
+	var total int
+	adjusted := step + 1
+	total = adjusted
+	_ = total
+}
+-- mixed.go --
+package render
+
+func Print(int) {}
+
+func RenderMixed(count int) {
+	total := count
+	Print(count + 1)
+	_ = total
+}
+-- want/mixed.go --
+package render
+
+func Print(int) {}
+
+func RenderMixed(count int) {
+	total := count
+	selected := count + 1
+	Print(selected)
+	_ = total
+}
+-- ambiguous.go --
+package render
+
+func PrintAmbiguous(int) {}
+
+func RenderAmbiguous(count int) {
+	var total int
+	total = count + 1
+	PrintAmbiguous(count + 1)
+	_ = total
+}
+-- original/ambiguous.go --
+package render
+
+func PrintAmbiguous(int) {}
+
+func RenderAmbiguous(count int) {
+	var total int
+	total = count + 1
+	PrintAmbiguous(count + 1)
+	_ = total
+}
+-- refusals.go --
+package render
+
+import "math"
+
+func compute() int { return 1 }
+
+func RenderShort(count int) {
+	total, other := count + 1, count
+	_, _ = total, other
+}
+
+func RenderMulti(count int) {
+	var total, other int
+	total, other = count + 1, 0
+	_, _ = total, other
+}
+
+func RenderEffect(count int) {
+	var total int
+	total = count + compute()
+	_ = total
+}
+
+func RenderQualifiedConstant() {
+	var total float64
+	total = math.Pi
+	_ = total
+}
+-- original/refusals.go --
+package render
+
+import "math"
+
+func compute() int { return 1 }
+
+func RenderShort(count int) {
+	total, other := count + 1, count
+	_, _ = total, other
+}
+
+func RenderMulti(count int) {
+	var total, other int
+	total, other = count + 1, 0
+	_, _ = total, other
+}
+
+func RenderEffect(count int) {
+	var total int
+	total = count + compute()
+	_ = total
+}
+
+func RenderQualifiedConstant() {
+	var total float64
+	total = math.Pi
+	_ = total
+}

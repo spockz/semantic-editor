@@ -1,6 +1,6 @@
 # A broken Go runtime must expose the subprocess diagnostic without modifying source.
 env GOROOT=$WORK/missing-go-runtime
-! exec semedit rename --file api/server.go --symbol Server.Start --to Serve
+! exec semedit refactor-rename --file api/server.go --symbol Server.Start --to Serve
 stderr 'rename: prepare gopls diagnostics environment: resolve effective Go environment: .*go: cannot find GOROOT directory:'
 cmp api/server.go want/api/server.go
 

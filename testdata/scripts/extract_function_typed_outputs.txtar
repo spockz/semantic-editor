@@ -1,9 +1,9 @@
-# Preserve a defined output type and refuse effectful or unsupported output types before writing.
-exec semedit extract-function --file distance.go --symbol describeDistance --in-function EmitDistance --kind function --start-line 6 --end-line 6
+# Preserve declared and effectful result types when extracting multiple outputs.
+exec semedit refactor-extract-callable --file distance.go --symbol describeDistance --in-function EmitDistance --kind function --start-line 6 --end-line 6
 stdout 'symbol: describeDistance'
 cmp distance.go want/distance.go
-! exec semedit extract-function --file effectful.go --symbol describeResult --in-function EmitEffectful --kind function --start-line 4 --end-line 4
-stderr 'cannot infer a safe return type'
+exec semedit refactor-extract-callable --file effectful.go --symbol describeResult --in-function EmitEffectful --kind function --start-line 4 --end-line 4
+stdout 'symbol: describeResult'
 cmp effectful.go want/effectful.go
 exec go test ./...
 
@@ -49,6 +49,11 @@ func EmitEffectful() {
 package distance
 
 func EmitEffectful() {
-	value, unit := readDistance(), "m"
+	value, unit := describeResult()
 	println(value, unit)
+}
+
+func describeResult() (Distance, string) {
+	value, unit := readDistance(), "m"
+	return value, unit
 }

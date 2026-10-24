@@ -1,0 +1,133 @@
+# Every unsupported call or mapping refuses before changing the function, any caller, or its sibling.
+cp service.go .scratch/service.txt
+cp calls.go .scratch/calls.txt
+cp sibling.go .scratch/sibling.txt
+! exec semedit refactor-change-signature --file service.go --symbol combine --expected-revision stale --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'expected_revision does not match'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":1,"parameter":{"name":"right","type":"int"}}]'
+stderr 'source_index 1 is mapped more than once'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":2,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'complete bijection'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"renamed","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'preserve each original name, type'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int64"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'preserve each original name, type'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'removed parameter is used by the function body'
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}},{"parameter":{"name":"extra","type":"bool"},"argument":"true"}]'
+stderr 'must preserve its original index'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/calls.txt
+cp .scratch/variable.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'compiler-proven constant'
+cmp calls.go .scratch/variable.txt
+cp .scratch/effect.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'compiler-proven constant'
+cmp calls.go .scratch/effect.txt
+cp .scratch/tuple.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'compiler-proven constant'
+cmp calls.go .scratch/tuple.txt
+cp .scratch/comment.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'call comments are unsupported'
+cmp calls.go .scratch/comment.txt
+cp .scratch/directive.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'source directives are unsupported'
+cmp calls.go .scratch/directive.txt
+cp .scratch/indirect.txt calls.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'function values and indirect callers are unsupported'
+cmp calls.go .scratch/indirect.txt
+cp .scratch/calls.txt calls.go
+cp .scratch/inactive.txt inactive_other.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'inactive source variant'
+cmp inactive_other.go .scratch/inactive.txt
+rm inactive_other.go
+! exec semedit refactor-change-signature --file service.go --symbol variadic --parameters '[{"source_index":1,"parameter":{"name":"rest","type":"int"}},{"source_index":0,"parameter":{"name":"first","type":"int"}}]'
+stderr 'variadic or unresolved target signatures'
+! exec semedit refactor-change-signature --file service.go --symbol nullable --parameters '[{"source_index":1,"parameter":{"name":"right","type":"any"}},{"source_index":0,"parameter":{"name":"left","type":"any"}}]'
+stderr 'compiler-proven constant'
+cmp service.go .scratch/service.txt
+cmp calls.go .scratch/calls.txt
+cmp sibling.go .scratch/sibling.txt
+cp .scratch/parameter_comment.txt service.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'parameter comments and source directives are unsupported'
+cmp service.go .scratch/parameter_comment.txt
+cmp calls.go .scratch/calls.txt
+cp .scratch/target_directive.txt service.go
+! exec semedit refactor-change-signature --file service.go --symbol combine --parameters '[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]'
+stderr 'parameter comments and source directives are unsupported'
+cmp service.go .scratch/target_directive.txt
+cmp calls.go .scratch/calls.txt
+-- go.mod --
+module example.com/permutationrefusal
+
+go 1.24
+-- service.go --
+package sample
+
+func combine(left, right int) int { return left*100 + right }
+func variadic(first int, rest ...int) {}
+func nullable(left, right any) {}
+-- calls.go --
+package sample
+
+func first() int { return combine(1, 2) }
+func nilCall() { nullable(nil, 1) }
+func ellipsisCall() { variadic(1, []int{2}...) }
+-- sibling.go --
+package sample
+
+func second( )int{return combine(3,4)}
+-- .scratch/variable.txt --
+package sample
+
+func first() int { value := 1; return combine(value, 2) }
+-- .scratch/effect.txt --
+package sample
+
+func next() int { panic("must not move") }
+func first() int { return combine(next(), 2) }
+-- .scratch/tuple.txt --
+package sample
+
+func pair() (int, int) { return 1, 2 }
+func first() int { return combine(pair()) }
+-- .scratch/comment.txt --
+package sample
+
+func first() int { return combine(1 /* keep */, 2) }
+-- .scratch/directive.txt --
+package sample
+
+//line invented.go:200
+func first() int { return combine(1, 2) }
+-- .scratch/indirect.txt --
+package sample
+
+var value = combine
+-- .scratch/inactive.txt --
+//go:build semedit_inactive
+
+package sample
+
+func inactive() int { return combine(1, 2) }
+-- .scratch/parameter_comment.txt --
+package sample
+
+func combine(left int /* keep */, right int) int { return left*100 + right }
+func variadic(first int, rest ...int) {}
+func nullable(left, right any) {}
+-- .scratch/target_directive.txt --
+package sample
+
+//line invented.go:200
+func combine(left, right int) int { return left*100 + right }
+func variadic(first int, rest ...int) {}
+func nullable(left, right any) {}

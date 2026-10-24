@@ -1,0 +1,84 @@
+# adr-tools creates a complete repository-template record that semedit can search and index.
+env ADR_DATE=2026-10-21 ADR_TEMPLATE= VISUAL=true
+exec adr new Template Created Record
+stdout 'docs/adr/0001-template-created-record.md'
+cmp docs/adr/0001-template-created-record.md want/0001-template-created-record.md
+exec semedit search-adrs --query concise --limit 1
+stdout '"id": "ADR-0001"'
+stdout '"path": "docs/adr/0001-template-created-record.md"'
+exec semedit generate-adr-index
+stdout '"status":"synced"'
+grep 'ADR-0001.*Template Created Record.*Proposed.*2026-10-21' docs/adr/README.md
+
+-- .adr-dir --
+docs/adr
+-- docs/adr/README.md --
+# ADR Index
+
+<!-- semedit-adr-register:start -->
+old generated section
+<!-- semedit-adr-register:end -->
+-- docs/adr/templates/template.md --
+<!-- WHY: Defines every required decision field and its stable metadata table keys for adr-tools-created records. -->
+# ADR-NUMBER: TITLE
+
+* **Status**: Proposed
+* **Date**: DATE
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Replace with one concise sentence. |
+| description | Explain the decision and its scope in one or two sentences. |
+| role | architecture |
+| scope | project |
+| area | generic |
+| languages | generic |
+
+## Context
+
+Describe the forces and constraints that motivate this decision.
+
+## Decision
+
+State the chosen approach.
+
+## Invariants
+
+* List requirements that must remain true.
+
+## Consequences
+
+Describe the resulting trade-offs and effects.
+-- want/0001-template-created-record.md --
+<!-- WHY: Defines every required decision field and its stable metadata table keys for adr-tools-created records. -->
+# ADR-1: Template Created Record
+
+* **Status**: Proposed
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Replace with one concise sentence. |
+| description | Explain the decision and its scope in one or two sentences. |
+| role | architecture |
+| scope | project |
+| area | generic |
+| languages | generic |
+
+## Context
+
+Describe the forces and constraints that motivate this decision.
+
+## Decision
+
+State the chosen approach.
+
+## Invariants
+
+* List requirements that must remain true.
+
+## Consequences
+
+Describe the resulting trade-offs and effects.

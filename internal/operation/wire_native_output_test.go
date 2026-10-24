@@ -114,7 +114,7 @@ func TestConstructInspectionAndSelectionErrorUseTypedOutputs(t *testing.T) {
 	if !ok || inspect.Output == nil || inspect.Output.ResultSchema == nil || inspect.ProjectOutput == nil {
 		t.Fatal("semantic_inspect_construct output contract is incomplete")
 	}
-	result := InspectConstructRes{File: "sample.go", InFunction: "Check", Kind: "if", Candidates: []astedit.ConstructCandidateInfo{{ConstructPath: "0", Syntax: "if ready {\n}"}}, SelectionRevision: "current"}
+	result := InspectConstructRes{File: "sample.go", InFunction: "Check", Kind: "if", Candidates: []astedit.ConstructCandidateInfo{{ConstructPath: "0", EndConstructPath: "0", Syntax: "if ready {\n}"}}, SelectionRevision: "current", ExpectedRevision: "sha256"}
 	projected, err := inspect.ProjectOutput(result)
 	if err != nil {
 		t.Fatalf("project inspect construct output: %v", err)
@@ -126,7 +126,7 @@ func TestConstructInspectionAndSelectionErrorUseTypedOutputs(t *testing.T) {
 	if err := ValidateValue(*inspect.Output.ResultSchema, output); err != nil {
 		t.Fatalf("projected inspect construct violates result schema: %v", err)
 	}
-	if output["file"] != "sample.go" || output[wireInFunction] != "Check" || output[wireExpectedSelectionRevision] != "current" {
+	if output["file"] != "sample.go" || output[wireInFunction] != "Check" || output[wireExpectedSelectionRevision] != "current" || output[wireExpectedRevision] != "sha256" {
 		t.Fatalf("projected inspect construct fields = %#v", output)
 	}
 	candidates, candidatesOK := output[wireCandidates].([]any)
@@ -134,14 +134,14 @@ func TestConstructInspectionAndSelectionErrorUseTypedOutputs(t *testing.T) {
 		t.Fatalf("projected inspect construct candidates = %#v", output[wireCandidates])
 	}
 	candidate, candidateOK := candidates[0].(map[string]any)
-	if !candidateOK || candidate[wireConstructPath] != "0" || candidate["syntax"] != "if ready {\n}" {
-		t.Fatalf("projected inspect construct candidate = %#v", candidates[0])
+	if !candidateOK || candidate[wireEndConstructPath] != candidate[wireConstructPath] || candidate[wireConstructPath] != "0" || candidate["syntax"] != "if ready {\n}" {
+		t.Fatalf("projected inspect construct endpoint candidate = %#v", candidates[0])
 	}
 	replace, ok := registry.LookupMCP("semantic_replace_construct")
 	if !ok || replace.ErrorOutput == nil || replace.ProjectErrorOutput == nil {
 		t.Fatal("semantic_replace_construct selection error contract is incomplete")
 	}
-	known := &astedit.ConstructSelectionError{Status: "ambiguous", File: "sample.go", Candidates: astedit.ConstructCandidateSet{InFunction: "Check", Kind: "if", Candidates: []astedit.ConstructCandidateInfo{{ConstructPath: "0", Syntax: "if ready {\n}"}}, SelectionRevision: "current"}}
+	known := &astedit.ConstructSelectionError{Status: "ambiguous", File: "sample.go", Candidates: astedit.ConstructCandidateSet{InFunction: "Check", Kind: "if", Candidates: []astedit.ConstructCandidateInfo{{ConstructPath: "0", EndConstructPath: "0", Syntax: "if ready {\n}"}}, SelectionRevision: "current"}}
 	value, recognized, projectErr := replace.ProjectErrorOutput(fmt.Errorf("wrapped: %w", known))
 	if projectErr != nil || !recognized {
 		t.Fatalf("project construct selection error = (%#v, %v, %v)", value, recognized, projectErr)

@@ -413,9 +413,9 @@ func explicitMutationGuidance(batching bool) string {
 	return " Parallelize independent read-only lookups. Perform mutations serially in the stated order; never run overlapping mutations concurrently."
 }
 
-const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
+const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* or refactor_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
 
-const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
+const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* or refactor_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
 
 const semanticIntegrationReflectionPrompt = "The benchmark attempt has ended. For benchmark analysis only, do not make further file changes, run tools, or retry the task. In one to three concise sentences, give candid, serious feedback on the most important improvement to semedit's tools, grounded in what you actually encountered during this run. Distinguish observed friction from suggestions, and describe the practical effect of the improvement. You may mention what worked well when relevant. If you did not use the tools or lack enough exposure to assess them, say so; do not invent issues or benefits."
 
@@ -457,6 +457,9 @@ func semanticToolBaseName(name string) string {
 	}
 	if after, found := strings.CutPrefix(clean, "semedit_semantic_"); found {
 		return "semantic_" + after
+	}
+	if after, found := strings.CutPrefix(clean, "semedit_refactor_"); found {
+		return "refactor_" + after
 	}
 	return clean
 }

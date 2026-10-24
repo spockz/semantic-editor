@@ -1,7 +1,7 @@
 # One buffered batch sees a newly inserted direct caller before converting all parameters, then edits the surviving function through its new object shape.
 stdin input.json
 exec semedit mcp --enable-batching
-! stdout '"name"\s*:\s*"semantic_introduce_parameter_object"'
+! stdout '"name"\s*:\s*"refactor_introduce_parameter_object"'
 stdout '"isError":false'
 cmp write.go .scratch/want/write.txt
 cmp calls.go .scratch/want/calls.txt
@@ -14,7 +14,7 @@ go 1.24
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func first() string { return write(\"a\", \"b\", 7) }"}},{"tool":"semantic_introduce_parameter_object","params":{"file":"write.go","symbol":"write","destination_file":"write.go","parameter":{"name":"options","type":"writeOptions"},"fields":[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]}},{"tool":"semantic_replace_body","params":{"file":"write.go","symbol":"write","body":"return save(options.path, options.data, options.mode)"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func first() string { return write(\"a\", \"b\", 7) }"}},{"tool":"refactor_introduce_parameter_object","params":{"file":"write.go","symbol":"write","destination_file":"write.go","parameter":{"name":"options","type":"writeOptions"},"fields":[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]}},{"tool":"semantic_replace_body","params":{"file":"write.go","symbol":"write","body":"return save(options.path, options.data, options.mode)"}}]}}}
 -- write.go --
 package sample
 

@@ -1,0 +1,157 @@
+# Extract direct slice factories and prove one evaluation, captured length, shared backing storage, and panic order.
+exec semedit refactor-extract-callable --file service.go --symbol walkOnce --in-function Run --kind function --start-line 18 --end-line 18
+stdout 'symbol: walkOnce'
+exec semedit refactor-extract-callable --file service.go --symbol walkMutation --in-function RunMutation --kind function --start-line 35 --end-line 40
+stdout 'symbol: walkMutation'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangeslicefactory
+
+go 1.23
+-- service.go --
+package sample
+
+var factoryCalls int
+var events []string
+var seen []int
+var current []int
+
+func values(mode int) []int {
+	factoryCalls++
+	events = append(events, "factory")
+	if mode == 2 {
+		panic("factory")
+	}
+	return []int{1, 2, 3}
+}
+
+func Run(mode int) {
+	for index, value := range values(mode) { record(index, value); break }
+}
+
+func currentValues() []int {
+	factoryCalls++
+	events = append(events, "factory")
+	return current
+}
+
+func RunMutation() {
+	for index, value := range currentValues() { if index == 0 { mutate() }; record(index, value) }
+}
+
+func mutate() {
+	current[1] = 9
+	current = append(current, 3)
+	events = append(events, "mutate")
+}
+
+func record(index, value int) {
+	seen = append(seen, value)
+	events = append(events, "record")
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func reset() {
+	factoryCalls = 0
+	events = nil
+	seen = nil
+}
+
+func TestSliceFactoryRunsOnceBeforeEarlyBreakAndPanic(t *testing.T) {
+	reset()
+	Run(0)
+	if factoryCalls != 1 || !reflect.DeepEqual(seen, []int{1}) || !reflect.DeepEqual(events, []string{"factory", "record"}) {
+		t.Fatalf("early break: calls=%d seen=%v events=%v", factoryCalls, seen, events)
+	}
+
+	reset()
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("Run did not propagate factory panic")
+			}
+		}()
+		Run(2)
+	}()
+	if factoryCalls != 1 || len(seen) != 0 || !reflect.DeepEqual(events, []string{"factory"}) {
+		t.Fatalf("factory panic: calls=%d seen=%v events=%v", factoryCalls, seen, events)
+	}
+}
+
+func TestSliceRangeCapturesDescriptorAndSharesBackingStorage(t *testing.T) {
+	reset()
+	current = make([]int, 2, 4)
+	current[0], current[1] = 1, 2
+	RunMutation()
+	if factoryCalls != 1 || !reflect.DeepEqual(seen, []int{1, 9}) || len(current) != 3 {
+		t.Fatalf("range capture: calls=%d seen=%v current=%v", factoryCalls, seen, current)
+	}
+	if !reflect.DeepEqual(events, []string{"factory", "mutate", "record", "record"}) {
+		t.Fatalf("events = %v", events)
+	}
+}
+-- want/service.go --
+package sample
+
+var factoryCalls int
+var events []string
+var seen []int
+var current []int
+
+func values(mode int) []int {
+	factoryCalls++
+	events = append(events, "factory")
+	if mode == 2 {
+		panic("factory")
+	}
+	return []int{1, 2, 3}
+}
+
+func Run(mode int) {
+	walkOnce(mode)
+}
+
+func walkOnce(mode int) {
+	for index, value := range values(mode) {
+		record(index, value)
+		break
+	}
+}
+
+func currentValues() []int {
+	factoryCalls++
+	events = append(events, "factory")
+	return current
+}
+
+func RunMutation() {
+	walkMutation()
+}
+
+func walkMutation() {
+	for index, value := range currentValues() {
+		if index == 0 {
+			mutate()
+		}
+		record(index, value)
+	}
+}
+
+func mutate() {
+	current[1] = 9
+	current = append(current, 3)
+	events = append(events, "mutate")
+}
+
+func record(index, value int) {
+	seen = append(seen, value)
+	events = append(events, "record")
+}

@@ -1,0 +1,34 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=1
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol total --in-function run --discriminator '1_i32 + 2_i32'
+stderr 'unresolved imported or macro-expanded names'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-unresolved-names-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+mod helper;
+use helper::*;
+
+fn run() {
+    consume(1_i32 + 2_i32);
+    include!("later.rs");
+}
+
+fn consume(value: i32) {}
+-- helper.rs --
+pub fn total() -> i32 { 10 }
+-- later.rs --
+consume(total());
+-- want/lib.rs --
+mod helper;
+use helper::*;
+
+fn run() {
+    consume(1_i32 + 2_i32);
+    include!("later.rs");
+}
+
+fn consume(value: i32) {}

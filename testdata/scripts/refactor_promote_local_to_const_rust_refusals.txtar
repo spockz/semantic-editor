@@ -1,0 +1,92 @@
+env SEMEDIT_TEST_RUST_PROMOTE_LOCAL_TO_CONST=1
+! exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/collision.rs --symbol retry_limit --in-function run
+stderr 'generated Rust constant name "RETRY_LIMIT" already appears'
+cmp src/collision.rs original/collision.rs
+! exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/extra-use.rs --symbol retry_limit --in-function run
+stderr 'extra, shadowed, or non-call uses'
+cmp src/extra-use.rs original/extra-use.rs
+! exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/overflow.rs --symbol retry_limit --in-function run
+stderr 'range-valid decimal fixed-width primitive integer literal'
+cmp src/overflow.rs original/overflow.rs
+env SEMEDIT_TEST_RUST_PROMOTE_LOCAL_TO_CONST=malformed
+! exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/malformed.rs --symbol retry_limit --in-function run
+cmp src/malformed.rs original/malformed.rs
+env SEMEDIT_TEST_RUST_PROMOTE_LOCAL_TO_CONST=stale
+! exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/stale.rs --symbol retry_limit --in-function run
+cmp src/stale.rs original/stale.rs
+
+-- Cargo.toml --
+[package]
+name = "rust-promote-local-to-const-refusals"
+version = "0.1.0"
+edition = "2021"
+-- src/collision.rs --
+const RETRY_LIMIT: i32 = 9;
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+-- original/collision.rs --
+const RETRY_LIMIT: i32 = 9;
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+-- src/extra-use.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+fn unrelated() {
+    let retry_limit: i32 = 8;
+    consume(retry_limit);
+}
+-- original/extra-use.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+fn unrelated() {
+    let retry_limit: i32 = 8;
+    consume(retry_limit);
+}
+-- src/overflow.rs --
+fn run() {
+    let retry_limit: u8 = 256;
+    consume(retry_limit);
+}
+fn consume(value: u8) {}
+-- original/overflow.rs --
+fn run() {
+    let retry_limit: u8 = 256;
+    consume(retry_limit);
+}
+fn consume(value: u8) {}
+-- src/malformed.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+-- original/malformed.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+-- src/stale.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}
+-- original/stale.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+fn consume(value: i32) {}

@@ -1,4 +1,4 @@
-// WHY: This test enforces strict 1:1 index atomicity, unique 4-digit ADR numbering, and status integrity between ADR/research documents and their README.md indexes.
+// WHY: This test enforces strict 1:1 index atomicity, continuous 4-digit ADR numbering, and status integrity between ADR/research documents and their README.md indexes.
 
 package main
 
@@ -89,7 +89,7 @@ func TestADRIndexAtomicity(t *testing.T) {
 		}
 	}
 
-	// Sequential numbering check (accounting for archived/revoked ADRs)
+	// Numbering stays continuous across active and archived records.
 	archivedNumbers := parseArchivedADRNumbers(t, filepath.Join(adrDir, "ARCHIVED.md"))
 	assertADRSequence(t, diskFiles, archivedNumbers)
 }
@@ -250,6 +250,10 @@ func assertADRSequence(t *testing.T, diskFiles map[string]int, archived []int) {
 		}
 		if i > 0 && num == allNums[i-1] {
 			t.Errorf("duplicate ADR number ADR-%04d exists in active or archived records", num)
+			continue
+		}
+		if i > 0 && num != allNums[i-1]+1 {
+			t.Errorf("ADR numbering gap between ADR-%04d and ADR-%04d", allNums[i-1], num)
 		}
 	}
 }

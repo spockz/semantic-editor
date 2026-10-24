@@ -1,0 +1,30 @@
+# A conflicting generated accessor refuses after an earlier unsaved field insertion, preserving only that successful overlay edit.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"error"'
+stdout 'already exists on the selected owner'
+stdout '"operation":"insert_field"'
+cmp config.go want/config.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldbatchrefusal
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_field","params":{"file":"config.go","in_type":"config","symbol":"config.counter","source":"counter int","placement":"type_end"}},{"tool":"refactor_encapsulate_field","params":{"file":"config.go","symbol":"config.counter","getter":"getCounter","setter":"setCounter"}}]}}}
+-- config.go --
+package sample
+
+type config struct{}
+
+func (*config) getCounter() int { return -1 }
+-- want/config.go --
+package sample
+
+type config struct{
+	counter int
+}
+
+func (*config) getCounter() int { return -1 }

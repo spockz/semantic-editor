@@ -185,7 +185,7 @@ func AddJavaImplementedInterface(source []byte, typeName, interfaceName string) 
 	for index := range class.NamedChildCount() {
 		child := class.NamedChild(index)
 		switch child.Type(lang) {
-		case "class_body":
+		case javaNodeClassBody:
 			body = child
 		case "super_interfaces":
 			interfaces = child
@@ -587,7 +587,7 @@ func SoleJavaTopLevelType(source []byte) (string, error) {
 	}
 	for index := range types[0].NamedChildCount() {
 		child := types[0].NamedChild(index)
-		if child.Type(lang) == javaNodeIdentifier || child.Type(lang) == "type_identifier" {
+		if child.Type(lang) == javaNodeIdentifier || child.Type(lang) == javaNodeTypeIdentifier {
 			return string(source[child.StartByte():child.EndByte()]), nil
 		}
 	}
@@ -608,7 +608,7 @@ func soleJavaTypeBody(lang *gts.Language, root *gts.Node) (*gts.Node, *gts.Node,
 	}
 	for index := range candidates[0].NamedChildCount() {
 		child := candidates[0].NamedChild(index)
-		if child.Type(lang) == "class_body" || child.Type(lang) == "enum_body" || child.Type(lang) == "enum_body_declarations" || child.Type(lang) == "interface_body" {
+		if child.Type(lang) == javaNodeClassBody || child.Type(lang) == "enum_body" || child.Type(lang) == "enum_body_declarations" || child.Type(lang) == "interface_body" {
 			return candidates[0], child, nil
 		}
 	}
@@ -663,7 +663,7 @@ func javaMemberHasName(lang *gts.Language, member *gts.Node, source []byte, name
 	}
 	for index := range member.NamedChildCount() {
 		child := member.NamedChild(index)
-		if (child.Type(lang) == javaNodeIdentifier || child.Type(lang) == "type_identifier") && string(source[child.StartByte():child.EndByte()]) == name {
+		if (child.Type(lang) == javaNodeIdentifier || child.Type(lang) == javaNodeTypeIdentifier) && string(source[child.StartByte():child.EndByte()]) == name {
 			return true
 		}
 	}
@@ -678,7 +678,7 @@ func javaFieldOrder(lang *gts.Language, field *gts.Node, source []byte) (int, in
 func javaMemberOrder(lang *gts.Language, member *gts.Node, source []byte) (int, int) {
 	switch member.Type(lang) {
 	case javaNodeFieldDeclaration:
-		modifiers := javaModifiers(lang, member, source)
+		modifiers := javaModifiers(lang, member)
 		rank := 2
 		if modifiers["static"] {
 			rank = 1
@@ -831,15 +831,19 @@ func findJavaMemberSelection(lang *gts.Language, root *gts.Node, start, end int)
 	return selected
 }
 
-func javaModifiers(lang *gts.Language, member *gts.Node, source []byte) map[string]bool {
+func javaModifiers(lang *gts.Language, member *gts.Node) map[string]bool {
 	result := make(map[string]bool)
 	for index := range member.NamedChildCount() {
-		child := member.NamedChild(index)
-		if child.Type(lang) != "modifiers" {
+		modifiers := member.NamedChild(index)
+		if modifiers.Type(lang) != "modifiers" {
 			continue
 		}
-		for modifier := range strings.FieldsSeq(string(source[child.StartByte():child.EndByte()])) {
-			result[modifier] = true
+		for modifierIndex := range modifiers.ChildCount() {
+			modifier := modifiers.Child(modifierIndex)
+			switch modifier.Type(lang) {
+			case "static", "final":
+				result[modifier.Type(lang)] = true
+			}
 		}
 		break
 	}
@@ -856,4 +860,211 @@ func lineIndent(source []byte, offset int) string {
 		index++
 	}
 	return string(source[start:index])
+}
+
+// InferredLocal identifies the declaration, name, and var token of one method-local binding.
+type InferredLocal struct {
+	Declaration Candidate
+	Identifier  backend.Range
+	Type        Candidate
+}
+
+// JavaInferredLocal resolves one unannotated, single-declarator var in a method body.
+func JavaInferredLocal(source []byte, name string) (InferredLocal, error) {
+	lang, root, err := parse(source)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	declarations, forbidden := javaInferredLocalDeclarations(source, name, lang, root)
+	if len(declarations) != 1 {
+		return InferredLocal{}, fmt.Errorf("java inferred local %q resolves to %d declarations", name, len(declarations))
+	}
+	if forbidden {
+		return InferredLocal{}, fmt.Errorf("java inferred local %q is inside an unsupported binding scope", name)
+	}
+	return javaInferredLocalTokens(source, name, lang, declarations[0])
+}
+
+// ValidateJavaExplicitType checks the native replacement without inferring or rewriting its type.
+func ValidateJavaExplicitType(value string) error {
+	if value == "" || value != strings.TrimSpace(value) || value == "var" || strings.ContainsAny(value, "\r\n@;{}") || strings.Contains(value, "/*") || strings.Contains(value, "//") {
+		return fmt.Errorf("java explicit type is not denotable")
+	}
+	source := []byte("class TypeProbe { " + value + " value; }")
+	lang, root, err := parse(source)
+	if err != nil {
+		return fmt.Errorf("java explicit type is not denotable: %w", err)
+	}
+	var typeNode *gts.Node
+	var visit func(*gts.Node)
+	visit = func(node *gts.Node) {
+		if node.Type(lang) == javaNodeFieldDeclaration {
+			typeNode = node.ChildByFieldName("type", lang)
+			return
+		}
+		for index := range node.NamedChildCount() {
+			visit(node.NamedChild(index))
+		}
+	}
+	visit(root)
+	if typeNode == nil || string(source[typeNode.StartByte():typeNode.EndByte()]) != value {
+		return fmt.Errorf("java explicit type is not one complete denotable type")
+	}
+	if javaExplicitTypeContainsVar(source, typeNode) {
+		return fmt.Errorf("java explicit type contains reserved var component")
+	}
+	switch typeNode.Type(lang) {
+	case "integral_type", "floating_point_type", "boolean_type", javaNodeTypeIdentifier, "scoped_type_identifier", "generic_type", "array_type":
+		return nil
+	default:
+		return fmt.Errorf("java explicit type %q is not supported", value)
+	}
+}
+
+// JavaInferredLocalAt binds an identifier selection to its containing method and fresh CST tokens.
+func JavaInferredLocalAt(source []byte, name string, selection backend.Range) (InferredLocal, error) {
+	lang, root, err := parse(source)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	start, err := ByteOffsetFromPosition(source, selection.Start)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	end, err := ByteOffsetFromPosition(source, selection.End)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	var owners []*gts.Node
+	var visit func(*gts.Node)
+	visit = func(node *gts.Node) {
+		if node.Type(lang) == javaNodeMethodDeclaration && int(node.StartByte()) <= start && end <= int(node.EndByte()) {
+			owners = append(owners, node)
+		}
+		for index := range node.NamedChildCount() {
+			visit(node.NamedChild(index))
+		}
+	}
+	visit(root)
+	if len(owners) != 1 {
+		return InferredLocal{}, fmt.Errorf("java inferred local selection requires one containing method")
+	}
+	base := int(owners[0].StartByte())
+	methodSource := source[base:owners[0].EndByte()]
+	local, err := JavaInferredLocal(methodSource, name)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	localStart, err := ByteOffsetFromPosition(methodSource, local.Identifier.Start)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	localEnd, err := ByteOffsetFromPosition(methodSource, local.Identifier.End)
+	if err != nil {
+		return InferredLocal{}, err
+	}
+	local.Identifier = backend.Range{Start: backend.PositionFromByteOffset(source, base+localStart), End: backend.PositionFromByteOffset(source, base+localEnd)}
+	if local.Identifier != selection {
+		return InferredLocal{}, fmt.Errorf("java inferred local selection must exactly cover its identifier")
+	}
+	for _, candidate := range []*Candidate{&local.Declaration, &local.Type} {
+		candidate.StartByte += owners[0].StartByte()
+		candidate.EndByte += owners[0].StartByte()
+		candidate.Range = backend.Range{Start: backend.PositionFromByteOffset(source, int(candidate.StartByte)), End: backend.PositionFromByteOffset(source, int(candidate.EndByte))}
+	}
+	return local, nil
+}
+
+func javaInferredLocalHasAnonymousClass(node *gts.Node, lang *gts.Language) bool {
+	if node.Type(lang) == "object_creation_expression" {
+		for index := range node.NamedChildCount() {
+			if node.NamedChild(index).Type(lang) == javaNodeClassBody {
+				return true
+			}
+		}
+	}
+	for index := range node.NamedChildCount() {
+		if javaInferredLocalHasAnonymousClass(node.NamedChild(index), lang) {
+			return true
+		}
+	}
+	return false
+}
+
+func javaInferredLocalDeclarations(source []byte, name string, lang *gts.Language, root *gts.Node) ([]*gts.Node, bool) {
+	var declarations []*gts.Node
+	var forbiddenMatch bool
+	var visit func(*gts.Node, bool)
+	visit = func(node *gts.Node, forbidden bool) {
+		if node == nil {
+			return
+		}
+		switch node.Type(lang) {
+		case "lambda_expression", "for_statement", "enhanced_for_statement", "while_statement", "do_statement", "resource", "class_declaration", "interface_declaration", "enum_declaration", "record_declaration", "object_creation_expression":
+			forbidden = true
+		}
+		if node.Type(lang) == "local_variable_declaration" {
+			for index := range node.NamedChildCount() {
+				child := node.NamedChild(index)
+				if child.Type(lang) != javaNodeVariableDeclarator {
+					continue
+				}
+				identifier := child.ChildByFieldName("name", lang)
+				if identifier != nil && string(source[identifier.StartByte():identifier.EndByte()]) == name {
+					declarations = append(declarations, node)
+					forbiddenMatch = forbiddenMatch || forbidden
+				}
+			}
+		}
+		for index := range node.NamedChildCount() {
+			visit(node.NamedChild(index), forbidden)
+		}
+	}
+	visit(root, false)
+	return declarations, forbiddenMatch
+}
+
+func javaInferredLocalTokens(source []byte, name string, lang *gts.Language, declaration *gts.Node) (InferredLocal, error) {
+	typeNode := declaration.ChildByFieldName("type", lang)
+	if typeNode == nil || string(source[typeNode.StartByte():typeNode.EndByte()]) != "var" {
+		return InferredLocal{}, fmt.Errorf("java local %q must have inferred var type", name)
+	}
+	var identifier *gts.Node
+	count := 0
+	for index := range declaration.NamedChildCount() {
+		child := declaration.NamedChild(index)
+		switch child.Type(lang) {
+		case javaNodeVariableDeclarator:
+			count++
+			identifier = child.ChildByFieldName("name", lang)
+			if child.ChildByFieldName("value", lang) == nil {
+				return InferredLocal{}, fmt.Errorf("java inferred local %q has no initializer", name)
+			}
+		case "modifiers":
+			return InferredLocal{}, fmt.Errorf("java inferred local %q must be unannotated and unmodified", name)
+		}
+	}
+	if count != 1 || identifier == nil {
+		return InferredLocal{}, fmt.Errorf("java inferred local %q requires one declarator", name)
+	}
+	if javaInferredLocalHasAnonymousClass(declaration, lang) {
+		return InferredLocal{}, fmt.Errorf("java inferred local %q has a non-denotable anonymous class type", name)
+	}
+	return InferredLocal{
+		Declaration: newCandidate(source, declaration, "", "", backend.ConstructStatementOrExpr),
+		Identifier:  backend.Range{Start: backend.PositionFromByteOffset(source, int(identifier.StartByte())), End: backend.PositionFromByteOffset(source, int(identifier.EndByte()))},
+		Type:        newCandidate(source, typeNode, "", "var", backend.ConstructStatementOrExpr),
+	}, nil
+}
+
+func javaExplicitTypeContainsVar(source []byte, node *gts.Node) bool {
+	if string(source[node.StartByte():node.EndByte()]) == "var" {
+		return true
+	}
+	for index := range node.NamedChildCount() {
+		if javaExplicitTypeContainsVar(source, node.NamedChild(index)) {
+			return true
+		}
+	}
+	return false
 }

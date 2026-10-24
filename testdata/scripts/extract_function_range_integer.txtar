@@ -1,0 +1,67 @@
+# Extract a named integer range and verify nonpositive bounds, typed values, and expression evaluation.
+exec semedit refactor-extract-callable --file service.go --symbol visitRange --in-function Run --kind function --start-line 8 --end-line 10
+stdout 'symbol: visitRange'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangeinteger
+
+go 1.23
+-- service.go --
+package sample
+
+type Count int
+
+var visited []Count
+
+func Run(limit Count) {
+	for index := range limit + 1 {
+		record(index)
+	}
+}
+
+func record(value Count) { visited = append(visited, value) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesIntegerRangeSemantics(t *testing.T) {
+	for _, test := range []struct {
+		limit Count
+		want  []Count
+	}{
+		{limit: -2, want: nil},
+		{limit: -1, want: nil},
+		{limit: 0, want: []Count{0}},
+		{limit: 2, want: []Count{0, 1, 2}},
+	} {
+		visited = nil
+		Run(test.limit)
+		if !reflect.DeepEqual(visited, test.want) {
+			t.Fatalf("Run(%d) visited = %v, want %v", test.limit, visited, test.want)
+		}
+	}
+}
+-- want/service.go --
+package sample
+
+type Count int
+
+var visited []Count
+
+func Run(limit Count) {
+	visitRange(limit)
+}
+
+func visitRange(limit Count) {
+	for index := range limit + 1 {
+		record(index)
+	}
+}
+
+func record(value Count) { visited = append(visited, value) }

@@ -1,0 +1,82 @@
+# Inline one pure computed bool into the complete adjacent if condition and refuse init/subexpression contexts.
+exec go test ./...
+exec semedit refactor-inline-value --file condition.go --symbol enabled --in-function ShouldProcess
+cmp condition.go .scratch/want/condition.go
+! exec semedit refactor-inline-value --file condition.go --symbol enabled --in-function HasInit
+stderr 'if condition with an init statement'
+cmp condition.go .scratch/want/condition.go
+! exec semedit refactor-inline-value --file condition.go --symbol enabled --in-function PartialCondition
+stderr 'complete if condition'
+cmp condition.go .scratch/want/condition.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedif
+
+go 1.23
+-- condition.go --
+package condition
+
+func ShouldProcess(value int) bool {
+	enabled := value != 0 && 10/value > 1
+	if enabled {
+		return true
+	}
+	return false
+}
+
+func HasInit(value int) bool {
+	enabled := value > 0
+	if result := value; enabled {
+		return result > 0
+	}
+	return false
+}
+
+func PartialCondition(value int) bool {
+	enabled := value > 0
+	if value == 0 || enabled {
+		return false
+	}
+	return true
+}
+-- .scratch/want/condition.go --
+package condition
+
+func ShouldProcess(value int) bool {
+	if value != 0 && 10/value > 1 {
+		return true
+	}
+	return false
+}
+
+func HasInit(value int) bool {
+	enabled := value > 0
+	if result := value; enabled {
+		return result > 0
+	}
+	return false
+}
+
+func PartialCondition(value int) bool {
+	enabled := value > 0
+	if value == 0 || enabled {
+		return false
+	}
+	return true
+}
+-- condition_test.go --
+package condition
+
+import "testing"
+
+func TestShouldProcess(t *testing.T) {
+	for _, test := range []struct {
+		value int
+		want  bool
+	}{{value: 0, want: false}, {value: 5, want: true}, {value: 10, want: false}} {
+		if got := ShouldProcess(test.value); got != test.want {
+			t.Errorf("ShouldProcess(%d) = %t, want %t", test.value, got, test.want)
+		}
+	}
+}

@@ -1,0 +1,29 @@
+# A Metals method extraction and following lookup share the unpublished batch overlay.
+env SEMEDIT_TEST_SCALA_EXTRACT_CALLABLE=1
+exec materialize-mcp-input input.json
+stdin input.expanded.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"applied_with_diagnostics"'
+stdout '"source_view":"working"'
+cmp src/Thing.scala expected.scala
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"language":"scala","trust_workspace":true,"metals_bin":"@METALS_BIN@","java_bin":"@JAVA_BIN@","java_version":"21","file":"src/Thing.scala","symbol":"logWork","in_function":"run","kind":"function","start_line":3,"end_line":3}},{"tool":"semantic_lookup","params":{"language":"scala","trust_workspace":true,"metals_bin":"@METALS_BIN@","java_bin":"@JAVA_BIN@","java_version":"21","file":"src/Thing.scala","symbol":"logWork"}}]}}}
+-- src/Thing.scala --
+object Thing {
+  def run(): Unit = {
+    consume(1 + 2)
+  }
+  def consume(value: Int): Unit = println(value)
+}
+-- expected.scala --
+object Thing {
+  def run(): Unit = {
+    def logWork(): Unit =
+      consume(1 + 2)
+
+    logWork()
+  }
+  def consume(value: Int): Unit = println(value)
+}

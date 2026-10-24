@@ -1,0 +1,29 @@
+# Refuse zero-value deletion when removing its type import would also remove package initialization.
+mkdir .scratch
+cp main.go .scratch/before.go
+! exec semedit remove-construct --file main.go --kind var --symbol unusedRecord --safe-delete
+stderr 'final use of an import'
+cmp main.go .scratch/before.go
+exec go run .
+stderr 'initialized'
+
+-- go.mod --
+module example.com/safedeletezerovarinit
+
+go 1.24
+
+-- main.go --
+package main
+
+import "example.com/safedeletezerovarinit/dep"
+
+var unusedRecord dep.Record
+
+func main() {}
+
+-- dep/dep.go --
+package dep
+
+type Record struct{}
+
+func init() { println("initialized") }

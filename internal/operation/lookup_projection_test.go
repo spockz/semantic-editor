@@ -13,6 +13,10 @@ import (
 
 func TestLookupProjectionOmitsOutsideWorkspacePaths(t *testing.T) {
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("canonicalize lookup projection workspace: %v", err)
+	}
 	result := &backend.LookupResult{Candidates: []*backend.NamedTarget{
 		{Name: "Inside", QualifiedName: "Inside", Kind: "function", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(root, "src", "inside.go")), Range: backend.Range{Start: backend.Position{Line: 2, Character: 23}, End: backend.Position{Line: 2, Character: 28}}}},
 		{Name: "Outside", QualifiedName: "Outside", Kind: "function", Location: backend.SourceLocation{URI: pathutil.FileURI(filepath.Join(filepath.Dir(root), "outside.go")), Range: backend.Range{Start: backend.Position{Line: 0, Character: 0}, End: backend.Position{Line: 0, Character: 7}}}},

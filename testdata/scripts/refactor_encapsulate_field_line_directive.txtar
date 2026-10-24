@@ -1,0 +1,32 @@
+# Rewrite a typed field access after a line directive changes its virtual filename.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file owner.go --symbol owner.value --getter getValue --setter setValue
+cmp owner.go want/owner.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldlinedirective
+
+go 1.24
+-- owner.go --
+package sample
+
+type owner struct {
+	value int
+}
+
+//line virtual.go:1
+func read(o *owner) int { return o.value }
+-- want/owner.txt --
+package sample
+
+type owner struct {
+	value int
+}
+
+//line virtual.go:1
+func read(o *owner) int { return o.getValue() }
+
+func (receiver *owner) getValue() int      { return receiver.value }
+func (receiver *owner) setValue(value int) { receiver.value = value }

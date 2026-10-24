@@ -47,8 +47,11 @@ func rustProfile() Profile {
 	return Profile{
 		Language: backend.LanguageRust, DisplayName: "Rust", Maturity: "Selected-file refactoring preview",
 		Limitations: []capability.Constraint{
+			{Title: "Bounded Promote Local to Const",
+				Description: "Promotion accepts one explicitly typed immutable local with a range-valid decimal fixed-width integer literal when its only use is the sole direct value argument of the immediately following call. Macros, attributes, imports, comments, custom or shadowed types, extra uses, mutation, destructuring, aggregates, and any non-exact native edit refuse.",
+				Severity:    "info"},
 			{Title: "Trusted Explicit Workspace",
-				Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
+				Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer. Rust-analyzer may run Cargo metadata while loading the project; the backend disables build scripts, procedural macros, and check-on-save.",
 				Severity:    "error"},
 			{Title: "Hierarchical Document Symbols",
 				Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
@@ -73,11 +76,14 @@ func javaProfile() Profile {
 
 func scalaProfile() Profile {
 	return Profile{
-		Language: backend.LanguageScala, DisplayName: "Scala", Maturity: readOnlyPreview,
+		Language: backend.LanguageScala, DisplayName: "Scala", Maturity: "Bounded refactoring preview",
 		Limitations: []capability.Constraint{
 			{Title: "Trusted Explicit Tools",
-				Description: "Lookup requires a selected .scala file, an explicit workspace root for project markers, explicit workspace trust, a pinned preinstalled Metals distribution, and recorded Java 21 or newer; no build tool is invoked.",
+				Description: "Lookup and extraction require a selected .scala file, an explicit workspace root for project markers, explicit workspace trust, a pinned preinstalled Metals distribution, and recorded Java 21 or newer; no build tool is invoked.",
 				Severity:    "error"},
+			{Title: "Bounded Refactorings",
+				Description: "Extract-value accepts only integer literal arithmetic as the sole argument in a two-method object: a zero-argument expression-bodied Int owner calls one strict Int identity callee. Extract-callable accepts one or more contiguous direct-call statements to the same callee in a selected method and creates a local Unit helper. Inline-value remains unavailable until the configured Metals runtime returns the native command action and its applyEdit callback is verified. Other syntax, overloads, by-name parameters, and compiler diagnostics are unavailable.",
+				Severity:    "info"},
 			{Title: "Hierarchical Document Symbols",
 				Description: "Only exact hierarchical classes, objects, traits, enums, methods, fields, and nested types are resolved; overload signatures, givens, extensions, package objects, generated symbols, and cross-file SemanticDB search are not promised.",
 				Severity:    "info"},

@@ -41,7 +41,7 @@ To conserve context budget and maintain architectural integrity, adhere strictly
 
 * **Verification Standard**: Always run `make check` prior to executing specific test or verification tools, ensuring automated formatters, fixers, and dependency tidying apply upfront. Verify all changes via `make check` before concluding work.
 * **Shared Test Setup**: Share setup and execution across related assertions wherever possible, grouping assertions against the same setup or result into individually named subtests. Keep separate setups when shared mutable state, lifecycle behavior, or failure isolation requires them.
-* **Complete Migration & Zero-Cruft Invariant**: This is an agent-maintained codebase. Whenever introducing a new internal mechanism (such as buffer staging, output schemas, or dispatch contracts) or consolidating public operations, execute a complete migration across all affected tools and callers in the same effort. Eradicate transitional legacy wrappers, parallel code paths, and compatibility aliases rather than leaving technical debt to accumulate.
+* **Complete Migration & Zero-Legacy Invariant**: This is an agent-maintained, unreleased codebase. When changing an interface, mechanism, schema, or behavior, migrate every affected implementation, caller, registration, test, document, skill, and persisted artifact in the same change, then remove the old path. Do not add compatibility aliases, fallback wrappers, parallel implementations, versioned interfaces, or transitional shims. Accepted ADRs preserve decision history; revise them through linked superseding ADRs rather than rewriting their historical decisions.
 * **Workspace Manifest Safety (ADR-0005)**: Never write `go.work` or mutate repository workspace manifests on disk without explicit user approval.
 * **Atomic Disk Updates (ADR-0010)**: All file mutations must follow atomic write semantics (temporary file $\to$ `fsync` $\to$ `os.Rename`) with advancing `mtime`.
 * **Temporary Work**: Place all temporary scratch files in the gitignored `.scratch/` directory.
@@ -71,7 +71,7 @@ When developing or refactoring code inside this repository, agents must dogfood 
 * **Symbol Inspection**: Use `semantic_inspect_symbol` to retrieve complete source declarations, signatures, comments, and package imports.
 * **Declaration Outline**: Use `semantic_outline` to inspect hierarchical symbol trees for a file or directory with elided function bodies; use `semantic_workspace_outline` first to discover which packages to inspect.
 * **References & Usages**: Use `semantic_find_references` to discover call sites, type usages, parameter bindings, and field accesses.
-* **Renaming**: Use `semantic_rename` for function, method, type, or variable renames instead of search-and-replace.
+* **Renaming**: Use `refactor_rename` for function, method, type, or variable renames instead of search-and-replace.
 * **Construct Lifecycle**: Use `semantic_insert_construct` and `semantic_replace_construct` to insert or mutate inner control flow, clauses, branches, loops, and statement/expressions rather than rewriting entire function bodies or text blocks.
 * **Function/Method Bodies**: Use `semantic_replace_body` to modify complete function implementations when whole-body replacement is necessary.
 * **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.

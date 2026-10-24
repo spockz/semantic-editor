@@ -1,0 +1,22 @@
+# Refuse an unkeyed literal for the private owner type without changing its layout or callers.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.value --getter getValue --setter setValue
+stderr 'cannot add field while source contains unkeyed owner literals'
+cmp owner.go before-owner.txt
+exec go test
+
+-- go.mod --
+module example.com/encapsulatefieldpositional
+
+go 1.24
+-- owner.go --
+package sample
+
+type owner struct {
+	value int
+	count int
+}
+
+var _ = owner{1, 2}

@@ -293,7 +293,7 @@ func TestParseTxtarExpectedOutputState(t *testing.T) {
 	t.Parallel()
 
 	content := `# Scenario with want file and cmp command
-exec semedit rename --file api/server.go --symbol Old --to New
+exec semedit refactor-rename --file api/server.go --symbol Old --to New
 cmp api/server.go want/api/server.go
 
 -- api/server.go --
@@ -352,8 +352,8 @@ func TestRenderMarkdownOutputsExpectedState(t *testing.T) {
 		Title:    "Rename Symbol",
 		Steps: []TxtarStep{{
 			Description: "Rename symbol",
-			Command:     "semedit rename --file api/server.go --symbol Old --to New",
-			MCPTool:     "semantic_rename",
+			Command:     "semedit refactor-rename --file api/server.go --symbol Old --to New",
+			MCPTool:     "refactor_rename",
 			MCPArgsJSON: `{"file":"api/server.go","symbol":"Old","to":"New"}`,
 		}},
 		Outputs: []TxtarFileOutput{{

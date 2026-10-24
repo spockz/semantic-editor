@@ -108,7 +108,7 @@ func suggestFailedTarget(cc CallContext, entry Entry, raw map[string]any, cause 
 		ctx = context.Background()
 	}
 	budget := 1500 * time.Millisecond
-	if entry.TargetPreflight != nil || entry.Key == string(backend.OperationRename) || entry.Key == string(backend.OperationFindReferences) || entry.Key == string(backend.OperationExtractFunction) || entry.Key == string(backend.OperationExtractVariable) {
+	if key := backendOperationKey(entry.Key); entry.TargetPreflight != nil || key == string(backend.OperationRename) || key == string(backend.OperationFindReferences) || key == string(backend.OperationExtractFunction) || key == string(backend.OperationExtractVariable) {
 		budget = 5 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
@@ -166,7 +166,8 @@ func prepareSuggestionTarget(cc CallContext, entry Entry, raw map[string]any, ca
 		return nil
 	}
 	selectorKey, query := failedSourceSelector(raw, cause)
-	validate := targetValidator(entry.Key, raw, selectorKey)
+	key := backendOperationKey(entry.Key)
+	validate := targetValidator(key, raw, selectorKey)
 	if entry.TargetPreflight != nil {
 		validate = func(ctx context.Context, call CallContext, project backend.ProjectContext, selector string) error {
 			retry := cloneRaw(raw)
@@ -179,7 +180,7 @@ func prepareSuggestionTarget(cc CallContext, entry Entry, raw map[string]any, ca
 	if validate == nil || selectorKey == "" || query == "" || len(query) > 256 || mode == "off" {
 		return nil
 	}
-	return &suggestionTarget{project: project, query: query, selectorKey: selectorKey, mode: mode, validate: validate, retrieval: suggestionRetrievalContext(entry.Key, selectorKey, query, raw)}
+	return &suggestionTarget{project: project, query: query, selectorKey: selectorKey, mode: mode, validate: validate, retrieval: suggestionRetrievalContext(key, selectorKey, query, raw)}
 }
 
 func suggestionRetrievalContext(key, selectorKey, selector string, raw map[string]any) suggestions.Query {
@@ -365,8 +366,11 @@ func targetValidator(key string, raw map[string]any, selectorKey string) nativeT
 			if err != nil {
 				return err
 			}
-			_, err = planSignatureChange(snapshot, intent)
-			return err
+			plan, err := planSignatureChange(snapshot, intent)
+			if err != nil {
+				return err
+			}
+			return validateSignatureOverlay(snapshot, plan)
 		}
 	}
 	return extractionTargetValidator(key, raw, selectorKey)
@@ -511,6 +515,7 @@ func sameSuggestionFile(root, left, right string) bool {
 }
 
 func recordSuccessfulTargetChange(ctx context.Context, key string, raw map[string]any, result any) {
+	key = backendOperationKey(key)
 	buffer := sourcebuf.FromContext(ctx)
 	if buffer == nil {
 		return

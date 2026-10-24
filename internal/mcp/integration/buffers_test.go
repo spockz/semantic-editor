@@ -147,10 +147,10 @@ func unsavedBufferEdits() []map[string]any {
 	return []map[string]any{
 		{"tool": "semantic_insert_function", "params": map[string]any{"file": "uses.go", "source": "func Read() int { return Value() }"}},
 		{"tool": "semantic_probe_buffers", "params": map[string]any{"file": "uses.go", "expected": "return Value()"}},
-		{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
+		{"tool": "refactor_rename", "params": map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
 		{"tool": "semantic_probe_buffers", "params": map[string]any{"file": "uses.go", "expected": "return Renamed()"}},
 		{"tool": "semantic_replace_body", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "body": "return 3"}},
-		{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Final"}},
+		{"tool": "refactor_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Final"}},
 		{"tool": "semantic_probe_buffers", "params": map[string]any{"file": "uses.go", "expected": "return Final()"}},
 	}
 }
@@ -281,10 +281,10 @@ func TestBatchSubdirectoryRenameAcrossBarrier(t *testing.T) {
 	}
 	var output bytes.Buffer
 	response, err := mcptest.NewServer(t, "full", subdir, &output, mcp.WithRegistry(registry)).ExecuteBatch(t.Context(), []mcp.BatchEntry{
-		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"value.go","symbol":"Value","to":"Renamed"}`)},
+		{Tool: "refactor_rename", Params: json.RawMessage(`{"file":"value.go","symbol":"Value","to":"Renamed"}`)},
 		{Tool: "semantic_probe_module_disk", Params: json.RawMessage(`{}`)},
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"value.go","symbol":"Renamed","body":"return 3"}`)},
-		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"value.go","symbol":"Renamed","to":"Final"}`)},
+		{Tool: "refactor_rename", Params: json.RawMessage(`{"file":"value.go","symbol":"Renamed","to":"Final"}`)},
 	}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -337,18 +337,18 @@ func TestBatchMovesAndRenameShareUnsavedModule(t *testing.T) {
 	}
 	edits := []map[string]any{
 		{"tool": "semantic_insert_function", "params": map[string]any{"file": "caller/use.go", "source": "func Unsaved() string { return legacy.MoveMe(\" unsaved \") }"}},
-		{"tool": "semantic_move_construct", "params": map[string]any{"file": "legacy/source.go", "destination_file": "legacy/spare.go", "symbol": "MoveMe"}},
+		{"tool": "refactor_move_declaration", "params": map[string]any{"file": "legacy/source.go", "destination_file": "legacy/spare.go", "symbol": "MoveMe"}},
 		{"tool": "semantic_probe_move_buffers", "params": map[string]any{}},
-		{"tool": "semantic_move_construct", "params": map[string]any{"file": "legacy/spare.go", "destination_file": "api/dest.go", "symbol": "MoveMe"}},
+		{"tool": "refactor_move_declaration", "params": map[string]any{"file": "legacy/spare.go", "destination_file": "api/dest.go", "symbol": "MoveMe"}},
 		{"tool": "semantic_probe_move_buffers", "params": map[string]any{}},
-		{"tool": "semantic_rename", "params": map[string]any{"file": "api/dest.go", "symbol": "MoveMe", "to": "Final"}},
+		{"tool": "refactor_rename", "params": map[string]any{"file": "api/dest.go", "symbol": "MoveMe", "to": "Final"}},
 		{"tool": "semantic_replace_body", "params": map[string]any{"file": "api/dest.go", "symbol": "Final", "body": "return strings.TrimSpace(value) + \"!\""}},
 		{"tool": "semantic_probe_move_buffers", "params": map[string]any{}},
 	}
 	var input, output bytes.Buffer
 	encoder := json.NewEncoder(&input)
 	requests := []map[string]any{
-		{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "semantic_rename", "arguments": map[string]any{"file": "value.go", "symbol": "Value", "to": "Warm"}}},
+		{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "refactor_rename", "arguments": map[string]any{"file": "value.go", "symbol": "Value", "to": "Warm"}}},
 		{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}},
 	}
 	for _, request := range requests {
@@ -445,7 +445,7 @@ func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 	probes := 0
 	registerSignatureBufferProbe(t, registry, fixture.root, originals, identities, &probes)
 	edits := []map[string]any{
-		{"tool": "semantic_change_signature", "params": map[string]any{
+		{"tool": "refactor_change_signature", "params": map[string]any{
 			"file": "value.go", "symbol": "value", "parameters": []any{
 				map[string]any{"parameter": map[string]any{"name": "mode", "type": "int"}, "argument": "7"},
 			},
@@ -478,6 +478,159 @@ func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 			t.Fatalf("batch did not publish final signature edit in %s", file)
 		}
 	}
+}
+
+func TestMCPBatchEncapsulateFieldKeepsDiskPreimageUntilFlush(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	originals := map[string]string{
+		"config.go": "package sample\n\ntype config struct { value int }\n\nfunc (c *config) read() int { return c.value }\n",
+	}
+	for file, content := range originals {
+		if err := pipeline.WriteAtomic(filepath.Join(fixture.root, file), []byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := operation.DefaultRegistry()
+	probes := 0
+	if err := registerEncapsulateFieldBufferProbe(registry, fixture.root, originals, &probes); err != nil {
+		t.Fatal(err)
+	}
+	edits := []map[string]any{
+		{"tool": "refactor_encapsulate_field", "params": map[string]any{"file": "config.go", "symbol": "config.value", "getter": "readValue", "setter": "setValue"}},
+		{"tool": "semantic_probe_encapsulate_field_buffer", "params": map[string]any{}},
+	}
+	var input, output bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	requests := []map[string]any{
+		{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"initializationOptions": map[string]any{"trust_workspace": true}}},
+		{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}},
+	}
+	for _, request := range requests {
+		if err := encoder.Encode(request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mcptest.NewServer(t, "full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+		t.Fatal(err)
+	}
+	if probes != 1 {
+		t.Fatalf("buffer probes = %d, want 1; server output: %s", probes, output.String())
+	}
+	final, err := os.ReadFile(filepath.Join(fixture.root, "config.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(final) == originals["config.go"] || !strings.Contains(string(final), "c.readValue()") || !strings.Contains(string(final), "setValue") {
+		t.Fatalf("batch did not publish complete encapsulation: %s", final)
+	}
+}
+
+func TestMCPBatchEncapsulateFieldConcurrentPreimageConflictPreservesExternalBytes(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	originalConfig := "package sample\n\ntype config struct { value int }\n\nfunc (c *config) read() int { return c.value }\n"
+	originalCaller := "package sample\n\nfunc readOther(c *config) int { return c.value }\n"
+	concurrentConfig := originalConfig + "// concurrent disk edit\n"
+	for file, content := range map[string]string{"config.go": originalConfig, "caller.go": originalCaller} {
+		if err := pipeline.WriteAtomic(filepath.Join(fixture.root, file), []byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	registry := operation.DefaultRegistry()
+	probes := 0
+	if err := registerEncapsulateFieldDiskConflictProbe(registry, fixture.root, []byte(concurrentConfig), &probes); err != nil {
+		t.Fatal(err)
+	}
+	edits := []map[string]any{
+		{"tool": "refactor_encapsulate_field", "params": map[string]any{"file": "config.go", "symbol": "config.value", "getter": "readValue", "setter": "setValue"}},
+		{"tool": "semantic_probe_encapsulate_field_disk_conflict", "params": map[string]any{}},
+	}
+	var input, output bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	requests := []map[string]any{
+		{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{"initializationOptions": map[string]any{"trust_workspace": true}}},
+		{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}},
+	}
+	for _, request := range requests {
+		if err := encoder.Encode(request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mcptest.NewServer(t, "full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+		t.Fatal(err)
+	}
+	if probes != 1 {
+		t.Fatalf("disk conflict probes = %d, want 1; server output: %s", probes, output.String())
+	}
+	if !strings.Contains(output.String(), `"isError":true`) || !strings.Contains(output.String(), "buffered source changed on disk") {
+		t.Fatalf("concurrent disk change did not reject the encapsulation batch: %s", output.String())
+	}
+	config, err := os.ReadFile(filepath.Join(fixture.root, "config.go"))
+	if err != nil || string(config) != concurrentConfig {
+		t.Fatalf("concurrent config bytes = %q, err = %v, want preserved external edit", config, err)
+	}
+	caller, err := os.ReadFile(filepath.Join(fixture.root, "caller.go"))
+	if err != nil || string(caller) != originalCaller {
+		t.Fatalf("caller bytes = %q, err = %v, want original bytes after conflict", caller, err)
+	}
+}
+
+func registerEncapsulateFieldDiskConflictProbe(registry *operation.Registry, root string, concurrent []byte, probes *int) error {
+	definition := operation.Def[struct{}, operation.FileEditRes]{
+		Key: "probe_encapsulate_field_disk_conflict", MCPName: "semantic_probe_encapsulate_field_disk_conflict", Batchable: true, BufferedBatch: true,
+		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){
+			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
+				working, err := sourcebuf.ReadFile(ctx, filepath.Join(root, "caller.go"))
+				if err != nil {
+					return operation.FileEditRes{}, err
+				}
+				if !strings.Contains(string(working), "c.readValue()") {
+					return operation.FileEditRes{}, fmt.Errorf("encapsulation rewrite was not in the working buffer before concurrent disk edit: %s", working)
+				}
+				if err := pipeline.WriteAtomic(filepath.Join(root, "config.go"), concurrent); err != nil {
+					return operation.FileEditRes{}, err
+				}
+				*probes++
+				return operation.FileEditRes{}, nil
+			},
+		},
+		Format: func(operation.FileEditRes) (string, error) { return "external edit written", nil },
+	}
+	return operation.Register(registry, definition)
+}
+
+func registerEncapsulateFieldBufferProbe(registry *operation.Registry, root string, originals map[string]string, probes *int) error {
+	definition := operation.Def[struct{}, operation.FileEditRes]{
+		Key: "probe_encapsulate_field_buffer", MCPName: "semantic_probe_encapsulate_field_buffer", Batchable: true, BufferedBatch: true,
+		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){
+			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
+				if sourcebuf.FromContext(ctx) == nil {
+					return operation.FileEditRes{}, fmt.Errorf("encapsulate-field batch lost its source buffer before flush")
+				}
+				for file, original := range originals {
+					disk, err := os.ReadFile(filepath.Join(root, file))
+					if err != nil {
+						return operation.FileEditRes{}, err
+					}
+					if string(disk) != original {
+						return operation.FileEditRes{}, fmt.Errorf("encapsulate-field batch published %s before flush", file)
+					}
+					working, err := sourcebuf.ReadFile(ctx, filepath.Join(root, file))
+					if err != nil {
+						return operation.FileEditRes{}, err
+					}
+					if !strings.Contains(string(working), "c.readValue()") || !strings.Contains(string(working), "setValue") {
+						return operation.FileEditRes{}, fmt.Errorf("encapsulate-field buffer lacks getter rewrite/accessor: %s", working)
+					}
+				}
+				*probes++
+				return operation.FileEditRes{}, nil
+			},
+		},
+		Format: func(operation.FileEditRes) (string, error) { return "observed", nil },
+	}
+	return operation.Register(registry, definition)
 }
 
 func registerSignatureBufferProbe(t *testing.T, registry *operation.Registry, root string, originals map[string]string, identities map[string]os.FileInfo, probes *int) {

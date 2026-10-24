@@ -1,0 +1,60 @@
+# Move an exported standalone scalar constant, preserving exact typed value and bindings.
+exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol RetryWindow --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+cmp caller/use.go .scratch/_want/caller/use.go
+exec go test ./...
+
+-- go.mod --
+module example.com/constantmove
+
+go 1.23
+
+-- legacy/limits.go --
+package legacy
+
+const RetryWindow int = 180
+-- api/limits.go --
+package api
+
+import (
+	"example.com/constantmove/legacy"
+	"example.com/constantmove/stable"
+)
+
+func Existing() int {
+	_ = stable.Value()
+	return legacy.RetryWindow
+}
+-- caller/use.go --
+package caller
+
+import "example.com/constantmove/legacy"
+
+func Use() int { return legacy.RetryWindow }
+-- stable/stable.go --
+package stable
+
+func Value() int { return 1 }
+-- .scratch/_want/legacy/limits.go --
+package legacy
+-- .scratch/_want/api/limits.go --
+package api
+
+import (
+	"example.com/constantmove/stable"
+)
+
+func Existing() int {
+	_ = stable.Value()
+	return RetryWindow
+}
+
+const RetryWindow int = 180
+-- .scratch/_want/caller/use.go --
+package caller
+
+import "example.com/constantmove/api"
+
+func Use() int { return api.RetryWindow }

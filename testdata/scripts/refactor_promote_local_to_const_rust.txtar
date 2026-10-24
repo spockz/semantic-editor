@@ -1,0 +1,35 @@
+env SEMEDIT_TEST_RUST_PROMOTE_LOCAL_TO_CONST=1
+exec semedit refactor-promote-local-to-const --language rust --trust-workspace --file src/main.rs --symbol retry_limit --in-function run
+stdout 'Promoted one bounded Rust local to a constant'
+cmp src/main.rs want-main.rs
+exec mkdir .scratch
+[exec:rustc] exec rustc --edition=2021 src/main.rs -o .scratch/promote-local-to-const
+[exec:rustc] exec ./.scratch/promote-local-to-const
+
+-- Cargo.toml --
+[package]
+name = "rust-promote-local-to-const-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/main.rs --
+fn run() {
+    let retry_limit: i32 = 7;
+    consume(retry_limit);
+}
+
+fn consume(value: i32) {
+    if value == 7 {} else { std::process::exit(1); }
+}
+
+fn main() { run(); }
+-- want-main.rs --
+fn run() {
+    const RETRY_LIMIT: i32 = 7;
+    consume(RETRY_LIMIT);
+}
+
+fn consume(value: i32) {
+    if value == 7 {} else { std::process::exit(1); }
+}
+
+fn main() { run(); }

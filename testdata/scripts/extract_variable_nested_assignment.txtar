@@ -1,0 +1,144 @@
+# Keep a branch-local assignment expression at its original evaluation point and require inspected paths for ambiguity.
+exec semedit refactor-extract-value --file nested.go --symbol selected --in-function RenderBranch --kind variable --discriminator 'count + 1'
+cmp nested.go want/nested.go
+exec semedit refactor-extract-value --file loop.go --symbol selected --in-function RenderLoop --kind variable --discriminator 'total + index'
+cmp loop.go want/loop.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1'
+stderr 'expression selection is ambiguous'
+cmp ambiguous.go original/ambiguous.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1' --construct-path 1.0.0 --expected-revision stale
+stderr 'selected source revision mismatch'
+cmp ambiguous.go original/ambiguous.go
+exec semedit refactor-extract-value --file ambiguous.go --symbol selected --in-function RenderAmbiguous --kind variable --discriminator 'count + 1' --construct-path 1.0.0 --expected-revision 14a1f3838c6e63c4afb23e11ae6a73d0fb8303d91e6d3e4073c4d94a4163d81a
+cmp ambiguous.go want/ambiguous.go
+! exec semedit refactor-extract-value --file refusals.go --symbol selected --in-function RenderCompound --kind variable --discriminator 'count + 1'
+stderr 'only simple assignments'
+cmp refusals.go original/refusals.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablenestedassignment
+
+go 1.24
+-- nested.go --
+package render
+
+func RenderBranch(count int) int {
+	total := 0
+	if count > 0 {
+		total = count + 1
+	}
+	return total
+}
+
+-- want/nested.go --
+package render
+
+func RenderBranch(count int) int {
+	total := 0
+	if count > 0 {
+		selected := count + 1
+		total = selected
+	}
+	return total
+}
+-- loop.go --
+package render
+
+func RenderLoop(count int) int {
+	total := 0
+	for index := 0; index < count; index++ {
+		total = total + index
+	}
+	return total
+}
+-- want/loop.go --
+package render
+
+func RenderLoop(count int) int {
+	total := 0
+	for index := 0; index < count; index++ {
+		selected := total + index
+		total = selected
+	}
+	return total
+}
+-- ambiguous.go --
+package render
+
+func RenderAmbiguous(count int) int {
+	total := 0
+	if count > 0 {
+		total = count + 1
+	} else {
+		total = count + 1
+	}
+	return total
+}
+-- original/ambiguous.go --
+package render
+
+func RenderAmbiguous(count int) int {
+	total := 0
+	if count > 0 {
+		total = count + 1
+	} else {
+		total = count + 1
+	}
+	return total
+}
+-- want/ambiguous.go --
+package render
+
+func RenderAmbiguous(count int) int {
+	total := 0
+	if count > 0 {
+		selected := count + 1
+		total = selected
+	} else {
+		total = count + 1
+	}
+	return total
+}
+-- refusals.go --
+package render
+
+func RenderCompound(count int) int {
+	total := 0
+	if count > 0 {
+		total += count + 1
+	}
+	return total
+}
+-- original/refusals.go --
+package render
+
+func RenderCompound(count int) int {
+	total := 0
+	if count > 0 {
+		total += count + 1
+	}
+	return total
+}
+-- nested_test.go --
+package render
+
+import "testing"
+
+func TestNestedAssignmentExtractionPreservesBranchBehavior(t *testing.T) {
+	if got := RenderBranch(2); got != 3 {
+		t.Fatalf("RenderBranch(2) = %d, want 3", got)
+	}
+	if got := RenderBranch(-2); got != 0 {
+		t.Fatalf("RenderBranch(-2) = %d, want 0", got)
+	}
+	if got := RenderLoop(4); got != 6 {
+		t.Fatalf("RenderLoop(4) = %d, want 6", got)
+	}
+	if got := RenderAmbiguous(2); got != 3 {
+		t.Fatalf("RenderAmbiguous(2) = %d, want 3", got)
+	}
+	if got := RenderAmbiguous(-2); got != -1 {
+		t.Fatalf("RenderAmbiguous(-2) = %d, want -1", got)
+	}
+}

@@ -1,0 +1,66 @@
+# Stage extraction of a switch-case assignment to a named method parameter.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/switchparameterbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"addCount","in_function":"Counter.Adjust","kind":"method","construct_path":"0.0.0","expected_revision":"9711350791b42b87adbe565d8248eb4154fc6dfeabd0eb60fa9c3e898c089352"}}]}}}
+-- service.go --
+package sample
+
+type Counter struct {
+	step int
+}
+
+func (c *Counter) Adjust(mode int, count int) int {
+	switch mode {
+	case 1:
+		count = count + c.step
+	default:
+		count = count - c.step
+	}
+	return count
+}
+-- want/service.go --
+package sample
+
+type Counter struct {
+	step int
+}
+
+func (c *Counter) Adjust(mode int, count int) int {
+	switch mode {
+	case 1:
+		count = c.addCount(count)
+	default:
+		count = count - c.step
+	}
+	return count
+}
+
+func (c *Counter) addCount(count int) int {
+	count = count + c.step
+	return count
+}
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestBatchSwitchParameterExtraction(t *testing.T) {
+	counter := &Counter{step: 3}
+	if got := counter.Adjust(1, 5); got != 8 {
+		t.Fatalf("Adjust(1, 5) = %d, want 8", got)
+	}
+	if got := counter.Adjust(0, 5); got != 2 {
+		t.Fatalf("Adjust(0, 5) = %d, want 2", got)
+	}
+}

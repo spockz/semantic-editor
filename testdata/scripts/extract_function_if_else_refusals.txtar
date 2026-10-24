@@ -1,0 +1,128 @@
+# Keep unsupported if/else selections unchanged with explicit reasons.
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function MissingElse --kind function --start-line 4 --end-line 4
+stderr 'if/else extraction requires a complete else block'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function EffectfulCondition --kind function --start-line 8 --end-line 8
+stderr 'condition must be a pure expression over resolved scalar inputs and constants'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function Nested --kind function --start-line 12 --end-line 12
+stderr 'branch statements must be direct calls'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function OutwardExit --kind function --start-line 16 --end-line 16
+stderr 'branch statements must be direct calls'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function WithInit --kind function --start-line 20 --end-line 20
+stderr 'if/else extraction does not support an init statement'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function BranchAssignment --kind function --start-line 24 --end-line 24
+stderr 'branch statements must be direct calls'
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function NonScalarInput --kind function --start-line 28 --end-line 28
+stderr 'cannot copy non-scalar owner input'
+cmp unsupported.go original/unsupported.go
+! exec semedit refactor-extract-callable --file unsupported.go --symbol move --in-function AliasCapture --kind function --start-line 33 --end-line 33
+stderr 'closure-captured values'
+! exec semedit refactor-extract-callable --file constants.go --symbol move --in-function LocalConstant --kind function --start-line 5 --end-line 5
+stderr 'condition must be a pure expression over resolved scalar inputs and constants'
+cmp constants.go original/constants.go
+
+-- go.mod --
+module example.com/extractifelserefusals
+
+go 1.23
+-- unsupported.go --
+package sample
+
+func MissingElse(flag bool) {
+	if flag { hit() }
+}
+
+func EffectfulCondition() {
+	if probe() { hit() } else { miss() }
+}
+
+func Nested(flag bool) {
+	if flag { if probe() { hit() } else { miss() } } else { miss() }
+}
+
+func OutwardExit(flag bool) {
+	if flag { return } else { miss() }
+}
+
+func WithInit() {
+	if n := probeValue(); n > 0 { hit() } else { miss() }
+}
+
+func BranchAssignment(flag bool) {
+	if flag { value = 1 } else { value = 2 }
+}
+
+func NonScalarInput(flag bool, values []int) {
+	if flag { consume(values) } else { miss() }
+}
+
+func AliasCapture(flag bool, value int) {
+	mutate := func() { value++ }
+	if flag { consumeScalar(value) } else { consumeScalar(0) }
+	_ = mutate
+}
+
+var value int
+func hit() {}
+func miss() {}
+func probe() bool { return true }
+func probeValue() int { return 1 }
+func consume([]int) {}
+func consumeScalar(int) {}
+-- original/unsupported.go --
+package sample
+
+func MissingElse(flag bool) {
+	if flag { hit() }
+}
+
+func EffectfulCondition() {
+	if probe() { hit() } else { miss() }
+}
+
+func Nested(flag bool) {
+	if flag { if probe() { hit() } else { miss() } } else { miss() }
+}
+
+func OutwardExit(flag bool) {
+	if flag { return } else { miss() }
+}
+
+func WithInit() {
+	if n := probeValue(); n > 0 { hit() } else { miss() }
+}
+
+func BranchAssignment(flag bool) {
+	if flag { value = 1 } else { value = 2 }
+}
+
+func NonScalarInput(flag bool, values []int) {
+	if flag { consume(values) } else { miss() }
+}
+
+func AliasCapture(flag bool, value int) {
+	mutate := func() { value++ }
+	if flag { consumeScalar(value) } else { consumeScalar(0) }
+	_ = mutate
+}
+
+var value int
+func hit() {}
+func miss() {}
+func probe() bool { return true }
+func probeValue() int { return 1 }
+func consume([]int) {}
+func consumeScalar(int) {}
+-- constants.go --
+package sample
+
+func LocalConstant() {
+	const enabled = true
+	if enabled { hit() } else { miss() }
+}
+-- original/constants.go --
+package sample
+
+func LocalConstant() {
+	const enabled = true
+	if enabled { hit() } else { miss() }
+}

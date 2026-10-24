@@ -1,0 +1,31 @@
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=1
+env SEMEDIT_RUST_CREATE_TARGET_ON_CODEACTION=src/bin/app.rs
+exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+cmp src/lib.rs want-lib.txt
+cmp src/bin/app.rs want-app.txt
+
+-- Cargo.toml --
+[package]
+name = "rust-unobserved-source-addition"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}
+-- want-lib.txt --
+fn run() {
+    extracted();
+}
+
+fn extracted() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}
+-- want-app.txt --
+include!("../lib.rs");
+fn extracted() {}
+fn main() { run(); }

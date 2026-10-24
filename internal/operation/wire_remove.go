@@ -7,14 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/spockz/semantic-editor/internal/astedit"
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backends"
 	"github.com/spockz/semantic-editor/internal/javacst"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/sourcebuf"
-	"path/filepath"
-	"strings"
 )
 
 const (
@@ -92,7 +93,7 @@ var (
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Role: RoleSelector, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: Go case value to remove (for example nil or \"foo\"); use default for a default clause"},
 		{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)"},
-		{Name: removeSafeDelete, CLIName: "safe-delete", JSONName: removeSafeDelete, Type: ParamBoolean, Description: "Request fail-closed reference preflight before removing an eligible Go declaration or private Java declaration. Any references, non-private Java declarations, or incomplete analysis refuse the edit.", Default: false},
+		{Name: removeSafeDelete, CLIName: "safe-delete", JSONName: removeSafeDelete, Type: ParamBoolean, Description: "Request fail-closed deletion proof: Go supports unused private standalone constants, eligible free functions, explicitly typed zero-value package variables of any type, initialized basic package variables with compiler-proven constant initializers, method-free defined types, and unreferenced type aliases; Java supports private declarations with complete JDT LS reference coverage. References, unsupported effects, or incomplete analysis refuse the edit.", Default: false},
 		{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically remove imports made unused by this edit (default true)", Default: true},
 	}, readProjectParams...)
 )
@@ -177,8 +178,8 @@ func validateGoRemoveRequest(req RemoveReq) error {
 	default:
 		return fmt.Errorf("unsupported removal kind %q", req.Kind)
 	}
-	if req.SafeDelete && req.Kind != backend.ConstructFunction && req.Kind != backend.ConstructConst && req.Kind != backend.ConstructVar {
-		return fmt.Errorf("safe_delete is supported only for function, const, or var removal")
+	if req.SafeDelete && req.Kind != backend.ConstructFunction && req.Kind != backend.ConstructConst && req.Kind != backend.ConstructVar && req.Kind != backend.ConstructType {
+		return fmt.Errorf("safe_delete is supported only for function, const, var, or bounded type removal")
 	}
 	return nil
 }
@@ -216,7 +217,7 @@ func runRemove(ctx context.Context, cc CallContext, req RemoveReq) (RemoveRes, e
 		TargetCase: req.TargetCase, ConstructPath: req.ConstructPath, SafeDelete: req.SafeDelete,
 	}, effectiveAutoOrganize(cc, req.AutoOrganizeImports))
 	if err != nil {
-		if snapshotErr, ok := errors.AsType[*astedit.SafeDeleteSnapshotError](err); ok {
+		if snapshotErr, ok := errors.AsType[*astedit.SafeDeleteInputConflictError](err); ok {
 			return RemoveRes{}, &SafeDeleteRefusalError{
 				File: req.File, Symbol: req.Symbol, InFunction: req.InFunction,
 				Discriminator: req.Discriminator, TargetCase: req.TargetCase,

@@ -637,8 +637,8 @@ func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
 
 func TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches(t *testing.T) {
 	result := &backend.InspectResult{Matches: []backend.InspectedSymbol{
-		{QualifiedName: "Widget.run", Kind: "method", File: "src/Widget.java", Revision: "captured-one"},
-		{QualifiedName: "Widget.run", Kind: "method", File: "src/Other.java", Revision: "captured-two"},
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Widget.rs", Revision: "captured-one"},
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Other.rs", Revision: "captured-two"},
 	}}
 	projection, err := ProjectInspectResult(result)
 	if err != nil {
@@ -648,8 +648,8 @@ func TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches(t *testing.T) 
 		t.Fatalf("continuations = %#v, want both ambiguous matches", projection.Continuations)
 	}
 	for index, want := range []InspectContinuation{
-		{File: "src/Widget.java", Symbol: "Widget.run", ExpectedRevision: "captured-one"},
-		{File: "src/Other.java", Symbol: "Widget.run", ExpectedRevision: "captured-two"},
+		{File: "src/Widget.rs", Symbol: "Widget.run", ExpectedRevision: "captured-one"},
+		{File: "src/Other.rs", Symbol: "Widget.run", ExpectedRevision: "captured-two"},
 	} {
 		got := projection.Continuations[index]
 		if got.File != want.File || got.Symbol != want.Symbol || got.ExpectedRevision != want.ExpectedRevision || got.InFunction != nil || got.InType != nil || got.InDeclaration != nil {

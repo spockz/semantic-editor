@@ -1,0 +1,192 @@
+# Extract named map ranges in one buffered batch and prove runtime behavior without assuming iteration order.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchextractrangemap
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"walkAndClear","in_function":"RunAndClear","kind":"function","start_line":35,"end_line":37}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"walkEntries","in_function":"Run","kind":"function","start_line":27,"end_line":29}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"walkOne","in_function":"RunOne","kind":"function","start_line":17,"end_line":23}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"walkLocalEntries","in_function":"RunLocal","kind":"function","start_line":11,"end_line":13}},{"tool":"refactor_rename","params":{"file":"service.go","symbol":"walkEntries","to":"visitEntries"}}]}}}
+-- service.go --
+package sample
+
+type EntryMap map[int]string
+
+var seen map[int]string
+var alias EntryMap
+var callbackCount int
+
+func RunLocal() {
+	entries := EntryMap{3: "three", 4: "four"}
+	for key, value := range entries {
+		record(key, value)
+	}
+}
+
+func RunOne(entries EntryMap) {
+	for key, value := range entries {
+		if key < 0 {
+			continue
+		}
+		recordOnce(key, value)
+		break
+	}
+}
+
+func Run(entries EntryMap) {
+	for key, value := range entries {
+		record(key, value)
+	}
+}
+
+func RunAndClear(entries EntryMap) {
+	alias = entries
+	callbackCount = 0
+	for key, value := range entries {
+		recordAndClear(key, value)
+	}
+}
+
+func record(key int, value string) {
+	seen[key] = value
+}
+
+func recordOnce(key int, value string) {
+	seen[key] = value
+}
+
+func recordAndClear(key int, value string) {
+	seen[key] = value
+	if callbackCount == 0 {
+		clear(alias)
+	}
+	callbackCount++
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestMapRangeExtractionPreservesNilEmptyAndEntries(t *testing.T) {
+	seen = map[int]string{}
+	Run(nil)
+	Run(EntryMap{})
+	if len(seen) != 0 {
+		t.Fatalf("nil and empty maps produced entries: %v", seen)
+	}
+
+	want := map[int]string{1: "one", 2: "two", 3: "three"}
+	Run(EntryMap{1: "one", 2: "two", 3: "three"})
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("Run entries = %v, want %v", seen, want)
+	}
+}
+
+func TestMapRangeExtractionPreservesBreakAndContinue(t *testing.T) {
+	seen = map[int]string{}
+	RunOne(EntryMap{-1: "negative one", -2: "negative two"})
+	if len(seen) != 0 {
+		t.Fatalf("RunOne recorded entries after continuing: %v", seen)
+	}
+
+	seen = map[int]string{}
+	RunOne(EntryMap{1: "one", 2: "two", 3: "three"})
+	if len(seen) != 1 {
+		t.Fatalf("RunOne visited %d entries, want one: %v", len(seen), seen)
+	}
+}
+
+func TestMapRangeExtractionPreservesLocalMapAndAliasMutation(t *testing.T) {
+	seen = map[int]string{}
+	RunLocal()
+	wantLocal := map[int]string{3: "three", 4: "four"}
+	if !reflect.DeepEqual(seen, wantLocal) {
+		t.Fatalf("RunLocal entries = %v, want %v", seen, wantLocal)
+	}
+
+	entries := EntryMap{1: "one", 2: "two", 3: "three"}
+	seen = map[int]string{}
+	RunAndClear(entries)
+	if callbackCount != 1 || len(entries) != 0 || len(seen) != 1 {
+		t.Fatalf("alias mutation: callbacks=%d entries=%v seen=%v", callbackCount, entries, seen)
+	}
+}
+-- .scratch/want/service.go --
+package sample
+
+type EntryMap map[int]string
+
+var seen map[int]string
+var alias EntryMap
+var callbackCount int
+
+func RunLocal() {
+	entries := EntryMap{3: "three", 4: "four"}
+	walkLocalEntries(entries)
+}
+
+func walkLocalEntries(entries EntryMap) {
+	for key, value := range entries {
+		record(key, value)
+	}
+}
+
+func RunOne(entries EntryMap) {
+	walkOne(entries)
+}
+
+func walkOne(entries EntryMap) {
+	for key, value := range entries {
+		if key < 0 {
+			continue
+		}
+		recordOnce(key, value)
+		break
+	}
+}
+
+func Run(entries EntryMap) {
+	visitEntries(entries)
+}
+
+func visitEntries(entries EntryMap) {
+	for key, value := range entries {
+		record(key, value)
+	}
+}
+
+func RunAndClear(entries EntryMap) {
+	alias = entries
+	callbackCount = 0
+	walkAndClear(entries)
+}
+
+func walkAndClear(entries EntryMap) {
+	for key, value := range entries {
+		recordAndClear(key, value)
+	}
+}
+
+func record(key int, value string) {
+	seen[key] = value
+}
+
+func recordOnce(key int, value string) {
+	seen[key] = value
+}
+
+func recordAndClear(key int, value string) {
+	seen[key] = value
+	if callbackCount == 0 {
+		clear(alias)
+	}
+	callbackCount++
+}

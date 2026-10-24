@@ -156,22 +156,24 @@ public final class LedgerService {
 `,
 		"ledger-service/src/main/java/com/acme/ledger/service/LedgerCaller.java": `package com.acme.ledger.service;
 
-import com.acme.ledger.domain.EntryType;
+import static com.acme.ledger.domain.EntryType.CREDIT;
+
 import com.acme.ledger.domain.LedgerEntry;
 import com.acme.ledger.domain.Money;
 
 final class LedgerCaller {
-    void submit(LedgerService service) { service.post(new LedgerEntry(new Money(100), EntryType.CREDIT), true); }
+    void submit(LedgerService service) { service.post(new LedgerEntry(new Money(100), CREDIT), true); }
 }
 `,
 		"ledger-service/src/test/java/com/acme/ledger/service/LedgerServiceTest.java": `package com.acme.ledger.service;
 
-import com.acme.ledger.domain.EntryType;
+import static com.acme.ledger.domain.EntryType.*;
+
 import com.acme.ledger.domain.LedgerEntry;
 import com.acme.ledger.domain.Money;
 
 final class LedgerServiceTest {
-    void testPost(LedgerService service) { service.post(new LedgerEntry(new Money(2), EntryType.DEBIT), false); }
+    void testPost(LedgerService service) { service.post(new LedgerEntry(new Money(2), DEBIT), false); }
 }
 `,
 		"ledger-service/src/main/java/com/acme/ledger/service/InMemoryAuditSink.java": `package com.acme.ledger.service;
@@ -381,20 +383,20 @@ public final class InMemoryAuditSink {}
 	if !bytes.Contains(before, selectedExpr) {
 		t.Fatalf("real refactoring expression is absent")
 	}
-	variableResult, err := operationRegistry.Dispatch(call, "extract_variable", map[string]any{
+	variableResult, err := operationRegistry.Dispatch(call, "refactor_extract_value", map[string]any{
 		"file":     filepath.ToSlash(filepath.Join("ledger-service", "src/main/java/com/acme/ledger/service/LedgerService.java")),
 		"language": "java", "trust_workspace": true, "jdtls_home": jdtlsHome, "java_bin": javaBin, "import_maven": true,
 		"symbol": "amountCents", "in_function": "LedgerService.post(LedgerEntry, boolean)", "discriminator": string(selectedExpr),
 	})
 	if err != nil {
-		t.Fatalf("real semantic_extract_variable Java: %v", err)
+		t.Fatalf("real refactor_extract_value (kind=variable) Java: %v", err)
 	}
 	if _, ok := variableResult.(operation.ExtractionResult); !ok {
 		t.Fatalf("real Java variable extraction result has type %T", variableResult)
 	}
 	serviceSource, err = os.ReadFile(serviceFile)
 	if err != nil || !strings.Contains(string(serviceSource), "long amountCents = entry.amount().cents();") || !strings.Contains(string(serviceSource), "long cents = amountCents;") {
-		t.Fatalf("real semantic_extract_variable did not create and use amountCents: source=%s err=%v", serviceSource, err)
+		t.Fatalf("real refactor_extract_value (kind=variable) did not create and use amountCents: source=%s err=%v", serviceSource, err)
 	}
 	diagnostics, err := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: serviceFile, CheckOnly: true})
 	if err != nil {
@@ -414,23 +416,23 @@ public final class InMemoryAuditSink {}
 	if result, ok := loopResult.(operation.InspectConstructRes); !ok || len(result.Candidates) != 1 || result.Candidates[0].ConstructPath != "loop[0]" {
 		t.Fatalf("real Java loop-inspection result = %#v", loopResult)
 	}
-	constantResult, err := operationRegistry.Dispatch(call, "extract_constant", map[string]any{
+	constantResult, err := operationRegistry.Dispatch(call, "refactor_extract_value", map[string]any{
 		"file":     filepath.ToSlash(filepath.Join("ledger-service", "src/main/java/com/acme/ledger/service/LedgerService.java")),
 		"language": "java", "trust_workspace": true, "jdtls_home": jdtlsHome, "java_bin": javaBin, "import_maven": true,
-		"symbol": "MAX_POSTING_CENTS", "in_function": "LedgerService.post(LedgerEntry, boolean)", "discriminator": "1000",
+		"symbol": "MAX_POSTING_CENTS", "in_function": "LedgerService.post(LedgerEntry, boolean)", "discriminator": "1000", "kind": "constant",
 	})
 	if err != nil {
-		t.Fatalf("real semantic_extract_constant Java: %v", err)
+		t.Fatalf("real refactor_extract_value (kind=constant) Java: %v", err)
 	}
 	if _, ok := constantResult.(operation.ExtractionResult); !ok {
 		t.Fatalf("real Java constant extraction result has type %T", constantResult)
 	}
 	serviceSource, err = os.ReadFile(serviceFile)
 	if err != nil || !bytes.Contains(serviceSource, []byte("MAX_POSTING_CENTS")) || !bytes.Contains(serviceSource, []byte("cents > MAX_POSTING_CENTS")) {
-		t.Fatalf("real semantic_extract_constant did not create and use MAX_POSTING_CENTS: source=%s err=%v", serviceSource, err)
+		t.Fatalf("real refactor_extract_value (kind=constant) did not create and use MAX_POSTING_CENTS: source=%s err=%v", serviceSource, err)
 	}
 
-	parameterObjectResult, err := operationRegistry.Dispatch(call, "introduce_parameter_object", map[string]any{
+	parameterObjectResult, err := operationRegistry.Dispatch(call, "refactor_introduce_parameter_object", map[string]any{
 		"file":   filepath.ToSlash(filepath.Join("ledger-service", "src/main/java/com/acme/ledger/service/LedgerService.java")),
 		"symbol": "LedgerService.post(LedgerEntry, boolean)", "destination_file": filepath.ToSlash(filepath.Join("ledger-service", "src/main/java/com/acme/ledger/service/LedgerService.java")),
 		"parameter": map[string]any{"name": "options", "type": "PostOptions"},
@@ -451,17 +453,19 @@ public final class InMemoryAuditSink {}
 		t.Fatalf("real semantic_introduce_parameter_object did not update the method: source=%s err=%v", serviceSource, err)
 	}
 	callerAfter, err := os.ReadFile(filepath.Join(filepath.Dir(serviceFile), "LedgerCaller.java"))
-	if err != nil || !strings.Contains(string(callerAfter), "new PostOptions(new LedgerEntry(new Money(100), EntryType.CREDIT), true)") {
-		t.Fatalf("real semantic_introduce_parameter_object did not preserve caller arguments: source=%s err=%v", callerAfter, err)
+	if err != nil || !strings.Contains(string(callerAfter), "new PostOptions(new LedgerEntry(new Money(100), CREDIT), true)") ||
+		!bytes.Contains(callerAfter, []byte("import static com.acme.ledger.domain.EntryType.CREDIT;")) {
+		t.Fatalf("real semantic_introduce_parameter_object did not preserve caller arguments and imports: source=%s err=%v", callerAfter, err)
 	}
 	testCallerAfter, err := os.ReadFile(filepath.Join(root, "ledger-service", "src", "test", "java", "com", "acme", "ledger", "service", "LedgerServiceTest.java"))
-	if err != nil || !strings.Contains(string(testCallerAfter), "new PostOptions(new LedgerEntry(new Money(2), EntryType.DEBIT), false)") {
-		t.Fatalf("real semantic_introduce_parameter_object did not preserve test caller arguments: source=%s err=%v", testCallerAfter, err)
+	if err != nil || !strings.Contains(string(testCallerAfter), "new PostOptions(new LedgerEntry(new Money(2), DEBIT), false)") ||
+		!bytes.Contains(testCallerAfter, []byte("import static com.acme.ledger.domain.EntryType.DEBIT;")) {
+		t.Fatalf("real semantic_introduce_parameter_object did not preserve test caller arguments and imports: source=%s err=%v", testCallerAfter, err)
 	}
 
 	implementationFile := filepath.Join(root, "ledger-service", "src", "main", "java", "com", "acme", "ledger", "service", "InMemoryAuditSink.java")
 	implementationRelative := filepath.ToSlash(filepath.Join("ledger-service", "src/main/java/com/acme/ledger/service/InMemoryAuditSink.java"))
-	_, err = operationRegistry.Dispatch(call, "implement_contract", map[string]any{
+	_, err = operationRegistry.Dispatch(call, "refactor_implement_contract", map[string]any{
 		"file": implementationRelative, "symbol": "InMemoryAuditSink", "contract": "AuditSink",
 		"contract_file": filepath.ToSlash(filepath.Join("ledger-domain", "src/main/java/com/acme/ledger/domain/AuditSink.java")),
 		"receiver_kind": "pointer", "body_policy": "panic_stub", "language": "java", "trust_workspace": true,
@@ -497,7 +501,7 @@ public final class InMemoryAuditSink {}
 	if err != nil || !strings.Contains(string(implementationSource), "record(LedgerEntry entry)") || !strings.Contains(string(implementationSource), "return;") {
 		t.Fatalf("real semantic_replace_body did not update record implementation: source=%s err=%v", implementationSource, err)
 	}
-	methodRename, err := operationRegistry.Dispatch(call, "rename", map[string]any{
+	methodRename, err := operationRegistry.Dispatch(call, "refactor_rename", map[string]any{
 		"file":   filepath.ToSlash(filepath.Join("ledger-domain", "src/main/java/com/acme/ledger/domain/AuditSink.java")),
 		"symbol": "AuditSink.record(LedgerEntry)", "to": "append", "language": "java", "trust_workspace": true,
 		"jdtls_home": jdtlsHome, "java_bin": javaBin, "import_maven": true,
@@ -518,8 +522,11 @@ public final class InMemoryAuditSink {}
 			t.Fatalf("real semantic_rename did not update %s: source=%s err=%v", file, updated, readErr)
 		}
 	}
+	if callerBeforeRename, readErr := os.ReadFile(filepath.Join(root, "ledger-service", "src/main/java/com/acme/ledger/service/LedgerCaller.java")); readErr != nil || !bytes.Contains(callerBeforeRename, []byte("import static com.acme.ledger.domain.EntryType.CREDIT;")) {
+		t.Fatalf("real operations before public-type rename lost the EntryType import: source=%s err=%v", callerBeforeRename, readErr)
+	}
 	publicTypeFile := filepath.Join(root, "ledger-domain", "src", "main", "java", "com", "acme", "ledger", "domain", "EntryType.java")
-	publicRename, err := operationRegistry.Dispatch(call, "rename", map[string]any{
+	publicRename, err := operationRegistry.Dispatch(call, "refactor_rename", map[string]any{
 		"file":   filepath.ToSlash(filepath.Join("ledger-domain", "src/main/java/com/acme/ledger/domain/EntryType.java")),
 		"symbol": "EntryType", "to": "PostingKind", "language": "java", "trust_workspace": true,
 		"jdtls_home": jdtlsHome, "java_bin": javaBin, "import_maven": true,
@@ -545,7 +552,15 @@ public final class InMemoryAuditSink {}
 		filepath.Join(root, "ledger-service", "src/test/java/com/acme/ledger/service/LedgerServiceTest.java"),
 	} {
 		updated, readErr := os.ReadFile(file)
-		if readErr != nil || !bytes.Contains(updated, []byte("PostingKind")) {
+		importExpected := ""
+		switch filepath.Base(file) {
+		case "LedgerCaller.java":
+			importExpected = "import static com.acme.ledger.domain.PostingKind.CREDIT;"
+		case "LedgerServiceTest.java":
+			importExpected = "import static com.acme.ledger.domain.PostingKind.DEBIT;"
+		}
+		if readErr != nil || !bytes.Contains(updated, []byte("PostingKind")) ||
+			(importExpected != "" && !bytes.Contains(updated, []byte(importExpected))) {
 			t.Fatalf("real public-type rename did not update %s: source=%s err=%v", file, updated, readErr)
 		}
 	}
@@ -590,7 +605,7 @@ public final class InMemoryAuditSink {}
 	if guavaBlock == "" || strings.Contains(guavaBlock, "<version>") {
 		t.Fatalf("managed child dependency is missing or duplicates its inherited version: %s", servicePOMData)
 	}
-	_, moveErr := operationRegistry.Dispatch(call, "move_construct", map[string]any{
+	_, moveErr := operationRegistry.Dispatch(call, "refactor_move_declaration", map[string]any{
 		"file":             filepath.ToSlash(filepath.Join("ledger-domain", "src/main/java/com/acme/ledger/domain/AuditSink.java")),
 		"symbol":           "AuditSink",
 		"destination_file": filepath.ToSlash(filepath.Join("ledger-domain", "src/main/java/com/acme/ledger/domain/contracts/ContractTarget.java")),
@@ -615,6 +630,9 @@ public final class InMemoryAuditSink {}
 	}
 	if !strings.Contains(string(serviceAfterMove), "import com.acme.ledger.domain.contracts.AuditSink;") {
 		t.Fatalf("real Java type move did not update the package caller: source=%s", serviceAfterMove)
+	}
+	if moveDiagnostics, verifyErr := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: serviceFile, CheckOnly: true}); verifyErr != nil || len(moveDiagnostics) != 0 {
+		t.Fatalf("real JDT LS diagnostics after type move = %#v, err=%v", moveDiagnostics, verifyErr)
 	}
 }
 

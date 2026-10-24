@@ -3,7 +3,7 @@ mkdir -p ../tokenlib
 cp .scratch/local-token.mod ../tokenlib/go.mod
 cp .scratch/local-token.go ../tokenlib/token.go
 exec go test ./...
-! exec semedit implement-contract --file worker.go --symbol Worker --contract Runner --contract-file runner.go --receiver-kind pointer --body-policy panic_stub --destination-file worker.go
+! exec semedit refactor-implement-contract --file worker.go --symbol Worker --contract Runner --contract-file runner.go --receiver-kind pointer --body-policy panic_stub --destination-file worker.go
 stderr 'contract edits do not support mutable local replacement module "example.com/local/token" outside the captured module'
 cmp go.mod .scratch/want/go.mod
 cmp worker.go .scratch/want/worker.go

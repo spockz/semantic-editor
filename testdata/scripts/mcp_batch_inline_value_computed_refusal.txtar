@@ -1,0 +1,36 @@
+# Refuse the staged effectful initializer and preserve earlier edits while stopping later children.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'computed initializer must contain only scalar literals'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedrefusal
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"calc.go","symbol":"Build","body":"value := next()\nreturn value"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Build"}},{"tool":"semantic_replace_body","params":{"file":"calc.go","symbol":"Marker","body":"return 99"}}]}}}
+-- calc.go --
+package calc
+
+func Build(seed int) int {
+	value := seed + 1
+	return value
+}
+
+func next() int { return 2 }
+
+func Marker() int { return 1 }
+-- .scratch/want/calc.go --
+package calc
+
+func Build(seed int) int {
+	value := next()
+	return value
+}
+
+func next() int { return 2 }
+
+func Marker() int { return 1 }

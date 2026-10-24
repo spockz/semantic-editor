@@ -1,0 +1,32 @@
+env SEMEDIT_TEST_RUST_INLINE_VALUE=1
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"applied_with_diagnostics"'
+stdout 'no selected source has a configured verification backend'
+stdout '"operation":"refactor_inline_value"'
+cmp src/lib.rs .scratch/want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "inline-value-batch-fixture"
+version = "0.1.0"
+edition = "2021"
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_inline_value","params":{"language":"rust","trust_workspace":true,"file":"src/lib.rs","symbol":"value","in_function":"run"}},{"tool":"refactor_inline_value","params":{"language":"rust","trust_workspace":true,"file":"src/lib.rs","symbol":"count","in_function":"run"}}]}}}
+-- src/lib.rs --
+fn run() {
+    let value = 42_i32;
+    consume(value, value);
+    let count = 7_i32;
+    consume(count, count);
+}
+
+fn consume(left: i32, right: i32) {}
+-- .scratch/want/lib.rs --
+fn run() {
+    consume(42_i32, 42_i32);
+    consume(7_i32, 7_i32);
+}
+
+fn consume(left: i32, right: i32) {}

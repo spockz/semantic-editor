@@ -1,0 +1,27 @@
+# WHY: Multi-site selectors reject nested exact calls and preserve the source rather than changing evaluation structure.
+! exec semedit refactor-inline-callable --file main.go --symbol adjust --call-site '{"file":"main.go","in_function":"Run","discriminator":"adjust()","expected_revision":"b3b143172c39325edb026a0605ed3a454797be977b844e36327a3487a1246e70","occurrence_indices":[0,1]}'
+stderr 'not a supported top-level'
+cmp main.go .scratch/original.go
+
+-- go.mod --
+module example.com/inlineunsupported
+
+go 1.24
+-- main.go --
+package sample
+func adjust() int { return 1 }
+func wrap(value int) int { return value }
+func Run() int {
+ first := wrap(adjust())
+ second := wrap(adjust())
+ return first + second
+}
+-- .scratch/original.go --
+package sample
+func adjust() int { return 1 }
+func wrap(value int) int { return value }
+func Run() int {
+ first := wrap(adjust())
+ second := wrap(adjust())
+ return first + second
+}

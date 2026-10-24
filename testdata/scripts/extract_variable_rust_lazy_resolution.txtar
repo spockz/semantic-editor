@@ -1,0 +1,23 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=lazy
+exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol total --in-function run --discriminator '1_i32 + 2_i32'
+stdout 'Extracted the Rust expression with a rust-analyzer assist'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-lazy-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}
+-- want/lib.rs --
+fn run() {
+    let total = 1_i32 + 2_i32;
+    consume(total);
+}
+
+fn consume(value: i32) {}

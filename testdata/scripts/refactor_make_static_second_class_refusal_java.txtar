@@ -1,0 +1,49 @@
+# Java make-static refuses a same-name method in another class before requesting an edit.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_MAKE_STATIC=1 SEMEDIT_TEST_JAVA_MAKE_STATIC_SECOND_CLASS=1 SEMEDIT_JAVA_ORGANIZE=1
+! exec semedit refactor-make-static --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --symbol 'Service.count()'
+stderr 'must resolve uniquely in the selected file before applying the action'
+cmp src/Service.java original/Service.java
+cmp src/Caller.java original/Caller.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_linux/.keep --
+placeholder
+
+-- tools/jdtls/config_win/.keep --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Service.java --
+package sample;
+class Service {
+  int count() { return 1; }
+}
+class Other {
+  int count() { return 2; }
+}
+-- src/Caller.java --
+package sample;
+class Caller {
+  int value = new Service().count();
+}
+
+
+-- original/Service.java --
+package sample;
+class Service {
+  int count() { return 1; }
+}
+class Other {
+  int count() { return 2; }
+}
+-- original/Caller.java --
+package sample;
+class Caller {
+  int value = new Service().count();
+}
+
+

@@ -1,0 +1,49 @@
+# Accept adr-tools' unpadded title number while preserving the stable padded ADR identifier and workspace-relative path.
+exec semedit search-adrs --query generated --limit 5
+stdout '"id": "ADR-0001"'
+stdout '"path": "docs/adr/0001-template-output.md"'
+exec semedit generate-adr-index
+stdout '"status":"synced"'
+grep 'ADR-0001.*Template Output.*Accepted.*2026-10-21' docs/adr/README.md
+
+-- .adr-dir --
+docs/adr
+
+-- docs/adr/README.md --
+# ADR Index
+
+<!-- semedit-adr-register:start -->
+old generated content
+<!-- semedit-adr-register:end -->
+
+-- docs/adr/0001-template-output.md --
+# ADR-1: Template Output
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Verify adr-tools generated numbering. |
+| description | Normalize adr-tools' unpadded title number while retaining the canonical record identifier. |
+| role | contract |
+| scope | documentation |
+| area | generic |
+| languages | generic |
+
+## Context
+
+adr-tools pads the destination filename but writes the unpadded number into the title.
+
+## Decision
+
+Normalize the parsed identifier to four digits for the decision register and search results.
+
+## Invariants
+
+* The title number must match the record filename after normalization.
+
+## Consequences
+
+New records made from the repository template validate without post-editing the title.

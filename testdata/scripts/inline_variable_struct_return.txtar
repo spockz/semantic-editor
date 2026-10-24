@@ -1,0 +1,43 @@
+# Inline a sibling-file named struct while preserving its interface dynamic type and scalar values.
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Build
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinestructreturn
+
+go 1.23
+-- types.go --
+package calc
+
+type Result struct {
+	Count int
+	Ready bool
+	Label string
+	Omitted float64
+}
+-- calc.go --
+package calc
+
+func Build() any {
+value := Result{Count: 0XFF, Ready: true, Label: "ready", Omitted: 1E3}
+	return value
+}
+-- .scratch/want/calc.go --
+package calc
+
+func Build() any {
+	return Result{Count: 0XFF, Ready: true, Label: "ready", Omitted: 1E3}
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuildPreservesDynamicTypeAndValue(t *testing.T) {
+	got, ok := Build().(Result)
+	if !ok { t.Fatalf("Build dynamic type = %T, want Result", Build()) }
+if got != (Result{Count: 255, Ready: true, Label: "ready", Omitted: 1000}) {
+	 t.Fatalf("Build() = %#v", got)
+	}
+}

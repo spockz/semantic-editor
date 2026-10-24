@@ -1,6 +1,6 @@
 # Java move_construct moves a public top-level type across packages and updates callers.
 env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_MOVE_TOP_LEVEL=1 SEMEDIT_JAVA_ORGANIZE=1
-exec semedit move-construct --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/oldpkg/Widget.java --destination-file src/newpkg/Target.java --symbol Widget --target-symbol Target
+exec semedit refactor-move-declaration --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/oldpkg/Widget.java --destination-file src/newpkg/Target.java --symbol Widget --target-symbol Target
 exec test ! -e src/oldpkg/Widget.java
 cmp src/newpkg/Widget.java want/Widget.java
 cmp src/client/Caller.java want/Caller.java

@@ -1,10 +1,10 @@
 # A misspelled private type selector suggests the owner; retry extracts the same field under the same new type name.
 env SEMEDIT_SUGGESTIONS=generic
 cp cache.go original.txt
-! exec semedit extract-type --file cache.go --symbol cacheState --in-type cach --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+! exec semedit refactor-extract-type --file cache.go --symbol cacheState --in-type cach --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
 stderr 'Suggested target: cache'
 cmp cache.go original.txt
-exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+exec semedit refactor-extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
 stdout 'Extracted selected fields into a composed Go struct type.'
 exec grep -F 'state cacheState' cache.go
 exec grep -F 'c.state.entries' cache.go

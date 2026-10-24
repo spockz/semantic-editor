@@ -1,0 +1,44 @@
+! exec semedit refactor-extract-callable --file receiver.go --symbol helper --in-function 'Service.Run' --kind method --start-line 15 --end-line 15
+stderr 'defer or go statements in the owner'
+cmp receiver.go original/receiver.go
+
+-- go.mod --
+module example.com/extractfunctionreceivercapture
+
+go 1.23
+-- receiver.go --
+package sample
+
+type Service struct {
+	count int
+}
+
+func before() {}
+
+func (s Service) Run() {
+	done := make(chan struct{})
+	go func() {
+		s.count++
+		close(done)
+	}()
+	before()
+	<-done
+}
+-- original/receiver.go --
+package sample
+
+type Service struct {
+	count int
+}
+
+func before() {}
+
+func (s Service) Run() {
+	done := make(chan struct{})
+	go func() {
+		s.count++
+		close(done)
+	}()
+	before()
+	<-done
+}

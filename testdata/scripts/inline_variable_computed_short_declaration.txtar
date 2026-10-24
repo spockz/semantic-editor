@@ -1,0 +1,105 @@
+# Inline one pure scalar local into the complete RHS of an immediately following single-name := declaration.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function LocalTarget
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function PackageShadow
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function MultipleTargets
+stderr 'short declaration with one target'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function NonAdjacent
+stderr 'immediate direct return'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function ExtraUse
+stderr 'exactly one resolved reference'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedshortdecl
+
+go 1.23
+-- calc.go --
+package calc
+
+func LocalTarget(seed int) int {
+	value := seed + 2
+	result := value
+	return result
+}
+
+var result int
+
+func PackageShadow(seed int) int {
+	value := seed + 3
+	result := value
+	return result
+}
+
+func MultipleTargets(seed int) int {
+	value := seed + 1
+	other, total := 0, value
+	return total + other
+}
+
+func NonAdjacent(seed int) int {
+	var counter int
+	value := seed + 1
+	counter++
+	total := value
+	return total + counter
+}
+
+func ExtraUse(seed int) int {
+	value := seed + 1
+	total := value
+	_ = value
+	return total
+}
+-- .scratch/want/calc.go --
+package calc
+
+func LocalTarget(seed int) int {
+	result := seed + 2
+	return result
+}
+
+var result int
+
+func PackageShadow(seed int) int {
+	result := seed + 3
+	return result
+}
+
+func MultipleTargets(seed int) int {
+	value := seed + 1
+	other, total := 0, value
+	return total + other
+}
+
+func NonAdjacent(seed int) int {
+	var counter int
+	value := seed + 1
+	counter++
+	total := value
+	return total + counter
+}
+
+func ExtraUse(seed int) int {
+	value := seed + 1
+	total := value
+	_ = value
+	return total
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestInlineShortDeclaration(t *testing.T) {
+	if got := LocalTarget(5); got != 7 {
+		t.Fatalf("LocalTarget(5) = %d, want 7", got)
+	}
+	if got := PackageShadow(5); got != 8 {
+		t.Fatalf("PackageShadow(5) = %d, want 8", got)
+	}
+}

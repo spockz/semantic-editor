@@ -1,0 +1,25 @@
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=1
+exec cp src/lib.rs before_lib.txt
+! exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 2
+stderr 'rust callable extraction currently requires a single-source Cargo package'
+cmp src/lib.rs before_lib.txt
+
+-- Cargo.toml --
+[package]
+name = "rust-custom-target-refusal"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "app"
+path = "app.fixture"
+-- app.fixture --
+include!("src/lib.rs");
+fn extracted() {}
+fn main() { run(); }
+-- src/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}

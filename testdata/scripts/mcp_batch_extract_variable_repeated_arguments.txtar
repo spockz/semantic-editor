@@ -1,0 +1,52 @@
+# Build a repeated call in an unsaved body edit, extract it, rename the new local, and verify final overlay bytes.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeatedbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"Sink(count + 1, 0, count + 1)"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","discriminator":"count+1"}},{"tool":"refactor_rename","params":{"file":"render.go","symbol":"selected","to":"repeatedValue"}}]}}}
+-- render.go --
+package render
+
+var values [2]int
+
+func Sink(first, second, third int) {
+	values = [2]int{first, third}
+}
+
+func Render(count int) {
+	Sink(0, count, 0)
+}
+-- .scratch/want/render.go --
+package render
+
+var values [2]int
+
+func Sink(first, second, third int) {
+	values = [2]int{first, third}
+}
+
+func Render(count int) {
+	repeatedValue := count + 1
+	Sink(repeatedValue, 0, repeatedValue)
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestRepeatedArgumentBatch(t *testing.T) {
+	Render(5)
+	if values != [2]int{6, 6} {
+		t.Fatalf("sink values = %v", values)
+	}
+}

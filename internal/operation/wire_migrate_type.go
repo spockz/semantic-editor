@@ -70,7 +70,7 @@ func runMigrateType(ctx context.Context, cc CallContext, req MigrateTypeReq) (Se
 		return SemanticEditRes{}, fmt.Errorf("resolve type target path: %w", err)
 	}
 	expectedRevision := revisionHex(plan.Change.After)
-	draft, err := semanticEditDraft(cc.WorkDir, "migrate-type", plan, []SymbolTarget{{File: absoluteToWorkPath(cc.WorkDir, targetPath), Symbol: req.Symbol, ExpectedRevision: &expectedRevision}})
+	draft, err := semanticEditDraft(cc.WorkDir, backendMigrateTypeOperation, plan, []SymbolTarget{{File: absoluteToWorkPath(cc.WorkDir, targetPath), Symbol: req.Symbol, ExpectedRevision: &expectedRevision}})
 	if err != nil {
 		return SemanticEditRes{}, err
 	}
@@ -84,9 +84,9 @@ func runMigrateType(ctx context.Context, cc CallContext, req MigrateTypeReq) (Se
 func migrateTypeDef() Def[MigrateTypeReq, SemanticEditRes] {
 	receiptSchema := EditReceiptSchema()
 	return Def[MigrateTypeReq, SemanticEditRes]{
-		Key:     "migrate_type",
+		Key:     "refactor_migrate_type",
 		Summary: "Use this tool instead of text editing to migrate one unexported Go struct field between type names with identical type identity after alias resolution. Only one private field and one unqualified same-package or predeclared destination type are supported. Distinct named types, exported fields, conversions, imported selectors, and local variables are refused before the file changes.",
-		Params:  migrateTypeParams, Level: LevelFile, CLIName: "migrate-type", MCPName: semanticMigrateTypeToolName,
+		Params:  migrateTypeParams, Level: LevelFile, CLIName: "refactor-migrate-type", MCPName: semanticMigrateTypeToolName,
 		Parse:    parseMigrateType,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, MigrateTypeReq) (SemanticEditRes, error){backend.LanguageGo: runMigrateType},
 		Format: func(res SemanticEditRes) (string, error) {

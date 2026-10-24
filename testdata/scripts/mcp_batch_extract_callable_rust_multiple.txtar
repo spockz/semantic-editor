@@ -1,0 +1,34 @@
+# Apply Rust callable extraction and then resolve its requested helper from the working overlay.
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=multi
+stdin input.json
+exec semedit mcp
+stdout '"source_view":"working"'
+stdout '"operation":"refactor_extract_callable"'
+cmp src/lib.rs expected.txt
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"language":"rust","trust_workspace":true,"file":"src/lib.rs","symbol":"extracted","in_function":"run","kind":"function","start_line":2,"end_line":3}},{"tool":"semantic_lookup","params":{"language":"rust","trust_workspace":true,"file":"src/lib.rs","symbol":"extracted"}}]}}}
+-- Cargo.toml --
+[package]
+name = "extract-function-rust-batch-fixture"
+version = "0.1.0"
+edition = "2021"
+build = false
+-- src/lib.rs --
+fn run() {
+    consume(1_i32);
+    consume(2_i32);
+}
+
+fn consume(value: i32) {}
+-- expected.txt --
+fn run() {
+    extracted();
+}
+
+fn extracted() {
+    consume(1_i32);
+    consume(2_i32);
+}
+
+fn consume(value: i32) {}

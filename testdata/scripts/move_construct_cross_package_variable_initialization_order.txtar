@@ -1,0 +1,52 @@
+# Refuse hidden initialization-order changes even when moving the variable leaves the import graph unchanged.
+! exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol RetryWindow --placement file_end
+stderr 'dynamic package initialization'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+
+-- go.mod --
+module example.com/variablemoveinitorder
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+import "example.com/variablemoveinitorder/api"
+
+type reader interface {
+	Read() int
+}
+
+type snapshotReader struct{}
+
+func (snapshotReader) Read() int { return RetryWindow }
+
+var Snapshot = reader(snapshotReader{}).Read()
+var RetryWindow = 7
+
+func ExistingImport() int { return api.Base }
+-- api/state.go --
+package api
+
+var Base = 1
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/variablemoveinitorder/api"
+
+type reader interface {
+	Read() int
+}
+
+type snapshotReader struct{}
+
+func (snapshotReader) Read() int { return RetryWindow }
+
+var Snapshot = reader(snapshotReader{}).Read()
+var RetryWindow = 7
+
+func ExistingImport() int { return api.Base }
+-- .scratch/want/api.go --
+package api
+
+var Base = 1

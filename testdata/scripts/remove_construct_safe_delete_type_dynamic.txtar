@@ -1,0 +1,49 @@
+# Safe deletion refuses private struct types when dynamic imports make hidden uses possible.
+! exec semedit remove-construct --file api/decls.go --kind type --symbol dynamicRecord --safe-delete
+stderr 'dynamic imports in the target package'
+cmp api/decls.go .scratch/want/api/decls.go
+exec go test ./...
+
+-- go.mod --
+module example.com/safe-type-dynamic
+
+go 1.23
+
+-- api/decls.go --
+package api
+
+import "reflect"
+
+type dynamicRecord struct{ Count int }
+
+func Observe() reflect.Type { return reflect.TypeOf(dynamicRecord{}) }
+
+-- api/decls_test.go --
+package api
+
+import "testing"
+
+func TestReflectionCanObserveRecord(t *testing.T) {
+	if got := Observe().Name(); got != "dynamicRecord" {
+		t.Fatalf("reflect name = %q", got)
+	}
+}
+-- .scratch/want/api/decls.go --
+package api
+
+import "reflect"
+
+type dynamicRecord struct{ Count int }
+
+func Observe() reflect.Type { return reflect.TypeOf(dynamicRecord{}) }
+
+-- api/decls_test.go --
+package api
+
+import "testing"
+
+func TestReflectionCanObserveRecord(t *testing.T) {
+	if got := Observe().Name(); got != "dynamicRecord" {
+		t.Fatalf("reflect name = %q", got)
+	}
+}

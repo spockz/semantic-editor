@@ -1,0 +1,32 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=1
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol drop --in-function run --discriminator '1_i32 + 2_i32'
+stderr 'unresolved imported or macro-expanded names'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-rust-aliased-macro-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+mod helper;
+
+fn run() {
+    consume(1_i32 + 2_i32);
+    helper::load!("later.rs");
+}
+
+fn consume(value: i32) {}
+-- helper.rs --
+pub use std::include as load;
+-- later.rs --
+drop(0_i32)
+-- want/lib.rs --
+mod helper;
+
+fn run() {
+    consume(1_i32 + 2_i32);
+    helper::load!("later.rs");
+}
+
+fn consume(value: i32) {}

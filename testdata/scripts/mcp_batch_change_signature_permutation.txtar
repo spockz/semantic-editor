@@ -1,0 +1,35 @@
+# Permutation sees an earlier constant argument edit and its declaration supports the subsequent batch child.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+exec go test ./...
+-- go.mod --
+module example.com/permutationbatch
+
+go 1.24
+-- service.go --
+package sample
+
+func combine(left, right int) int { return left*100 + right }
+-- calls.go --
+package sample
+
+func first() int { return combine(1, 2) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return combine(3 + 4, 2)"}},{"tool":"refactor_change_signature","params":{"file":"service.go","symbol":"combine","parameters":[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func verify() int { return combine(9, 3) }"}}]}}}
+-- .scratch/want/service.txt --
+package sample
+
+func combine(right int, left int) int { return left*100 + right }
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int {
+	return combine(2, 3+4)
+}
+
+func verify() int { return combine(9, 3) }

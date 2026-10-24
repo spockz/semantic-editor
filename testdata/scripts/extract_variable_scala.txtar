@@ -1,0 +1,65 @@
+# Extract through Metals' native three-edit action and bound local rename; reject a shape outside the verified subset without changing bytes.
+env SEMEDIT_TEST_SCALA_EXTRACT_VARIABLE=1
+# Go master: extract_variable.txtar. Scala uses an expression-bodied Int method and preserves the native Metals action's local-block rewrite.
+exec semedit refactor-extract-value --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Thing.scala --symbol total --in-function run --discriminator '1 + 2'
+! stderr .+
+exec cmp src/Thing.scala expected.scala
+exec cp src/Thing.scala after_extract.scala
+! exec semedit refactor-extract-value --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Thing.scala --symbol total --in-function run --discriminator '2 + 3'
+stderr 'one exact expression-bodied Int method selection'
+exec cmp src/Thing.scala after_extract.scala
+exec cp src/Unsafe.scala unsafe_expected.scala
+! exec semedit refactor-extract-value --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Unsafe.scala --symbol total --in-function run --discriminator '1 + 2'
+stderr 'same-object strict Int callee'
+exec cmp src/Unsafe.scala unsafe_expected.scala
+env SEMEDIT_TEST_SCALA_EDIT_MODE=foreign
+! exec semedit refactor-extract-value --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Foreign.scala --symbol total --in-function run --discriminator '1 + 2'
+stderr 'exactly 3 edits in the selected file'
+exec cmp src/Foreign.scala foreign_expected.scala
+env SEMEDIT_TEST_SCALA_EDIT_MODE=stale-rename
+! exec semedit refactor-extract-value --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --file src/Stale.scala --symbol total --in-function run --discriminator '1 + 2'
+stderr 'exactly two version-2 local edits'
+exec cmp src/Stale.scala stale_expected.scala
+-- src/Thing.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}
+-- expected.scala --
+object Thing {
+  def run(): Int = {
+    val total = 1 + 2
+    consume(total)
+  }
+  def consume(value: Int): Int = value
+}
+-- src/Unsafe.scala --
+object Unsafe {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Byte): Int = value.toInt
+}
+-- unsafe_expected.scala --
+object Unsafe {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Byte): Int = value.toInt
+}
+-- src/Foreign.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}
+-- foreign_expected.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}
+-- src/Stale.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}
+-- stale_expected.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}

@@ -1,0 +1,46 @@
+# A destination declaration that shadows true or a predeclared basic type must not silently change a moved constant's binding.
+! exec semedit refactor-move-declaration --file legacy/feature.go --destination-file api/feature.go --symbol Enabled --placement file_end
+stderr 'changed the constant type or value'
+cmp legacy/feature.go .scratch/_want/legacy-feature.go
+cmp api/feature.go .scratch/_want/api-feature.go
+! exec semedit refactor-move-declaration --file legacy/limit.go --destination-file api/limit.go --symbol Limit --placement file_end
+stderr 'changed the constant type or value'
+cmp legacy/limit.go .scratch/_want/legacy-limit.go
+cmp api/limit.go .scratch/_want/api-limit.go
+
+-- go.mod --
+module example.com/constantcapturerefusal
+
+go 1.23
+-- legacy/feature.go --
+package legacy
+
+const Enabled = true
+-- api/feature.go --
+package api
+
+const true = false
+-- legacy/limit.go --
+package legacy
+
+const Limit int = 10
+-- api/limit.go --
+package api
+
+type int int64
+-- .scratch/_want/legacy-feature.go --
+package legacy
+
+const Enabled = true
+-- .scratch/_want/api-feature.go --
+package api
+
+const true = false
+-- .scratch/_want/legacy-limit.go --
+package legacy
+
+const Limit int = 10
+-- .scratch/_want/api-limit.go --
+package api
+
+type int int64

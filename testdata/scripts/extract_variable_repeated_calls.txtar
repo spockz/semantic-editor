@@ -1,0 +1,79 @@
+# Coalesce a stable scalar expression across every direct call in an explicit inclusive range.
+exec semedit refactor-extract-value --file calls.go --symbol shared --in-function Render --kind variable --discriminator 'count + step' --construct-path 0 --end-construct-path 1 --expected-revision a328b853d64d2ddebd846259020d22822b5374669ae28b2eba136ca8780a484c
+cmp calls.go .scratch/want_calls.go
+! exec semedit refactor-extract-value --file gap.go --symbol shared --in-function RenderGap --kind variable --discriminator 'count + 1' --construct-path 0 --end-construct-path 2 --expected-revision f8cb09cef7a582e5edae9c20a8e8bfaaa045f8a58d82d5b6873ec473bfa8ef9d
+stderr 'not a matching direct call'
+cmp gap.go .scratch/original_gap.go
+! exec semedit refactor-extract-value --file calls.go --symbol missing --in-function Render --kind variable --discriminator 'count + step' --end-construct-path 1
+stderr 'end_construct_path requires construct_path'
+cmp calls.go .scratch/want_calls.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeatedcalls
+
+go 1.24
+-- calls.go --
+package render
+
+var pairValues [4]int
+var pairCalls int
+
+func pairSink(first, second int) {
+	pairValues[pairCalls*2] = first
+	pairValues[pairCalls*2+1] = second
+	pairCalls++
+}
+
+func Render(count, step int) {
+	pairSink(count + step, 0)
+	pairSink(0, count + step)
+}
+-- .scratch/want_calls.go --
+package render
+
+var pairValues [4]int
+var pairCalls int
+
+func pairSink(first, second int) {
+	pairValues[pairCalls*2] = first
+	pairValues[pairCalls*2+1] = second
+	pairCalls++
+}
+
+func Render(count, step int) {
+	shared := count + step
+	pairSink(shared, 0)
+	pairSink(0, shared)
+}
+-- gap.go --
+package render
+
+func gapSink(int) {}
+
+func RenderGap(count int) {
+	gapSink(count + 1)
+	count++
+	gapSink(count + 1)
+}
+-- .scratch/original_gap.go --
+package render
+
+func gapSink(int) {}
+
+func RenderGap(count int) {
+	gapSink(count + 1)
+	count++
+	gapSink(count + 1)
+}
+-- calls_test.go --
+package render
+
+import "testing"
+
+func TestRepeatedCalls(t *testing.T) {
+	Render(4, 1)
+	if pairValues != [4]int{5, 0, 0, 5} {
+		t.Fatalf("call arguments = %v", pairValues)
+	}
+}

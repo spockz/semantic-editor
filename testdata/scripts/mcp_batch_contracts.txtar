@@ -11,7 +11,7 @@ module example.com/contractbatch
 
 go 1.27.1
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"store.go","source":"func (*Store) Close() error { return nil }"}},{"tool":"semantic_extract_interface","params":{"file":"store.go","in_type":"Store","symbol":"StoreAPI","destination_file":"contracts.go","receiver_kind":"pointer","members":[{"file":"store.go","symbol":"(*Store).Read"},{"file":"store.go","symbol":"(*Store).Close"}]}},{"tool":"semantic_insert_function","params":{"file":"store.go","source":"func UseStore(store StoreAPI) {}"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"store.go","source":"func (*Store) Close() error { return nil }"}},{"tool":"refactor_extract_interface","params":{"file":"store.go","in_type":"Store","symbol":"StoreAPI","destination_file":"contracts.go","receiver_kind":"pointer","members":[{"file":"store.go","symbol":"(*Store).Read"},{"file":"store.go","symbol":"(*Store).Close"}]}},{"tool":"semantic_insert_function","params":{"file":"store.go","source":"func UseStore(store StoreAPI) {}"}}]}}}
 -- store.go --
 package sample
 

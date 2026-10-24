@@ -3,8 +3,7 @@
 set -euo pipefail
 
 repo_root=$(cd -- "$(dirname -- "$0")/.." && pwd -P)
-mkdir -p -- "$repo_root/.scratch"
-fixture=$(mktemp -d "$repo_root/.scratch/worktreecheck.XXXXXX")
+fixture=$(mktemp -d "${TMPDIR:-/tmp}/worktreecheck.XXXXXX")
 trap 'rm -rf -- "$fixture"' EXIT
 
 main="$fixture/main checkout"

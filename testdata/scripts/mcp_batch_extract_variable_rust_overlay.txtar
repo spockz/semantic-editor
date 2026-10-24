@@ -1,0 +1,32 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=batch
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"applied_with_diagnostics"'
+stdout 'no selected source has a configured verification backend'
+stdout '"operation":"refactor_extract_value"'
+cmp src/lib.rs .scratch/want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-rust-batch-fixture"
+version = "0.1.0"
+edition = "2021"
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_value","params":{"language":"rust","file":"src/lib.rs","symbol":"total","in_function":"run","discriminator":"1_i32 + 2_i32","trust_workspace":true}},{"tool":"refactor_extract_value","params":{"language":"rust","file":"src/lib.rs","symbol":"innerValue","in_function":"run","discriminator":"4_i32 + 5_i32","trust_workspace":true}}]}}}
+-- src/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+    consume(4_i32 + 5_i32);
+}
+
+fn consume(value: i32) -> i32 { value }
+-- .scratch/want/lib.rs --
+fn run() {
+    let total = 1_i32 + 2_i32;
+    consume(total);
+    let innerValue = 4_i32 + 5_i32;
+    consume(innerValue);
+}
+
+fn consume(value: i32) -> i32 { value }

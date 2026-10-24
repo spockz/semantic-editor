@@ -11,7 +11,7 @@ module example.com/contractbatch
 
 go 1.27.1
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_type","params":{"file":"contracts/runner.go","source":"type Runner interface { Run() error }"}},{"tool":"semantic_implement_contract","params":{"file":"worker/worker.go","symbol":"Worker","contract":"Runner","contract_file":"contracts/runner.go","destination_file":"worker/methods.go","receiver_kind":"pointer","body_policy":"panic_stub"}},{"tool":"semantic_replace_body","params":{"file":"worker/methods.go","symbol":"(*Worker).Run","body":"return nil"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_type","params":{"file":"contracts/runner.go","source":"type Runner interface { Run() error }"}},{"tool":"refactor_implement_contract","params":{"file":"worker/worker.go","symbol":"Worker","contract":"Runner","contract_file":"contracts/runner.go","destination_file":"worker/methods.go","receiver_kind":"pointer","body_policy":"panic_stub"}},{"tool":"semantic_replace_body","params":{"file":"worker/methods.go","symbol":"(*Worker).Run","body":"return nil"}}]}}}
 -- contracts/runner.go --
 package contracts
 -- worker/worker.go --

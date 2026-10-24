@@ -4,6 +4,8 @@ package mcp_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/operation"
 	"github.com/spockz/semantic-editor/internal/pipeline"
 	"github.com/spockz/semantic-editor/internal/telemetry"
 )
@@ -64,7 +67,7 @@ func assertCleanGoNotificationVerification(t *testing.T, client *warmMCPCostClie
 
 func checkGoNotificationPublication(t *testing.T, fixture managedMCPFixture, client *warmMCPCostClient, mode string) {
 	t.Helper()
-	client.toolResult(t, "semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
+	client.toolResult(t, "refactor_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
 	value, err := os.ReadFile(filepath.Join(fixture.root, "value.go"))
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +89,7 @@ func checkGoNotificationPublication(t *testing.T, fixture managedMCPFixture, cli
 			t.Fatalf("aborted scaffold: %v", statErr)
 		}
 	} else {
-		client.toolResult(t, "semantic_rename", map[string]any{"file": "generated.go", "symbol": "Generated", "to": "Published"})
+		client.toolResult(t, "refactor_rename", map[string]any{"file": "generated.go", "symbol": "Generated", "to": "Published"})
 		contents, readErr := os.ReadFile(generated)
 		if readErr != nil || !strings.Contains(string(contents), "func Published()") || !strings.Contains(string(contents), "return Renamed()") {
 			t.Fatalf("generated source = %s, err = %v", contents, readErr)
@@ -158,8 +161,8 @@ func TestMCPStagedRenameRepairsLazyAndDroppedViews(t *testing.T) {
 	client.toolResult(t, "semantic_insert_function", map[string]any{"file": "value.go", "source": "func Added() int { return Value() + 3 }"})
 	assertDeferredGoNotifications(t, client, "semantic_insert_function")
 	assertUnpublishedGoSource(t, path, original)
-	renamed := client.toolResult(t, "semantic_rename", map[string]any{"file": "value.go", "symbol": "Added", "to": "Ready"})
-	metrics := latestGoplsCallMetrics(t, client, "semantic_rename")
+	renamed := client.toolResult(t, "refactor_rename", map[string]any{"file": "value.go", "symbol": "Added", "to": "Ready"})
+	metrics := latestGoplsCallMetrics(t, client, "refactor_rename")
 	if metrics.Phases["gopls.request.textDocument/prepareRename"].Count != 1 || metrics.Phases["gopls.notify.textDocument/didChange"].Count == 0 {
 		t.Fatalf("staged rename did not synchronize/query its working declaration: %+v", metrics)
 	}
@@ -177,7 +180,7 @@ func TestMCPStagedRenameRepairsLazyAndDroppedViews(t *testing.T) {
 	}
 	client.toolResult(t, "semantic_stage_drop", map[string]any{"step_id": envelope.Receipt.StepID})
 	assertDeferredGoNotifications(t, client, "semantic_stage_drop")
-	client.toolResult(t, "semantic_rename", map[string]any{"file": "value.go", "symbol": "Added", "to": "Final"})
+	client.toolResult(t, "refactor_rename", map[string]any{"file": "value.go", "symbol": "Added", "to": "Final"})
 	assertUnpublishedGoSource(t, path, original)
 	client.toolResult(t, "semantic_commit", map[string]any{})
 	published, readErr := os.ReadFile(path)
@@ -201,7 +204,7 @@ func TestMCPStageAbortRestoresDiskDocumentsWithoutRestart(t *testing.T) {
 	client.toolResult(t, "semantic_stage", map[string]any{})
 	client.toolResult(t, "semantic_scaffold_file", map[string]any{"file": "staged.go", "package": "sample"})
 	client.toolResult(t, "semantic_insert_function", map[string]any{"file": "staged.go", "source": "func Staged() int { return Value() }"})
-	client.toolResult(t, "semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
+	client.toolResult(t, "refactor_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
 	client.toolResult(t, "semantic_stage_abort", map[string]any{})
 	metrics := latestGoplsCallMetrics(t, client, "semantic_stage_abort")
 	if got := metrics.Phases["gopls.notify.textDocument/didClose"].Count; got == 0 {
@@ -262,6 +265,134 @@ func TestMCPASTOnlyBatchSynchronizesAfterFlush(t *testing.T) {
 	assertSingleSessionStart(t, fixture.counter)
 }
 
+func TestMCPEncapsulateFieldBatchReusesGoplsSession(t *testing.T) {
+	fixture := newWarmMCPCostFixture(t, 1)
+	configSource := "package sample\n\ntype config struct { value int }\n\nfunc (c *config) read() int { return c.value }\n"
+	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "config.go"), []byte(configSource)); err != nil {
+		t.Fatal(err)
+	}
+	client := newWarmMCPCostClient(t, fixture.root)
+	client.call(t, "initialize", map[string]any{})
+	client.toolResult(t, "semantic_verify", map[string]any{"check_only": true})
+	edits := []map[string]any{
+		{"tool": "refactor_encapsulate_field", "params": map[string]any{"file": "config.go", "symbol": "config.value", "getter": "readValue", "setter": "setValue"}},
+		{"tool": "refactor_rename", "params": map[string]any{"file": "config.go", "symbol": "(*config).readValue", "to": "readStoredValue"}},
+		{"tool": "semantic_replace_body", "params": map[string]any{"file": "config.go", "symbol": "(*config).setValue", "body": "receiver.value = value + 1"}},
+	}
+	client.toolResult(t, "semantic_batch", map[string]any{"edits": edits})
+	metrics := latestGoplsCallMetrics(t, client, "semantic_batch")
+	if got := metrics.Phases["gopls.request.textDocument/rename"].Count; got == 0 {
+		t.Fatalf("encapsulate-field batch did not rename its generated accessor through gopls: %+v", metrics)
+	}
+	assertSingleSessionStart(t, fixture.counter)
+	contents, err := os.ReadFile(filepath.Join(fixture.root, "config.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"c.readStoredValue()", "func (receiver *config) setValue", "receiver.value = value + 1"} {
+		if !strings.Contains(string(contents), fragment) {
+			t.Errorf("published encapsulation batch source lacks %q: %s", fragment, contents)
+		}
+	}
+}
+
+func TestMCPEncapsulateFieldReceiptBindsLiveAccessors(t *testing.T) {
+	fixture := newWarmMCPCostFixture(t, 1)
+	accessorsPath := filepath.Join(fixture.root, "accessors.go")
+	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "config.go"), []byte("package sample\n\ntype config struct { value int }\n\nfunc (c *config) read() int { return c.value }\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(accessorsPath, []byte("package sample\n")); err != nil {
+		t.Fatal(err)
+	}
+	client := newWarmMCPCostClient(t, fixture.root)
+	client.call(t, "initialize", map[string]any{})
+	client.toolResult(t, "semantic_verify", map[string]any{"check_only": true})
+	raw := client.toolResult(t, "refactor_encapsulate_field", map[string]any{
+		"file": "config.go", "destination_file": "accessors.go", "symbol": "config.value", "getter": "readValue", "setter": "setValue",
+	})
+	var response struct {
+		Result struct {
+			Receipt operation.EditReceipt `json:"edit_receipt"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.Receipt.Status != operation.EditPersistedWithDiagnostics && response.Result.Receipt.Status != operation.EditPersisted {
+		t.Fatalf("encapsulation receipt status = %q: %s", response.Result.Receipt.Status, raw)
+	}
+	if len(response.Result.Receipt.Continuations) != 2 {
+		t.Fatalf("encapsulation continuations = %+v", response.Result.Receipt.Continuations)
+	}
+	accessors, err := os.ReadFile(accessorsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(accessors)
+	wantRevision := hex.EncodeToString(digest[:])
+	for index, wantSymbol := range []string{"(*config).readValue", "(*config).setValue"} {
+		continuation := response.Result.Receipt.Continuations[index]
+		if continuation.File != "accessors.go" || continuation.Symbol != wantSymbol || continuation.ExpectedRevision == nil || *continuation.ExpectedRevision != wantRevision {
+			t.Fatalf("continuation %d = %+v, want accessors.go %s at %s", index, continuation, wantSymbol, wantRevision)
+		}
+	}
+	getter, setter := response.Result.Receipt.Continuations[0], response.Result.Receipt.Continuations[1]
+	client.toolResult(t, "refactor_rename", map[string]any{"file": getter.File, "symbol": getter.Symbol, "to": "readStoredValue"})
+	client.toolResult(t, "semantic_replace_body", map[string]any{"file": setter.File, "symbol": setter.Symbol, "body": "receiver.value = value + 1"})
+	contents, err := os.ReadFile(accessorsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"func (receiver *config) readStoredValue()", "func (receiver *config) setValue", "receiver.value = value + 1"} {
+		if !bytes.Contains(contents, []byte(fragment)) {
+			t.Errorf("follow-up using receipt target lacks %q: %s", fragment, contents)
+		}
+	}
+	assertSingleSessionStart(t, fixture.counter)
+}
+
+func TestMCPEncapsulateFieldStageKeepsWorkingEditsUnpublished(t *testing.T) {
+	fixture := newWarmMCPCostFixture(t, 1)
+	path := filepath.Join(fixture.root, "config.go")
+	original := []byte("package sample\n\ntype config struct { value int }\n\nfunc (c *config) read() int { return c.value }\n")
+	if err := pipeline.WriteAtomic(path, original); err != nil {
+		t.Fatal(err)
+	}
+	client := newWarmMCPCostClient(t, fixture.root)
+	client.call(t, "initialize", map[string]any{})
+	client.toolResult(t, "semantic_verify", map[string]any{"check_only": true})
+	client.toolResult(t, "semantic_stage", map[string]any{})
+
+	encapsulated := client.toolResult(t, "refactor_encapsulate_field", map[string]any{
+		"file": "config.go", "symbol": "config.value", "getter": "readValue", "setter": "setValue",
+	})
+	if !bytes.Contains(encapsulated, []byte(`"status":"applied_working"`)) || !bytes.Contains(encapsulated, []byte(`"operation":"refactor_encapsulate_field"`)) {
+		t.Fatalf("encapsulation did not report its working receipt: %s", encapsulated)
+	}
+	assertUnpublishedGoSource(t, path, original)
+
+	client.toolResult(t, "refactor_rename", map[string]any{"file": "config.go", "symbol": "(*config).readValue", "to": "readStoredValue"})
+	metrics := latestGoplsCallMetrics(t, client, "refactor_rename")
+	if metrics.Phases["gopls.request.textDocument/rename"].Count == 0 || metrics.Phases["gopls.notify.textDocument/didChange"].Count == 0 {
+		t.Fatalf("staged rename did not synchronize the working accessor: %+v", metrics)
+	}
+	client.toolResult(t, "semantic_replace_body", map[string]any{"file": "config.go", "symbol": "(*config).setValue", "body": "receiver.value = value + 1"})
+	assertUnpublishedGoSource(t, path, original)
+	assertSingleSessionStart(t, fixture.counter)
+
+	client.toolResult(t, "semantic_commit", map[string]any{})
+	published, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"c.readStoredValue()", "func (receiver *config) setValue", "receiver.value = value + 1"} {
+		if !bytes.Contains(published, []byte(fragment)) {
+			t.Errorf("published encapsulation stage lacks %q: %s", fragment, published)
+		}
+	}
+}
+
 func TestMCPGoPublicationNotificationPolicy(t *testing.T) {
 	for _, mode := range []string{"batch", "stage", "abort"} {
 		t.Run(mode, func(t *testing.T) {
@@ -291,8 +422,8 @@ func TestGoplsCallMetricsThroughMCP(t *testing.T) {
 	fixture := newWarmMCPCostFixture(t, 1)
 	client := newWarmMCPCostClient(t, fixture.root)
 	client.call(t, "initialize", map[string]any{})
-	client.toolResult(t, "semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
-	metrics := latestGoplsCallMetrics(t, client, "semantic_rename")
+	client.toolResult(t, "refactor_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"})
+	metrics := latestGoplsCallMetrics(t, client, "refactor_rename")
 	for phase, count := range map[string]int{
 		"gopls.request.initialize":                 1,
 		"gopls.request.textDocument/prepareRename": 1,
@@ -494,7 +625,7 @@ func newGoplsCostTarget(b *testing.B, kind string) goplsCostTarget {
 		case "dirty_import_leaf":
 			result.target = filepath.Join("consumer19", "consumer.go")
 		case "exported_api_rename":
-			result.tool = "semantic_rename"
+			result.tool = "refactor_rename"
 		case "body_only_edit":
 			result.tool = "semantic_replace_body"
 		}

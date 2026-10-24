@@ -1,0 +1,62 @@
+# WHY: Cross-file method support must preserve result binding, revision guards, and active-package boundaries before writing.
+cp callee.go .scratch/before-callee.go
+cp caller.go .scratch/before-caller.go
+cp inactive.go .scratch/before-inactive.go
+cp other/caller.go .scratch/before-other.go
+! exec semedit refactor-inline-callable --file callee.go --symbol CrossCounter.Value --call-site '{"file":"caller.go","in_function":"RunShadowed","discriminator":"counter.Value()"}'
+stderr 'inlined conversion does not preserve the callee result type'
+cmp callee.go .scratch/before-callee.go
+cmp caller.go .scratch/before-caller.go
+! exec semedit refactor-inline-callable --file callee.go --symbol CrossCounter.Value --expected-revision 0000000000000000000000000000000000000000000000000000000000000000 --call-site '{"file":"caller.go","in_function":"RunCross","discriminator":"counter.Value()"}'
+stderr 'expected_revision does not match captured callee source'
+cmp callee.go .scratch/before-callee.go
+cmp caller.go .scratch/before-caller.go
+! exec semedit refactor-inline-callable --file callee.go --symbol CrossCounter.Value --call-site '{"file":"caller.go","in_function":"RunCross","discriminator":"counter.Value()","expected_revision":"0000000000000000000000000000000000000000000000000000000000000000"}'
+stderr 'call_site.expected_revision does not match captured caller source'
+cmp callee.go .scratch/before-callee.go
+cmp caller.go .scratch/before-caller.go
+! exec semedit refactor-inline-callable --file callee.go --symbol CrossCounter.Value --call-site '{"file":"other/caller.go","in_function":"RunCross","discriminator":"counter.Value()"}'
+stderr 'inline function requires caller and callee in the same active Go package'
+cmp callee.go .scratch/before-callee.go
+cmp other/caller.go .scratch/before-other.go
+! exec semedit refactor-inline-callable --file inactive.go --symbol CrossCounter.Inactive --call-site '{"file":"caller.go","in_function":"RunCross","discriminator":"counter.Value()"}'
+stderr 'refuses generated or build-constrained source or destination'
+cmp inactive.go .scratch/before-inactive.go
+cmp caller.go .scratch/before-caller.go
+
+-- go.mod --
+module example.com/inlinemethodrefusal
+
+go 1.24
+-- callee.go --
+package sample
+
+type CrossCounter struct{}
+
+func (*CrossCounter) Value() int { return 3 }
+-- caller.go --
+package sample
+
+func RunCross(counter *CrossCounter) int {
+	return counter.Value()
+}
+
+func RunShadowed(counter *CrossCounter, int func(int) int) any {
+	return counter.Value()
+}
+-- inactive.go --
+//go:build semedit_inactive_method
+
+package sample
+
+func (*CrossCounter) Inactive() int { return 4 }
+-- other/caller.go --
+package other
+
+import sample "example.com/inlinemethodrefusal"
+
+func RunCross(counter *sample.CrossCounter) int {
+	return counter.Value()
+}
+-- .scratch/keep --
+Keeps preimage copies outside the Go package.

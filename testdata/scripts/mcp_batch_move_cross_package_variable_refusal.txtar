@@ -1,0 +1,28 @@
+# A refused package-variable move leaves its source and destination unchanged in a buffered batch.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"error"'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+
+-- go.mod --
+module example.com/batchvariablemoverefusal
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+func load() int { return 180 }
+var RetryWindow = load()
+-- api/state.go --
+package api
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_move_declaration","params":{"file":"legacy/state.go","destination_file":"api/state.go","symbol":"RetryWindow"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+func load() int { return 180 }
+var RetryWindow = load()
+-- .scratch/want/api.go --
+package api

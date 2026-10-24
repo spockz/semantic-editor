@@ -20,25 +20,26 @@ import (
 )
 
 const (
-	sourceExtractFunctionReceiptFile     = "semantic_extract_function.result.continuations[].file"
-	sourceExtractFunctionReceiptSymbol   = "semantic_extract_function.result.continuations[].symbol"
-	sourceExtractFunctionReceiptRevision = "semantic_extract_function.result.continuations[].expected_revision"
-	sourceExtractConstantReceiptFile     = "semantic_extract_constant.result.continuations[].file"
-	sourceExtractConstantReceiptSymbol   = "semantic_extract_constant.result.continuations[].symbol"
-	sourceExtractVariableReceiptFile     = "semantic_extract_variable.result.continuations[].file"
-	sourceExtractVariableReceiptSymbol   = "semantic_extract_variable.result.continuations[].symbol"
-	sourceExtractVariableReceiptRevision = "semantic_extract_variable.result.continuations[].expected_revision"
-	sourceInlineVariableReceiptFile      = "semantic_inline_variable.result.continuations[].file"
-	sourceInlineVariableReceiptSymbol    = "semantic_inline_variable.result.continuations[].symbol"
-	sourceInlineVariableReceiptRevision  = "semantic_inline_variable.result.continuations[].expected_revision"
+	sourceExtractCallableReceiptFile     = "refactor_extract_callable.result.continuations[].file"
+	sourceExtractCallableReceiptSymbol   = "refactor_extract_callable.result.continuations[].symbol"
+	sourceExtractCallableReceiptRevision = "refactor_extract_callable.result.continuations[].expected_revision"
+	sourceExtractValueReceiptFile        = "refactor_extract_value.result.continuations[].file"
+	sourceExtractValueReceiptSymbol      = "refactor_extract_value.result.continuations[].symbol"
+	sourceExtractValueReceiptRevision    = "refactor_extract_value.result.continuations[].expected_revision"
+	sourceExtractDelegateReceiptFile     = "refactor_extract_delegate.result.edit_receipt.continuations[].file"
+	sourceExtractDelegateReceiptSymbol   = "refactor_extract_delegate.result.edit_receipt.continuations[].symbol"
+	sourceInlineValueReceiptFile         = "refactor_inline_value.result.continuations[].file"
+	sourceInlineValueReceiptSymbol       = "refactor_inline_value.result.continuations[].symbol"
+	sourceInlineValueReceiptRevision     = "refactor_inline_value.result.continuations[].expected_revision"
 )
 
 var extractionReceiptFileConsumers = []string{
+	canonicalMakeTypeExplicitKey,
 	semanticLookupToolName, semanticRenameToolName, semanticFindReferencesToolName, semanticInspectSymbolToolName,
 	semanticReplaceBodyToolName, semanticReplaceConstructToolName, semanticMoveConstructToolName, semanticRemoveConstructToolName,
 	semanticInsertCaseToolName, semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInsertDeclToolName,
 	semanticInsertDeclarationToolName, semanticInsertConstructToolName, semanticReplaceDeclToolName, semanticExtractFunctionToolName,
-	"semantic_extract_constant", semanticExtractVariableToolName, semanticInlineVariableToolName, "semantic_insert_field",
+	semanticExtractVariableToolName, semanticInlineVariableToolName, canonicalMakeStaticKey, "semantic_insert_field",
 	semanticAssertionModeToolName, semanticInspectConstructToolName,
 }
 
@@ -236,7 +237,7 @@ func formatExtractionResult(result ExtractionResult) (string, error) {
 }
 
 func runExtractFunctionWithReceipt(ctx context.Context, cc CallContext, req ExtractFunctionReq) (ExtractionResult, error) {
-	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "extract_function")
+	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, backendExtractFunctionOperation)
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -257,7 +258,7 @@ func runExtractFunctionWithReceipt(ctx context.Context, cc CallContext, req Extr
 }
 
 func runExtractConstantWithReceipt(ctx context.Context, cc CallContext, req ExtractConstantReq) (ExtractionResult, error) {
-	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "extract_constant", SymbolTarget{File: req.File, Symbol: req.Symbol})
+	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "refactor_extract_value", SymbolTarget{File: req.File, Symbol: req.Symbol})
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -272,8 +273,18 @@ func runExtractConstantWithReceipt(ctx context.Context, cc CallContext, req Extr
 	return ExtractionResult{Edit: edit, Draft: draft}, nil
 }
 
+func runExtractValueWithReceipt(ctx context.Context, cc CallContext, req ExtractVariableReq) (ExtractionResult, error) {
+	if req.Kind == "constant" {
+		return runExtractConstantWithReceipt(ctx, cc, extractConstantRequest(req))
+	}
+	if req.Kind == "field" {
+		return ExtractionResult{}, fmt.Errorf("go extract_value does not support kind=field; use a type-aware declaration operation")
+	}
+	return runExtractVariableWithReceipt(ctx, cc, req)
+}
+
 func runExtractVariableWithReceipt(ctx context.Context, cc CallContext, req ExtractVariableReq) (ExtractionResult, error) {
-	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "extract_variable")
+	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "refactor_extract_value")
 	if err != nil {
 		return ExtractionResult{}, err
 	}
@@ -290,7 +301,7 @@ func runExtractVariableWithReceipt(ctx context.Context, cc CallContext, req Extr
 }
 
 func runInlineVariableWithReceipt(ctx context.Context, cc CallContext, req InlineVariableReq) (ExtractionResult, error) {
-	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, "inline_variable")
+	draft, err := beginExtractionReceipt(ctx, cc.WorkDir, req.File, backendInlineValueOperation)
 	if err != nil {
 		return ExtractionResult{}, err
 	}

@@ -1,0 +1,74 @@
+# Replace an owner body and extract its whole if/else from the shared batch overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractifelsebatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"Run","body":"if enabled { yes() } else { no() }"}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"dispatch","in_function":"Run","kind":"function","start_line":6,"end_line":10}}]}}}
+-- service.go --
+package sample
+
+var events []string
+
+func Run(enabled bool) {
+	return
+}
+
+func yes() { record("yes") }
+func no() { record("no") }
+
+func reset() { events = nil }
+func record(event string) { events = append(events, event) }
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRunPreservesBothBranches(t *testing.T) {
+	for _, test := range []struct {
+		enabled bool
+		want    []string
+	}{
+		{enabled: true, want: []string{"yes"}},
+		{enabled: false, want: []string{"no"}},
+	} {
+		reset()
+		Run(test.enabled)
+		if !reflect.DeepEqual(events, test.want) {
+			t.Fatalf("Run(%v) events = %v, want %v", test.enabled, events, test.want)
+		}
+	}
+}
+-- .scratch/want/service.go --
+package sample
+
+var events []string
+
+func Run(enabled bool) {
+	dispatch(enabled)
+}
+
+func dispatch(enabled bool) {
+	if enabled {
+		yes()
+	} else {
+		no()
+	}
+}
+
+func yes() { record("yes") }
+func no()  { record("no") }
+
+func reset()              { events = nil }
+func record(event string) { events = append(events, event) }

@@ -86,6 +86,9 @@ func ProjectInspectResult(result *backend.InspectResult) (InspectProjection, err
 				continuation.InDeclaration = &continuation.Symbol
 			}
 		}
+		if filepath.Ext(file) == ".java" && match.Kind == "method" {
+			continuation.InFunction = &continuation.Symbol
+		}
 		projection.Continuations = append(projection.Continuations, continuation)
 	}
 	return projection, nil

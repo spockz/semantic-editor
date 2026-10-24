@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
-	"strings"
+	"slices"
+
+	"github.com/spockz/semantic-editor/internal/javacst"
 )
 
 var javaImportNamePattern = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)+$`)
@@ -17,76 +19,132 @@ func applyJavaExplicitImports(source []byte, add, remove []string) ([]byte, erro
 			return nil, fmt.Errorf("invalid Java import name %q", name)
 		}
 	}
-	updated := append([]byte(nil), source...)
+	updated := bytes.Clone(source)
 	for _, name := range remove {
-		lines := bytes.SplitAfter(updated, []byte("\n"))
-		var filtered bytes.Buffer
-		for i := 0; i < len(lines); i++ {
-			line := lines[i]
-			trimmed := strings.TrimSpace(string(line))
-			if trimmed == "import "+name+";" {
-				if i+1 < len(lines) && strings.TrimSpace(string(lines[i+1])) == "" {
-					i++
-				}
-				continue
-			}
-			filtered.Write(line)
+		var err error
+		updated, err = removeJavaImport(updated, name)
+		if err != nil {
+			return nil, fmt.Errorf("remove Java import %q: %w", name, err)
 		}
-		updated = filtered.Bytes()
 	}
 	for _, name := range add {
-		if hasJavaImport(updated, name) {
+		exists, err := hasJavaImport(updated, name)
+		if err != nil {
+			return nil, fmt.Errorf("inspect Java imports before adding %q: %w", name, err)
+		}
+		if exists {
 			continue
 		}
-		updated = insertJavaImport(updated, name)
+		updated, err = insertJavaImport(updated, name)
+		if err != nil {
+			return nil, fmt.Errorf("insert Java import %q: %w", name, err)
+		}
 	}
 	return updated, nil
 }
 
-func hasJavaImport(source []byte, name string) bool {
-	for line := range bytes.SplitSeq(source, []byte("\n")) {
-		if strings.TrimSpace(string(line)) == "import "+name+";" {
-			return true
+func hasJavaImport(source []byte, name string) (bool, error) {
+	imports, err := javacst.ParseJavaImports(source)
+	if err != nil {
+		return false, err
+	}
+	wanted := javacst.JavaImportIdentity(name, false)
+	for _, declaration := range imports.Declarations {
+		if declaration.Identity == wanted {
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }
 
-func insertJavaImport(source []byte, name string) []byte {
-	lines := bytes.SplitAfter(source, []byte("\n"))
-	offset, insertAfter := 0, -1
-	hasPackage, hasImports := false, false
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(string(line))
-		offset += len(line)
-		if strings.HasPrefix(trimmed, "import ") && strings.HasSuffix(trimmed, ";") {
-			hasImports = true
-			insertAfter = offset
+func removeJavaImport(source []byte, name string) ([]byte, error) {
+	imports, err := javacst.ParseJavaImports(source)
+	if err != nil {
+		return nil, err
+	}
+	wanted := javacst.JavaImportIdentity(name, false)
+	type removalSpan struct {
+		start int
+		end   int
+	}
+	var removals []removalSpan
+	for _, declaration := range imports.Declarations {
+		if declaration.Identity != wanted {
 			continue
 		}
-		if insertAfter < 0 && strings.HasPrefix(trimmed, "package ") && strings.HasSuffix(trimmed, ";") {
-			hasPackage = true
-			insertAfter = offset
+		removals = append(removals, removalSpan{start: declaration.Start, end: declaration.RemovalEnd})
+	}
+	if len(removals) == 0 {
+		return bytes.Clone(source), nil
+	}
+	updated := bytes.Clone(source)
+	for _, removal := range slices.Backward(removals) {
+
+		if removal.start < 0 || removal.end < removal.start || removal.end > len(updated) {
+			return nil, fmt.Errorf("java import removal span [%d,%d) is outside source of %d bytes", removal.start, removal.end, len(updated))
+		}
+		updated = append(updated[:removal.start], updated[removal.end:]...)
+	}
+	return updated, nil
+}
+
+func insertJavaImport(source []byte, name string) ([]byte, error) {
+	return insertJavaImportDeclaration(source, []byte("import "+name+";"))
+}
+
+func restoreJavaImportsFromPreimage(source, preimage []byte) ([]byte, error) {
+	original, err := javacst.ParseJavaImports(preimage)
+	if err != nil {
+		return nil, fmt.Errorf("parse Java preimage imports: %w", err)
+	}
+	updated := bytes.Clone(source)
+	for _, declaration := range original.Declarations {
+		current, err := javacst.ParseJavaImports(updated)
+		if err != nil {
+			return nil, fmt.Errorf("parse Java postimage imports: %w", err)
+		}
+		found := false
+		for _, existing := range current.Declarations {
+			if existing.Identity == declaration.Identity {
+				found = true
+				break
+			}
+		}
+		if found {
 			continue
 		}
-		if trimmed != "" && !strings.HasPrefix(trimmed, "//") && !strings.HasPrefix(trimmed, "/*") && !strings.HasPrefix(trimmed, "*") {
-			break
+		updated, err = insertJavaImportDeclaration(updated, declaration.Text)
+		if err != nil {
+			return nil, fmt.Errorf("restore Java import %q: %w", declaration.Identity, err)
 		}
 	}
-	if insertAfter < 0 {
-		insertAfter = 0
+	return updated, nil
+}
+
+func insertJavaImportDeclaration(source, declaration []byte) ([]byte, error) {
+	imports, err := javacst.ParseJavaImports(source)
+	if err != nil {
+		return nil, fmt.Errorf("parse Java imports before insertion: %w", err)
 	}
 	eol := []byte("\n")
 	if bytes.Contains(source, []byte("\r\n")) {
 		eol = []byte("\r\n")
 	}
-	addition := append([]byte("import "+name+";"), eol...)
-	if hasPackage && !hasImports {
-		addition = append(eol, addition...)
+	addition := make([]byte, 0, len(declaration)+2*len(eol))
+	if imports.InsertionOffset > 0 && source[imports.InsertionOffset-1] != '\n' {
+		addition = append(addition, eol...)
+	}
+	if imports.HasPackage && len(imports.Declarations) == 0 {
+		addition = append(addition, eol...)
+	}
+	addition = append(addition, declaration...)
+	addition = append(addition, eol...)
+	if imports.InsertionBlankLine {
+		addition = append(addition, eol...)
 	}
 	updated := make([]byte, 0, len(source)+len(addition))
-	updated = append(updated, source[:insertAfter]...)
+	updated = append(updated, source[:imports.InsertionOffset]...)
 	updated = append(updated, addition...)
-	updated = append(updated, source[insertAfter:]...)
-	return updated
+	updated = append(updated, source[imports.InsertionWhitespaceEnd:]...)
+	return updated, nil
 }

@@ -1,0 +1,114 @@
+# Extract calls from one switch-case body through the shared buffer pipeline.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go want/service.go
+cmp assignment.go want/assignment.go
+exec go test ./...
+
+-- go.mod --
+module example.com/switchextractbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"recordPair","in_function":"Emit","kind":"function","construct_path":"0.0.0","end_construct_path":"0.0.1","expected_revision":"dbaffae77bcadb98dd638b6b396d2250451014793047654a7babeab8531ffa9b"}},{"tool":"refactor_extract_callable","params":{"file":"assignment.go","symbol":"updateCount","in_function":"Assign","kind":"function","construct_path":"1.0.0","expected_revision":"0d3e8fd38376771ac15369f71192f927aae3e796671ce7325cdcd905e668b35d"}}]}}}
+-- service.go --
+package sample
+
+var seen []int
+
+func Emit(value int) int {
+	switch value {
+	case 1:
+		record(value)
+		record(value + 1)
+		return 2
+	default:
+		return 0
+	}
+}
+
+func record(value int) {
+	seen = append(seen, value)
+}
+-- assignment.go --
+package sample
+
+func Assign(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestEmitSwitchCaseExtraction(t *testing.T) {
+	seen = nil
+	if got := Emit(1); got != 2 {
+		t.Fatalf("Emit(1) = %d, want 2", got)
+	}
+	if !reflect.DeepEqual(seen, []int{1, 2}) {
+		t.Fatalf("seen = %v, want [1 2]", seen)
+	}
+	seen = nil
+	if got := Emit(0); got != 0 || len(seen) != 0 {
+		t.Fatalf("Emit(0) = %d, seen = %v; want 0 and no calls", got, seen)
+	}
+}
+func TestAssignSwitchCaseExtraction(t *testing.T) {
+	if got := Assign(true); got != 1 {
+		t.Fatalf("Assign(true) = %d, want 1", got)
+	}
+	if got := Assign(false); got != 0 {
+		t.Fatalf("Assign(false) = %d, want 0", got)
+	}
+}
+-- want/service.go --
+package sample
+
+var seen []int
+
+func Emit(value int) int {
+	switch value {
+	case 1:
+		recordPair(value)
+		return 2
+	default:
+		return 0
+	}
+}
+
+func recordPair(value int) {
+	record(value)
+	record(value + 1)
+}
+
+func record(value int) {
+	seen = append(seen, value)
+}
+-- want/assignment.go --
+package sample
+
+func Assign(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = updateCount(count)
+	}
+	return count
+}
+
+func updateCount(count int) int {
+	count = count + 1
+	return count
+}

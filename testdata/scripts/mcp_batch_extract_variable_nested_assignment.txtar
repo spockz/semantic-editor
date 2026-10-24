@@ -1,0 +1,46 @@
+# Stage a branch-body edit, extract its assignment expression in that same block, then refine the assignment in the shared buffer.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablenestedassignmentbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"total := 0; if count > 0 { total = count + 1 }; return total"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","discriminator":"count + 1"}},{"tool":"semantic_replace_construct","params":{"file":"render.go","kind":"statement/expression","in_function":"Render","discriminator":"total = selected","source":"total = selected * 2"}}]}}}
+-- render.go --
+package render
+
+func Render(count int) int {
+	return count
+}
+-- .scratch/want/render.go --
+package render
+
+func Render(count int) int {
+	total := 0
+	if count > 0 {
+		selected := count + 1
+		total = selected * 2
+	}
+	return total
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestBatchNestedAssignmentExtractionUsesSharedOverlay(t *testing.T) {
+	if got := Render(2); got != 6 {
+		t.Fatalf("Render(2) = %d, want 6", got)
+	}
+	if got := Render(-2); got != 0 {
+		t.Fatalf("Render(-2) = %d, want 0", got)
+	}
+}

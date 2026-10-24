@@ -117,7 +117,7 @@ func insertConstructOutputContract() *OperationOutputContract {
 	}, []OutputContinuation{
 		outputContinuation("file", RoleTarget, fileOutputConsumers),
 		outputContinuation("symbol", RoleTarget, symbolOutputConsumers),
-		outputContinuation("in_type", RoleSelector, []string{insertFieldToolName, "semantic_extract_type", semanticInsertConstructToolName}),
+		outputContinuation("in_type", RoleSelector, []string{insertFieldToolName, extractTypeToolName, semanticInsertConstructToolName}),
 		outputContinuation(wireInFunction, RoleSelector, functionOutputConsumers),
 		outputContinuation(wireDiscriminator, RoleSelector, discriminatorOutputConsumers),
 	})

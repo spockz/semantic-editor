@@ -1,0 +1,80 @@
+# Extract from a single-name Go short declaration without moving its evaluation point.
+exec semedit refactor-extract-value --file direct.go --symbol selected --in-function RenderDirect --kind variable --discriminator 'base + 1'
+cmp direct.go want/direct.go
+exec semedit refactor-extract-value --file nested.go --symbol selected --in-function RenderNested --kind variable --discriminator 'base + 2'
+cmp nested.go want/nested.go
+! exec semedit refactor-extract-value --file tuple.go --symbol selected --in-function RenderTuple --kind variable --discriminator 'base + 1'
+stderr 'only assignments with one target and one value are supported'
+cmp tuple.go original/tuple.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableshortdeclaration
+
+go 1.24
+-- direct.go --
+package render
+
+func RenderDirect(base int) int {
+	value := base + 1
+	return value
+}
+-- want/direct.go --
+package render
+
+func RenderDirect(base int) int {
+	selected := base + 1
+	value := selected
+	return value
+}
+-- nested.go --
+package render
+
+func RenderNested(base int) int {
+	if base > 0 {
+		value := base + 2
+		return value
+	}
+	return -1
+}
+-- want/nested.go --
+package render
+
+func RenderNested(base int) int {
+	if base > 0 {
+		selected := base + 2
+		value := selected
+		return value
+	}
+	return -1
+}
+-- tuple.go --
+package render
+
+func RenderTuple(base int) (int, int) {
+	left, right := base + 1, base + 2
+	return left, right
+}
+-- original/tuple.go --
+package render
+
+func RenderTuple(base int) (int, int) {
+	left, right := base + 1, base + 2
+	return left, right
+}
+-- extract_test.go --
+package render
+
+import "testing"
+
+func TestShortDeclarationExtractionPreservesBranchBehavior(t *testing.T) {
+	if got := RenderDirect(2); got != 3 {
+		t.Fatalf("RenderDirect(2) = %d, want 3", got)
+	}
+	if got := RenderNested(2); got != 4 {
+		t.Fatalf("RenderNested(2) = %d, want 4", got)
+	}
+	if got := RenderNested(-2); got != -1 {
+		t.Fatalf("RenderNested(-2) = %d, want -1", got)
+	}
+}

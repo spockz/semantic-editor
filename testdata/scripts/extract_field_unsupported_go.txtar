@@ -1,0 +1,17 @@
+# The shared field kind is rejected by Go before any source mutation.
+! exec semedit refactor-extract-value --file sample.go --symbol total --kind field --in-function run --discriminator '1 + 2'
+stderr 'go extract_value does not support kind=field'
+cmp sample.go want/sample.go
+
+-- sample.go --
+package sample
+
+func run() int {
+	return 1 + 2
+}
+-- want/sample.go --
+package sample
+
+func run() int {
+	return 1 + 2
+}

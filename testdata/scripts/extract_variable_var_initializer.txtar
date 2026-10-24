@@ -1,0 +1,117 @@
+# Extract exact RHS expressions from bounded local var declarations.
+exec semedit refactor-extract-value --file direct.go --symbol selected --in-function Render --kind variable --discriminator 'count + 1'
+cmp direct.go want/direct.go
+exec semedit refactor-extract-value --file nested.go --symbol selected --in-function RenderNested --kind variable --discriminator 'count + 2'
+cmp nested.go want/nested.go
+! exec semedit refactor-extract-value --file refusal.go --symbol selected --in-function RenderMultiple --kind variable --discriminator 'count + 1'
+stderr 'one name and one initializer'
+cmp refusal.go original/refusal.go
+! exec semedit refactor-extract-value --file refusal.go --symbol selected --in-function RenderGrouped --kind variable --discriminator 'count + 1'
+stderr 'grouped var declarations are not supported'
+cmp refusal.go original/refusal.go
+! exec semedit refactor-extract-value --file refusal.go --symbol selected --in-function RenderGroupedSingle --kind variable --discriminator 'count + 3'
+stderr 'grouped var declarations are not supported'
+cmp refusal.go original/refusal.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablevarinitializer
+
+go 1.24
+-- direct.go --
+package sample
+
+type Count int
+
+func Render(count Count) Count {
+	var total Count = count + 1
+	return total
+}
+-- want/direct.go --
+package sample
+
+type Count int
+
+func Render(count Count) Count {
+	selected := count + 1
+	var total Count = selected
+	return total
+}
+-- nested.go --
+package sample
+
+func RenderNested(count int) int {
+	if count > 0 {
+		var total = count + 2
+		return total
+	}
+	return 0
+}
+-- want/nested.go --
+package sample
+
+func RenderNested(count int) int {
+	if count > 0 {
+		selected := count + 2
+		var total = selected
+		return total
+	}
+	return 0
+}
+-- refusal.go --
+package sample
+
+func RenderMultiple(count int) {
+	var total, other = count + 1, count
+	_, _ = total, other
+}
+
+func RenderGrouped(count int) {
+	var (
+		total = count + 1
+		other = count + 2
+	)
+	_, _ = total, other
+}
+
+func RenderGroupedSingle(count int) {
+	var (
+		value = count + 3
+	)
+	_ = value
+}
+-- original/refusal.go --
+package sample
+
+func RenderMultiple(count int) {
+	var total, other = count + 1, count
+	_, _ = total, other
+}
+
+func RenderGrouped(count int) {
+	var (
+		total = count + 1
+		other = count + 2
+	)
+	_, _ = total, other
+}
+
+func RenderGroupedSingle(count int) {
+	var (
+		value = count + 3
+	)
+	_ = value
+}
+-- render_test.go --
+package sample
+
+import "testing"
+
+func TestVarInitializerExtractionPreservesRuntimeValues(t *testing.T) {
+	if got := Render(2); got != 3 {
+		t.Fatalf("Render(2) = %d, want 3", got)
+	}
+	if got := RenderNested(2); got != 4 {
+		t.Fatalf("RenderNested(2) = %d, want 4", got)
+	}
+}

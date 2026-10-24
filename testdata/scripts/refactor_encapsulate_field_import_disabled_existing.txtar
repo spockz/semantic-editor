@@ -1,0 +1,38 @@
+# Disabling import additions still permits a destination that already has a usable type import.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --symbol config.timeout --getter timeoutValue --setter setTimeoutValue --auto-organize-imports=false
+cmp config.go want-config.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulateexistingimport
+
+go 1.24
+-- config.go --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+
+func (c *config) read() time.Duration {
+	return c.timeout
+}
+-- want-config.txt --
+package sample
+
+import "time"
+
+type config struct {
+	timeout time.Duration
+}
+
+func (c *config) read() time.Duration {
+	return c.timeoutValue()
+}
+
+func (receiver *config) timeoutValue() time.Duration         { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value time.Duration) { receiver.timeout = value }

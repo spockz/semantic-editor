@@ -1,8 +1,8 @@
 # Inline all immediate direct literal uses and refuse a side-effecting initializer.
-exec semedit inline-variable --file calc.go --symbol value --in-function Compute
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Compute
 cmp calc.go want/calc.go
-! exec semedit inline-variable --file calc.go --symbol result --in-function Unsafe
-stderr 'initializer must be a literal expression'
+! exec semedit refactor-inline-value --file calc.go --symbol result --in-function Unsafe
+stderr 'binding requires an immediate direct call with one argument'
 cmp calc.go want/calc.go
 exec go test ./...
 

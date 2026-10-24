@@ -1,0 +1,67 @@
+# Refuse destination predeclared-name capture without modifying source files.
+! exec semedit refactor-move-declaration --file boolcase/legacy/state.go --destination-file boolcase/api/state.go --symbol Enabled --placement file_end
+stderr 'changed the initial value'
+cmp boolcase/legacy/state.go .scratch/want/boolcase-legacy.go
+cmp boolcase/api/state.go .scratch/want/boolcase-api.go
+! exec semedit refactor-move-declaration --file intcase/legacy/state.go --destination-file intcase/api/state.go --symbol Limit --placement file_end
+stderr 'changed the variable type'
+cmp intcase/legacy/state.go .scratch/want/intcase-legacy.go
+cmp intcase/api/state.go .scratch/want/intcase-api.go
+
+-- go.mod --
+module example.com/variablemovecapture
+
+go 1.23
+-- boolcase/legacy/state.go --
+package legacy
+
+var Enabled = true
+-- boolcase/api/state.go --
+package api
+
+const true = false
+-- intcase/legacy/state.go --
+package legacy
+
+var Limit int = 10
+-- intcase/api/state.go --
+package api
+
+type int int64
+-- .scratch/want/initcase-legacy.go --
+package legacy
+
+import "example.com/variablemoveproof/initcase/api"
+
+type reader interface {
+	Read() int
+}
+
+type snapshotReader struct{}
+
+func (snapshotReader) Read() int { return RetryWindow }
+
+var Snapshot = reader(snapshotReader{}).Read()
+var RetryWindow = 7
+
+func ExistingImport() int { return api.Base }
+-- .scratch/want/initcase-api.go --
+package api
+
+var Base = 1
+-- .scratch/want/boolcase-legacy.go --
+package legacy
+
+var Enabled = true
+-- .scratch/want/boolcase-api.go --
+package api
+
+const true = false
+-- .scratch/want/intcase-legacy.go --
+package legacy
+
+var Limit int = 10
+-- .scratch/want/intcase-api.go --
+package api
+
+type int int64

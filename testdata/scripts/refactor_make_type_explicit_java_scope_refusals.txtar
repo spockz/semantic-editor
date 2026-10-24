@@ -1,0 +1,59 @@
+# Unsupported binding scopes and inferred-type shapes fail before the native action and preserve all bytes.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=1 SEMEDIT_JAVA_ORGANIZE=1
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'resolves to 0 declarations'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.parameter(int)' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'resolves to 0 declarations'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.explicit()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'must have inferred var type'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.duplicate()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'resolves to 2 declarations'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.loop()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'unsupported binding scope'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.lambda()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'unsupported binding scope'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.modified()' --symbol total --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'unannotated and unmodified'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.anonymous()' --symbol action --expected-revision 84f3aa2cfe3da3531cab1d6486a2332847215242c03a737d47657c3df32a3d65
+stderr 'non-denotable anonymous class type'
+cmp src/Service.java original.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Service.java --
+class Service {
+  int total = 1;
+  int count() { return total; }
+  int parameter(int total) { return total; }
+  int explicit() { int total = 1; return total; }
+  int duplicate() { { var total = 1; } { var total = 2; } return 0; }
+  int loop() { for (var total = 0; total < 2; total++) {} return 0; }
+  int lambda() { Runnable run = () -> { var total = 1; }; return 0; }
+  int modified() { final var total = 1; return total; }
+  Runnable anonymous() { var action = new Runnable() { public void run() {} }; return action; }
+}
+-- original.java --
+class Service {
+  int total = 1;
+  int count() { return total; }
+  int parameter(int total) { return total; }
+  int explicit() { int total = 1; return total; }
+  int duplicate() { { var total = 1; } { var total = 2; } return 0; }
+  int loop() { for (var total = 0; total < 2; total++) {} return 0; }
+  int lambda() { Runnable run = () -> { var total = 1; }; return 0; }
+  int modified() { final var total = 1; return total; }
+  Runnable anonymous() { var action = new Runnable() { public void run() {} }; return action; }
+}

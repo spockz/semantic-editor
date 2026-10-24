@@ -1,0 +1,26 @@
+# Refuse unsupported Scala inline-value in a batch without mutating its source.
+exec materialize-mcp-input input.json
+stdin input.expanded.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'has no handler for language'
+cmp src/Thing.scala original.scala
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_inline_value","params":{"language":"scala","trust_workspace":true,"metals_bin":"@METALS_BIN@","java_bin":"@JAVA_BIN@","java_version":"21","file":"src/Thing.scala","symbol":"value","in_function":"run"}},{"tool":"semantic_lookup","params":{"language":"scala","trust_workspace":true,"metals_bin":"@METALS_BIN@","java_bin":"@JAVA_BIN@","java_version":"21","file":"src/Thing.scala","symbol":"run"}}]}}}
+-- src/Thing.scala --
+object Thing {
+  def run(): Unit = {
+    val value = 42
+    consume(value, value)
+  }
+  def consume(first: Int, second: Int): Unit = ()
+}
+-- original.scala --
+object Thing {
+  def run(): Unit = {
+    val value = 42
+    consume(value, value)
+  }
+  def consume(first: Int, second: Int): Unit = ()
+}

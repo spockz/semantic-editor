@@ -1,0 +1,81 @@
+# Extracts an ordered contiguous run while preserving struct equality's evaluation and panic order.
+exec go test ./...
+exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.payload"}]' --field state
+cmp record.go .scratch/want/record.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypeorderedcontiguous
+
+go 1.24
+-- record.go --
+package sample
+
+type record struct {
+	first   int
+	payload any
+	last    int
+}
+
+func unequalFirst() bool {
+	var left, right record
+	left.first, right.first = 1, 2
+	left.payload, right.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}
+
+func uncomparablePayload() bool {
+	var left, right record
+	left.first, right.first = 1, 1
+	left.payload, right.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}
+-- equality_test.go --
+package sample
+
+import "testing"
+
+func TestUnequalFirstFieldSkipsLaterInterfaceComparison(t *testing.T) {
+	if unequalFirst() {
+		t.Fatal("comparison returned true for unequal first fields")
+	}
+}
+
+func TestEqualFirstFieldStillPanicsAtUncomparableInterface(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("comparison did not panic at the uncomparable interface value")
+		}
+	}()
+	_ = uncomparablePayload()
+}
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	state recordState
+	last    int
+}
+
+type recordState struct {
+	first   int
+	payload any
+}
+
+func unequalFirst() bool {
+	var left, right record
+	left.state.first, right.state.first = 1, 2
+	left.state.payload, right.state.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}
+
+func uncomparablePayload() bool {
+	var left, right record
+	left.state.first, right.state.first = 1, 1
+	left.state.payload, right.state.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}

@@ -1,0 +1,38 @@
+# WHY: A refused interleaved initializer contributes no extraction edits and preserves an earlier successful child.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'contiguous source-order run'
+cmp record.go .scratch/want/record.go
+
+-- go.mod --
+module example.com/extracttypekeyedbatchrefusal
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"record.go","symbol":"marker","body":"return 11"}},{"tool":"refactor_extract_type","params":{"file":"record.go","symbol":"recordState","in_type":"record","members":[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}],"field":"state"}}]}}}
+-- record.go --
+package sample
+
+type record struct {
+	first int
+	second int
+	tail int
+}
+
+func marker() int { return 7 }
+var value = record{first: 1, tail: 3, second: 2}
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	first  int
+	second int
+	tail   int
+}
+
+func marker() int {
+	return 11
+}
+
+var value = record{first: 1, tail: 3, second: 2}

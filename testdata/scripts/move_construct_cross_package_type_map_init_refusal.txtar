@@ -1,0 +1,54 @@
+# A changed import graph refuses potentially panicking map initialization before writing.
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stderr 'refuses dynamic package initialization'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp legacy/init.go .scratch/_want/legacy/init.go
+cmp dependency/dependency.go .scratch/_want/dependency/dependency.go
+cmp state/state.go .scratch/_want/state/state.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossmapinit
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+import "example.com/typecrossmapinit/dependency"
+
+type Widget int
+
+func (Widget) Value() int { return dependency.Value() }
+-- legacy/init.go --
+package legacy
+
+var PanicAtInitialization = map[any]int{[]int{}: 1}
+-- api/api.go --
+package api
+-- dependency/dependency.go --
+package dependency
+
+func Value() int { return 1 }
+-- state/state.go --
+package state
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+import "example.com/typecrossmapinit/dependency"
+
+type Widget int
+
+func (Widget) Value() int { return dependency.Value() }
+-- .scratch/_want/legacy/init.go --
+package legacy
+
+var PanicAtInitialization = map[any]int{[]int{}: 1}
+-- .scratch/_want/dependency/dependency.go --
+package dependency
+
+func Value() int { return 1 }
+-- .scratch/_want/state/state.go --
+package state
+-- .scratch/_want/api/api.go --
+package api

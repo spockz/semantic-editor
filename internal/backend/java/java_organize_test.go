@@ -10,9 +10,10 @@ import (
 	"path/filepath"
 	"testing"
 
+	"time"
+
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
-	"time"
 )
 
 func TestApplyJavaOrganizeImportsEdit(t *testing.T) {
@@ -123,5 +124,24 @@ func TestJavaProcessSessionUsesLatestDocumentVersionForUnversionedDiagnostics(t 
 	got, err := session.WaitDiagnostics(context.Background(), "file:///selected.java", 3)
 	if err != nil || len(got) != 1 || got[0].Message != "current" {
 		t.Fatalf("diagnostics=%#v err=%v", got, err)
+	}
+}
+
+func TestDecodeJavaTextEditsRejectsMissingRequiredFields(t *testing.T) {
+	cases := map[string]json.RawMessage{
+		"missing range":            []byte(`[ {"newText":""} ]`),
+		"null range":               []byte(`[ {"range":null,"newText":""} ]`),
+		"missing newText":          []byte(`[ {"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}} ]`),
+		"null newText":             []byte(`[ {"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":null} ]`),
+		"missing start coordinate": []byte(`[ {"range":{"start":{"line":0},"end":{"line":0,"character":0}},"newText":""} ]`),
+		"null end position":        []byte(`[ {"range":{"start":{"line":0,"character":0},"end":null},"newText":""} ]`),
+		"non-string newText":       []byte(`[ {"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":1} ]`),
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeJavaTextEdits(raw); !errors.Is(err, ErrJavaRenameInvalidEdit) {
+				t.Fatalf("decodeJavaTextEdits(%s) error = %v, want %v", raw, err, ErrJavaRenameInvalidEdit)
+			}
+		})
 	}
 }

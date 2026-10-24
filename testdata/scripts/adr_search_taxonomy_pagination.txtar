@@ -1,0 +1,122 @@
+# Search applies decision-kind and scope-area-language filters before stable-ID pagination and returns relative paths.
+exec semedit search-adrs --query ownership --role principle --scope source-code --area backend --languages go --offset 1 --limit 1
+stdout '"total": 2'
+stdout '"offset": 1'
+stdout '"limit": 1'
+stdout '"id": "ADR-0003"'
+stdout '"summary": "Preserve ownership boundaries during backend edits."'
+stdout '"description": "Keep source-code ownership explicit for maintainers."'
+stdout '"role": "principle"'
+stdout '"scope": "source-code"'
+stdout '"area": "backend"'
+stdout '"languages": \['
+stdout '"path": "docs/adr/0003-ownership-boundaries.md"'
+! stdout '"path": "/'
+
+exec semedit search-adrs --query invariantneedle --limit 1
+stdout '"total": 1'
+stdout '"id": "ADR-0002"'
+
+exec semedit search-adrs --query fenceddecisionneedle --limit 1
+stdout '"total": 1'
+stdout '"id": "ADR-0002"'
+
+-- .adr-dir --
+docs/adr
+-- docs/adr/0001-workspace-ownership.md --
+# ADR-0001: Workspace Ownership
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve ownership boundaries at the workspace level. |
+| description | Keep workspace ownership explicit for maintainers. |
+| role | first-principle |
+| scope | project |
+| area | backend |
+| languages | go |
+
+## Context
+
+Workspace ownership defines the boundary for code changes.
+
+## Decision
+
+Keep ownership boundaries explicit.
+
+## Invariants
+
+* Requests stay within their workspace.
+
+## Consequences
+
+Owners can reason about the affected source.
+-- docs/adr/0002-code-ownership.md --
+# ADR-0002: Code Ownership
+
+* **Status**: Proposed
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve ownership boundaries for code maintainers. |
+| description | Keep source-code ownership explicit for maintainers. |
+| role | principle |
+| scope | source-code |
+| area | backend |
+| languages | go |
+
+## Context
+
+Several code changes need an explicit owner.
+
+## Decision
+
+Keep ownership boundaries explicit during backend edits.
+
+```text
+FencedDecisionNeedle
+```
+
+## Invariants
+
+* The code owner remains discoverable. Invariantneedle describes the preserved boundary.
+
+## Consequences
+
+Ownership stays visible to maintainers.
+-- docs/adr/0003-ownership-boundaries.md --
+# ADR-0003: Ownership Boundaries
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Preserve ownership boundaries during backend edits. |
+| description | Keep source-code ownership explicit for maintainers. |
+| role | principle |
+| scope | source-code |
+| area | backend |
+| languages | go |
+
+## Context
+
+Several code changes need an explicit owner.
+
+## Decision
+
+Keep ownership boundaries explicit during backend edits.
+
+## Invariants
+
+* The code owner remains discoverable.
+
+## Consequences
+
+Ownership stays visible to maintainers.

@@ -1,0 +1,18 @@
+# A stale expected revision refuses before any source changes.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.value --getter getValue --setter setValue --expected-revision stale
+stderr 'field declaration source revision changed'
+cmp owner.go before-owner.txt
+
+-- go.mod --
+module example.com/encapsulatefieldstale
+
+go 1.24
+-- owner.go --
+package sample
+
+type owner struct { value int }
+
+func read(value *owner) int { return value.value }

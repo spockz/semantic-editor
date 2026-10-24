@@ -1,0 +1,47 @@
+# Extract a nested return expression from one named result while preserving what a defer observes.
+exec semedit refactor-extract-value --file render.go --symbol selected --in-function Render --kind variable --discriminator 'value + 1'
+cmp render.go want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablenamedresult
+
+go 1.24
+-- render.go --
+package render
+
+var observed int
+
+func Render(value int) (result int) {
+	defer func() { observed = result }()
+	if value > 0 {
+		return value + 1
+	}
+	return value - 1
+}
+-- want/render.go --
+package render
+
+var observed int
+
+func Render(value int) (result int) {
+	defer func() { observed = result }()
+	if value > 0 {
+		selected := value + 1
+		return selected
+	}
+	return value - 1
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestNamedResultAndDeferObserveExtractedValue(t *testing.T) {
+	if got := Render(4); got != 5 || observed != 5 {
+		t.Fatalf("Render(4), observed = %d, %d; want 5, 5", got, observed)
+	}
+	if got := Render(-4); got != -5 || observed != -5 {
+		t.Fatalf("Render(-4), observed = %d, %d; want -5, -5", got, observed)
+	}
+}

@@ -240,9 +240,13 @@ func TestSemanticToolProviderPrefixesNormalizeConsistently(t *testing.T) {
 		caseName, name, server, want string
 	}{
 		{caseName: "CLI semantic name", name: "semantic_rename", want: "semantic_rename"},
+		{caseName: "canonical CLI refactor name", name: "refactor_rename", want: "refactor_rename"},
 		{caseName: "slash server prefix", name: "semedit/semantic_rename", want: "semantic_rename"},
 		{caseName: "MCP server prefix", name: "mcp__semedit__semantic_rename", want: "semantic_rename"},
 		{caseName: "OpenCode prefix", name: "semedit_semantic_rename", want: "semantic_rename"},
+		{caseName: "slash canonical refactor prefix", name: "semedit/refactor_rename", want: "refactor_rename"},
+		{caseName: "MCP canonical refactor prefix", name: "mcp__semedit__refactor_rename", want: "refactor_rename"},
+		{caseName: "OpenCode canonical refactor prefix", name: "semedit_refactor_rename", want: "refactor_rename"},
 		{caseName: "server identity", name: "lookup", server: "semedit", want: "lookup"},
 	} {
 		t.Run(test.caseName, func(t *testing.T) {
@@ -256,6 +260,21 @@ func TestSemanticToolProviderPrefixesNormalizeConsistently(t *testing.T) {
 	}
 	if isSemanticTool("shell", "local") {
 		t.Fatal("ordinary shell tool was classified as semantic")
+	}
+	if isSemanticTool("lookup", "") {
+		t.Fatal("tool without a semedit name or server identity was classified as semantic")
+	}
+}
+
+func TestCanonicalRefactorToolsWithoutServerMetadataVerifyMCP(t *testing.T) {
+	for _, name := range []string{"refactor_rename", "mcp__semedit__refactor_extract_value"} {
+		t.Run(name, func(t *testing.T) {
+			result := &RunResult{ToolCalls: []ToolCall{{Name: name, TransportStatus: ToolCallStatusSucceeded}}}
+			refreshMCPVerified(result)
+			if !result.MCPVerified {
+				t.Fatalf("canonical refactor call %q without server metadata did not verify MCP", name)
+			}
+		})
 	}
 }
 

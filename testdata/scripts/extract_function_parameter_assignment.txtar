@@ -1,0 +1,29 @@
+# Extract a single plain assignment to a basic named owner parameter.
+exec semedit refactor-extract-callable --file update.go --symbol increment --in-function Update --kind function --start-line 4 --end-line 4
+stdout 'symbol: increment'
+cmp update.go want/update.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionparameterassignment
+
+go 1.23
+-- update.go --
+package sample
+
+func Update(count int) {
+	count = count + 1
+	println(count)
+}
+-- want/update.go --
+package sample
+
+func Update(count int) {
+	count = increment(count)
+	println(count)
+}
+
+func increment(count int) int {
+	count = count + 1
+	return count
+}

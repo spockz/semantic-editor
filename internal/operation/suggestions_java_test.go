@@ -124,7 +124,7 @@ func TestJavaDispatchRenameAliasFeedsLaterSuggestion(t *testing.T) {
 	fake := &javaSuggestionBackend{file: file, selector: "demo.Widget"}
 	cc := NewCallContext(root, backend.ProjectContext{RootDir: root, Language: backend.LanguageJava})
 	cc.Service, cc.Ctx = javaSuggestionService(t, fake), sourcebuf.WithBuffer(context.Background(), buffer)
-	if _, dispatchErr := cc.Registry.Dispatch(cc, string(backend.OperationRename), map[string]any{"file": "Widget.java", "language": "java", "trust_workspace": true, "symbol": "demo.Widget", "to": "Gadget"}); dispatchErr != nil {
+	if _, dispatchErr := cc.Registry.Dispatch(cc, "refactor_rename", map[string]any{"file": "Widget.java", "language": "java", "trust_workspace": true, "symbol": "demo.Widget", "to": "Gadget"}); dispatchErr != nil {
 		t.Fatalf("rename dispatch: %v", dispatchErr)
 	}
 	aliases := buffer.SymbolAliases()
@@ -170,7 +170,7 @@ func TestSuggestJavaRenameUsesNativeNonMutatingValidator(t *testing.T) {
 	fake := &javaSuggestionBackend{file: file, selector: "demo.Widget"}
 	cc := NewCallContext(root, backend.ProjectContext{RootDir: root, Language: backend.LanguageJava})
 	cc.Service = javaSuggestionService(t, fake)
-	entry, _ := DefaultRegistry().LookupKey(string(backend.OperationRename))
+	entry, _ := DefaultRegistry().LookupKey("refactor_rename")
 	cause := &javabackend.JavaError{Op: "rename", File: file, Symbol: "demo.Widgte", Err: javabackend.ErrJavaSymbolNotFound}
 	err := suggestJavaFailedTarget(cc, entry, map[string]any{"file": "Widget.java", "language": "java", "trust_workspace": true, "symbol": "demo.Widgte", "to": "Gadget"}, cause)
 	alternatives := SuggestionsFromError(err)

@@ -301,7 +301,7 @@ func (*JavaBackend) Language() backend.LanguageID { return backend.LanguageJava 
 
 // Capabilities declares Java's trusted, file-scoped capabilities.
 func (*JavaBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationOrganizeImports, backend.OperationAddBuildDependency, backend.OperationOutline, backend.OperationInspect, backend.OperationFindReferences, backend.OperationInspectConstruct, backend.OperationInsertConstruct, backend.OperationReplaceConstruct, backend.OperationReplaceBody, backend.OperationReplaceDecl, backend.OperationRemoveConstruct, backend.OperationExtractFunction, backend.OperationExtractVariable, backend.OperationExtractConstant, backend.OperationInlineVariable, backend.OperationInlineFunction, backend.OperationImplementContract, backend.OperationChangeSignature, backend.OperationIntroduceParameter, backend.OperationIntroduceParameterObject, backend.OperationMoveConstruct)
+	return backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationOrganizeImports, backend.OperationAddBuildDependency, backend.OperationOutline, backend.OperationInspect, backend.OperationFindReferences, backend.OperationInspectConstruct, backend.OperationInsertConstruct, backend.OperationReplaceConstruct, backend.OperationReplaceBody, backend.OperationReplaceDecl, backend.OperationRemoveConstruct, backend.OperationExtractFunction, backend.OperationExtractVariable, backend.OperationExtractConstant, backend.OperationInlineVariable, backend.OperationInlineFunction, backend.OperationImplementContract, backend.OperationChangeSignature, backend.OperationIntroduceParameter, backend.OperationIntroduceParameterObject, backend.OperationMoveConstruct, javaMakeStaticOperation, javaMakeTypeExplicitOperation)
 }
 
 // SupportedConstructs reports construct kinds that Java supports for an operation.
@@ -334,37 +334,38 @@ func (*JavaBackend) SupportedConstructs(operation backend.Operation) []backend.C
 // CapabilityMatrix returns the declarative documentation matrix for the Java backend.
 func (*JavaBackend) CapabilityMatrix() backend.LanguageMatrix {
 	operations := map[string]backend.OpCapability{
-		"scaffold_file":              {Supported: true, Description: "Create a Java source file with a package inferred from sibling .java files or a Maven source-root path.", MCPTool: "semantic_scaffold_file", PlacementKey: false},
-		"set_doc_comment":            {Supported: true, Description: "Set or remove the attached Javadoc for one uniquely selected Java declaration; JDT LS formats and verifies the selected file.", MCPTool: "semantic_set_doc_comment", PlacementKey: false},
-		"insert_field":               {Supported: true, Description: "Insert one Java field into a uniquely selected class, enum, or record; member ordering follows static/instance tier and visibility, then JDT LS formats and verifies the file.", MCPTool: "semantic_insert_field", PlacementKey: true},
-		"insert_function":            {Supported: true, Description: "Insert one Java method or constructor into a uniquely selected owner type, ordered by member tier and visibility, then format and verify through JDT LS.", MCPTool: "semantic_insert_function", PlacementKey: true},
-		"insert_type":                {Supported: true, Description: "Insert one Java nested class, interface, enum, or record into a uniquely selected owner type, ordered by visibility, then format and verify through JDT LS.", MCPTool: "semantic_insert_type", PlacementKey: true},
-		"extract_function":           {Supported: true, Description: "Delegate one contiguous direct-statement selection in a Java method to JDT LS refactor.extract.function, rename the generated helper to the requested method name, then format and verify.", MCPTool: "semantic_extract_function", PlacementKey: false},
-		"implement_contract":         {Supported: true, Description: "Ensure a Java class implements the selected interface, then delegate missing method generation to JDT LS source.overrideMethods and verify.", MCPTool: "semantic_implement_contract", PlacementKey: false},
-		"extract_interface":          {Supported: true, Description: "Extract selected public instance methods from a Java class into a package-private interface in the same source file, then format and verify through JDT LS.", MCPTool: "semantic_extract_interface", PlacementKey: false},
-		"extract_variable":           {Supported: true, Description: "Delegate exact Java expression extraction to a JDT LS code action, rename its generated local to the requested symbol, then format and verify the source.", MCPTool: "semantic_extract_variable", PlacementKey: false},
-		"extract_constant":           {Supported: true, Description: "Delegate exact Java compile-time constant extraction to a JDT LS code action, rename its generated constant, then format and verify the source.", MCPTool: "semantic_extract_constant", PlacementKey: false},
-		"inline_variable":            {Supported: true, Description: "Delegate one selected Java local declaration to JDT LS refactor.inline, then format and verify the inlined result.", MCPTool: "semantic_inline_variable", PlacementKey: false},
-		"inline_function":            {Supported: true, Description: "Delegate one selected Java method invocation to JDT LS refactor.inline after resolving the call-site expression in its owner method.", MCPTool: "semantic_inline_function", PlacementKey: false},
-		"change_signature":           {Supported: true, Description: "Delegate a complete ordered Java method-parameter mapping to JDT LS refactor.change.signature, apply the returned workspace edit across callers, and verify every affected Java file.", MCPTool: "semantic_change_signature", PlacementKey: false},
-		"introduce_parameter":        {Supported: true, Description: "Replace one exact expression in a Java method with a new parameter, delegate signature and caller updates to JDT LS, then format and verify every affected file.", MCPTool: "semantic_introduce_parameter", PlacementKey: false},
-		"introduce_parameter_object": {Supported: true, Description: "Replace a Java method's complete parameter list with a package-private value object, rewrite bound body references, and update proven same-package direct callers through JDT LS.", MCPTool: "semantic_introduce_parameter_object", PlacementKey: false},
-		"move_construct":             {Supported: true, Description: "Move one Java static method, field, or nested type to a selected destination type through JDT LS, updating imports and references across the workspace.", MCPTool: "semantic_move_construct", PlacementKey: false},
-		"verify":                     {Supported: true, Description: "Trusted Java file or directory-scope formatting, source.organizeImports, and diagnostics through JDT LS; Maven/Gradle are never executed.", MCPTool: "semantic_verify"},
-		"organize_imports":           {Supported: true, Description: "Organize imports in one trusted Java file through JDT LS; explicit additions and removals are applied in the verified source buffer.", CLICommand: "semedit imports --language java --trust-workspace --jdtls-home <path> --file <path.java>", MCPTool: "semantic_organize_imports", PlacementKey: false},
-		"add_build_dependency":       {Supported: true, Description: "Update trusted Maven reactor POMs with dependencyManagement-aware edits; does not run Maven and refreshes an active JDT LS project.", CLICommand: "semedit add-build-dependency --language java --trust-workspace --dependency <group:artifact[:version][:scope][:classifier]> [--file <module-or-pom>]", MCPTool: "semantic_add_build_dependency", PlacementKey: false},
-		"inspect_construct":          {Supported: true, Description: "Inspect Java method-local control-flow and expression candidates with a pure-Go Tree-sitter Java CST locator; this operation is read-only.", MCPTool: "semantic_inspect_construct", PlacementKey: false},
-		"insert_construct":           {Supported: true, Description: "Insert one Java method-local construct at an explicit anchor or append an element to a selected Map.of, List.of, Set.of, or array initializer; then format and verify through JDT LS.", MCPTool: "semantic_insert_construct", PlacementKey: false},
-		"insert_case":                {Supported: true, Description: "Insert one Java case clause into an exact switch in a selected method, with candidate-set revision-checked ambiguity selection and JDT LS formatting and diagnostics.", MCPTool: "semantic_insert_case", PlacementKey: false},
-		"replace_body":               {Supported: true, Description: "Replace the statements in one Java method body while preserving the declaration signature; JDT LS formats, organizes imports, and verifies the result.", MCPTool: "semantic_replace_body", PlacementKey: false},
-		"replace_decl":               {Supported: true, Description: "Replace one Java method, field, or nested type declaration while preserving its kind and name, then format and verify through JDT LS.", MCPTool: "semantic_replace_decl", PlacementKey: false},
-		"replace_construct":          {Supported: true, Description: "Replace one selected Java method-local construct by its inspected Tree-sitter path, then format, organize imports, and verify through JDT LS.", MCPTool: "semantic_replace_construct", PlacementKey: false},
-		"remove_construct":           {Supported: true, Description: "Remove one Java method, constructor, field, nested type, or method-local control-flow construct; safe_delete requires a private declaration and complete JDT LS workspace reference coverage with no usages.", MCPTool: "semantic_remove_construct", PlacementKey: false},
-		"rename": {
+		"scaffold_file":                       {Supported: true, Description: "Create a Java source file with a package inferred from sibling .java files or a Maven source-root path.", MCPTool: "semantic_scaffold_file", PlacementKey: false},
+		"set_doc_comment":                     {Supported: true, Description: "Set or remove the attached Javadoc for one uniquely selected Java declaration; JDT LS formats and verifies the selected file.", MCPTool: "semantic_set_doc_comment", PlacementKey: false},
+		"insert_field":                        {Supported: true, Description: "Insert one Java field into a uniquely selected class, enum, or record; member ordering follows static/instance tier and visibility, then JDT LS formats and verifies the file.", MCPTool: "semantic_insert_field", PlacementKey: true},
+		"insert_function":                     {Supported: true, Description: "Insert one Java method or constructor into a uniquely selected owner type, ordered by member tier and visibility, then format and verify through JDT LS.", MCPTool: "semantic_insert_function", PlacementKey: true},
+		"insert_type":                         {Supported: true, Description: "Insert one Java nested class, interface, enum, or record into a uniquely selected owner type, ordered by visibility, then format and verify through JDT LS.", MCPTool: "semantic_insert_type", PlacementKey: true},
+		"refactor_extract_callable":           {Supported: true, Description: "Delegate one contiguous direct-statement selection in a Java method to JDT LS refactor.extract.function, rename the generated helper to the requested method name, then format and verify.", MCPTool: "refactor_extract_callable", PlacementKey: false},
+		"refactor_implement_contract":         {Supported: true, Description: "Ensure a Java class implements the selected interface, then delegate missing method generation to JDT LS source.overrideMethods and verify.", MCPTool: "refactor_implement_contract", PlacementKey: false},
+		"refactor_extract_interface":          {Supported: true, Description: "Extract selected public instance methods from a Java class into a package-private interface in the same source file, then format and verify through JDT LS.", MCPTool: "refactor_extract_interface", PlacementKey: false},
+		"refactor_extract_value":              {Supported: true, Description: "kind=variable delegates exact local extraction and kind=constant delegates compile-time constant extraction to JDT LS. Each action renames the generated identifier and verifies the source; kind=field is unsupported because the native mutable-field edit shape lacks a safe contract.", MCPTool: "refactor_extract_value", PlacementKey: false},
+		"refactor_inline_value":               {Supported: true, Description: "Delegate one selected Java local declaration to JDT LS refactor.inline, then format and verify the inlined result.", MCPTool: "refactor_inline_value", PlacementKey: false},
+		"refactor_inline_callable":            {Supported: true, Description: "Delegate one selected Java method invocation to JDT LS refactor.inline after resolving the call-site expression in its owner method.", MCPTool: "refactor_inline_callable", PlacementKey: false},
+		"refactor_change_signature":           {Supported: true, Description: "Delegate a complete ordered Java method-parameter mapping to JDT LS refactor.change.signature, apply the returned workspace edit across callers, and verify every affected Java file.", MCPTool: "refactor_change_signature", PlacementKey: false},
+		"refactor_introduce_parameter":        {Supported: true, Description: "Replace one exact expression in a Java method with a new parameter, delegate signature and caller updates to JDT LS, then format and verify every affected file.", MCPTool: "refactor_introduce_parameter", PlacementKey: false},
+		"refactor_introduce_parameter_object": {Supported: true, Description: "Replace a Java method's complete parameter list with a package-private value object, rewrite bound body references, and update proven same-package direct callers through JDT LS.", MCPTool: "refactor_introduce_parameter_object", PlacementKey: false},
+		"refactor_move_declaration":           {Supported: true, Description: "Move one Java static method, field, or nested type to a selected destination type through JDT LS, updating imports and references across the workspace.", MCPTool: "refactor_move_declaration", PlacementKey: false},
+		"refactor_make_static":                {Supported: true, Description: "Make one Java instance method static when its simple name is unique in the selected file; select the exact enabled JDT LS Make Static action of kind refactor.inline and validate its captured workspace edit.", MCPTool: "refactor_make_static", PlacementKey: false},
+		"refactor_make_type_explicit":         {Supported: true, Description: "Replace one unique Java method-local var token with the denotable explicit type supplied by a direct JDT LS refactor action; commands, imports, extra edits and unsupported binding scopes are refused.", MCPTool: "refactor_make_type_explicit"},
+		"verify":                              {Supported: true, Description: "Trusted Java file or directory-scope formatting, source.organizeImports, and diagnostics through JDT LS; Maven/Gradle are never executed.", MCPTool: "semantic_verify"},
+		"organize_imports":                    {Supported: true, Description: "Organize imports in one trusted Java file through JDT LS; explicit additions and removals are applied in the verified source buffer.", CLICommand: "semedit imports --language java --trust-workspace --jdtls-home <path> --file <path.java>", MCPTool: "semantic_organize_imports", PlacementKey: false},
+		"add_build_dependency":                {Supported: true, Description: "Update trusted Maven reactor POMs with dependencyManagement-aware edits; does not run Maven and refreshes an active JDT LS project.", CLICommand: "semedit add-build-dependency --language java --trust-workspace --dependency <group:artifact[:version][:scope][:classifier]> [--file <module-or-pom>]", MCPTool: "semantic_add_build_dependency", PlacementKey: false},
+		"inspect_construct":                   {Supported: true, Description: "Inspect Java method-local control-flow and expression candidates with a pure-Go Tree-sitter Java CST locator; this operation is read-only.", MCPTool: "semantic_inspect_construct", PlacementKey: false},
+		"insert_construct":                    {Supported: true, Description: "Insert one Java method-local construct at an explicit anchor or append an element to a selected Map.of, List.of, Set.of, or array initializer; then format and verify through JDT LS.", MCPTool: "semantic_insert_construct", PlacementKey: false},
+		"insert_case":                         {Supported: true, Description: "Insert one Java case clause into an exact switch in a selected method, with candidate-set revision-checked ambiguity selection and JDT LS formatting and diagnostics.", MCPTool: "semantic_insert_case", PlacementKey: false},
+		"replace_body":                        {Supported: true, Description: "Replace the statements in one Java method body while preserving the declaration signature; JDT LS formats, organizes imports, and verifies the result.", MCPTool: "semantic_replace_body", PlacementKey: false},
+		"replace_decl":                        {Supported: true, Description: "Replace one Java method, field, or nested type declaration while preserving its kind and name, then format and verify through JDT LS.", MCPTool: "semantic_replace_decl", PlacementKey: false},
+		"replace_construct":                   {Supported: true, Description: "Replace one selected Java method-local construct by its inspected Tree-sitter path, then format, organize imports, and verify through JDT LS.", MCPTool: "semantic_replace_construct", PlacementKey: false},
+		"remove_construct":                    {Supported: true, Description: "Remove one Java method, constructor, field, nested type, or method-local control-flow construct; safe_delete requires a private declaration and complete JDT LS workspace reference coverage with no usages.", MCPTool: "semantic_remove_construct", PlacementKey: false},
+		"refactor_rename": {
 			Supported:    true,
 			Description:  "Trusted JDT LS semantic rename applies validated text edits across Java files and supports one standalone public-type RenameFile operation; buffered resource renames are refused.",
-			CLICommand:   "semedit rename --language java --trust-workspace --jdtls-home <path> --java-bin <path> --file <path.java> --symbol <sym> --to <name>",
-			MCPTool:      "semantic_rename",
+			CLICommand:   "semedit refactor-rename --language java --trust-workspace --jdtls-home <path> --java-bin <path> --file <path.java> --symbol <sym> --to <name>",
+			MCPTool:      "refactor_rename",
 			PlacementKey: false,
 		},
 		"lookup": {
@@ -997,6 +998,27 @@ func (b *JavaBackend) publishJavaResourceRename(ctx context.Context, session Jav
 		processSession.recordDocumentVersion(rename.newURI, state.version)
 	}
 	b.documents[rename.newURI] = state
+	for _, fileEdit := range edit.files {
+		if fileEdit.file == rename.newPath || fileEdit.file == rename.oldPath {
+			continue
+		}
+		state, ok := b.documents[fileEdit.uri]
+		if !ok {
+			return fmt.Errorf("renamed Java reference document %q is absent from session state: %w", fileEdit.file, ErrJavaRenameInvalidEdit)
+		}
+		state.version++
+		if err := session.Notify(ctx, "textDocument/didChange", map[string]any{
+			lspTextDocumentKey: map[string]any{"uri": fileEdit.uri, "version": state.version},
+			"contentChanges":   []map[string]string{{"text": string(fileEdit.after)}},
+		}); err != nil {
+			return fmt.Errorf("revalidate Java reference after resource rename %q: %w", fileEdit.file, errors.Join(err, b.invalidateJavaSessionLocked(session)))
+		}
+		if processSession, ok := session.(*javaProcessSession); ok {
+			processSession.recordDocumentVersion(fileEdit.uri, state.version)
+		}
+		state.digest = sha256.Sum256(fileEdit.after)
+		b.documents[fileEdit.uri] = state
+	}
 	selected.file, selected.uri = rename.newPath, rename.newURI
 	return nil
 }
@@ -1013,8 +1035,9 @@ type javaResourceRename struct {
 }
 
 type javaWorkspaceEdit struct {
-	files   []javaWorkspaceFileEdit
-	renames []javaResourceRename
+	files           []javaWorkspaceFileEdit
+	renames         []javaResourceRename
+	organizeImports bool
 }
 
 type javaWorkspaceDocument struct {
@@ -1073,27 +1096,73 @@ func prepareJavaRenameEdit(ctx context.Context, session JavaSession, root, file 
 	if err != nil {
 		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Err: err}
 	}
-	if len(updated.renames) == 0 && filepath.Base(file) == oldName+".java" {
-		publicType, isPublic, typeErr := javacst.JavaPublicTopLevelTypeName(source)
-		if typeErr != nil {
-			return javaRenameEdit{}, fmt.Errorf("inspect Java public type for resource rename: %w", typeErr)
-		}
-		if isPublic && publicType == oldName {
-			newPath := filepath.Join(filepath.Dir(file), newName+".java")
-			if !pathutil.PathWithin(root, newPath) {
-				return javaRenameEdit{}, fmt.Errorf("java public type rename target escapes workspace")
-			}
-			if _, statErr := os.Stat(newPath); statErr == nil {
-				return javaRenameEdit{}, fmt.Errorf("java public type rename target %q already exists", newPath)
-			} else if !errors.Is(statErr, os.ErrNotExist) {
-				return javaRenameEdit{}, fmt.Errorf("inspect Java public type rename target %q: %w", newPath, statErr)
-			}
-			updated.renames = append(updated.renames, javaResourceRename{
-				oldURI: pathutil.FileURI(file), newURI: pathutil.FileURI(newPath), oldPath: file, newPath: newPath,
-			})
-		}
+	if err := prepareJavaPublicTypeRename(root, file, source, oldName, newName, &updated); err != nil {
+		return javaRenameEdit{}, err
+	}
+	if err := reconcileJavaRenamedTypeImports(source, oldName, newName, &updated); err != nil {
+		return javaRenameEdit{}, err
 	}
 	return javaRenameEdit{lookup: lookup, files: updated.files, renames: updated.renames}, nil
+}
+
+func prepareJavaPublicTypeRename(root, file string, source []byte, oldName, newName string, updated *javaWorkspaceEdit) error {
+	if len(updated.renames) > 0 || filepath.Base(file) != oldName+".java" {
+		return nil
+	}
+	publicType, isPublic, err := javacst.JavaPublicTopLevelTypeName(source)
+	if err != nil {
+		return fmt.Errorf("inspect Java public type for resource rename: %w", err)
+	}
+	if !isPublic || publicType != oldName {
+		return nil
+	}
+	newPath := filepath.Join(filepath.Dir(file), newName+".java")
+	if !pathutil.PathWithin(root, newPath) {
+		return fmt.Errorf("java public type rename target escapes workspace")
+	}
+	if _, err := os.Stat(newPath); err == nil {
+		return fmt.Errorf("java public type rename target %q already exists", newPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect Java public type rename target %q: %w", newPath, err)
+	}
+	updated.renames = append(updated.renames, javaResourceRename{
+		oldURI: pathutil.FileURI(file), newURI: pathutil.FileURI(newPath), oldPath: file, newPath: newPath,
+	})
+	return nil
+}
+
+func reconcileJavaRenamedTypeImports(source []byte, oldName, newName string, updated *javaWorkspaceEdit) error {
+	if len(updated.renames) == 0 {
+		return nil
+	}
+	packageName, err := javacst.JavaPackageName(source)
+	if err != nil {
+		return fmt.Errorf("read package for renamed Java type: %w", err)
+	}
+	move := javaTypeMoveImports{
+		typeName: oldName, oldPackage: packageName, newPackage: packageName,
+		oldName: qualifiedJavaTypeName(packageName, oldName), newName: qualifiedJavaTypeName(packageName, newName),
+	}
+	for i := range updated.files {
+		fileEdit := &updated.files[i]
+		if !bytes.Contains(fileEdit.before, []byte("import "+move.oldName+";")) {
+			continue
+		}
+		callerPackage, err := javacst.JavaPackageName(fileEdit.after)
+		if err != nil {
+			return fmt.Errorf("read Java reference package in %q: %w", fileEdit.file, err)
+		}
+		addImports, removeImports, err := javaMoveImportDelta(fileEdit.file, callerPackage, move)
+		if err != nil {
+			return err
+		}
+		updatedSource, err := applyJavaExplicitImports(fileEdit.after, addImports, removeImports)
+		if err != nil {
+			return fmt.Errorf("update Java renamed-type import in %q: %w", fileEdit.file, err)
+		}
+		fileEdit.after = updatedSource
+	}
+	return nil
 }
 
 type javaTextEdit struct {
@@ -1130,20 +1199,66 @@ func decodeJavaTextEdits(raw json.RawMessage) ([]javaTextEdit, error) {
 	}
 	edits := make([]javaTextEdit, len(values))
 	for i, value := range values {
-		var object map[string]json.RawMessage
-		if json.Unmarshal(value, &object) != nil || object == nil {
+		if !validJavaTextEditShape(value) {
 			return nil, ErrJavaRenameInvalidEdit
-		}
-		for key := range object {
-			if key != "range" && key != "newText" {
-				return nil, ErrJavaRenameInvalidEdit
-			}
 		}
 		if json.Unmarshal(value, &edits[i]) != nil {
 			return nil, ErrJavaRenameInvalidEdit
 		}
 	}
 	return edits, nil
+}
+
+func validJavaTextEditShape(raw json.RawMessage) bool {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || len(object) != 2 {
+		return false
+	}
+	for key := range object {
+		if key != "range" && key != "newText" {
+			return false
+		}
+	}
+	rangeRaw, rangeOK := object["range"]
+	newTextRaw, textOK := object["newText"]
+	if !rangeOK || !textOK || isJSONNull(rangeRaw) || isJSONNull(newTextRaw) || !validJavaRangeObject(rangeRaw) {
+		return false
+	}
+	var newText string
+	return json.Unmarshal(newTextRaw, &newText) == nil
+}
+
+func validJavaRangeObject(raw json.RawMessage) bool {
+	var positions map[string]json.RawMessage
+	if json.Unmarshal(raw, &positions) != nil || len(positions) != 2 {
+		return false
+	}
+	for _, side := range []string{"start", "end"} {
+		position, ok := positions[side]
+		if !ok || !validJavaPositionObject(position) {
+			return false
+		}
+	}
+	return true
+}
+
+func validJavaPositionObject(raw json.RawMessage) bool {
+	var coordinates map[string]json.RawMessage
+	if json.Unmarshal(raw, &coordinates) != nil || len(coordinates) != 2 {
+		return false
+	}
+	for _, key := range []string{"line", "character"} {
+		value, ok := coordinates[key]
+		var number int
+		if !ok || isJSONNull(value) || json.Unmarshal(value, &number) != nil {
+			return false
+		}
+	}
+	return true
+}
+
+func isJSONNull(value json.RawMessage) bool {
+	return bytes.Equal(bytes.TrimSpace(value), []byte("null"))
 }
 
 func prepareJavaWorkspaceEdits(ctx context.Context, root, selectedFile string, selectedSource []byte, raw json.RawMessage, oldName, newName string, allowResourceRenames bool) (javaWorkspaceEdit, error) {

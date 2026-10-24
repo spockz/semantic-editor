@@ -88,7 +88,7 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 				}
 				stagePrompt = strings.TrimSpace(stagePrompt + " " + steering + " When done, output DONE.")
 				if arm == ArmSemeditExplicit {
-					stagePrompt = strings.TrimSpace(stagePrompt + " Apply this stage using semantic_lookup for the current symbol followed by semantic_rename with the new identifier from the named rename-plan.md row. Keep mutations serial and change only this stage's row.")
+					stagePrompt = strings.TrimSpace(stagePrompt + " Apply this stage using semantic_lookup for the current symbol followed by refactor_rename with the new identifier from the named rename-plan.md row. Keep mutations serial and change only this stage's row.")
 				}
 			case ArmBaseline:
 				stagePrompt = strings.TrimSpace(stagePrompt + " Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.")

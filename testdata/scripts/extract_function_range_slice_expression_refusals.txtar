@@ -1,0 +1,38 @@
+# Refuse effectful slice bounds and extra non-scalar owner uses without changing source.
+mkdir .scratch
+cp effectful.go .scratch/effectful.go
+cp extra.go .scratch/extra.go
+! exec semedit refactor-extract-callable --file effectful.go --symbol walkEffectful --in-function WalkEffectful --kind function --start-line 4 --end-line 6
+stderr 'slice bounds must be pure compiler-resolved integer expressions'
+cmp effectful.go .scratch/effectful.go
+! exec semedit refactor-extract-callable --file extra.go --symbol walkExtra --in-function WalkExtra --kind function --start-line 4 --end-line 7
+stderr 'cannot copy non-scalar owner input "values"'
+cmp extra.go .scratch/extra.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangesliceexpressionrefusals
+
+go 1.23
+-- effectful.go --
+package sample
+
+func WalkEffectful(values []int) {
+	for index := range values[:1:nextBound()] {
+		consume(index)
+	}
+}
+
+func nextBound() int { return 1 }
+-- extra.go --
+package sample
+
+func WalkExtra(values []int) {
+	for index := range values[:] {
+		consume(index)
+		consumeSlice(values)
+	}
+}
+
+func consume(int)          {}
+func consumeSlice([]int)   {}

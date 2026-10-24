@@ -43,7 +43,7 @@ See the [Go guide](skills/semedit/references/golang.md).
 
 #### Rust
 
-Install the [`rust-analyzer` binary](https://rust-analyzer.github.io/book/installation.html) and select a `.rs` file. Rust requires explicit workspace trust and confines rename to the selected file; Cargo is not run. See the [Rust guide](skills/semedit/references/rust.md).
+Install the [`rust-analyzer` binary](https://rust-analyzer.github.io/book/installation.html) and select a `.rs` file. Rust requires explicit workspace trust and confines rename to the selected file. The backend disables build scripts, procedural macros, and check-on-save; rust-analyzer may run Cargo metadata while loading the project. See the [Rust guide](skills/semedit/references/rust.md).
 
 #### Java
 
@@ -140,10 +140,10 @@ Support is operation-specific. A shared interface does not imply that every lang
 
 | Language | Tooling | Implemented scope |
 | :--- | :--- | :--- |
-| **Go** | Go parser/AST, `gopls`, Go formatting/import tooling | Symbol lookup, workspace rename, construct insertion/replacement/movement, body and declaration replacement, literal local-variable inlining, scaffolding, imports, dependencies, assertion transforms, and verification |
-| **Rust** | `rust-analyzer` | Trusted selected-file lookup and rename; edits outside the selected `.rs` file are rejected. No Cargo execution or general verification |
-| **Java** | Eclipse JDT LS; separate bounded Maven actions | Trusted selected-file lookup, rename, formatting, import organization, and diagnostics; explicit Maven import; fixed Maven `test-compile` and `test` actions |
-| **Scala** | Metals | Trusted selected-file lookup only; no build import or mutation |
+| **Go** | Go parser/AST, `gopls`, Go formatting/import tooling | Symbol lookup, workspace rename, bounded callable extraction with typed data flow and revision-bound nested-block paths, value extraction, single or explicitly selected repeated constant extraction, callable/value inlining, structural edits, scaffolding, imports, dependencies, assertion transforms, and verification |
+| **Rust** | `rust-analyzer` | Trusted selected-file lookup, rename, outline, bounded local-value and callable extraction, checked fixed-width decimal constant extraction, and bounded local-value/callable inlining; edits outside the selected `.rs` file are rejected. The backend disables build scripts, procedural macros, and check-on-save; rust-analyzer may run Cargo metadata during project loading |
+| **Java** | Eclipse JDT LS; separate bounded Maven actions | Trusted lookup, rename, selected-file callable/value/constant extraction, value/callable inlining, signature changes, contract/interface implementation, declaration moves, formatting, import organization, diagnostics, and explicit Maven actions; field extraction is unsupported pending a safe native edit contract |
+| **Scala** | Metals | Trusted selected-file lookup and outline; bounded value/callable extraction validates native edit transactions. Inline-value remains unavailable until the configured Metals runtime returns its action and the production edit transaction is verified. No build import or compiler diagnostics |
 | **Haskell** | Haskell Language Server and matching GHC | Explicitly standalone, trusted `.hs` lookup only; project cradles, compilation, and mutation are unavailable |
 | **Kotlin** | `kotlin-language-server` | Trusted selected-file `.kt`/`.kts` lookup and diagnostics in a source-only scratch workspace; no mutation |
 | **Bash** | `bash-language-server` | Trusted selected-file `.sh`/`.bash` lookup and diagnostics in a source-only scratch workspace; no mutation or script execution by the backend |
@@ -157,20 +157,24 @@ Kotlin, Bash, and Makefile boundaries are documented in [ADR-0047](docs/adr/0047
 
 ## 4. Editing operations
 
-Registered semantic operations share CLI and MCP definitions. MCP `--profile` selects execution behavior (`full` or `mutations-only`); `--tool-profile` independently selects discovery (`base` by default, or `full`). The default base catalog includes `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment`. `mutations-only` filters read-only tools even when the full tool catalog is selected. Use command help or the active MCP tool schema for exact parameters and language constraints.
+Registered semantic operations share CLI and MCP definitions. MCP `--profile` selects execution behavior (`full` or `mutations-only`); `--tool-profile` independently selects discovery (`base` by default, or `full`). The default base catalog includes `semantic_workspace_outline`, `refactor_change_signature`, `refactor_extract_callable`, and `semantic_set_doc_comment`. Each refactoring has one canonical `refactor_*` MCP name and one canonical `refactor-*` CLI command. `mutations-only` filters read-only tools even when the full tool catalog is selected. Use command help or the active MCP tool schema for exact parameters and language constraints.
 
 | Intent | CLI command | MCP tool |
 | :--- | :--- | :--- |
 | Locate a symbol | `lookup` | `semantic_lookup` |
-| Rename a symbol and supported references | `rename` | `semantic_rename` |
+| Rename a symbol and supported references | `refactor-rename` | `refactor_rename` |
 | Add a Go construct | `insert-construct` | `semantic_insert_construct` |
 | Replace or upsert a Go construct | `replace-construct` | `semantic_replace_construct` |
 | Remove one Go declaration or switch case; safe deletion fails closed until preflights are complete | `remove-construct` | `semantic_remove_construct` |
-| Move a Go declaration within a file or between files in one package; cross-package moves support exported free functions within one module | `move-construct` | `semantic_move_construct` |
+| Move a Go declaration within a file or package; cross-package moves support exported functions, constants, aliases with predeclared structural type expressions, variables, and bounded defined-type groups within one module | `refactor-move-declaration` | `refactor_move_declaration` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
-| Extract a safe contiguous call-statement region into a Go helper | `extract-function` | `semantic_extract_function` |
-| Extract one exact typed call argument into a Go local | `extract-variable` | `semantic_extract_variable` |
-| Inline a Go local literal variable in its next call or return | `inline-variable` | `semantic_inline_variable` |
+| Extract supported Go or Java statement regions, contiguous Rust or Scala direct calls to the same callee, or inspected Go direct-statement paths with the matching file revision into a helper | `refactor-extract-callable` | `refactor_extract_callable` |
+| Extract a supported Go, Java, Rust, or bounded Scala value; Go supports guarded call arguments, repeated scalar expressions within one call or contiguous direct-assignment range, simple assignment RHS expressions in direct or nested statement blocks, and direct or nested returns with one unnamed result; Go and Java support their documented constant forms, and Rust accepts checked fixed-width decimal addition initializers | `refactor-extract-value` | `refactor_extract_value` |
+| Make one Java method static through JDT LS and update resolved callers | `refactor-make-static` | `refactor_make_static` |
+| Make one unique Java method-local `var` type explicit through a direct JDT LS token edit, using its inspected file revision | `refactor-make-type-explicit` | `refactor_make_type_explicit` |
+| Inline a supported Go, Java, or bounded Rust value; inline one supported callable or selected multiple Go free-function calls | `refactor-inline-value`, `refactor-inline-callable` | `refactor_inline_value`, `refactor_inline_callable` |
+| Encapsulate one private Go struct field with typed accessor generation and supported direct reference rewrites | `refactor-encapsulate-field` | `refactor_encapsulate_field` |
+| Move a contiguous run of private Go fields and one pointer method into a same-file delegate while retaining the owner wrapper | `refactor-extract-delegate` | `refactor_extract_delegate` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
 | Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
 
@@ -181,13 +185,13 @@ Registered semantic operations share CLI and MCP definitions. MCP `--profile` se
 | Compile or run Java tests | `maven-compile`, `maven-test` | `semantic_maven_compile`, `semantic_maven_test` |
 | Capture or restore a workspace snapshot | `snapshot`, `undo` | `semantic_snapshot`, `semantic_undo` |
 
-Cross-package construct moves are limited to exported free functions in the same Go module. Methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build-tagged or generated references are refused.
+Cross-package construct moves support exported free functions, standalone constants, aliases whose structural type expressions use only predeclared type names, and bounded defined types with their co-located exported direct methods. Alias moves require the candidate overlay to preserve exact unaliased type identity, so package-sensitive private members of anonymous types refuse. Moves require existing files in the same Go module and compiler-checked reference rewrites. Test-file references to moved constants, aliases, or defined-type groups; unsupported dependencies; import cycles; and ambiguous source evidence are refused. External consumers, defined-type nominal identity, and reflection names are outside the guarantee.
 
 [ADR-0049](docs/adr/0049-ast-construct-taxonomy-and-mutation-lifecycle.md) separates the construct lifecycle:
 
 * **Insert** creates a new construct at a chosen location and rejects declaration collisions. It cannot overwrite existing code.
 * **Replace** changes a construct in place. Declaration upsert can insert an absent declaration at its canonical layout position; replacement has no placement parameter.
-* **Move** relocates an existing declaration within its file or package, or a supported exported free function across packages, carrying attached comments without requiring its source again.
+* **Move** relocates an existing declaration within its file or package, or a supported exported Go declaration across packages, carrying attached comments without requiring its source again.
 
 These operations currently execute Go edits. The broader construct taxonomy in the ADRs does not enable mutation in other languages. The former discrete insertion tools, including `insert-declaration`, `insert-function`, `insert-type`, `insert-decl`, and `insert-case`, have been retired from the registry.
 
@@ -247,7 +251,7 @@ This builds the binaries and replaces the placeholders with absolute paths to `b
 For a Go project, run the binary from the intended workspace and name the declaration rather than calculating coordinates:
 
 ```sh
-semedit rename --file server.go --symbol Server.Start --to Serve
+semedit refactor-rename --file server.go --symbol Server.Start --to Serve
 semedit replace-body --file server.go --symbol Server.Serve --body 'return nil'
 ```
 
@@ -267,7 +271,7 @@ MCP initialization includes prescriptive guidance by default: inspect the tool i
 
 The [ADR index](docs/adr/README.md) records accepted decisions and their evolution; the [research index](docs/research/README.md) tracks investigations. A resolved feasibility question does not necessarily mean its integration has shipped.
 
-* **Broader refactoring support:** expression extraction, inlining, richer disambiguation, and additional language mutations remain future work. Go statement extraction accepts direct call statements, optionally preceded by one supported single-local declaration returned from the helper, with conservative named-parameter/receiver data flow. Bash and Makefile construct editing need parser evidence beyond language-server symbol ranges ([RQ-0024](docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md), [RQ-0037](docs/research/RQ-0037-bash-language-server-and-construct-editing.md), [RQ-0038](docs/research/RQ-0038-makefile-language-server-versus-parser.md)).
+* **Broader refactoring support:** the registered Go, Java, Rust, and Scala operations remain deliberately bounded by operation-specific syntax and edit-safety contracts. Additional data-flow shapes, language-operation pairs, and richer disambiguation remain under investigation. Bash and Makefile construct editing need parser evidence beyond language-server symbol ranges ([RQ-0024](docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md), [RQ-0060](docs/research/RQ-0060-go-refactoring-tool-implementation.md), [RQ-0037](docs/research/RQ-0037-bash-language-server-and-construct-editing.md), [RQ-0038](docs/research/RQ-0038-makefile-language-server-versus-parser.md)).
 * **Post-edit context and normalization:** bounded result projections, project quality policy, and configurable normalization remain under investigation ([RQ-0027](docs/research/RQ-0027-preventing-read-files.md) through [RQ-0029](docs/research/RQ-0029-project-normalization-configuration.md)).
 * **Benchmark integration:** native instruction-delivery channels have been identified, but the transport implementation described in [RQ-0039](docs/research/RQ-0039-benchmark-policy-instruction-transport.md) remains deferred. [ADR-0044](docs/adr/0044-benchmark-experiment-dimensions-and-result-semantics.md) remains proposed.
 * **Runtime and workspace evolution:** persistent server lifecycle, caching, and broader workspace topologies remain research topics. Concurrent polyglot server orchestration and embedded speculative workspace isolation are not current features.
@@ -296,6 +300,8 @@ Current test anchors use the requirement ID in the Go test name:
 ## 9. Development and documentation
 
 `make check` runs mechanical fixes, formatting, dependency tidying, linting, tests, and generated-documentation checks. Public semantic behavior is exercised through CLI [txtar contracts](testdata/scripts/), with comparable coverage for each implemented language-operation pair. Unit and property tests complement those contracts ([ADR-0028](docs/adr/0028-cross-language-cli-txtar-coverage.md)).
+
+Filesystem-backed tests place disposable workspaces and Go compiler temporary files on the managed benchmark RAM volume; provision it with `make bench-ram-mount` before running checks. Unit fixtures should use in-memory buffers when that preserves the behavior under test. Set `ALLOW_SSD_TEST_TEMP=1` only when an explicit SSD-backed temporary run is intended ([ADR-0093](docs/adr/0093-ram-backed-test-workspaces-and-in-memory-fixtures.md)).
 
 The Go documentation generator combines registry-derived capabilities, executable examples, and benchmark evidence into a Hugo/Hextra site. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for development and [the benchmark architecture guide](tools/benchmark-harness/README.md) for benchmark changes.
 

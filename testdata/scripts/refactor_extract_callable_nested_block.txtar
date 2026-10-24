@@ -1,0 +1,259 @@
+# Extract a contiguous region inside one nested block using revision-bound paths.
+exec semedit inspect-construct --file service.go --in-function Emit --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.0"'
+stdout '"expected_revision": "60663ee998eee2df4d2cd297f943581cf03388ca3272ab486189b23780ea548d"'
+exec semedit inspect-construct --file service.go --in-function Emit --kind statement/expression --discriminator 'count = count + 2'
+stdout '"construct_path": "1.0.1"'
+stdout '"expected_revision": "60663ee998eee2df4d2cd297f943581cf03388ca3272ab486189b23780ea548d"'
+exec semedit refactor-extract-callable --file service.go --symbol addCount --in-function Emit --kind function --construct-path 1.0.0 --end-construct-path 1.0.1 --expected-revision 60663ee998eee2df4d2cd297f943581cf03388ca3272ab486189b23780ea548d
+cmp service.go want/service.go
+exec semedit inspect-construct --file inner.go --in-function EmitInner --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.0"'
+stdout '"expected_revision": "aa9c46171159f70d41cea51c19eaf5e47d9e59e1ac5060762dbb5fee21b65940"'
+exec semedit refactor-extract-callable --file inner.go --symbol incrementInner --in-function EmitInner --kind function --construct-path 1.0.0 --end-construct-path 1.0.0 --expected-revision aa9c46171159f70d41cea51c19eaf5e47d9e59e1ac5060762dbb5fee21b65940
+cmp inner.go want/inner.go
+exec semedit inspect-construct --file counted.go --in-function EmitCounted --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.1"'
+stdout '"expected_revision": "70251e95bdb81b094ee962b11c71ae463f581ce1db823ee83e83176fa5bdfa8e"'
+exec semedit refactor-extract-callable --file counted.go --symbol incrementCounted --in-function EmitCounted --kind function --construct-path 1.0.1 --end-construct-path 1.0.1 --expected-revision 70251e95bdb81b094ee962b11c71ae463f581ce1db823ee83e83176fa5bdfa8e
+cmp counted.go want/counted.go
+exec semedit inspect-construct --file range.go --in-function EmitRange --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.1"'
+stdout '"expected_revision": "48e093882d756283d8b485143a419ea0436ddf47017abab586367dd123ede522"'
+exec semedit refactor-extract-callable --file range.go --symbol incrementRange --in-function EmitRange --kind function --construct-path 1.0.1 --end-construct-path 1.0.1 --expected-revision 48e093882d756283d8b485143a419ea0436ddf47017abab586367dd123ede522
+cmp range.go want/range.go
+exec semedit inspect-construct --file else.go --in-function EmitElse --kind statement/expression --discriminator 'count = count + 2'
+stdout '"construct_path": "1.1.0.0"'
+stdout '"expected_revision": "bb3e2c587b5f2a1c8760292a5083a6cf6fb921b27e4e5e1c637613c4a4eb676b"'
+exec semedit refactor-extract-callable --file else.go --symbol incrementElseCount --in-function EmitElse --kind function --construct-path 1.1.0.0 --end-construct-path 1.1.0.0 --expected-revision bb3e2c587b5f2a1c8760292a5083a6cf6fb921b27e4e5e1c637613c4a4eb676b
+cmp else.go want/else.go
+exec go test ./...
+! exec semedit refactor-extract-callable --file cross.go --symbol moveBoth --in-function Run --kind function --construct-path 0.0.0 --end-construct-path 0.1.0.0 --expected-revision 5b18c588a3dd420db8ee2cf5b1435ff1ac8701bdded4fa18077b37344dc45bc6
+stderr 'must select statements from the same block'
+cmp cross.go original/cross.go
+
+-- go.mod --
+module example.com/nestedextract
+
+go 1.24
+-- service.go --
+package sample
+
+func Emit(enabled bool) int {
+	count := 0
+	if enabled {
+		count = count + 1
+		count = count + 2
+	}
+	return count
+}
+-- service_test.go --
+package sample
+
+import (
+	"io"
+	"os"
+	"testing"
+)
+
+func TestEmit(t *testing.T) {
+	for _, test := range []struct {
+		enabled bool
+		want    int
+	}{{true, 3}, {false, 0}} {
+		if got := Emit(test.enabled); got != test.want {
+			t.Errorf("Emit(%v) = %d, want %d", test.enabled, got, test.want)
+		}
+	}
+}
+
+func TestNestedExtractionPreservesReads(t *testing.T) {
+	if got := captureStdout(t, func() { EmitInner(true) }); got != "1\n" {
+		t.Errorf("EmitInner(true) printed %q, want 1", got)
+	}
+	if got := captureStdout(t, EmitCounted); got != "0\n1\n2\n" {
+		t.Errorf("EmitCounted() printed %q, want 0, 1, 2", got)
+	}
+	if got := captureStdout(t, EmitRange); got != "0\n1\n2\n" {
+		t.Errorf("EmitRange() printed %q, want 0, 1, 2", got)
+	}
+}
+
+func captureStdout(t *testing.T, run func()) string {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	defer reader.Close()
+	original := os.Stdout
+	os.Stdout = writer
+	defer func() { os.Stdout = original }()
+	run()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout pipe: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout pipe: %v", err)
+	}
+	return string(output)
+}
+-- inner.go --
+package sample
+
+import "fmt"
+
+func EmitInner(enabled bool) {
+	count := 0
+	if enabled {
+		count = count + 1
+		fmt.Println(count)
+	}
+}
+-- counted.go --
+package sample
+
+import "fmt"
+
+func EmitCounted() {
+	count := 0
+	for i := 0; i < 3; i++ {
+		fmt.Println(count)
+		count = count + 1
+	}
+}
+-- range.go --
+package sample
+
+import "fmt"
+
+func EmitRange() {
+	count := 0
+	for range []int{1, 2, 3} {
+		fmt.Println(count)
+		count = count + 1
+	}
+}
+-- else.go --
+package sample
+
+func EmitElse(enabled bool) int {
+	count := 0
+	if enabled {
+		count = count + 1
+	} else {
+		count = count + 2
+	}
+	return count
+}
+-- want/service.go --
+package sample
+
+func Emit(enabled bool) int {
+	count := 0
+	if enabled {
+		count = addCount(count)
+	}
+	return count
+}
+
+func addCount(count int) int {
+	count = count + 1
+	count = count + 2
+	return count
+}
+-- want/inner.go --
+package sample
+
+import "fmt"
+
+func EmitInner(enabled bool) {
+	count := 0
+	if enabled {
+		count = incrementInner(count)
+		fmt.Println(count)
+	}
+}
+
+func incrementInner(count int) int {
+	count = count + 1
+	return count
+}
+-- want/counted.go --
+package sample
+
+import "fmt"
+
+func EmitCounted() {
+	count := 0
+	for i := 0; i < 3; i++ {
+		fmt.Println(count)
+		count = incrementCounted(count)
+	}
+}
+
+func incrementCounted(count int) int {
+	count = count + 1
+	return count
+}
+-- want/range.go --
+package sample
+
+import "fmt"
+
+func EmitRange() {
+	count := 0
+	for range []int{1, 2, 3} {
+		fmt.Println(count)
+		count = incrementRange(count)
+	}
+}
+
+func incrementRange(count int) int {
+	count = count + 1
+	return count
+}
+-- want/else.go --
+package sample
+
+func EmitElse(enabled bool) int {
+	count := 0
+	if enabled {
+		count = count + 1
+	} else {
+		count = incrementElseCount(count)
+	}
+	return count
+}
+
+func incrementElseCount(count int) int {
+	count = count + 2
+	return count
+}
+-- cross.go --
+package sample
+
+func Run(enabled bool) {
+	if enabled {
+		printOne()
+	} else {
+		printTwo()
+	}
+}
+
+func printOne() {}
+func printTwo() {}
+-- original/cross.go --
+package sample
+
+func Run(enabled bool) {
+	if enabled {
+		printOne()
+	} else {
+		printTwo()
+	}
+}
+
+func printOne() {}
+func printTwo() {}

@@ -1,0 +1,36 @@
+# Unsupported compound writes and address-taking refuse before modifying the owner file.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.counter --getter getCounter --setter setCounter
+stderr 'one-target standalone assignments'
+cmp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.pointer --getter getPointer --setter setPointer
+stderr 'outside a supported statement'
+cmp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.incremented --getter getIncremented --setter setIncremented
+stderr 'outside a supported statement'
+cmp owner.go before-owner.txt
+! exec semedit refactor-encapsulate-field --file owner.go --symbol owner.decremented --getter getDecremented --setter setDecremented
+stderr 'outside a supported statement'
+cmp owner.go before-owner.txt
+exec go test
+
+-- go.mod --
+module example.com/encapsulatefieldrefusal
+
+go 1.24
+-- owner.go --
+package sample
+
+type owner struct {
+	counter int
+	pointer int
+	incremented int
+	decremented int
+}
+
+func (o *owner) compound() { o.counter += 1 }
+func (o *owner) address() *int { return &o.pointer }
+func (o *owner) increment() { o.incremented++ }
+func (o *owner) decrement() { o.decremented-- }

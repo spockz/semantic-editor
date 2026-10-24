@@ -57,7 +57,7 @@ func TestFailedTargetSuggestionsValidateExplicitRetries(t *testing.T) {
 		{"transposition", "replace_body", "PraseConfig", "config.go", 1},
 		{"receiver", "replace_body", "Server.ParseConfg", "config.go", 1},
 		{"wrong receiver", "replace_body", "Other.ParseConfg", "config.go", 0},
-		{"workspace alternatives", "rename", "PraseConfig", "", 3},
+		{"workspace alternatives", "refactor_rename", "PraseConfig", "", 3},
 		{"file restriction", "replace_body", "ParseConfg", "other/config.go", 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -142,7 +142,7 @@ func TestSuggestionProvidersAreFailureOnly(t *testing.T) {
 	if provider.calls.Load() != 0 {
 		t.Fatal("provider ran for an exact target")
 	}
-	_, err := cc.Registry.Dispatch(cc, "rename", map[string]any{"symbol": "ParseConfig", "to": "invalid-name"})
+	_, err := cc.Registry.Dispatch(cc, "refactor_rename", map[string]any{"symbol": "ParseConfig", "to": "invalid-name"})
 	if err == nil || len(SuggestionsFromError(err)) != 0 {
 		t.Fatalf("introduced name was corrected: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestAmbiguousTargetsPreferExactNativeCandidates(t *testing.T) {
 		"two/parse.go":   "package two\nfunc ParseConfig() {}\n",
 		"three/parse.go": "package three\nfunc PraseConfig() {}\n",
 	})
-	_, err := cc.Registry.Dispatch(cc, "rename", map[string]any{"symbol": "ParseConfig", "to": "ReadConfig"})
+	_, err := cc.Registry.Dispatch(cc, "refactor_rename", map[string]any{"symbol": "ParseConfig", "to": "ReadConfig"})
 	if !errors.Is(err, backend.ErrAmbiguous) {
 		t.Fatalf("ambiguity identity lost: %v", err)
 	}
@@ -190,7 +190,7 @@ func TestAmbiguousTargetsPreferExactNativeCandidates(t *testing.T) {
 		for key, value := range alternative.Arguments {
 			retry[key] = value
 		}
-		if _, err := retryCall.Registry.Dispatch(retryCall, "rename", retry); err != nil {
+		if _, err := retryCall.Registry.Dispatch(retryCall, "refactor_rename", retry); err != nil {
 			t.Fatalf("retry exact ambiguity alternative: %v", err)
 		}
 	}
@@ -322,7 +322,7 @@ func TestSuggestionsRequireNativeSignatureCompatibility(t *testing.T) {
 		map[string]any{"source_index": 0, "parameter": map[string]any{"name": "x", "type": "int"}},
 		map[string]any{"parameter": map[string]any{"name": "mode", "type": "int"}, "argument": "0"},
 	}}
-	_, err := cc.Registry.Dispatch(cc, "change_signature", raw)
+	_, err := cc.Registry.Dispatch(cc, "refactor_change_signature", raw)
 	if !errors.Is(err, symbol.ErrNotFound) {
 		t.Fatalf("signature failure identity: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestSuggestionsRequireNativeSignatureCompatibility(t *testing.T) {
 		}
 		retryCall := cc
 		retryCall.Ctx = sourcebuf.WithBuffer(context.Background(), buffer.Fork())
-		if _, err := cc.Registry.Dispatch(retryCall, "change_signature", retry); err != nil {
+		if _, err := cc.Registry.Dispatch(retryCall, "refactor_change_signature", retry); err != nil {
 			t.Fatalf("signature retry: %v", err)
 		}
 	}

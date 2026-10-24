@@ -54,7 +54,7 @@ func runInlineFunctionJava(ctx context.Context, cc CallContext, req InlineFuncti
 	}
 	result, err := service.ApplyCodeAction(ctx, backend.CodeActionRequest{
 		Operation: backend.OperationInlineFunction, Project: callerProject, File: callerFile,
-		Range: offsetJavaRange(caller.Range, candidate.Range), Kind: "refactor.inline",
+		Range: offsetJavaRange(caller.Range, candidate.Range), Kind: backend.CodeActionInlineKind,
 		ExpectedRevision: caller.Revision,
 	})
 	if err != nil {
@@ -83,7 +83,7 @@ func javaInlineFunctionReceipt(cc CallContext, calleeFile, callerFile string, ca
 		return EditReceiptDraft{}, err
 	}
 	afterRevision := structuralRevision(result.After)
-	readSet, planned, err := javaCodeActionFileRevisions(cc, result)
+	readSet, planned, err := codeActionFileRevisions(cc, result)
 	if err != nil {
 		return EditReceiptDraft{}, err
 	}
@@ -102,7 +102,7 @@ func inlineFunctionReceipt(callerRelative, calleeRelative string, caller, callee
 		calleeRevision = afterRevision
 	}
 	return EditReceiptDraft{
-		Operation: "inline_function", Status: EditPersisted,
+		Operation: backendInlineFunctionOperation, Status: EditPersisted,
 		ReadSet: readSet, PlannedChanges: planned,
 		Continuations: []SymbolTarget{
 			{File: calleeRelative, Symbol: callee.QualifiedName, ExpectedRevision: &calleeRevision},

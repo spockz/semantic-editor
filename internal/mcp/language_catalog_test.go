@@ -121,7 +121,7 @@ func TestInjectedNilRegistryDoesNotFallBackToDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range tools {
-		if tool["name"] == "semantic_rename" || tool["name"] == "semantic_verify" {
+		if tool["name"] == "refactor_rename" || tool["name"] == "semantic_verify" {
 			t.Fatalf("explicit nil registry exposed default operation %q", tool["name"])
 		}
 	}

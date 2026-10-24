@@ -55,7 +55,7 @@ func BenchmarkMCPWarmOperationCost(b *testing.B) {
 				{"file_outline", "semantic_outline", map[string]any{"path": "value.go"}, 10 * time.Millisecond},
 				{"workspace_outline", "semantic_workspace_outline", map[string]any{"path": "."}, 10 * time.Millisecond},
 				{"references", "semantic_find_references", map[string]any{"file": "value.go", "symbol": "Value"}, 10 * time.Millisecond},
-				{"symbol_rename", "semantic_rename", nil, time.Second},
+				{"symbol_rename", "refactor_rename", nil, time.Second},
 			}
 			for _, scenario := range cases {
 				b.Run(scenario.name, func(b *testing.B) { benchmarkWarmMCPCost(b, packages, scenario) })
@@ -70,7 +70,7 @@ func benchmarkWarmMCPCost(b *testing.B, packages int, scenario warmMCPCostCase) 
 	client.call(b, "initialize", map[string]any{})
 	warmVerify(b, client)
 	warmArguments := scenario.arguments
-	if scenario.tool == "semantic_rename" {
+	if scenario.tool == "refactor_rename" {
 		warmArguments = map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}
 	}
 	client.toolResult(b, scenario.tool, warmArguments)
@@ -92,7 +92,7 @@ func benchmarkWarmMCPCost(b *testing.B, packages int, scenario warmMCPCostCase) 
 }
 
 func warmBaselineArguments(scenario warmMCPCostCase, index int) map[string]any {
-	if scenario.tool != "semantic_rename" {
+	if scenario.tool != "refactor_rename" {
 		return scenario.arguments
 	}
 	from, to := "Renamed", "Value"
@@ -105,7 +105,7 @@ func warmBaselineArguments(scenario warmMCPCostCase, index int) map[string]any {
 func warmValidateBaseline(b *testing.B, root string, packages int, tool string, index int, raw json.RawMessage) {
 	b.Helper()
 	switch tool {
-	case "semantic_rename":
+	case "refactor_rename":
 		expected := "Value"
 		if index%2 != 0 {
 			expected = "Renamed"

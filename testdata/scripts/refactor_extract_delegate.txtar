@@ -1,0 +1,90 @@
+# Moves fields and one pointer method while keeping the owner method and nil behavior.
+exec go test ./...
+exec semedit refactor-extract-delegate --file counter.go --symbol counterState --in-type counter --members '[{"file":"counter.go","symbol":"counter.value"}]' --field state --method Add
+cmp counter.go .scratch/want/counter.go
+exec go test ./...
+
+-- go.mod --
+module example.com/refactordelegate
+
+go 1.24
+-- counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+
+func (c *counter) Add(delta int) int {
+	if delta == 0 {
+		return 0
+	}
+	c.value += delta
+	return c.value
+}
+
+func (c *counter) Value() int {
+	return c.value
+}
+-- counter_test.go --
+package sample
+
+import "testing"
+
+type adder interface {
+	Add(int) int
+}
+
+var _ adder = (*counter)(nil)
+
+func TestDelegatePreservesMethodValueAndExpression(t *testing.T) {
+	c := &counter{}
+	var value func(int) int = c.Add
+	var expression func(*counter, int) int = (*counter).Add
+	if value(3) != 3 || expression(c, 2) != 5 || c.Value() != 5 {
+		t.Fatal("delegate changed method dispatch or state")
+	}
+}
+
+func TestDelegatePreservesLazyNilReceiverFault(t *testing.T) {
+	var c *counter
+	if c.Add(0) != 0 {
+		t.Fatal("nil receiver should return before accessing state")
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("nil receiver should panic when selected state is accessed")
+		}
+	}()
+	_ = c.Add(1)
+}
+-- .scratch/want/counter.go --
+package sample
+
+type counter struct {
+	state counterState
+}
+
+type counterState struct {
+	value int
+}
+
+func (c *counterState) Add(delta int) int {
+	if delta == 0 {
+		return 0
+	}
+	c.value += delta
+	return c.value
+}
+
+func (c *counter) Add(delta int) int {
+	var delegate *counterState
+	if c != nil {
+		delegate = &c.state
+	}
+	return delegate.Add(delta)
+}
+
+func (c *counter) Value() int {
+	return c.state.value
+}

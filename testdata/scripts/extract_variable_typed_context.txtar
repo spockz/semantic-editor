@@ -1,7 +1,7 @@
 # Preserve defined and interface parameter types; refuse callable parameters.
-exec semedit extract-variable --file render.go --symbol distanceValue --in-function '(*Renderer).Render' --discriminator distance
-exec semedit extract-variable --file render.go --symbol readerValue --in-function '(*Renderer).RenderReader' --discriminator reader
-! exec semedit extract-variable --file render.go --symbol callbackValue --in-function '(*Renderer).Dynamic' --discriminator value
+exec semedit refactor-extract-value --file render.go --symbol distanceValue --in-function '(*Renderer).Render' --discriminator distance
+exec semedit refactor-extract-value --file render.go --symbol readerValue --in-function '(*Renderer).RenderReader' --discriminator reader
+! exec semedit refactor-extract-value --file render.go --symbol callbackValue --in-function '(*Renderer).Dynamic' --discriminator value
 stderr 'only an unshadowed same-file package function call with no unresolved import binding is supported'
 cmp render.go want/render.go
 exec go test ./...
@@ -17,14 +17,14 @@ type Distance int
 type Reader interface{ Read() }
 type Renderer struct{}
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func (r *Renderer) Render(distance Distance) {
-	consume(distance, distance)
+	consume(distance, 0)
 }
 
 func (r *Renderer) RenderReader(reader Reader) {
-	consume(reader, r)
+	consume(reader, nil)
 }
 
 func (r *Renderer) Dynamic(call func(any), value any) {
@@ -37,16 +37,16 @@ type Distance int
 type Reader interface{ Read() }
 type Renderer struct{}
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func (r *Renderer) Render(distance Distance) {
 	distanceValue := distance
-	consume(distanceValue, distance)
+	consume(distanceValue, 0)
 }
 
 func (r *Renderer) RenderReader(reader Reader) {
 	readerValue := reader
-	consume(readerValue, r)
+	consume(readerValue, nil)
 }
 
 func (r *Renderer) Dynamic(call func(any), value any) {

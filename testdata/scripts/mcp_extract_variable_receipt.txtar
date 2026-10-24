@@ -2,7 +2,7 @@
 stdin input.json
 exec semedit mcp
 stdout '"isError":false'
-stdout '"operation":"extract_variable"'
+stdout '"operation":"refactor_extract_value"'
 stdout '"status":"persisted"'
 stdout '"continuations":'
 stdout '"file":"render.go"'
@@ -17,23 +17,23 @@ module example.com/extractvariablereceipt
 
 go 1.24
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_variable","arguments":{"file":"render.go","symbol":"distanceValue","in_function":"Render","discriminator":"distance"}}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"render.go","symbol":"Render","to":"Display"}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"refactor_extract_value","arguments":{"file":"render.go","symbol":"distanceValue","in_function":"Render","discriminator":"distance"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"refactor_rename","arguments":{"file":"render.go","symbol":"Render","to":"Display"}}}
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":"render.go","symbol":"Display"}}}
 -- render.go --
 package render
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func Render(distance int) {
-	consume(distance, distance)
+	consume(distance, 0)
 }
 -- .scratch/want/render.go --
 package render
 
-func consume(first any, rest ...any) {}
+func consume(first any, second any) {}
 
 func Display(distance int) {
 	distanceValue := distance
-	consume(distanceValue, distance)
+	consume(distanceValue, 0)
 }

@@ -1,0 +1,416 @@
+# Extract a direct-call range from one expression-switch case body.
+exec semedit inspect-construct --file service.go --in-function Emit --kind statement/expression --discriminator 'record(value)'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "dbaffae77bcadb98dd638b6b396d2250451014793047654a7babeab8531ffa9b"'
+exec semedit refactor-extract-callable --file service.go --symbol recordPair --in-function Emit --kind function --construct-path 0.0.0 --end-construct-path 0.0.1 --expected-revision dbaffae77bcadb98dd638b6b396d2250451014793047654a7babeab8531ffa9b
+cmp service.go want/service.go
+! exec semedit refactor-extract-callable --file cross.go --symbol crossPair --in-function Cross --kind function --construct-path 0.0.0 --end-construct-path 0.1.0 --expected-revision 8d6aac2cf1346f8de41c3d7e3f714251bea49dc21febbb8f79fdc46ef864808b
+stderr 'must select statements from the same block'
+cmp cross.go original/cross.go
+exec semedit inspect-construct --file assignment.go --in-function Assign --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.0"'
+stdout '"expected_revision": "0d3e8fd38376771ac15369f71192f927aae3e796671ce7325cdcd905e668b35d"'
+exec semedit refactor-extract-callable --file assignment.go --symbol updateCount --in-function Assign --kind function --construct-path 1.0.0 --expected-revision 0d3e8fd38376771ac15369f71192f927aae3e796671ce7325cdcd905e668b35d
+cmp assignment.go want/assignment.go
+exec semedit inspect-construct --file unread.go --in-function AssignWithoutRead --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "1.0.0"'
+stdout '"expected_revision": "063e79c74e669340d4aed90da6d8d5782fbaf21371e9ac537f857a927afda492"'
+! exec semedit refactor-extract-callable --file unread.go --symbol updateWithoutRead --in-function AssignWithoutRead --kind function --construct-path 1.0.0 --expected-revision 063e79c74e669340d4aed90da6d8d5782fbaf21371e9ac537f857a927afda492
+stderr 'target must be read after the switch'
+cmp unread.go original/unread.go
+exec semedit inspect-construct --file parameter.go --in-function AssignParameter --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "8d59deb2b1ba58e0f7e32d371043d4430d720fddc06bebd527f93186a410b3e3"'
+exec semedit refactor-extract-callable --file parameter.go --symbol updateParameter --in-function AssignParameter --kind function --construct-path 0.0.0 --expected-revision 8d59deb2b1ba58e0f7e32d371043d4430d720fddc06bebd527f93186a410b3e3
+cmp parameter.go want/parameter.go
+exec semedit inspect-construct --file receiver.go --in-function Counter.Run --kind statement/expression --discriminator 'count = count + 1'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "c1f49d2bd21baa361425fc43ed71ef11495328b2daceb4d853221422c67d2704"'
+! exec semedit refactor-extract-callable --file receiver.go --symbol updateReceiver --in-function Counter.Run --kind function --construct-path 0.0.0 --expected-revision c1f49d2bd21baa361425fc43ed71ef11495328b2daceb4d853221422c67d2704
+stderr 'does not support the owner receiver'
+cmp receiver.go original/receiver.go
+exec semedit inspect-construct --file loop.go --in-function AssignInLoop --kind statement/expression --discriminator 'count = 1'
+stdout '"construct_path": "1.0.1.0.0"'
+stdout '"expected_revision": "fc05a697cfe288e98fb7301ba94070cd361dd6d702e5f065cb4c33e9309be71e"'
+exec semedit refactor-extract-callable --file loop.go --symbol updateLoopCount --in-function AssignInLoop --kind function --construct-path 1.0.1.0.0 --expected-revision fc05a697cfe288e98fb7301ba94070cd361dd6d702e5f065cb4c33e9309be71e
+cmp loop.go want/loop.go
+exec go test ./...
+exec semedit inspect-construct --file nested_case.go --in-function NestedCase --kind statement/expression --discriminator 'value := 1'
+stdout '"construct_path": "0.0.0.0.0"'
+stdout '"expected_revision": "9dd99437d069a1969870ff8454530cff1fd3a94bfb561f41901090edd6533aec"'
+! exec semedit refactor-extract-callable --file nested_case.go --symbol initializeValue --in-function NestedCase --kind function --construct-path 0.0.0.0.0 --expected-revision 9dd99437d069a1969870ff8454530cff1fd3a94bfb561f41901090edd6533aec
+stderr 'does not select a supported statement'
+cmp nested_case.go original/nested_case.go
+exec semedit inspect-construct --file type_switch.go --in-function TypeSwitch --kind statement/expression --discriminator 'consumeType(1)'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "943e3f9d5cc796c85a3d61615ffb93b9efbdaa8c9d53fa92086493207a0c4754"'
+! exec semedit refactor-extract-callable --file type_switch.go --symbol consumeCase --in-function TypeSwitch --kind function --construct-path 0.0.0 --expected-revision 943e3f9d5cc796c85a3d61615ffb93b9efbdaa8c9d53fa92086493207a0c4754
+stderr 'does not select a supported statement'
+cmp type_switch.go original/type_switch.go
+exec semedit inspect-construct --file select.go --in-function Select --kind statement/expression --discriminator 'consumeSelect(value)'
+stdout '"construct_path": "0.0.0"'
+stdout '"expected_revision": "5834fb1bf20527aec64340b8fd52fd7160e67a1b330791e3a5c44d93418bc1a3"'
+! exec semedit refactor-extract-callable --file select.go --symbol consumeSelected --in-function Select --kind function --construct-path 0.0.0 --expected-revision 5834fb1bf20527aec64340b8fd52fd7160e67a1b330791e3a5c44d93418bc1a3
+stderr 'does not select a supported statement'
+cmp select.go original/select.go
+
+-- go.mod --
+module example.com/switchextract
+
+go 1.24
+-- service.go --
+package sample
+
+var seen []int
+
+func Emit(value int) int {
+	switch value {
+	case 1:
+		record(value)
+		record(value + 1)
+		return 2
+	default:
+		return 0
+	}
+}
+
+func record(value int) {
+	seen = append(seen, value)
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestEmitSwitchCaseExtraction(t *testing.T) {
+	seen = nil
+	if got := Emit(1); got != 2 {
+		t.Fatalf("Emit(1) = %d, want 2", got)
+	}
+	if !reflect.DeepEqual(seen, []int{1, 2}) {
+		t.Fatalf("seen = %v, want [1 2]", seen)
+	}
+	seen = nil
+	if got := Emit(0); got != 0 || len(seen) != 0 {
+		t.Fatalf("Emit(0) = %d, seen = %v; want 0 and no calls", got, seen)
+	}
+}
+
+func TestAssignSwitchCaseExtraction(t *testing.T) {
+	if got := Assign(true); got != 1 {
+		t.Fatalf("Assign(true) = %d, want 1", got)
+	}
+	if got := Assign(false); got != 0 {
+		t.Fatalf("Assign(false) = %d, want 0", got)
+	}
+}
+
+-- cross.go --
+package sample
+
+func Cross(enabled bool) {
+	switch enabled {
+	case true:
+		first()
+	case false:
+		second()
+	}
+}
+
+func first() {}
+func second() {}
+-- original/cross.go --
+package sample
+
+func Cross(enabled bool) {
+	switch enabled {
+	case true:
+		first()
+	case false:
+		second()
+	}
+}
+
+func first() {}
+func second() {}
+-- assignment.go --
+package sample
+
+func Assign(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- original/assignment.go --
+package sample
+
+func Assign(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- unread.go --
+package sample
+
+func AssignWithoutRead(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return 7
+}
+-- original/unread.go --
+package sample
+
+func AssignWithoutRead(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return 7
+}
+-- parameter.go --
+package sample
+
+func AssignParameter(enabled bool, count int) int {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- want/parameter.go --
+package sample
+
+func AssignParameter(enabled bool, count int) int {
+	switch enabled {
+	case true:
+		count = updateParameter(count)
+	}
+	return count
+}
+
+func updateParameter(count int) int {
+	count = count + 1
+	return count
+}
+-- parameter_test.go --
+package sample
+
+import "testing"
+
+func TestAssignParameterSwitchCaseExtraction(t *testing.T) {
+	if got := AssignParameter(true, 4); got != 5 {
+		t.Fatalf("AssignParameter(true, 4) = %d, want 5", got)
+	}
+	if got := AssignParameter(false, 4); got != 4 {
+		t.Fatalf("AssignParameter(false, 4) = %d, want 4", got)
+	}
+}
+-- original/parameter.go --
+package sample
+
+func AssignParameter(enabled bool, count int) int {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- receiver.go --
+package sample
+
+type Counter int
+
+func (count Counter) Run(enabled bool) Counter {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- original/receiver.go --
+package sample
+
+type Counter int
+
+func (count Counter) Run(enabled bool) Counter {
+	switch enabled {
+	case true:
+		count = count + 1
+	}
+	return count
+}
+-- loop.go --
+package sample
+
+func AssignInLoop(limit int) int {
+	count, iterations := 0, 0
+	for iterations < 5 && count < limit {
+		iterations++
+		switch true {
+		case true:
+			count = 1
+		default:
+			break
+		}
+	}
+	return iterations
+}
+-- want/loop.go --
+package sample
+
+func AssignInLoop(limit int) int {
+	count, iterations := 0, 0
+	for iterations < 5 && count < limit {
+		iterations++
+		switch true {
+		case true:
+			count = updateLoopCount()
+		default:
+			break
+		}
+	}
+	return iterations
+}
+
+func updateLoopCount() int {
+	var count int
+	count = 1
+	return count
+}
+-- loop_test.go --
+package sample
+
+import "testing"
+
+func TestAssignInLoopSwitchCaseExtraction(t *testing.T) {
+	if got := AssignInLoop(1); got != 1 {
+		t.Fatalf("AssignInLoop(1) = %d, want 1", got)
+	}
+	if got := AssignInLoop(3); got != 5 {
+		t.Fatalf("AssignInLoop(3) = %d, want 5", got)
+	}
+}
+-- nested_case.go --
+package sample
+
+func NestedCase() {
+	switch true {
+	case true:
+		if true {
+			value := 1
+			consumeNested(value)
+		}
+	}
+}
+
+func consumeNested(int) {}
+-- original/nested_case.go --
+package sample
+
+func NestedCase() {
+	switch true {
+	case true:
+		if true {
+			value := 1
+			consumeNested(value)
+		}
+	}
+}
+
+func consumeNested(int) {}
+-- type_switch.go --
+package sample
+
+func TypeSwitch(value any) {
+	switch value.(type) {
+	case int:
+		consumeType(1)
+	}
+}
+
+func consumeType(int) {}
+-- original/type_switch.go --
+package sample
+
+func TypeSwitch(value any) {
+	switch value.(type) {
+	case int:
+		consumeType(1)
+	}
+}
+
+func consumeType(int) {}
+-- select.go --
+package sample
+
+func Select(ch <-chan int) {
+	select {
+	case value := <-ch:
+		consumeSelect(value)
+	}
+}
+
+func consumeSelect(int) {}
+-- original/select.go --
+package sample
+
+func Select(ch <-chan int) {
+	select {
+	case value := <-ch:
+		consumeSelect(value)
+	}
+}
+
+func consumeSelect(int) {}
+-- want/service.go --
+package sample
+
+var seen []int
+
+func Emit(value int) int {
+	switch value {
+	case 1:
+		recordPair(value)
+		return 2
+	default:
+		return 0
+	}
+}
+
+func recordPair(value int) {
+	record(value)
+	record(value + 1)
+}
+
+func record(value int) {
+	seen = append(seen, value)
+}
+-- want/assignment.go --
+package sample
+
+func Assign(enabled bool) int {
+	count := 0
+	switch enabled {
+	case true:
+		count = updateCount(count)
+	}
+	return count
+}
+
+func updateCount(count int) int {
+	count = count + 1
+	return count
+}

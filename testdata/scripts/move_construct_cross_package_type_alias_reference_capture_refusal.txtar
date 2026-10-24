@@ -1,0 +1,51 @@
+# Refuse when rewriting a qualified alias conversion would bind to a same-named local function.
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Count --placement file_end
+stderr 'resolves to a different declaration'
+cmp legacy/types.go .scratch/_want/legacy.go
+cmp api/api.go .scratch/_want/api.go
+cmp caller/use.go .scratch/_want/caller.go
+
+-- go.mod --
+module example.com/typecrossaliascapture
+
+go 1.23
+-- legacy/types.go --
+package legacy
+
+type Count = int8
+-- api/api.go --
+package api
+
+import "example.com/typecrossaliascapture/legacy"
+
+func Use(x int) int {
+	Count := func(value int) int { return value + 1 }
+	_ = Count(1)
+	return int(legacy.Count(x))
+}
+-- caller/use.go --
+package caller
+
+import "example.com/typecrossaliascapture/api"
+
+func Call() int { return api.Use(256) }
+-- .scratch/_want/legacy.go --
+package legacy
+
+type Count = int8
+-- .scratch/_want/api.go --
+package api
+
+import "example.com/typecrossaliascapture/legacy"
+
+func Use(x int) int {
+	Count := func(value int) int { return value + 1 }
+	_ = Count(1)
+	return int(legacy.Count(x))
+}
+-- .scratch/_want/caller.go --
+package caller
+
+import "example.com/typecrossaliascapture/api"
+
+func Call() int { return api.Use(256) }

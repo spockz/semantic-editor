@@ -1,0 +1,59 @@
+# WHY: Verifies a multi-call inline plans from a preceding callee overlay and preserves successful earlier children when a later child refuses.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"tool":"refactor_inline_callable"'
+stdout '"status":"applied_working"'
+cmp callee.go .scratch/want/callee.go
+cmp caller.go .scratch/want/caller.go
+cp .scratch/caller_test.txt caller_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinemultibatch
+
+go 1.24
+-- callee.go --
+package sample
+func adjust() int { return 1 }
+-- caller.go --
+package sample
+func Run() []int {
+ first := adjust()
+ second := adjust()
+ third := adjust()
+ return []int{first, second, third}
+}
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"callee.go","symbol":"adjust","body":"return 11"}},{"tool":"refactor_inline_callable","params":{"file":"callee.go","symbol":"adjust","call_site":{"file":"caller.go","in_function":"Run","discriminator":"adjust()","expected_revision":"521f265e8e891130dd67b8ec9ae1e8e39b4f51041d60159a64c205bbba5862eb","occurrence_indices":[0,1]}}},{"tool":"semantic_replace_body","params":{"file":"caller.go","symbol":"Missing","body":"return 99"}}]}}}
+-- .scratch/caller_test.txt --
+package sample
+
+import "testing"
+
+func TestInlineMultipleSitesUseBatchOverlay(t *testing.T) {
+	got := Run()
+	want := []int{11, 11, 11}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("Run() = %v, want %v", got, want)
+		}
+	}
+	if got := adjust(); got != 11 {
+		t.Fatalf("preserved callee = %d, want 11", got)
+	}
+}
+-- .scratch/want/callee.go --
+package sample
+
+func adjust() int {
+	return 11
+}
+-- .scratch/want/caller.go --
+package sample
+func Run() []int {
+ first := int(11)
+ second := int(11)
+ third := adjust()
+ return []int{first, second, third}
+}

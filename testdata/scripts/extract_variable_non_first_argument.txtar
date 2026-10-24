@@ -1,0 +1,184 @@
+# Extract a non-first call argument only when sibling values cannot reorder effects or panics.
+exec semedit refactor-extract-value --file success.go --symbol selected --in-function RenderSuccess --kind variable --discriminator 'count + 1'
+cmp success.go want/success.go
+exec semedit refactor-extract-value --file selected_index.go --symbol selected --in-function RenderSelectedIndex --kind variable --discriminator 'values[index]'
+cmp selected_index.go want/selected_index.go
+! exec semedit refactor-extract-value --file first_unsafe.go --symbol selected --in-function RenderFirstUnsafe --kind variable --discriminator value
+stderr 'sibling call arguments'
+cmp first_unsafe.go original/first_unsafe.go
+! exec semedit refactor-extract-value --file nonfirst_unsafe.go --symbol selected --in-function RenderNonFirstUnsafe --kind variable --discriminator 'count + 1'
+stderr 'sibling call arguments'
+cmp nonfirst_unsafe.go original/nonfirst_unsafe.go
+! exec semedit refactor-extract-value --file panic_sibling.go --symbol selected --in-function RenderPanicSibling --kind variable --discriminator 'count + 1'
+stderr 'sibling call arguments'
+cmp panic_sibling.go original/panic_sibling.go
+exec semedit refactor-extract-value --file repeated.go --symbol selected --in-function RenderRepeated --kind variable --discriminator count
+cmp repeated.go want/repeated.go
+! exec semedit refactor-extract-value --file generic.go --symbol selected --in-function RenderGeneric --kind variable --discriminator count
+stderr 'generic callees'
+cmp generic.go original/generic.go
+! exec semedit refactor-extract-value --file variadic.go --symbol selected --in-function RenderVariadic --kind variable --discriminator count
+stderr 'variadic callees'
+cmp variadic.go original/variadic.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablenonfirst
+
+go 1.24
+-- success.go --
+package render
+
+func PrintSuccess(int, int, string) {}
+
+func RenderSuccess(count int) {
+	PrintSuccess(0, count + 1, "label")
+}
+-- want/success.go --
+package render
+
+func PrintSuccess(int, int, string) {}
+
+func RenderSuccess(count int) {
+	selected := count + 1
+	PrintSuccess(0, selected, "label")
+}
+-- selected_index.go --
+package render
+
+func PrintSelectedIndex(int, int, int) {}
+
+func RenderSelectedIndex(values []int, index int) {
+	PrintSelectedIndex(0, values[index], 1)
+}
+-- want/selected_index.go --
+package render
+
+func PrintSelectedIndex(int, int, int) {}
+
+func RenderSelectedIndex(values []int, index int) {
+	selected := values[index]
+	PrintSelectedIndex(0, selected, 1)
+}
+-- first_unsafe.go --
+package render
+
+func PrintFirstUnsafe(int, int) {}
+func mutateFirstUnsafe(value *int) int { *value = *value + 1; return 0 }
+
+func RenderFirstUnsafe(value int) {
+	PrintFirstUnsafe(value, mutateFirstUnsafe(&value))
+}
+-- original/first_unsafe.go --
+package render
+
+func PrintFirstUnsafe(int, int) {}
+func mutateFirstUnsafe(value *int) int { *value = *value + 1; return 0 }
+
+func RenderFirstUnsafe(value int) {
+	PrintFirstUnsafe(value, mutateFirstUnsafe(&value))
+}
+-- nonfirst_unsafe.go --
+package render
+
+func PrintNonFirstUnsafe(int, int, int) {}
+func mutateNonFirstUnsafe(value *int) int { *value = *value + 1; return 0 }
+
+func RenderNonFirstUnsafe(count int) {
+	PrintNonFirstUnsafe(mutateNonFirstUnsafe(&count), count + 1, 0)
+}
+-- original/nonfirst_unsafe.go --
+package render
+
+func PrintNonFirstUnsafe(int, int, int) {}
+func mutateNonFirstUnsafe(value *int) int { *value = *value + 1; return 0 }
+
+func RenderNonFirstUnsafe(count int) {
+	PrintNonFirstUnsafe(mutateNonFirstUnsafe(&count), count + 1, 0)
+}
+-- panic_sibling.go --
+package render
+
+func PrintPanicSibling(int, int) {}
+
+func RenderPanicSibling(values []int, index, count int) {
+	PrintPanicSibling(values[index], count + 1)
+}
+-- original/panic_sibling.go --
+package render
+
+func PrintPanicSibling(int, int) {}
+
+func RenderPanicSibling(values []int, index, count int) {
+	PrintPanicSibling(values[index], count + 1)
+}
+-- repeated.go --
+package render
+
+var repeatedLeft, repeatedRight int
+
+func PrintRepeated(left, right int) {
+	repeatedLeft, repeatedRight = left, right
+}
+
+func RenderRepeated(count int) {
+	PrintRepeated(count, count)
+}
+
+-- repeated_test.go --
+package render
+
+import "testing"
+
+func TestRepeatedArguments(t *testing.T) {
+	RenderRepeated(7)
+	if repeatedLeft != 7 || repeatedRight != 7 {
+		t.Fatalf("arguments = %d, %d", repeatedLeft, repeatedRight)
+	}
+}
+
+-- want/repeated.go --
+package render
+
+var repeatedLeft, repeatedRight int
+
+func PrintRepeated(left, right int) {
+	repeatedLeft, repeatedRight = left, right
+}
+
+func RenderRepeated(count int) {
+	selected := count
+	PrintRepeated(selected, selected)
+}
+-- generic.go --
+package render
+
+func PrintGeneric[T ~int](value T) {}
+
+func RenderGeneric(count int) {
+	PrintGeneric(count)
+}
+-- original/generic.go --
+package render
+
+func PrintGeneric[T ~int](value T) {}
+
+func RenderGeneric(count int) {
+	PrintGeneric(count)
+}
+-- variadic.go --
+package render
+
+func PrintVariadic(values ...int) {}
+
+func RenderVariadic(count int) {
+	PrintVariadic(count)
+}
+-- original/variadic.go --
+package render
+
+func PrintVariadic(values ...int) {}
+
+func RenderVariadic(count int) {
+	PrintVariadic(count)
+}

@@ -1,0 +1,59 @@
+# Two native token edits preserve primitive and generic overload selection; overload-qualified owners remain distinct.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=1 SEMEDIT_JAVA_ORGANIZE=1
+exec semedit inspect-symbol --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --symbol 'Service.count()'
+stdout 'db4cc2885f4aabbb5e5781eb37d9047053ec98653303f9104376aa3547776006'
+exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision db4cc2885f4aabbb5e5781eb37d9047053ec98653303f9104376aa3547776006
+stdout 'Made the Java local type explicit through JDT LS'
+stdout 'Service.count\(\)'
+exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.reference()' --symbol items --expected-revision 1b4f7f758e27183325172ccf6b66bfa09e542a5932948fcb5a616b29a1e33fe9
+stdout 'Made the Java local type explicit through JDT LS'
+cmp src/Service.java want/Service.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Service.java --
+import java.util.ArrayList;
+import java.util.List;
+class Service {
+  static String choose(int value) { return "int:" + value; }
+  static String choose(long value) { return "long:" + value; }
+  static String choose(ArrayList<String> value) { return "array:" + value.size(); }
+  static String choose(List<String> value) { return "list:" + value.size(); }
+  static String count() {
+    var total = 1 + 2;
+    return choose(total);
+  }
+  static String count(int seed) { return "other"; }
+  static String reference() {
+    var items = new ArrayList<String>();
+    items.add("item");
+    return choose(items);
+  }
+  public static void main(String[] args) { System.out.println(count() + "/" + reference()); }
+}
+-- want/Service.java --
+import java.util.ArrayList;
+import java.util.List;
+class Service {
+  static String choose(int value) { return "int:" + value; }
+  static String choose(long value) { return "long:" + value; }
+  static String choose(ArrayList<String> value) { return "array:" + value.size(); }
+  static String choose(List<String> value) { return "list:" + value.size(); }
+  static String count() {
+    int total = 1 + 2;
+    return choose(total);
+  }
+  static String count(int seed) { return "other"; }
+  static String reference() {
+    ArrayList<String> items = new ArrayList<String>();
+    items.add("item");
+    return choose(items);
+  }
+  public static void main(String[] args) { System.out.println(count() + "/" + reference()); }
+}

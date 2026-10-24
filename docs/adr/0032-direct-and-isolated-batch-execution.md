@@ -178,15 +178,15 @@ including Java rename, staged code actions, and interface verification.
 Lazy binding must not omit package siblings or inputs on which semantic
 validation depends. `sourcebuf.New` must not eagerly read every workspace
 `.go` and `.java` file, and per-output checks must not rescan unrelated trees.
-Stage and sync every changed output before replacing any source. Validate the
-complete observed read set and tree membership before publication, then check
-each target's preimage immediately before its sorted replacement, accounting
-for already published outputs. Full observed inputs and membership are checked
-before staging and again before the first replacement; only each output's
-canonical path, identity, mode, and exact bytes are rechecked between replacements.
+Stage and sync every changed output before replacing any source. Validate each
+captured source preimage before publication, then check each target's preimage
+immediately before its sorted replacement, accounting for already published
+outputs. Captured inputs are checked before staging and again before the first
+replacement; only each output's canonical path, identity, mode, and exact bytes
+are rechecked between replacements. New files or callers added after discovery
+need not block publication and may remain outside the migration.
 Tree selections retain their extensions, recursion scope, and exclusion policy
-through fork/replay and publication. Ignore only the publisher's owned temporary
-files when rechecking membership after staging. Go package loaders explicitly
+through fork/replay. Go package loaders explicitly
 select Go trees; symbol collision checks observe their package directory without
 implicitly selecting nested packages. Generic/Java observations do not query
 the Go environment, while Go observations retain effective cache exclusions.

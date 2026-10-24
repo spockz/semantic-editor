@@ -133,7 +133,7 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 	batchText, err := CriticalText(map[string]any{"result": &BatchResponse{
 		Status: "ok",
 		Results: []BatchResult{{
-			Tool: "semantic_change_signature", Status: "ok",
+			Tool: "refactor_change_signature", Status: "ok",
 			Result: json.RawMessage(`{"status":"applied_working","function_target":{"file":"main.go","symbol":"update","expected_revision":"working-rev"}}`),
 		}},
 		FinalDiff: "large final diff",

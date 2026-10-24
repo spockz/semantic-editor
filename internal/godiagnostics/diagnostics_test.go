@@ -788,7 +788,10 @@ func newPublishedOverlayHarness(t *testing.T) publishedOverlayHarness {
 	if goLookupErr != nil {
 		t.Fatal(goLookupErr)
 	}
-	root := t.TempDir()
+	root, rootErr := filepath.EvalSymlinks(t.TempDir())
+	if rootErr != nil {
+		t.Fatal(rootErr)
+	}
 	writeManagedFixture(t, root, "go.mod", "module example.com/publishedoverlay\n\ngo 1.24\n")
 	diskSource := []byte("package sample\n\nfunc Value() int { return 1 }\n")
 	overlaySource := []byte("package sample\n\nimport \"strings\"\n\nfunc Value() int { _ = strings.TrimSpace(\"\"); return 2 }\n")

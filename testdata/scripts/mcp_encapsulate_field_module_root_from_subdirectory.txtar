@@ -1,0 +1,44 @@
+# A child-directory MCP process can encapsulate module-root sources when initialization explicitly authorizes the module root.
+cd child
+env SEMEDIT_TEST_MCP_ROOT=$WORK
+exec materialize-mcp-input ../input.json
+stdin input.expanded.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"applied_working"'
+stdout '"path":"caller.go"'
+cmp ../config.go ../.scratch/want/config.go
+cmp ../caller.go ../.scratch/want/caller.go
+cd ..
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldrootfromsubdir
+
+go 1.24
+-- child/marker.txt --
+The MCP process starts here, while initialization selects the module root.
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"rootPath":"@MCP_ROOT@","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_field","params":{"file":"config.go","in_type":"config","symbol":"config.counter","source":"counter int","placement":"type_end"}},{"tool":"semantic_insert_function","params":{"file":"caller.go","source":"func (c *config) readCounter() int { return c.counter }"}},{"tool":"refactor_encapsulate_field","params":{"file":"config.go","symbol":"config.counter","getter":"counterValue","setter":"setCounter"}},{"tool":"refactor_rename","params":{"file":"config.go","symbol":"counterValue","to":"count"}},{"tool":"semantic_replace_body","params":{"file":"config.go","symbol":"config.setCounter","body":"receiver.counter = value"}}]}}}
+-- config.go --
+package sample
+
+type config struct{}
+-- caller.go --
+package sample
+-- .scratch/want/config.go --
+package sample
+
+type config struct {
+	counter int
+}
+
+func (receiver *config) count() int { return receiver.counter }
+func (receiver *config) setCounter(value int) {
+	receiver.counter = value
+}
+-- .scratch/want/caller.go --
+package sample
+
+func (c *config) readCounter() int { return c.count() }

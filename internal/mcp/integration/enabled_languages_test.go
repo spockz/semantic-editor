@@ -196,7 +196,7 @@ func TestMCPBatchJavaOnlySkipsGoBaselineAndVerification(t *testing.T) {
 	}
 	input := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}`,
-		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"edits":[{"tool":"semantic_rename","params":{"symbol":"Widget","to":"Gadget","file":"Widget.java","language":"java","trust_workspace":true,"jdtls_home":"/jdtls"}}]}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"edits":[{"tool":"refactor_rename","params":{"symbol":"Widget","to":"Gadget","file":"Widget.java","language":"java","trust_workspace":true,"jdtls_home":"/jdtls"}}]}}}`,
 	}, "\n") + "\n"
 	var out bytes.Buffer
 	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("java")).Serve(context.Background(), strings.NewReader(input)); err != nil {

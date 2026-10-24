@@ -1,0 +1,30 @@
+# A later batch child extracts the RHS from an assignment created in the same overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableassignmentbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"var total int; total = count + 1; _ = total"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"adjusted","in_function":"Render","discriminator":"count + 1"}}]}}}
+-- render.go --
+package render
+
+func Render(count int) {
+}
+-- .scratch/want/render.go --
+package render
+
+func Render(count int) {
+	var total int
+	adjusted := count + 1
+	total = adjusted
+	_ = total
+}

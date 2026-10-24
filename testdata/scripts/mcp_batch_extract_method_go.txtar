@@ -1,0 +1,50 @@
+# Extract a receiver method in an unpublished batch overlay and verify the final program.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp counter.go .scratch/want/counter.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractmethodbatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"counter.go","symbol":"doubleValue","in_function":"Counter.Run","kind":"method","start_line":6,"end_line":7}}]}}}
+-- counter.go --
+package sample
+
+type Counter struct{ value int }
+
+func (c Counter) Run(delta int) int {
+	value := c.value + delta
+	value = value * 2
+	return value
+}
+-- .scratch/want/counter.go --
+package sample
+
+type Counter struct{ value int }
+
+func (c Counter) Run(delta int) int {
+	value := c.doubleValue(delta)
+	return value
+}
+
+func (c Counter) doubleValue(delta int) int {
+	value := c.value + delta
+	value = value * 2
+	return value
+}
+-- counter_test.go --
+package sample
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	if got := (Counter{value: 3}).Run(4); got != 14 {
+		t.Fatalf("Run() = %d, want 14", got)
+	}
+}

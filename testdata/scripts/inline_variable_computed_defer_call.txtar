@@ -1,0 +1,104 @@
+# Inline a pure computed scalar into its sole immediate direct defer argument while preserving registration-time evaluation.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Build
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Combine
+stderr 'binding requires an immediate direct defer call with one argument'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Method
+stderr 'inline call target must be a direct function name'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Dynamic
+stderr 'inline call target must resolve to a declared function or builtin'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputeddefer
+
+go 1.23
+-- calc.go --
+package calc
+
+type Count int
+
+var seen []Count
+
+func record(value Count) { seen = append(seen, value) }
+
+type recorder struct{}
+
+func (recorder) record(Count) {}
+
+var receiver recorder
+
+func combine(Count, Count) {}
+
+func Build(seed Count) {
+	value := seed + 2
+	defer record(value)
+	seed = 99
+}
+
+func Combine(seed Count) {
+	value := seed + 2
+	defer combine(seed, value)
+}
+
+func Method(seed Count) {
+	value := seed + 2
+	defer receiver.record(value)
+}
+
+func Dynamic(callback func(Count), seed Count) {
+	value := seed + 2
+	defer callback(value)
+}
+-- .scratch/want/calc.go --
+package calc
+
+type Count int
+
+var seen []Count
+
+func record(value Count) { seen = append(seen, value) }
+
+type recorder struct{}
+
+func (recorder) record(Count) {}
+
+var receiver recorder
+
+func combine(Count, Count) {}
+
+func Build(seed Count) {
+	defer record(seed + 2)
+	seed = 99
+}
+
+func Combine(seed Count) {
+	value := seed + 2
+	defer combine(seed, value)
+}
+
+func Method(seed Count) {
+	value := seed + 2
+	defer receiver.record(value)
+}
+
+func Dynamic(callback func(Count), seed Count) {
+	value := seed + 2
+	defer callback(value)
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuildKeepsDeferredArgumentValue(t *testing.T) {
+	seen = nil
+	Build(5)
+	if len(seen) != 1 || seen[0] != 7 {
+		t.Fatalf("seen = %v, want [7]", seen)
+	}
+}

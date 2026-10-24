@@ -1,0 +1,93 @@
+# This archive proves aliases with predeclared container, pointer, function, struct, and interface type expressions retain type identity when moved.
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Table --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Entry --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Callback --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Fixed --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Pipe --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Pointer --placement file_end
+stdout 'Successfully moved construct'
+exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Reader --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/types.go .scratch/want/legacy.go
+cmp api/api.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/structuralaliasmove
+
+go 1.23
+-- legacy/types.go --
+package legacy
+
+type Table = map[string][]int
+type Entry = struct {
+	Key string
+	Value int
+}
+type Callback = func([]byte) error
+type Fixed = [3]byte
+type Pipe = chan<- string
+type Pointer = *int
+type Reader = interface{ Read([]byte) (int, error) }
+
+func WrapTable(value Table) Table { return value }
+-- api/api.go --
+package api
+
+import "example.com/structuralaliasmove/legacy"
+
+func Existing(value legacy.Table) legacy.Table { return value }
+-- caller/use.go --
+package caller
+
+import "example.com/structuralaliasmove/legacy"
+
+func Use(value legacy.Table, entry legacy.Entry, callback legacy.Callback, fixed legacy.Fixed, pipe legacy.Pipe, pointer legacy.Pointer, reader legacy.Reader) (legacy.Table, legacy.Entry, legacy.Callback, legacy.Fixed, legacy.Pipe, legacy.Pointer, legacy.Reader) {
+	return legacy.WrapTable(value), entry, callback, fixed, pipe, pointer, reader
+}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/structuralaliasmove/api"
+
+func WrapTable(value api.Table) api.Table {
+	return value
+}
+-- .scratch/want/api.go --
+package api
+
+func Existing(value Table) Table { return value }
+
+type Table = map[string][]int
+
+type Entry = struct {
+	Key   string
+	Value int
+}
+
+type Callback = func([]byte) error
+
+type Fixed = [3]byte
+
+type Pipe = chan<- string
+
+type Pointer = *int
+
+type Reader = interface{ Read([]byte) (int, error) }
+-- .scratch/want/caller.go --
+package caller
+
+import (
+	"example.com/structuralaliasmove/api"
+	"example.com/structuralaliasmove/legacy"
+)
+
+func Use(value api.Table, entry api.Entry, callback api.Callback, fixed api.Fixed, pipe api.Pipe, pointer api.Pointer, reader api.Reader) (api.Table, api.Entry, api.Callback, api.Fixed, api.Pipe, api.Pointer, api.Reader) {
+	return legacy.WrapTable(value), entry, callback, fixed, pipe, pointer, reader
+}

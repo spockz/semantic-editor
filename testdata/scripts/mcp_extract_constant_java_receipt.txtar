@@ -1,0 +1,34 @@
+# Java constant extraction exposes the shared canonical operation in its MCP receipt.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXTRACT_CONSTANT=1 SEMEDIT_TEST_JAVA_CONSTRUCTS=1
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"persisted"'
+cmp src/Widget.java want/Widget.java
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"refactor_extract_value","arguments":{"language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls","file":"src/Widget.java","symbol":"MAX","kind":"constant","in_function":"Widget.run()","discriminator":"1 + 2"}}}
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Widget.java --
+package sample;
+class Widget {
+  int run() {
+    return 1 + 2;
+  }
+}
+-- want/Widget.java --
+package sample;
+class Widget {
+  private static final int MAX = 1 + 2;
+  int run() {
+    return MAX;
+  }
+}

@@ -1,4 +1,11 @@
 # Java Semantic Refactoring Guide
+<!-- WHY: Route Java semedit tasks to supported operations and their verified boundaries without loading uncommon migration recipes. -->
+
+## Make an inferred local type explicit
+
+Inspect the signature-qualified owner method to obtain its current file revision, then call `refactor_make_type_explicit` with `file`, the unique local binding `symbol`, `in_function` (for example `Service.count()`), and that `expected_revision`. The operation requests JDT LS's exact `Change type of '<local>' to '<type>'` action of kind `refactor` and accepts only one eager selected-file edit replacing the CST `var` token. Initializer and use bytes remain unchanged before normal formatting and verification. The receipt continues at the owner method because locals are not document-symbol targets.
+
+This supports primitive types and denotable named or generic types requiring no import edits. Modified or annotated declarations, duplicate locals, fields, parameters, loop scopes (`for`, enhanced `for`, `while`, and `do` bodies), lambda/nested-class scopes, anonymous or non-denotable types, stale revisions, commands, lazy actions, resource edits, annotations, and extra edits refuse without applying the native edit. Explicit replacements containing a reserved `var` component also refuse, including `var[]` and `List<var>`. It does not change an already explicit type.
 
 MCP results follow the [shared output policy](../SKILL.md#copy-typed-results-and-respect-publication).
 Use typed continuations with their exact revisions, and retain failure and
@@ -12,11 +19,13 @@ does not indicate a clean workspace. Use verification only for a fresh report.
 Rename returns `active_count` and diagnostic changes rather than every existing
 workspace warning; request `semantic_verify` for a full diagnostic inventory.
 
-This reference explains how to execute bounded and multi-step Java code transformations using `semedit` primitives and Maven integration. Read this document only when refactoring or modernizing Java source files.
+This reference explains how to use `semedit` with Java, including bounded transformations and Maven integration. Read it when navigating, inspecting, setting up, verifying, or editing Java source files.
+
+For less frequent refactoring recipes, see [advanced Java refactorings](java/advanced-refactorings.md): interface/contract changes, parameter and signature changes, parameter objects, declaration movement, callable inlining, Make Static, and class-shape changes.
 
 Trusted Java requests reuse a JDT LS session per workspace root and keep selected document versions synchronized with the source overlay. A trusted root with a regular `pom.xml` enables JDT LS Maven import by default; pass `import_maven: false` to disable it. JDT LS import does not execute Maven.
 
-The default MCP base catalog includes Java-capable `semantic_workspace_outline`, `semantic_change_signature`, `semantic_extract_function`, and `semantic_set_doc_comment` operations. `--tool-profile full` exposes all registered tools, while execution `--profile mutations-only` independently removes read-only tools such as workspace outline.
+The default MCP base catalog includes Java-capable `semantic_workspace_outline`, `refactor_change_signature`, `refactor_extract_callable`, and `semantic_set_doc_comment` operations. `--tool-profile full` exposes all registered tools, while execution `--profile mutations-only` independently removes read-only tools such as workspace outline.
 
 Selected-file lookup, inspection, reference search, and rename failures may expose
 up to three structured `suggestions`. They come from the current native JDT LS
@@ -37,27 +46,11 @@ For overloaded methods and constructors, query by base name to receive all candi
 
 Use `semantic_find_references` with a selected Java file and a uniquely qualified symbol to ask JDT LS for workspace references. Returned locations are checked to remain inside the trusted root and carry source revisions. Overloaded methods still require a selector that resolves to exactly one declaration.
 
-Use `semantic_extract_variable` to extract an exact expression from one Java method. Supply `in_function`, exact-source `discriminator`, and the caller-chosen local `symbol`. If the expression is ambiguous, copy `construct_path` and `expected_revision` from the current inspection result. The operation requests JDT LS `refactor.extract.variable`, captures direct or intercepted workspace edits, renames the generated local, then formats and verifies the file. Unsupported or ambiguous JDT LS actions fail before publication.
+Use `refactor_extract_value` with `kind: "variable"` to extract an exact expression into a local, or `kind: "constant"` for a compile-time constant. Field extraction is unsupported because stock JDT LS generates a mutable instance field and a method-local assignment, and semedit has no verified contract for that edit shape. Supply `in_function`, exact-source `discriminator`, and the caller-chosen `symbol`; if the expression is ambiguous, copy `construct_path` and `expected_revision` from the current inspection result. JDT LS performs the selected extraction action, semedit validates and renames the generated declaration, then formats and verifies the file.
 
-Use `semantic_extract_constant` for a Java compile-time constant expression. Supply `in_function`, exact-source `discriminator`, and the caller-chosen constant `symbol`; use `construct_path` with its matching `expected_revision` when the expression repeats. JDT LS `refactor.extract.constant` creates the field, after which semedit renames the generated identifier, formats, and verifies the file. Keep this separate from local extraction: use `semantic_extract_variable` for runtime expressions.
+Use `refactor_extract_callable` to extract a contiguous range of direct statements from one Java method into a helper method. Supply the owner `in_function`, helper `symbol`, `kind: "method"`, and 1-based `start_line` / `end_line` matching complete statement boundaries. Nested or partial control-flow selections fail closed; JDT LS infers parameters and return values, then semedit renames its generated helper, formats, and verifies the file.
 
-Use `semantic_extract_function` to extract a contiguous range of direct statements from one Java method into a helper method. Supply the owner `in_function`, helper `symbol`, `kind: "method"`, and 1-based `start_line` / `end_line` matching complete statement boundaries. Nested or partial control-flow selections fail closed; JDT LS infers parameters and return values, then semedit renames its generated helper, formats, and verifies the file.
-
-Use `semantic_implement_contract` with the concrete class `file` and `symbol`, the interface name in `contract`, and its source in optional `contract_file`. The operation adds the interface to the class when absent, then uses JDT LS `java/listOverridableMethods` and `java/addOverridableMethods` to generate only missing method stubs. Java currently writes to the selected class file, so `destination_file` must be omitted or equal `file`; the generated methods are placeholders and need a follow-up `semantic_replace_body` before they represent completed behavior.
-
-Use `semantic_extract_interface` with the concrete type in `in_type`, a new interface `symbol`, and exact direct method selectors in `members`. Java extracts public instance methods only, appends a package-private interface to the same source file, adds it to the class, then formats and verifies through JDT LS. `destination_file` must be omitted or equal `file`; overload selectors must identify one method signature.
-
-Use `semantic_change_signature` with one signature-qualified Java method `symbol` and the complete ordered `parameters` mapping. Preserve each existing parameter with its `source_index`; added parameters require a closed `argument` expression so JDT LS can update every resolved call site. The returned workspace edit is validated and applied across the affected Java files, then each file is formatted and checked for diagnostics. Do not split the signature change and caller updates into separate edits.
-
-Use `semantic_introduce_parameter` when one exact expression in a Java method should become a new parameter. Supply the complete ordered `parameters` mapping, preserve existing entries by `source_index`, add the new parameter with its call-site `argument`, and identify the expression with `discriminator` plus `construct_path` when needed. JDT LS updates the method signature and resolved callers; semedit then replaces the selected expression in the method body and verifies every changed file.
-
-Use `semantic_introduce_parameter_object` when a Java method's full parameter list should become one cohesive value object. Supply a `parameter` with the new argument name and type, map every original argument once through `fields` in `source_index` order, and select an existing same-file `destination_file`. The operation generates a package-private immutable class with a constructor and accessors, asks JDT LS to replace the method parameters and update references, then rewrites each constructor call with its original arguments in order and replaces method-body parameter uses with accessors. It refuses public or protected methods, cross-package callers, annotated or otherwise unsupported parameter syntax, argument comments, field type changes, non-invocation references, incomplete call-site edits, and stale source revisions. JDT LS formats and checks every changed file before publication.
-
-Use `semantic_move_construct` to move a Java static method, static field, or static nested type to an existing destination type. Supply the source `file` and `symbol`, the destination type's `destination_file`, and its qualified name as `target_symbol`; omit Go placement options. JDT LS performs the move, updates references and imports across affected files, and semedit verifies the resulting workspace edit. Instance methods and non-static nested types are refused.
-
-Use `semantic_inline_function` to inline one Java invocation. Select the callee with `file` and `symbol`; use `call_site` to select the caller file, its `in_function`, and the exact call expression as `discriminator`. The expression must resolve uniquely in the method, and JDT LS `refactor.inline` edits only that selected caller file.
-
-Use `semantic_inline_variable` to inline one local declaration in a Java method. Supply the declaration `symbol` and `in_function`; semedit resolves the declaration with the Java CST and requests JDT LS `refactor.inline`. The action’s edits are validated before formatting and diagnostics. Use this for a binding JDT LS can prove safe to inline; do not hand-replace its references.
+Use `refactor_inline_value` to inline one local declaration in a Java method. Supply the declaration `symbol` and `in_function`; semedit resolves the declaration with the Java CST and requests JDT LS `refactor.inline`. The action’s edits are validated before formatting and diagnostics. Use this for a binding JDT LS can prove safe to inline; do not hand-replace its references.
 
 Use `semantic_replace_body` with a Java method selector and bare replacement statements to change a method body while preserving its signature. Use `semantic_replace_decl` to replace one selected method, field, or nested type declaration; the replacement must preserve the selected declaration kind and name. Use `semantic_remove_construct` to remove a method-local construct by `in_function` and exact `discriminator`, or a method, constructor, field declaration, or nested type by its unique symbol. Declaration deletion also removes a directly attached Javadoc comment. Java `safe_delete` is limited to private declarations and requires complete JDT LS workspace reference coverage with no usages; it refuses on any remaining references or incomplete analysis. The embedded CST validates the result, then JDT LS formats the file, organizes imports, and verifies diagnostics.
 
@@ -73,7 +66,7 @@ Use `semantic_inspect_construct` with a trusted Java file and the exact method s
 
 Use `semantic_insert_case` to add a complete Java `case` or `default` clause to one selected switch in a method. Select its owner with `in_function`, identify a tagged switch with `discriminator`, and choose `first`, `last`, `before_default`, `before`, or `after`. Before/after require `target_case`; an ambiguous switch requires the inspected `construct_path` and matching `expected_selection_revision`. Duplicate labels and stale selections fail closed before JDT LS formatting and diagnostics.
 
-`semantic_rename` applies JDT LS text edits across Java files in the trusted workspace after validating each file preimage. A standalone public top-level type rename can also move its `.java` file when JDT LS returns one `RenameFile` operation. The destination must be absent and in the same package directory; buffered batches refuse resource renames.
+`refactor_rename` applies JDT LS text edits across Java files in the trusted workspace after validating each file preimage. A standalone public top-level type rename can also move its `.java` file when JDT LS returns one `RenameFile` operation. The destination must be absent and in the same package directory; buffered batches refuse resource renames.
 
 Use `semantic_organize_imports` with one selected `.java` file and `trust_workspace: true` to add fully qualified type imports, remove exact imports, then format and organize the file through JDT LS. The operation edits the shared source buffer and commits through the verified Java backend. `semantic_verify` also accepts a Java directory path; formatting and import organization run on every Java source beneath that scope, including test sources.
 
@@ -83,81 +76,6 @@ Use `semantic_stage` before a multi-turn Java change that must stay unpublished.
 
 ---
 
-## 1. Macro Refactorings in Java
+## Java workflow patterns
 
-`semedit` core operations for Java are indexed in the primary `SKILL.md` table. High-level patterns (e.g., Class $\to$ Record, Record $\to$ Class, Encapsulate Field) are composed by the agent using core operations and verified via Maven.
-
----
-
-## 2. Java Refactoring Patterns
-
-### Pattern A: Modernizing Class to Record (Class $\to$ Record)
-
-When migrating an immutable data carrier class (POJO/DTO) to a Java 16+ `record`:
-
-1. **Preflight & Inspection**:
-   - Use `semantic_outline` and `semantic_inspect_symbol` to inspect the target class: ensure fields are `private final`, state is immutable, and the class does not extend an external class (`extends Object` only).
-   - Verify serialization/reflection dependencies (e.g., JPA entities require mutable classes with no-arg constructors and cannot become records; Jackson DTOs may need `@JsonNaming` or record creator annotations).
-2. **Atomic Transformation**:
-   - Convert the class header to record syntax:
-
-     ```java
-     // Before
-     public final class Point {
-         private final int x;
-         private final int y;
-         public Point(int x, int y) { this.x = x; this.y = y; }
-         public int getX() { return x; }
-         public int getY() { return y; }
-     }
-
-     // After
-     public record Point(int x, int y) {}
-     ```
-
-   - Eliminate redundant canonical constructors, standard getters (`getX()`), `equals()`, `hashCode()`, and `toString()`.
-   - Preserve validation logic in a compact constructor:
-
-     ```java
-     public record BoundedRange(int min, int max) {
-         public BoundedRange {
-             if (min > max) throw new IllegalArgumentException("min > max");
-         }
-     }
-     ```
-
-3. **Call-Site Adjustment & Renaming**:
-   - Update call sites from JavaBean getter access (`point.getX()`) to record component access (`point.x()`). Use `semantic_rename` with `file` and `trust_workspace: true` when renaming symbols across trusted workspace files.
-4. **Verification**:
-   - Run `semantic_verify` with `format: true` and `organize_imports: true` to format the modified file and clean unused imports.
-   - Execute `semantic_maven_compile` with `trust_workspace: true` to ensure zero compilation or caller breaks.
-
----
-
-### Pattern B: De-recording (Record $\to$ Class)
-
-When a `record` outgrows its immutable constraints (e.g., requires mutable caches, lazy initialization, or inheritance hierarchy):
-
-1. **Inspection**:
-   - Use `semantic_lookup` and `semantic_inspect_symbol` to capture current record components and constructor invariants.
-2. **Expansion**:
-   - Convert `record Point(int x, int y)` into a standard class with explicit `private final` fields.
-   - Synthesize canonical constructor, component accessors (`public int x() { return x; }`), and explicit `equals`/`hashCode`/`toString` implementations.
-3. **Verification**:
-   - Format source with `semantic_verify` and compile via `semantic_maven_compile`. Because existing callers invoke `point.x()`, accessor compatibility is maintained without breaking downstream callers.
-
----
-
-### Pattern C: Encapsulate Field
-
-When converting exposed public or package-private fields into encapsulated properties:
-
-1. **Preflight Inspection**:
-   - Use `semantic_lookup` and `semantic_inspect_symbol` to check field access and annotations.
-2. **Accessor Addition & Refactoring**:
-   - Introduce explicit getter: `public T getFieldName() { return this.fieldName; }`.
-   - Introduce explicit setter: `public void setFieldName(T value) { this.fieldName = value; }`.
-   - Update field visibility from `public` to `private`.
-   - Use `semantic_rename` with `file` and `trust_workspace: true` to rename callers where method signatures match.
-3. **Verification**:
-   - Format with `semantic_verify` and run `semantic_maven_test` to confirm behavior and unit test passes.
+The primary `SKILL.md` table indexes semedit's core Java operations. The advanced reference contains less frequent signature, parameter, interface and contract changes, parameter objects, declaration moves, callable inlining, Make Static, and class-shape migrations.

@@ -33,9 +33,9 @@ func runImplementContract(ctx context.Context, cc CallContext, request implement
 
 func implementContractDef() Def[implementContractRequest, contractOutput] {
 	return Def[implementContractRequest, contractOutput]{
-		Key:     "implement_contract",
+		Key:     "refactor_implement_contract",
 		Summary: "Use this tool instead of rebuilding interface method signatures to generate missing Go methods on an existing concrete type. contract_file identifies an ordinary interface, receiver_kind selects pointer or value semantics, and body_policy must explicitly select panic_stub. Generated methods panic when called; they are placeholders, not completed implementations. destination_file must already exist in the concrete type package. Copy type_target to inspect the concrete type and each generated_methods file/symbol pair to replace_body or rename. Existing incompatible methods, unsupported promoted methods, failed required-package overlay type checks, and mutable local replacement modules are refused before one apply; versioned replacements remain supported.",
-		Params:  implementContractParams, Level: LevelSymbol, CLIName: "implement-contract", MCPName: contractImplementTool,
+		Params:  implementContractParams, Level: LevelSymbol, CLIName: "refactor-implement-contract", MCPName: contractImplementTool,
 		Parse: parseImplementContractRequest,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, implementContractRequest) (contractOutput, error){
 			backend.LanguageGo:   runImplementContract,
@@ -43,7 +43,7 @@ func implementContractDef() Def[implementContractRequest, contractOutput] {
 		},
 		Format: formatContractOutput, Output: implementContractOutputContract(),
 		FinalizeOutput: func(cc CallContext, req implementContractRequest, result contractOutput) (contractOutput, error) {
-			result.Operation = "semantic_implement_contract"
+			result.Operation = canonicalImplementContractName
 			cc.Project = effectiveProject(cc, req.Project)
 			if req.Project.Language == backend.LanguageJava {
 				return finalizeJavaContractOutput(cc, result)

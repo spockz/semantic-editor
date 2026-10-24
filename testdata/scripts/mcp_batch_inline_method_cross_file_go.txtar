@@ -1,0 +1,73 @@
+# WHY: Cross-file method inlining must consume the preceding callee overlay and support a later caller edit.
+stdin input.json
+exec semedit mcp --live-reload
+! stdout '"isError":true'
+stdout '"tool":"refactor_inline_callable"'
+stdout '"status":"applied_working"'
+cmp callee.go .scratch/want/callee.go
+cmp caller.go .scratch/want/caller.go
+cmp sibling.go .scratch/want/sibling.go
+cp .scratch/caller_test.txt caller_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinemethodbatch
+
+go 1.24
+-- callee.go --
+package sample
+
+type Counter struct{}
+
+func (*Counter) Value() float64 { return 7 }
+-- caller.go --
+package sample
+
+func Run(counter *Counter) any {
+	return counter.Value()
+}
+-- sibling.go --
+package sample
+
+// Preserve this formatting.
+var untouched =    1
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"callee.go","symbol":"Counter.Value","body":"return 11"}},{"tool":"refactor_inline_callable","params":{"file":"callee.go","symbol":"Counter.Value","call_site":{"file":"caller.go","in_function":"Run","discriminator":"counter.Value()"}}},{"tool":"semantic_insert_function","params":{"file":"caller.go","source":"func Verify() any { return Run(nil) }"}}]}}}
+-- .scratch/caller_test.txt --
+package sample
+
+import "testing"
+
+func TestOverlayResult(t *testing.T) {
+	for _, got := range []any{Run(nil), Verify()} {
+		if value, ok := got.(float64); !ok || value != 11 {
+			t.Fatalf("result = %#v (%T), want float64(11)", got, got)
+		}
+	}
+	if got := (*Counter)(nil).Value(); got != 11 {
+		t.Fatalf("preserved method = %v, want 11", got)
+	}
+}
+-- .scratch/want/callee.go --
+package sample
+
+type Counter struct{}
+
+func (*Counter) Value() float64 {
+	return 11
+}
+-- .scratch/want/caller.go --
+package sample
+
+func Run(counter *Counter) any {
+	return float64(11)
+}
+
+func Verify() any { return Run(nil) }
+-- .scratch/want/sibling.go --
+package sample
+
+// Preserve this formatting.
+var untouched =    1

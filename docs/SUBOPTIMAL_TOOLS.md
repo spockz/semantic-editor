@@ -50,6 +50,318 @@
 * Failure: Both Go edits applied, but automatic verification stopped because the configured Bash linter required explicit trust for the repository root.
 * Workaround: Re-run scoped verification with workspace trust enabled, then inspect the final source and tests.
 * Root cause: The batch implicitly ran all configured verification hooks, including a Bash source check unrelated to the Go-only edit, without the per-request workspace trust needed by that hook.
+## 2026-10-24 semantic construct replacement rejected a grouped var declaration
+
+* Tool: `semantic_replace_construct`, kind `var`.
+* Target: `internal/operation/wire_remove.go`, `removeParams`.
+* Failure: replacement returned `multiple declarations found in snippet`; no source changes were published.
+* Workaround: use a surgical source-field edit after inspecting the complete declaration; the tool accepts individual declarations but not the grouped `var` block containing this parameter table.
+* Root cause: the declaration-level edit parser cannot target one declaration within a grouped `var` declaration.
+
+## 2026-10-24 semantic inspection rejected a guessed constant-parser selector
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/operation/wire_extract.go`, guessed selector `parseExtractConstant`.
+* Failure: inspection returned `symbol not found`; no source changes were made.
+* Workaround: use the outline's declared names to select the actual shared extraction parser.
+* Root cause: the constant parser has a different declared name than the one inferred from the feature name.
+
+## 2026-10-24 semantic lookup could not resolve the guessed constant parser
+
+* Tool: `semantic_lookup`.
+* Target: Go symbol `parseExtractConstant`.
+* Failure: workspace lookup returned `symbol not found`; no source changes were made.
+* Workaround: inspect the declared operation parser through the operation's file outline and use its registered declaration name.
+* Root cause: the inferred parser symbol does not exist in the current Go source.
+
+## 2026-10-23 semantic construct replacement required a returned selector
+
+* Tool: `semantic_replace_construct`, kind `if`.
+* Target: `internal/astedit/move_cross_package_var.go`, `validateCrossPackageVariableMoveOverlay`.
+* Failure: replacement using a reconstructed source discriminator returned `not_found`; a second attempt using its first returned selection token returned `selection_revision_mismatch`. No source changes were published.
+* Workaround: retry with the latest returned `construct_path` and selection revision.
+* Root cause: the selector requires a normalized AST candidate discriminator or the exact path returned in its refusal details.
+
+## 2026-10-23 semantic inspection selector did not find an exported operation
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/astedit/move_cross_package.go`, selector `MoveConstruct`.
+* Failure: symbol inspection returned `symbol not found`; no files were changed.
+* Workaround: use the package outline and direct file search to locate the exported move entry point, then inspect its actual selector.
+* Root cause: the selected file does not declare a symbol with that name; the operation is defined under a different selector or file.
+
+## 2026-10-23 semantic inspection rejected guessed helper selectors
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/astedit/move_cross_package.go` (`moveCrossPackageConstruct`) and `internal/astedit/move_cross_package_type.go` (`validateCrossPackageTypeOverlay`, `validateCrossPackageTypeMoveBindings`).
+* Failure: inspection returned `symbol not found` for each guessed selector; no source changes were made.
+* Workaround: use the source outline to select declared helper names before inspection.
+* Root cause: helper names were inferred from behavior instead of confirmed from the declared symbol list.
+
+## 2026-10-23 constant declaration replacement rejected a const group
+
+* Tool: `semantic_replace_construct`, kind `const`.
+* Target: `internal/astedit/move_cross_package.go`, `moveReferenceFunction` constant group.
+* Failure: replacement returned `multiple declarations found in snippet`; no source changes were published.
+* Workaround: insert the enum entry through a construct edit, then use a surgical source edit to group the entry with the adjacent enum constants after the parser rejected replacing the group.
+* Root cause: the tool's `const` replacement parser accepts one constant declaration and did not accept the grouped const block used for this enum.
+
+## 2026-10-23 semantic function replacement refused an implicit rename
+
+* Tool: `semantic_replace_construct`, kind `function`.
+* Target: `internal/astedit/move_cross_package.go`, `movedFunctionForReferences`.
+* Failure: replacement refused to change the selected symbol name and required `movedFunctionForReferences` to remain unchanged; no source changes were published.
+* Workaround: use `semantic_rename` for the internal symbol, then replace its implementation with the generalized object resolver.
+* Root cause: declaration replacement preserves the selected declaration's identity and does not perform symbol renames.
+
+## 2026-10-23 function replacement rejected an adjacent helper declaration
+
+* Tool: `semantic_replace_construct`, kind `function`.
+* Target: `internal/astedit/move_cross_package.go`, `validateCrossPackageMoveOverlay`.
+* Failure: replacement returned `multiple declarations found in snippet`; no source changes were published.
+* Workaround: replace the selected function alone, then insert `destinationTypeName` as a separate declaration.
+* Root cause: the function replacement parser accepts exactly one declaration per request.
+
+## 2026-10-22: Declaration relocation must remove before inserting
+
+* Tool: `semantic_insert_construct`, kind `function`.
+* Target: move `finalizeJavaMethodActionOutput` from `wire_java_static.go` to `wire_java_refactor.go`.
+* Failure: insertion correctly refused the existing package-level declaration collision.
+* Workaround: remove the old declaration, then insert its unchanged implementation at the shared Java wiring location.
+* Root cause: construct insertion is not an atomic cross-file declaration move and prevents simultaneous duplicate declarations.
+
+## 2026-10-22: Statement insertion accepts one statement only
+
+* Tool: `semantic_insert_construct`, kind `statement/expression`.
+* Target: `cmd/semedit/java_explicit_type_txtar_test.go`, `fakeJavaExplicitTypeSymbols`.
+* Failure: inserting a declaration, loop, and guard together returned `expected exactly one statement`.
+* Workaround: insert one declaration computing the fixture class line from its controlled source.
+* Root cause: statement insertion intentionally accepts a single AST statement, not an unbraced sequence.
+
+## 2026-10-22: Construct replacement rejects declaration selector key
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_java_explicit_type.go`, `makeTypeExplicitParams`.
+* Failure: the callable tool rejected `in_declaration` as an unknown parameter when replacing a selector source-field expression.
+* Workaround: use a targeted built-in source-field edit after inspecting the exact declaration.
+* Root cause: this tool revision scopes expression replacement by function and does not expose declaration-owned expression selection.
+
+## 2026-10-22: Output schema case insertion requires a switch discriminator
+
+* Tool: `semantic_insert_construct`, kind `case`.
+* Target: `internal/mcp/schema_test.go`, `assertListedToolOutputSchema`.
+* Failure: `switch statement not found` when selecting the function without a switch discriminator.
+* Workaround: append the new operation name to the existing receipt-schema case with a targeted built-in edit.
+* Root cause: case insertion requires an explicit switch selector in addition to its function owner.
+
+## 2026-10-22: Java registry insertion selectors
+
+* Tool: `semantic_insert_construct`.
+* Targets: `backendOperationByPublicKey` in `internal/operation/refactor_identity.go` and the registration block in `internal/operation/wire_engine.go`.
+* Failures: the named map discriminator matched no composites; the supplied owner `Wire` did not exist.
+* Workaround: use a targeted built-in map addition; inspect the registration function's exact name before retrying statement insertion.
+* Root cause: an identifier-only composite discriminator and an incorrect function selector did not identify source constructs.
+
+## 2026-10-22: Java capability literal selector
+
+* Tool: `semantic_insert_construct`, kind `element`.
+* Target: `internal/backend/java/java.go`, `JavaBackend.CapabilityMatrix`.
+* Failure: `literal selector matched 0 composites` for a map discriminator using the wrong type name.
+* Workaround: the retry with the exact `map[string]backend.OpCapability` type also found no composites; use a targeted built-in map entry insertion.
+* Root cause: a type-only discriminator does not select this local map literal through the operation's composite selector.
+
+## 2026-10-22: Path-selected signature replacement still required its discriminator
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_signature_permutation.go`, `validateSignaturePermutationCandidate`, path `15.e0`.
+* Failure: `discriminator is required for statement/expression replacement` despite an explicit returned construct path.
+* Workaround: Supply both the original source discriminator and its expression path.
+* Root cause: The request omitted the discriminator required by the statement/expression backend; the tool schema describes it as optional across construct kinds.
+
+## 2026-10-22: Signature call sorting replacements matched statements and expressions
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_signature_permutation.go`, the two `astedit.SortSignatureCalls` invocations in `validateSignaturePermutationCandidate`.
+* Failure: Each discriminator matched both its expression statement and the nested call expression, so both requests refused before writing.
+* Workaround: Copy the returned expression paths (`15.e0` and `16.e0`) for the replacements, retaining the physical-order helper in its operation-local proof owner.
+* Root cause: An entire call has identical source at two supported construct levels; the caller omitted explicit candidate paths.
+
+## 2026-10-22: Signature evidence insertion used the free-function kind for a method
+
+* Tool: `semantic_insert_construct`.
+* Target: `internal/operation/wire_signature_permutation.go`, `signaturePermutationCollector.collectParameters`.
+* Failure: `source declaration does not match construct kind "function"` for a declaration with a receiver.
+* Workaround: Retry with the supported `method` construct kind.
+* Root cause: The caller selected the free-function kind for a receiver method.
+
+## 2026-10-22: Signature permutation inspection used the wrong snapshot file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/operation/wire_structural_plan.go`, `structuralSnapshot` and `loadStructuralPackages`.
+* Failure: Both selectors returned `symbol not found`; these declarations live in `wire_structural_snapshot.go`.
+* Workaround: Locate the owning file with `rg`, then inspect the exact declarations semantically.
+* Root cause: The caller assumed the planner owned snapshot loading instead of checking declaration ownership first.
+
+## 2026-10-22: Selected-file Scala edit still validated unrelated files with import cleanup disabled
+
+* Tool: `semantic_replace_construct`, target `internal/backend/scala/codeactions.go`, method `ScalaBackend.ensureScalaSessionLocked`, with `auto_organize_imports=false`.
+* Failure: The operation again reported `clean imports after construct replacement`, this time refusing because the identity or permissions of unrelated `internal/astedit/inline.go` changed; application state was unknown.
+* Workaround: Recheck selected-file bytes, then use a targeted built-in patch for this backend-local cleanup while independent lanes are editing other packages.
+* Root cause: The mutation/import path validates a broader shared workspace snapshot even when the request disables import organization.
+
+## 2026-10-22: Scala cleanup edit conflicted with concurrent Rust test writes
+
+* Tool: `semantic_replace_construct`, target `internal/backend/scala/codeactions.go`, method `ScalaBackend.ensureScalaSessionLocked`.
+* Failure: Import cleanup refused with `buffered source changed on disk` for the unrelated `internal/backend/rust/codeactions_test.go`; application state was reported unknown.
+* Workaround: Inspect the Scala target before retrying with import cleanup disabled, keeping the mutation confined to its selected source file.
+* Root cause: The semantic operation's import-cleanup snapshot observed concurrent changes from the independent Rust cleanup lane.
+
+## 2026-10-22: Go backend directory outline routed to Make
+
+* Tool: `semantic_outline`, target `internal/backend/scala` with `include_tests=true` and default language selection.
+* Failure: The Go implementation directory was routed to Make and refused with `workspace trust required: outline: make`.
+* Workaround: Retry the directory outline with explicit `language=go`.
+* Root cause: Automatic directory language routing selected an unrelated backend rather than the Go package already identified by `semantic_workspace_outline`.
+
+## 2026-10-22: Source patch context did not match live extraction code
+
+* Tool: `apply_patch`, target `internal/astedit/extract_variable.go`.
+* Failure: A multi-declaration patch was rejected because its expected context for `selectedVariableExpressions` did not match the current working-tree version; no source mutation occurred.
+* Workaround: Re-read the live declarations and split the implementation into smaller, current-context edits.
+* Root cause: The patch was composed from a stale view of the already-modified shared extraction implementation.
+
+## 2026-10-22: Test patch context did not match new case table
+
+* Tool: `apply_patch`, target `internal/astedit/extract_variable_test.go`.
+* Failure: A follow-up patch to add an expression field to the newly inserted refusal test table was rejected because the expected case layout did not match the just-added source; no test file mutation occurred.
+* Workaround: Re-read the new test block and patch its current field and case declarations directly.
+* Root cause: The follow-up used the table's earlier compact formatting rather than its actual multiline source.
+
+## 2026-10-22: Test append anchor did not match the final case table
+
+* Tool: `apply_patch`, target `internal/astedit/extract_variable_test.go`.
+* Failure: The patch that appended the range tests did not match the exact ending of the existing var-initializer test; no source changes occurred.
+* Workaround: Re-read the actual file tail and append the tests using its current final lines as the anchor.
+* Root cause: The append patch assumed a slightly different indentation and trailing block layout.
+
+## 2026-10-22: Semantic lookup auto-routed to Make without a language selector
+
+* Tool: `semantic_lookup`, target symbol `collectStatementExpressionCandidates` in the `dc11` semantic-editor worktree.
+* Failure: A read-only review lookup without an explicit language or file selector routed to Make and failed with `workspace trust required: lookup: make: /Users/alessandro/.codex/worktrees/dc11/semantic-editor`; no source mutation occurred.
+* Workaround: Locate the declaration, then retry with `language: go` and the selected Go source file.
+* Root cause: Omitting language and file selectors allowed backend auto-routing to Make, which required workspace trust.
+
+## 2026-10-22: Semantic insertion required both construct path and source discriminator
+
+* Tool: `semantic_insert_construct`, target `internal/backend/java/codeactions.go`, method `JavaBackend.ApplyCodeAction`.
+* Failure: Retrying the ambiguous anchor with `construct_path` and `expected_revision` but no `discriminator` was refused; no write occurred.
+* Workaround: Retry with the same inspected path/revision and the exact statement source as `discriminator`.
+* Root cause: Relative `after` insertion requires both the path guard and statement discriminator.
+
+## 2026-10-22: Semantic insertion found duplicate Java error guards
+
+* Tool: `semantic_insert_construct`, target `internal/backend/java/codeactions.go`, method `JavaBackend.ApplyCodeAction`.
+* Failure: The exact `if err != nil { return nil, err }` anchor matched six guards and was refused without writing.
+* Workaround: Retry using the operation's reported `construct_path` and `expected_revision` for the guard after `prepareJavaCodeActionWorkspace`.
+* Root cause: The method contains repeated identical error guards, so source text alone does not identify the intended insertion site.
+
+## 2026-10-22: Semantic construct replacement required the complete conditional statement
+
+* Tool: `semantic_replace_construct`, target `internal/backend/java/codeactions.go`, function `updateJavaMoveReference`.
+* Failure: The request used only the `if` condition as the discriminator and returned candidate statements without applying a change.
+* Workaround: Retry with the complete conditional statement as the selector.
+* Root cause: Statement replacement matches the full construct source, not a condition fragment.
+
+## 2026-10-22: Semantic replacement could not update a compound type-rename block
+
+* Tool: `semantic_replace_construct`, target `internal/backend/java/java.go`, function `prepareJavaRenameEdit`.
+* Failure: Replacing the resource-rename `if` with the original block plus import reconciliation was refused with `expected exactly one statement`; no source mutation occurred.
+* Workaround: Apply a narrow patch after the existing resource-rename block and verify through focused Java tests.
+* Root cause: Construct replacement accepts one Go statement, while this edit needed to retain one compound statement and add a second.
+
+## 2026-10-22: Semantic construct replacement required the qualified Java backend method
+
+* Tool: `semantic_replace_construct`, target `internal/backend/java/codeactions.go`.
+* Failure: The request selected `finishJavaCodeAction` without its receiver and returned `symbol not found`; no write occurred.
+* Workaround: Retry with the suggested qualified selector `JavaBackend.finishJavaCodeAction`.
+* Root cause: The selected method is resolved by its receiver-qualified Go name.
+
+## 2026-10-21: Semantic symbol inspection used a guessed declaration name
+
+* Tool: `semantic_inspect_symbol`, target `internal/astedit/inline.go`, declaration `inlineLiteral`.
+* Failure: The inspection returned “symbol not found”; no source was changed.
+* Workaround: Inspect the file outline first and use the exact declaration name before retrying.
+* Root cause: The requested symbol name was guessed instead of selected from the file's declared symbols.
+
+## 2026-10-21: Semantic workspace outline hit the Make workspace trust gate
+
+* Tool: `semantic_workspace_outline`, target the Rust backend audit in this repository.
+* Failure: The outline was refused with `workspace trust required: outline: make: <repo>`; no files changed.
+* Workaround: Continue the read-only audit from backend capability sources and CLI txtar coverage, without running the trusted Make hook.
+* Root cause: Workspace-wide auto discovery reached the repository's configured Make outline hook, which requires explicit trust even though the audit concerned Rust.
+
+## 2026-10-21: Semantic batch applied range validation but its lint hook failed
+
+* Tool: `semantic_batch`, replacing `validateExtractionRangeLoop` and inserting `validateExtractionSliceFactoryRange` in `internal/astedit/extract_flow.go`.
+* Failure: Both edits were applied to the working tree, but final verification returned `applied_with_diagnostics` after the configured `golangci-lint` hook exited 3. The diagnostic report also contained unrelated repository errors outside the changed declarations; no final verification completed.
+* Workaround: Inspect the applied source and use the repository's trusted `make check` as the authoritative verifier; do not treat the batch result as clean.
+* Root cause: The semantic batch runs repository-wide configured verification hooks, and the lint subprocess returned only an exit status without actionable output for the selected declarations.
+
+## 2026-10-21: Semantic batch verification stopped at Bash workspace trust gate
+
+* Tool: `semantic_batch` inserting and replacing Go functions in `internal/astedit/extract_flow.go`.
+* Failure: Both edits were applied, but final verification stopped before diagnostics because the repository's Bash verification hook requires explicit workspace trust. The batch returned `applied_with_diagnostics` without a final diagnostic inventory.
+* Workaround: Keep the applied edits, inspect the resulting source, and run the repository's trusted full check before proceeding.
+* Root cause: The batch omitted `trust_workspace: true`; the workspace verification hook scans Bash paths outside the Go edit scope and requires explicit trust.
+
+## 2026-10-21: Semantic construct replacement used the wrong selector kind
+
+* Tool: `semantic_replace_construct`, target `internal/operation/suggestions.go`, function `targetValidator`.
+* Failure: Replacing the exact Go assignment statement using `kind: "statement/expression"` was refused before writing; the tool exposed the enclosing `switch` as the matching statement candidate instead of the nested assignment.
+* Workaround: After logging the refusal, use a surgical source patch for the small validator change and verify it with the repository checks.
+* Root cause: The construct selector treats this nested statement as path-addressable rather than matching its source through the broad statement/expression kind.
+
+## 2026-10-21: Semantic insertion rejected a declaration revision guard
+
+* Tool: `semantic_batch` with `semantic_insert_construct`, target `internal/astedit/signature_plan.go`.
+* Failure: Adding a package type with `kind: "type"` and `expected_revision` was rejected before application because the tool only accepts that guard for field, element, and statement/expression insertion.
+* Workaround: Record the rejected request, then retry declaration insertion without the unsupported guard after confirming the source remains unchanged.
+* Root cause: The construct insertion schema does not accept a declaration-level expected revision even though it accepts that field for selected nested constructs.
+
+## 2026-10-21: Semantic batch final lint hook returned an opaque failure
+
+* Tool: `semantic_batch` replacing signature-target capture logic in `internal/astedit/signature_plan.go`.
+* Failure: All four semantic edits were applied to the working tree, but final verification stopped at the configured `golangci-lint` hook with exit code 3. The tool returned `applied_with_diagnostics` and did not include the hook's diagnostic output.
+* Workaround: Preserve the applied edits, inspect the resulting declarations, then run the repository's `make check` and focused AST tests to identify any source or lint errors.
+* Root cause: The failure is isolated to the semantic server's per-batch lint hook: the repository `make check` using the same configured linter completed successfully, and the MCP result omitted stderr needed to identify a subprocess-specific trigger. No source or repository-linter failure reproduced.
+
+## 2026-10-21: Semantic field insertion refused exported candidate type
+
+* Tool: `semantic_insert_construct`, target `internal/astedit/construct_inspection.go`, type `ConstructCandidateInfo`.
+* Failure: Field insertion was refused with `cannot prove positional-literal compatibility for exported owner type "ConstructCandidateInfo"`; no mutation was applied.
+* Workaround: Record the failure, add the endpoint field with a surgical source edit, and update every keyed candidate literal to populate it.
+* Root cause: The operation conservatively refuses field additions to exported structs because it cannot prove that positional literals outside the selected package remain compatible.
+
+## 2026-10-21: Semantic batch verification stopped at workspace trust gate
+
+* Tool: `semantic_batch` replacing operation identity expressions in `internal/operation/wire_extract.go`.
+* Failure: Both child edits were applied to the batch working view, but final verification stopped because the configured Bash verification hook requires explicit trust for the worktree. The batch reported `applied_with_diagnostics` and did not capture a final diagnostic inventory.
+* Workaround: Inspect the resulting files and verify the completed migration with the repository's `make check` before continuing.
+* Root cause: The batch runs workspace verification hooks, and this repository's Bash hook requires explicit workspace trust that the batch request did not grant.
+
+## 2026-10-21: Semantic verification could not load the package-closure analyzer
+
+* Tool: `semantic_verify`, target `internal/astedit/extract_flow.go` in the selected Go module.
+* Failure: Verification stopped before completing its linter hook because the cached `packageclosure.so` plugin was built against a different Go `cmp` package version. The partial diagnostics also reported type errors in unrelated files across the existing dirty worktree.
+* Workaround: Use the repository's `make check` as the authoritative verification path and investigate its current results; do not treat the incomplete diagnostics as a clean verification.
+* Root cause: The semantic verification hook loaded a stale cached custom analyzer plugin incompatible with the active Go toolchain.
+
+## 2026-10-20: Semantic symbol inspection used the wrong selected file
+
+* Tool: `semantic_inspect_symbol`, target `internal/astedit/extraction_analysis.go`.
+* Failure: Two inspection requests named declarations from files that did not contain them (`validateTypedExtractionAliases` is in `extract_flow.go`; `prepareFunctionExtraction` is in `extraction_target.go`). Neither request changed files.
+* Workaround: Locate declarations with `rg` and retry inspection in the defining file. A subsequent function replacement reported diagnostics because its signature change preceded the caller update; the caller was then updated.
+* Root cause: The selected file did not contain the requested declaration, and the replacement changed a signature with an existing caller.
 
 ## 2026-10-17: Batch function insertion rejected multiple declarations
 
@@ -6385,3 +6697,1701 @@ Every extracted attempt is listed separately. event is the complete recorded too
 * Observed failure: selecting the literal with discriminator `analysisTranscriptTurn` returned `literal selector matched 0 composites`; no edit was applied.
 * Workaround: add the `RawEvents` initializer field with a narrowly scoped source patch after locating the exact literal.
 * Root cause: the construct selector did not accept the Go type name as a matching discriminator for this composite literal.
+## Current implementation session
+
+| Tool | Target | Observed failure | Workaround | Root cause |
+| :--- | :--- | :--- | :--- | :--- |
+| `semantic_inspect_symbol` | `internal/operation/registry.go` | Failed because the guessed file path does not exist; registry declarations are in `internal/operation/operation.go`. No source mutation occurred. | Located the declaration with `rg`; retry inspection using the actual file. | Incorrect filename assumption. |
+| `semantic_batch` / child `semantic_replace_body` | `internal/astedit/extract.go` | Child body replacement applied, but automatic verification stopped because a configured Bash hook requires workspace trust; no final diagnostics were captured. | Retry the same workspace operation with `trust_workspace: true`, as authorized by the user's implementation request, and inspect the resulting source. | This repository's configured verification hooks include Bash scripts and the selected worktree had not yet been trusted for hook execution. |
+| `semantic_verify` | `internal/astedit/extract.go` | Go diagnostics completed, but the configured `golangci-lint` hook failed because `.scratch/go/bin/packageclosure.so` is missing; diagnostics also report unrelated source/test type errors outside the edited file. | Run the required workspace `make check` to establish repository tooling state, then distinguish baseline failures from this change before continuing. | The worktree lacks the local package-closure plugin artifact and the diagnostics session exposes a broader inconsistent baseline. |
+| `semantic_batch` / child `semantic_replace_body` | `internal/astedit/extract.go` | All child edits were applied in the working overlay, but final verification failed at `golangci-lint` for the same missing `.scratch/go/bin/packageclosure.so`; no final diagnostic inventory was captured. | Inspect the final source diff, run the focused compile/test after `make check` has been attempted, and report the lint-hook limitation if it persists. | The formatter and Go diagnostics ran, but the repository's configured custom linter plugin is not built and network access prevents installing its pinned dependencies. |
+| `semantic_inspect_symbol` | `internal/operation/wire_extract.go` | Failed because the guessed symbol `extractFunctionOperation` was not declared in that file. No source mutation occurred. | Locate the actual declaration in the file and retry inspection using its exact symbol name. | Incorrect symbol-name assumption. |
+| `semantic_replace_construct` | `cmd/semedit/language_txtar_test.go` | Failed because the guessed enclosing function `fakeLSPResponse` does not exist; no source mutation occurred. | Located the matching string in `handleFakeLanguageRequest`; continue with the fixture source update using the correct scope. | Incorrect enclosing-function assumption. |
+| `semantic_replace_construct` | `cmd/semedit/language_txtar_test.go` | Refused an unqualified replacement because two `fakeRangeAt(1, 8, 17)` expressions matched; no source mutation occurred. | Use the returned construct paths or replace the containing expression with an explicit path. | The fixture has matching rename ranges in both batch action branches. |
+| `semantic_replace_construct` | `cmd/semedit/language_txtar_test.go` | Rejected a construct-path replacement without a discriminator; no source mutation occurred. | Retry with the exact discriminator and the returned path/revision. | The API requires both selectors even when the path is unambiguous. |
+| `semantic_replace_construct` | `cmd/semedit/language_txtar_test.go` | Refused replacement because `fakeRangeAt(3, 8, 17)` also occurs in another handler. | Use the returned construct path and current selection revision. | The same coordinate helper is shared by Java and Rust fake-server fixtures. |
+| `semantic_insert_construct` | `internal/astedit/extract.go` | Rejected insertion of four function declarations with `function insertion requires exactly one function declaration`; no source mutation occurred. | Split the helper declarations into one semantic insertion per call. | The operation accepts exactly one declaration construct per request. |
+| `semantic_outline` | `internal/operation` | Refused the read-only declaration outline with `workspace trust required`; no source mutation occurred. | Retry with `trust_workspace: true` for this explicitly selected worktree; if the trust gate remains unavailable, use `semantic_workspace_outline` followed by bounded read-only source inspection. | The workspace was not trusted for the Make-backed analysis hook. |
+| `semantic_outline` | `internal/operation` | After workspace trust was supplied, refused the directory outline with `external outlines support selected files only`; no source mutation occurred. | Request outlines for selected source files after discovering the package with `semantic_workspace_outline`. | The outline server exposes selected-file scope in the external Make-backed adapter despite the Go directory-scope description. |
+| `semantic_remove_construct` | `internal/operation/wire_extract.go` | Removed `extractConstantParams` while its dead `parseExtractConstant` declaration still referenced it; syntax parsing succeeded but diagnostics reported `undefined: extractConstantParams`. | Remove the now-unregistered parser declaration immediately, then rerun the focused Go package checks. | The tool validates syntax and target resolution but applies one declaration at a time, so the intermediate edit temporarily retained an unreachable parser dependency. |
+| `semantic_replace_construct` | `internal/operation/language_contracts.go` | A case replacement using discriminator `extract_variable` returned `not_found` despite exposing the matching case in its diagnostic candidate list; no source mutation occurred. | Retry with the reported construct path and selection revision, or use the smallest syntax-aware edit supported by the available tool. | Go case candidates are enumerated as `case "..."` syntax, while the supplied selector omitted that syntax shape. |
+| `semantic_replace_construct` | `internal/operation/wire_contract_extract.go` | A function-scoped expression replacement for `refactor_extract_interface` returned `not_found` because the assignment is inside the operation-definition closure, not `runExtractInterface`; no source mutation occurred. | Locate the expression's enclosing closure from the outline, then retry with that exact scope or perform a minimal syntax-aware edit. | The selector used the outer handler function rather than the nested definition initializer that owns the result projection. |
+| `semantic_replace_construct` | `internal/operation/wire_contract_extract.go` | A second expression replacement selected `extractInterfaceDef`, but the nested `FinalizeOutput` closure remained outside the adapter's expression selector; no source mutation occurred. | Use a reported construct path into the nested closure with its selection revision, or leave this literal if the shared constant does not reduce duplication. | The adapter returns the whole `Def` composite as a candidate and does not descend into closure bodies for discriminator matching. |
+| `semantic_replace_construct` | `internal/operation/wire_extract.go` | Updating the `Summary` string inside `extractFunctionDef` was rejected because nested expression selectors require `in_function`; no source mutation occurred. | Use a targeted patch for only the metadata string. | The declaration's composite literal field is nested in an expression context unsupported by the selector's chosen scope. |
+| `semantic_lookup` | Go declaration `InsertField` | Lookup returned `symbol not found`; no source mutation occurred. | Continued with package outline and exact `PlanInsertField` / `resolveStructuralFieldTarget` declarations. | `InsertField` was an operation name, not a Go declaration. |
+| `semantic_outline` | `internal/backend/rust` | Directory outline failed with `workspace trust required: outline: make: <worktree>`; no source mutation occurred. | Used `semantic_workspace_outline` for package discovery and direct bounded source inspection. | The directory was routed through the Make-backed external outline adapter despite an explicit Go worktree path; external workspace trust was not granted for this call. |
+| `semantic_inspect_symbol` | `internal/operation/refactor_identity_test.go` | Failed to resolve the guessed test function name `TestCanonicalRefactorIdentity`; no source mutation occurred. | Locate the test declaration in the selected file and retry with its exact name. | The requested symbol name did not match the test declaration. |
+| `semantic_inspect_symbol` | `cmd/semedit/language_txtar_test.go` | Failed to resolve `TestREQ001SemanticIntentCLIContracts`; no source mutation occurred. | Locate the test in the actual source file and retry there. | The selected test file was incorrect; `rg` identified `cmd/semedit/main_test.go` as the likely location. |
+| `semantic_insert_construct` | `internal/operation/refactor_identity.go` | Rejected constant insertion with `const insertion requires a valid const declaration`; no source mutation occurred. | Retry with a complete `const name = value` declaration, or make the smallest syntax-aware patch. | The insertion syntax requires the full declaration rather than the constant specification alone. |
+| `semantic_replace_construct` | `internal/operation/refactor_identity.go` | Rejected a nested expression selector combined with `symbol`; no source mutation occurred. | Retry the nested expression selection with `in_function` and its exact discriminator, omitting `symbol`. | The API accepts direct-symbol replacement or nested selection, but not both selectors together. |
+
+## Suboptimal Tool Behavior
+
+## 2026-10-20: `semantic_batch` could not capture baseline Go diagnostics
+
+* Tool: `semantic_batch` with `semantic_replace_body`
+* Target: `parseExtractTypeMembers` in `internal/operation/wire_extract_type.go`
+* Observed failure: the batch stopped during its pre-edit diagnostics because gopls reported no package metadata for `internal/mcptest/validate.go`; the semantic edit was not applied.
+* Workaround: confirm the selected target bytes remain unchanged, then apply the minimal selector-order guard with a syntax-aware patch and verify through `make check` and the CLI txtar suite.
+* Root cause: the retained gopls session lacked package metadata for a current module source file during batch baseline diagnostics.
+
+## 2026-10-20: `semantic_lookup` selected the Make backend for a Go declaration lookup
+
+* Tool: `semantic_lookup`
+* Target: `structuralFieldSourceSet` in the semantic-editor worktree
+* Observed failure: lookup without an explicit Go language/file selected the Make backend and returned `workspace trust required: lookup: make`; no source files were modified.
+* Workaround: retry with the Go language and exact source file selected; the declaration resolved in `internal/operation/wire_structural_snapshot_field.go`.
+* Root cause: automatic language selection misclassified an unscoped Go symbol request as Make and enforced the external-tool trust gate.
+
+## 2026-10-20: `semantic_inspect_symbol` could not find a declaration in the guessed file
+
+* Tool: `semantic_inspect_symbol`
+* Target: guessed `structuralFieldSourceSet` in `internal/operation/wire_structural_field.go`
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: locate the declaration with `semantic_lookup`, then inspect the returned file.
+* Root cause: the helper is defined in a companion snapshot file, not the guessed operation file.
+
+## 2026-10-20: `semantic_outline` selected the Make backend for a Go package directory
+
+* Tool: `semantic_outline`
+* Target: `internal/contractedit` in the semantic-editor worktree
+* Observed failure: the directory outline returned `workspace trust required: outline: make` instead of Go declarations; no source files were modified.
+* Workaround: retry with `language: "go"` explicitly selected, then use bounded source inspection if the Go directory outline remains unsupported.
+* Root cause: automatic language selection misclassified this Go package directory as Make and applied the Make trust gate.
+
+## 2026-10-20: `semantic_outline` selected the Make backend for a Go directory
+
+* Tool: `semantic_outline`
+* Target: `internal/backend/rust` in the semantic-editor workspace
+* Observed failure: the request returned `workspace trust required: outline: make` instead of an outline.
+* Workaround: continue the read-only capability audit with the repository's existing source and fixture files; the initial `semantic_workspace_outline` had already established the Go workspace layout.
+* Root cause: automatic backend selection treated a directory-scoped outline request as Make-language work, then enforced Make workspace trust. No source files were modified by the failed request.
+
+## 2026-10-20: `semantic_inspect_symbol` could not resolve a guessed declaration name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/operation/wire_structural_plan.go`, guessed symbol `inspectConstructDef`
+* Observed failure: the selected-file inspection returned `symbol not found`.
+* Workaround: locate the registered definition from the file's declarations before requesting inspection; no source files were modified by the failed request.
+* Root cause: the guessed symbol name did not match a declaration in the selected file.
+
+## 2026-10-20: `semantic_inspect_symbol` could not resolve a guessed extraction helper name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/construct_span.go`, guessed symbol `selectExtractStatements`
+* Observed failure: the selected-file inspection returned `symbol not found`.
+* Workaround: locate the helper's owning file and exact declaration name before another inspection request; no source files were modified by the failed request.
+* Root cause: the guessed symbol did not match a declaration in that file.
+
+## 2026-10-20: `semantic_inspect_symbol` could not resolve a guessed statement selector name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/construct_span.go`, guessed symbol `selectDirectStatementSpan`
+* Observed failure: the selected-file inspection returned `symbol not found`.
+* Workaround: use the already resolved extraction selector declarations and locate the next helper by its actual source name before inspection; no source files were modified by the failed request.
+* Root cause: the guessed symbol did not match a declaration in that file.
+
+## 2026-10-20: `semantic_outline` auto-detected Make for Go backend directories
+
+* Tool: `semantic_outline`
+* Target: `internal/backend/{rust,scala,java}` and `internal/operation`
+* Observed failure: directory outline requests using automatic language selection returned `workspace trust required: outline: make`.
+* Workaround: retry the read-only outline with explicit `language=go`; no source files were modified by the failed requests.
+* Root cause: automatic language detection classified these Go source directories as Make-language scopes and enforced Make workspace trust.
+
+## 2026-10-20: `semantic_inspect_symbol` could not resolve a guessed extraction analysis name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extraction_analysis.go`, guessed symbol `loadGoExtractionAnalysis`
+* Observed failure: the selected-file inspection returned `symbol not found`.
+* Workaround: enumerate the file's declarations to locate the actual typed extraction loader before inspecting it; no source files were modified by the failed request.
+* Root cause: the guessed function name did not match a declaration in that file.
+
+## 2026-10-20: Web open could not retrieve pinned Metals source
+
+* Tool: `web__run` open of the raw GitHub source for Metals 1.6.9 `InlineValueCodeAction.scala`
+* Target: Metals 1.6.9 inline-value command implementation
+* Observed failure: the web tool returned `Cache miss` for the pinned raw source URL.
+* Workaround: inspect the installed official Metals 1.6.9 JAR with `javap`; the bytecode showed that command completion discards the `workspace/applyEdit` future result, so a final bounded client integration would need its own apply-edit completion barrier.
+* Root cause: the browser fetch cache did not contain the pinned raw GitHub source.
+
+## 2026-10-21: `semantic_replace_construct` refused trailing gosec annotations
+
+* Tool: `semantic_batch` with `semantic_replace_construct`
+* Target: `internal/adr/record.go` and `internal/adr/index.go`
+* Observed failure: replacing the selected read and path-validation statements with trailing `#nosec` comments failed with `statement replacement cannot safely preserve a trailing line comment`; the batch made no changes.
+* Workaround: add the narrowly scoped linter explanations with ordinary source editing after the semantic operation proved unsupported.
+* Root cause: construct replacement does not preserve or accept trailing line comments on statement replacements.
+
+## 2026-10-21: `semantic_lookup` could not resolve guessed operation symbols
+
+* Tool: `semantic_lookup`
+* Target: Go workspace; guessed symbols `IntroduceParameter` and `registerIntroduceParameter`
+* Observed failure: both workspace lookups returned `symbol not found`.
+* Workaround: inspect actual operation registrations and use their declared selectors before further semantic lookups; no source files were modified by the failed requests.
+* Root cause: the guessed names did not match declarations in the current workspace.
+
+## 2026-10-21: `semantic_outline` target test file was guessed incorrectly
+
+* Tool: `semantic_outline`
+* Target: `internal/adr/record_test.go`
+* Observed failure: the selected-file outline returned `no such file or directory`.
+* Workaround: use the existing `internal/adr/adr_test.go` path shown by the package files and retry; no source files were modified by the failed request.
+* Root cause: the test file name was inferred from `record.go` rather than discovered from the package.
+
+## 2026-10-21: `semantic_inspect_symbol` could not resolve guessed helper names
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extract.go` (`loadExtractionPackages`) and `internal/operation/wire_scala_refactor.go` (`inlineVariableDef`)
+* Observed failure: both selected-file inspections returned `symbol not found`; no source files were modified by the failed requests.
+* Workaround: locate actual declarations through package outlines and registration references, then inspect their declared names.
+* Root cause: both helper names were inferred rather than resolved from the target files.
+
+## 2026-10-21: `semantic_replace_construct` could not resolve a guessed Scala test name
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/backend/scala/inline_value_test.go` (`TestScalaInlineValueCapability`)
+* Observed failure: selected-file replacement returned `symbol not found`; no source files were modified by the failed request.
+* Workaround: inspect the test file outline and use an existing declared test selector, or add a focused test through the file's actual declarations.
+* Root cause: the test name was inferred rather than inspected.
+
+## 2026-10-21: `semantic_inspect_symbol` could not resolve a guessed registry test name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/operation/wire_backend_test.go` (`TestRegistryMatrix`)
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: locate the test declaration and use its actual name, `TestMatrixDerivesSupportFromHandlers`.
+* Root cause: the test name was inferred rather than inspected.
+
+## 2026-10-21: `semantic_insert_construct` rejected multiple field declarations
+
+* Tool: `semantic_insert_construct`
+* Target: `internal/adr/record.go` (`Record`)
+* Observed failure: field insertion first rejected a source containing both fields, then refused a single field because it could not prove positional-literal compatibility for exported `Record`; no source files were modified.
+* Workaround: add the fields with a targeted type declaration edit after confirming record literals are keyed.
+* Root cause: the semantic field insertion accepts one field per request and conservatively rejects exported owner types when positional-literal compatibility cannot be established.
+
+## 2026-10-21: `semantic_replace_construct` rejected a fence-aware section parser
+
+* Tool: `semantic_replace_construct` via `semantic_batch`
+* Target: `internal/adr/record.go` (`sectionBodies`)
+* Observed failure: replacement source failed Go parsing because the generated backtick fence character became an unterminated rune literal; earlier batch edits to the same file had already applied.
+* Workaround: replace the fence character comparison with its byte value and retry only the failed declaration.
+* Root cause: JavaScript template-string escaping altered a Go rune literal before it reached the semantic tool.
+
+## 2026-10-21: `semantic_replace_construct` was given an incorrect ADR search path
+
+* Tool: `semantic_replace_construct` via `semantic_batch`
+* Target: intended `internal/adr/search.go`; the request used nonexistent `internal/backend/adr/search.go`
+* Observed failure: the semantic tool could not read the target file; no source files were modified by this request.
+* Workaround: use the package path returned by the workspace outline and retry against `internal/adr/search.go`.
+* Root cause: the ADR package location was entered incorrectly.
+
+## 2026-10-21: `semantic_batch` could not complete workspace verification
+
+* Tool: `semantic_batch`
+* Target: `internal/adr` source and tests
+* Observed failure: edits applied, but final verification stopped because the workspace trust requirement blocked Bash diagnostics for `tools/benchmark-harness/scripts/benchmark-ram-common.sh`.
+* Workaround: run the repository's authorized `make check` verification after the edits.
+* Root cause: the semantic tool's final diagnostics pass includes configured Bash sources and requires workspace trust beyond Go syntax validation.
+
+## 2026-10-21: `semantic_insert_construct` rejected two function declarations in one request
+
+* Tool: `semantic_insert_construct` via `semantic_batch`
+* Target: `internal/adr/record.go`
+* Observed failure: function insertion requires exactly one declaration; the preceding `parseMetadata` replacement applied, but no helper functions were inserted.
+* Workaround: insert `parseMetadataTable` and `validateMetadataLabels` as separate semantic operations.
+* Root cause: the function insertion contract accepts one function declaration per request.
+
+## 2026-10-21: `semantic_replace_construct` detected a concurrent Rust source change
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/javacst/members.go`
+* Observed failure: publication refused because `internal/backend/rust/codeactions.go` changed on disk while the semantic edit held a workspace snapshot; no Java change was published.
+* Workaround: pause Java semantic edits until the parallel Rust writer finishes, then retry the Java declaration update against a fresh source snapshot.
+* Root cause: independent language lanes shared one worktree and semantic edits validate the full workspace read set.
+
+## 2026-10-21: `semantic_replace_construct` rejected multiple declarations in one request
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/backend/scala/codeactions.go` (`renameScalaExtractedLocal`)
+* Observed failure: replacement was rejected with `multiple declarations found in snippet`; no source files were modified.
+* Workaround: replace the existing function first, then insert or replace the shared helper in a separate semantic operation.
+* Root cause: the function replacement contract accepts exactly one declaration per request.
+
+## 2026-10-21: `semantic_replace_construct` could not publish after a concurrent Rust edit
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/backend/scala/extract_function.go` (`renameScalaExtractedMethod`)
+* Observed failure: publication aborted with `buffered source changed on disk` for `internal/backend/rust/codeactions.go`; no Scala source was published by this request.
+* Workaround: retry the Scala edit after the Rust backend writer finishes and the workspace snapshot stabilizes.
+* Root cause: another lane changed a shared-worktree file during semedit's workspace publication validation.
+
+## 2026-10-21: `semantic_replace_construct` could not publish after a concurrent Java edit
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/backend/rust/extract_function.go` (`selectRustExtractFunctionAction`)
+* Observed failure: import cleanup failed because `internal/javacst/members.go` changed on disk while semedit held a workspace snapshot; no Rust source change was published by this request.
+* Workaround: wait for concurrent language-lane writes to settle, then retry against a fresh workspace snapshot.
+* Root cause: independent language lanes share one worktree and semantic edits validate the full workspace read set.
+
+## 2026-10-21: `semantic_batch` applied an edit but could not verify the workspace
+
+* Tool: `semantic_batch`
+* Target: `internal/backend/rust/extract_function.go` (`selectRustExtractFunctionAction`)
+* Observed failure: the function replacement applied, but automatic full-workspace verification stopped because the Bash source hook required explicit workspace trust; no completed diagnostic inventory was captured.
+* Workaround: report verification as incomplete and defer verification to the coordinated trusted workspace check after concurrent language-lane edits finish.
+* Root cause: the batch ran workspace hooks without explicit trust for the selected workspace.
+
+## 2026-10-21: `semantic_outline` auto-routed Go package reviews to Make
+
+* Tool: `semantic_outline`
+* Targets: `internal/backend/rust`, `internal/backend/java`, and `internal/backend/scala`
+* Observed failure: review requests without an explicit language selected the Make backend and returned `workspace trust required`; no files were modified.
+* Workaround: specify `language: "go"` for these Go implementation packages and retry.
+* Root cause: automatic language selection chose Make for the selected package paths instead of the Go source backend.
+
+## 2026-10-21: `semantic_inspect_symbol` could not resolve guessed Go extraction helpers
+
+* Tool: `semantic_inspect_symbol`
+* Targets: `internal/astedit/extract.go` (`extractFunctionFromSource`), `internal/astedit/extract_flow.go` (`prepareExtractionBuffer`, `loadExtractionPackages`), and `internal/astedit/extract_constant.go` (`extractConstantFromSource`)
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: use the declarations from the semantic outline and inspect the actual helper names in their declared files.
+* Root cause: helper names and file locations were inferred instead of resolved from the outline.
+
+## 2026-10-21: `semantic_inspect_symbol` could not resolve guessed refactor identity test
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/operation/refactor_identity_test.go`
+* Observed failure: selected-file inspection returned `symbol not found`; no files were modified.
+* Workaround: outline the test file and inspect its declared test function by its exact name.
+* Root cause: the test function name was guessed instead of discovered from the outline.
+
+## 2026-10-21: `semantic_inspect_symbol` used an unresolved extraction helper name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extract_variable.go` (`prepareVariableExtraction`)
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: use `semantic_outline` to locate the helper's actual declaration file and name, then inspect that declaration.
+* Root cause: the helper was assumed to live in the public entry-point file, but extraction helpers are split across files.
+
+## 2026-10-21: `semantic_inspect_symbol` could not locate the extraction input type
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extraction_target.go` (`variableExtractionInput`)
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: use `semantic_outline` to locate the type's defining file, then inspect that file's exact selector.
+* Root cause: the type's defining file had not been located before inspection.
+
+## 2026-10-21: `semantic_inspect_symbol` could not locate an extraction helper
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extract_variable.go` (`prepareVariableExtraction`)
+* Observed failure: selected-file inspection returned `symbol not found`; no source files were modified.
+* Workaround: inspect the actual helper names listed by `semantic_outline` and continue with the resolved declarations.
+* Root cause: the helper name was assumed before confirming it in the file outline.
+
+## 2026-10-21: semantic batch verification required unapproved Bash trust
+
+* Tool: `semantic_batch` (verification phase after six successful `semantic_replace_construct` edits)
+* Target: workspace verification, including `tools/benchmark-harness/scripts/benchmark-ram-common.sh`
+* Observed failure: all six Go source edits were applied to the working buffer, but final verification could not complete because the Bash verifier required workspace trust; no final diagnostic inventory was captured.
+* Workaround: record the incomplete verification and use the repository's approved `make check` workflow before targeted tests.
+* Root cause: batch verification scopes the entire workspace and reached a Bash source while the request did not grant external-tool trust.
+
+## 2026-10-21: semantic batch verification found unrelated golangci-lint failures
+
+* Tool: `semantic_batch` (verification phase after two successful `semantic_replace_construct` edits)
+* Target: workspace verification, `golangci-lint` hook
+* Observed failure: source edits were applied, but workspace verification stopped because `golangci-lint` exited with status 3; the captured diagnostics include errors in untouched `internal/astedit/inspect.go` and repository-wide findings.
+* Workaround: retain the diagnostic report and run the required `make check` before deciding whether any failure is caused by this change.
+* Root cause: workspace-wide configured lint findings are present outside the selected extraction implementation, preventing semantic_batch from returning a completed diagnostic inventory.
+
+## 2026-10-21: `semantic_insert_construct` rejected multiple functions as one source
+
+* Tool: `semantic_insert_construct` (inside `semantic_batch`)
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: the batch first replaced `chooseVariableCandidate`, then function insertion refused the combined test source with `function insertion requires exactly one function declaration`; no test source was written.
+* Workaround: insert each test as an individual function construct, or use targeted ordinary test-file editing if the semantic inserter remains unsupported.
+* Root cause: the insertion operation accepts one function declaration per request, while the test payload contained two.
+
+## 2026-10-21: test insertion succeeded but workspace lint hook remained unavailable
+
+* Tool: `semantic_batch` (verification phase after two successful `semantic_insert_construct` edits)
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: both test functions were inserted and Go diagnostics completed, but final workspace verification failed because the custom `packageclosure` analyzer plugin was built against a different Go package version.
+* Workaround: record the tool failure and use `make check` plus the focused package tests for verification.
+* Root cause: stale `.scratch/go/bin/packageclosure.so` prevents the configured workspace-wide golangci-lint hook from loading.
+
+## 2026-10-21: semantic batch verification remains blocked by stale analyzer plugin
+
+* Tool: `semantic_batch` (verification phase after one successful `semantic_replace_construct` edit)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: Go language-server diagnostics completed, but the workspace lint hook could not load `.scratch/go/bin/packageclosure.so` because it was built with a different Go package version.
+* Workaround: keep verification scoped to `make check` and targeted Go tests while preserving this hook failure in the report.
+* Root cause: the cached custom analyzer plugin is incompatible with the current Go toolchain.
+
+## 2026-10-21: semantic batch verification again hit the analyzer plugin mismatch
+
+* Tool: `semantic_batch` (verification phase after three successful source edits)
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: focused gopls diagnostics completed, but repository-wide verification failed to load `.scratch/go/bin/packageclosure.so` due to a Go package version mismatch.
+* Workaround: continue with the focused `go test` and CLI txtar runs after the required `make check` attempt.
+* Root cause: the cached custom analyzer plugin remains incompatible with this workspace's Go toolchain.
+
+## 2026-10-21: semantic batch verification remains blocked on packageclosure
+
+* Tool: `semantic_batch` (verification phase after one successful `semantic_replace_construct` edit)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: the selected Go package passed language-server diagnostics, but workspace verification failed to load the custom packageclosure plugin because it was built for a different Go package version.
+* Workaround: proceed with focused package and CLI verification after the required `make check` attempt.
+* Root cause: stale plugin binary incompatibility, confirmed separately by `make check` reporting packageclosure version/context loading failures.
+
+## 2026-10-21: semantic batch verification still cannot load packageclosure
+
+* Tool: `semantic_batch` (verification phase after two successful `semantic_replace_construct` edits)
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: Go diagnostics completed for the edited package, but final workspace checks again failed because the packageclosure plugin binary does not match the active Go toolchain.
+* Workaround: continue with the required Make check and focused tests; the Go test fixtures now use `.scratch` to stay within the authorized workspace root.
+* Root cause: stale custom linter plugin in `.scratch/go/bin`.
+
+## 2026-10-21: semantic batch verification blocked by custom analyzer plugin
+
+* Tool: `semantic_batch` (verification phase after two successful Go source edits)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: selected-package gopls diagnostics completed, but final workspace checks failed loading `packageclosure.so` due to a Go version mismatch.
+* Workaround: verify this bounded change with the focused Go unit test and CLI txtar cases; record `make check` as blocked by the same plugin issue.
+* Root cause: cached custom analyzer plugin incompatibility in `.scratch/go/bin`.
+
+## 2026-10-21: `semantic_set_doc_comment` dispatched a Go declaration as Make
+
+* Tool: `semantic_set_doc_comment`
+* Target: `internal/astedit/extract_variable.go` (`ExtractVariable`, `ExtractVariableOptions`)
+* Observed failure: both documentation updates failed before mutation with `dispatch "set_doc_comment" for language "make": operation is not supported for language`.
+* Workaround: retain the existing documentation comments and report the misdispatch; no source changes were made by these calls.
+* Root cause: the doc-comment tool resolved the selected Go source file as Make despite the explicit `language: go` selector.
+
+## 2026-10-21: semantic batch insertion rejected multiple Go functions
+
+* Tool: `semantic_batch` (`semantic_insert_construct` child after a successful `semantic_replace_construct` child)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: the replacement of `findVariableCandidates` applied, but the following function insertion failed with `function insertion requires exactly one function declaration` because the source contained multiple helpers.
+* Workaround: insert each helper as a separate function construct, then rerun `make check` and focused Go tests.
+* Root cause: the function insertion operation accepts exactly one function declaration per edit; batch does not roll back earlier successful edits.
+
+## 2026-10-21: semantic batch verification required Bash workspace trust
+
+* Tool: `semantic_batch` (four successful Go helper insertions followed by verification)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: all Go edits applied, but workspace verification stopped before collecting diagnostics because the configured Bash verification hook required workspace trust for `tools/benchmark-harness/scripts/benchmark-ram-common.sh`.
+* Workaround: use the repository's `make check` and the focused Go unit and CLI txtar cases for verification.
+* Root cause: the semantic batch trust was not granted for the workspace's Bash verification hook.
+
+## 2026-10-21: semantic batch verification again required Bash workspace trust
+
+* Tool: `semantic_batch` (`semantic_organize_imports` applied `strconv` before verification)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: import organization applied and reported no Go diagnostics, but the final workspace verification stopped at the Bash source trust gate for `benchmark-ram-common.sh`.
+* Workaround: rely on the required `make check` and focused Go unit and CLI txtar verification.
+* Root cause: the batch verification runs the configured Bash hook without workspace trust, independently of the successful Go edit.
+
+## 2026-10-21: semantic batch verification blocked review fixes at Bash trust gate
+
+* Tool: `semantic_batch` (two Go candidate-selection edits and one typed-input edit all applied before verification)
+* Target: `internal/astedit/extract_variable.go`
+* Observed failure: Go source edits completed, but final workspace verification stopped because the configured Bash hook required trust for `benchmark-ram-common.sh`.
+* Workaround: run the repository `make check` and focused Go extraction and CLI fixture tests.
+* Root cause: workspace-wide verification includes a trusted external Bash analysis step that this batch did not authorize.
+
+## 2026-10-21: semantic signature change misrouted a Go test file
+
+* Tool: `semantic_change_signature`
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: the explicit Go request was dispatched as Make and rejected with `dispatch "change_signature" for language "make": operation is not supported for language`.
+* Workaround: remove the redundant helper parameter and update its direct test call sites with a targeted source edit, then run `make check`.
+* Root cause: the semantic dispatcher classified this Go test file as Make despite the explicit Go language selector.
+
+## 2026-10-21: semantic construct replacement rejected a renamed Go test function
+
+* Tool: `semantic_replace_construct`
+* Target: `internal/astedit/extract_variable_test.go`
+* Observed failure: replacing `TestExtractVariableRefusesUnsupportedAssignmentsWithoutWriting` with a new function name was rejected with `replacement must preserve the selected function symbol`.
+* Workaround: preserve the selected function name while updating its cases; rename only in a separate semantic operation if the clearer name is still needed.
+* Root cause: function replacement enforces the selected declaration's symbol identity.
+
+## 2026-10-21: semantic workspace outline required trust
+
+* Tool: `semantic_outline`
+* Target: `internal/backend`
+* Observed failure: workspace outline stopped before reading package structure because the configured Make hook required workspace trust.
+* Workaround: continue the read-only capability audit using repository operation metadata, backend source, and CLI txtar inventory.
+* Root cause: semantic outline invokes configured workspace hooks and the request did not grant trust for this worktree.
+
+## 2026-10-21: semantic outline rejected backend directory scope
+
+* Tool: `semantic_outline`
+* Target: `internal/backend`
+* Observed failure: after granting workspace trust, the outline rejected the directory because external backend outlines accept selected files only.
+* Workaround: continue the read-only audit with operation capability metadata, backend source, and CLI txtar inventory.
+* Root cause: the external outline adapter does not support directory scopes.
+
+## 2026-10-21: semantic function insertion rejected a file revision guard
+
+* Tool: `semantic_insert_construct`
+* Target: `internal/sourcebuf/buffer.go`
+* Observed failure: insertion of `ApplyAndPublish` was rejected before editing with `expected_revision is only valid for field, element, and statement/expression insertion`.
+* Workaround: retry the declaration insertion without the unsupported whole-file revision guard after rechecking the target declaration and file state.
+* Root cause: function insertion does not accept `expected_revision`; that guard is limited to selected construct insertion kinds.
+
+## 2026-10-21: semantic_inspect_symbol parameter mismatch
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extract.go`
+* Observed failure: the call supplied `path`, but the tool accepts `file`; it returned `unknown param "path"` without changing workspace state.
+* Workaround: retry with the supported `file` parameter after recording this entry.
+* Root cause: the inspection tool schema differs from the outline tool schema.
+
+## 2026-10-21: semantic_inspect_symbol exact symbol resolution
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/extract.go`
+* Observed failure: the call requested `extractFunction`; symbol resolution failed and suggested the exported symbol `ExtractFunction`. No workspace state changed.
+* Workaround: retry with the exact Go declaration spelling.
+* Root cause: symbol names are case-sensitive.
+
+## 2026-10-21: semantic_remove_construct exposed dependent references
+
+* Tool: `semantic_remove_construct`
+* Target: `internal/astedit/inline_function_plan.go` and `internal/astedit/extract.go`
+* Observed failure: removing the unused planner and redundant alias checker left expected undefined references in their tests and extraction planner call site. The declarations themselves were removed correctly.
+* Workaround: removed the obsolete-only tests and stale call, deleted the unused syntax-only planner file while keeping publication tests, and removed the now-unused `forwardedIdent` helper.
+* Root cause: declaration-level removal does not atomically migrate dependent callers or remove the containing obsolete helper file.
+
+## 2026-10-21: semantic_inspect_symbol lookup used an unverified declaration name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/plan.go`
+* Observed failure: the review lane requested `ApplySourcePlan`, but the selected file contains no declaration with that name. No workspace state changed.
+* Workaround: use the directory outline to identify an existing declaration before retrying inspection.
+* Root cause: the reviewer guessed a symbol name instead of selecting it from the current outline.
+
+## 2026-10-21: `semantic_outline` blocked by missing workspace trust
+
+* Tool: `semantic_outline`.
+* Target: `internal/backend/rust` in the active semantic-editor worktree.
+* Observed failure: the tool returned `workspace trust required: outline: make: /Users/alessandro/.codex/worktrees/dc11/semantic-editor` while attempting a read-only declaration outline.
+* Workaround: continued with read-only repository inspection; no source mutation was attempted through the failed tool.
+* Root cause: the semedit MCP workspace trust state does not include this worktree for the outline operation.
+
+## 2026-10-21: `semantic_batch` could not finish configured Bash verification
+
+* Tool: `semantic_batch` inserting `sourcePublication` and `publishPreparedSource` in `internal/astedit/publication.go`.
+* Observed failure: both Go constructs were applied, but the batch's configured verification failed before completion because it attempted Bash verification on `tools/benchmark-harness/scripts/benchmark-ram-common.sh` and the MCP workspace trust state did not include this worktree.
+* Workaround: retain the applied Go constructs, record the failed verification, and run repository-defined `make check` for full validation.
+* Root cause: the batch verifies every tracked language in the workspace and cannot complete Bash project-hook checks without explicit trust.
+
+## 2026-10-21: `semantic_batch` verification failed on unrelated package errors
+
+* Tool: `semantic_batch` replacing `publishExtraction`, `publishVariableExtraction`, and `publishInlineVariable` after inserting the shared publisher.
+* Observed failure: the edits applied, but the configured `golangci-lint` hook exited 3 with 33 diagnostics. The reported Go errors concern `backend.InspectedSymbol` and `inspectTestBackend` fields in `internal/astedit/inspect.go`, `internal/backend/backend_test.go`, and `internal/operation/value_schema_test.go`, outside the edited declarations; no diagnostic named the new publisher or its callers. The preceding construct insertion also did not add imports to the new file.
+* Workaround: record the hook failure for repository-wide follow-up, add the helper's three imports surgically, and run repository `make check` to determine whether the cross-package diagnostics reproduce in configured verification.
+* Root cause: the semantic batch runs a whole-workspace lint hook over the broad in-progress tree; its insertion did not manage imports, and the diagnostic report does not establish whether the cross-package errors are stale MCP analysis or current unrelated source errors.
+
+## 2026-10-21: semantic_outline inferred Make for a Go directory
+
+* Tool: `semantic_outline`
+* Target: `internal/astedit`
+* Observed failure: with language inference, the read-only outline request routed to Make and failed its workspace-trust check. No workspace state changed.
+* Workaround: retry with explicit `language: "go"`.
+* Root cause: automatic language inference selected the wrong backend for a directory request.
+
+## 2026-10-21: semantic_inspect_symbol reviewer lookup used a guessed name
+
+* Tool: `semantic_inspect_symbol`
+* Target: `internal/astedit/inline.go`
+* Observed failure: the review lane requested `prepareInlineVariable`, `prepareVariableExtraction`, and `prepareFunctionExtractionOutput` from individual caller files where those declarations do not exist; their actual declarations live in other files. No workspace state changed.
+* Workaround: switch to workspace lookup/outline before further symbol inspection, then inspect each declaration in its defining file.
+* Root cause: the reviewer guessed declaration locations from call sites instead of resolving helpers across the package first.
+
+## 2026-10-21: `semantic_insert_construct` rejected combined type and method declarations
+
+* Tool: `semantic_insert_construct` targeting `internal/backend/rust/codeactions_test.go`.
+* Observed failure: type insertion returned `type insertion requires exactly one type declaration` because the submitted construct combined a type declaration with two methods. No source mutation occurred.
+* Workaround: retry by inserting only the type declaration and then insert each method separately, or use the smallest manual text edit if the semantic tool cannot express the grouped addition.
+* Root cause: the operation accepts one construct of the selected kind, not a bundle of declarations.
+
+## 2026-10-21: `semantic_insert_construct` rejected a receiver method as a function
+
+* Tool: `semantic_insert_construct` targeting `internal/backend/rust/codeactions_test.go`.
+* Observed failure: inserting `LatestServerStatus` as `kind: function` returned `source declaration does not match construct kind "function"`. No source mutation occurred.
+* Workaround: inspect the supported construct taxonomy and use the correct method construct kind, or add the method with a narrow manual edit if unsupported.
+* Root cause: the declaration is a receiver method and the tool distinguishes methods from functions.
+
+## 2026-10-21: `semantic_insert_construct` introduced an invalid Rust test helper call
+
+* Tool: `semantic_insert_construct` adding `rustInlineProtocolFixture` in `internal/backend/rust/codeactions_test.go`.
+* Observed failure: the inserted helper called `fakeRustRange` with four arguments although it accepts three; semantic diagnostics reported the compile error immediately after the edit.
+* Workaround: correct the single range expression using a targeted semantic construct replacement, then rerun formatting and the package test.
+* Root cause: the helper used a guessed positional range helper signature instead of inspecting its declaration first.
+
+## 2026-10-21: `semantic_insert_construct` rejected a multi-statement diagnostic insertion
+
+* Tool: `semantic_insert_construct` targeting `rustInlineProtocolFixture` in `internal/backend/rust/codeactions_test.go`.
+* Observed failure: inserting a multi-statement diagnostic block as one `statement/expression` construct returned `expected exactly one statement`. No source mutation occurred.
+* Workaround: insert the diagnostics as one syntactic block statement, or use a narrower edit supported by the construct selector.
+* Root cause: statement/expression insertion accepts one statement node rather than an unbraced sequence.
+
+## 2026-10-21: `semantic_replace_construct` could not select a nested test failure statement
+
+* Tool: `semantic_replace_construct` targeting the error assertion in `TestRustInlineOperationsShareProtocolLifecycle`.
+* Observed failure: the exact `t.Fatalf` statement was not returned as a selectable candidate inside the nested test closures; no source mutation occurred.
+* Workaround: use the enclosing function's candidate path or rely on a targeted manual edit if no exact path is exposed.
+* Root cause: the current selector did not expose the nested statement at the requested function scope.
+
+## 2026-10-21: `semantic_replace_construct` could not select the current test diagnostic
+
+* Tool: `semantic_replace_construct` targeting the success error assertion in `TestRustInlineOperationsShareProtocolLifecycle`.
+* Observed failure: the requested `t.Fatalf` diagnostic expression was not exposed as a selectable nested statement; no source mutation occurred.
+* Workaround: retain the existing diagnostic until a broader candidate path can select it, or make the one-line edit manually if necessary.
+* Root cause: nested statements inside the test closures are not surfaced as direct candidates under this selector.
+
+## 2026-10-21: `semantic_insert_construct` could not anchor inside a nested test closure
+
+* Tool: `semantic_insert_construct` targeting the success subtest in `TestRustInlineOperationsShareProtocolLifecycle`.
+* Observed failure: the requested `if` anchor was not found in the enclosing test function; no source mutation occurred.
+* Workaround: select the nested closure as its own function-like scope where supported, or use a precise manual edit to add the assertion.
+* Root cause: the operation did not search statement anchors inside the nested closure body.
+
+## 2026-10-21: semantic_insert_construct rejected multiple function declarations
+
+* Tool: `semantic_insert_construct`
+* Target: `internal/backend/rust/codeactions_test.go`
+* Failure: a single call containing two top-level function declarations returned `function insertion requires exactly one function declaration` and made no changes.
+* Workaround: insert each helper declaration in a separate semantic operation.
+* Root cause: this insertion operation accepts exactly one declaration per call.
+
+## 2026-10-21 Scala extraction lifecycle cleanup
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: `internal/backend/scala`
+* Observed failure: the initial outline request returned `workspace trust required: outline: make: .../semantic-editor`.
+* Workaround: retry with explicit `trust_workspace: true` after confirming this is the task workspace.
+* Root cause: the Make backend requires explicit workspace trust even when the requested scope is the Scala backend.
+* Follow-up: trusted directory-scope retry also failed because the automatic outline selected Make, which supports selected files only. Retry individual Scala source files explicitly with `language: "go"` where the Scala adapter is implemented in Go.
+
+## 2026-10-21: `semantic_batch` applied edits but final verification failed on an unrelated Bash file
+
+* Tool: `semantic_batch` running three `semantic_replace_construct` edits and its final `semantic_verify` step.
+* Target: `internal/astedit/extract_constant.go` and `internal/astedit/refactor_publication_test.go`.
+* Observed failure: all three Go edits were applied, but the batch returned `applied_with_diagnostics` because final verification reached `tools/benchmark-harness/scripts/benchmark-ram-common.sh` and failed with `workspace trust required: verify: bash`. The final diagnostic inventory was unavailable.
+* Workaround: preserve the applied edits, verify them with the repository's configured `make check`, and rerun focused Go tests after the required check baseline.
+* Root cause: the batch's final workspace-wide verification traversed a Bash source file whose backend requires explicit workspace trust, outside the edited Go paths.
+* Follow-up: the Scala lint cleanup also applied all five semantic edits but its final workspace verification hit the same unrelated Bash trust failure; no source edit failed. The targeted Scala package test and `git diff --check` passed.
+
+## 2026-10-21: semantic_inspect_symbol rejected unsupported file parameter
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: `internal/backend/java/codeactions.go`, `replaceJavaIntroducedParameterExpression`
+* Observed failure: the call using `path` was rejected because this operation accepts `file` instead; no source mutation occurred.
+* Workaround: use the documented `file` parameter for symbol inspection, or use a targeted manual edit when inspection is not needed for the change.
+* Root cause: the tool schema distinguishes `file` from workspace operations that accept `path`.
+
+## 2026-10-21: `semantic_lookup` defaulted to Make during Go cleanup review
+
+* Tool: `semantic_lookup` (`mcp__semedit`)
+* Target: Go symbols `publishPreparedSource` and `ExtractConstant`.
+* Observed failure: both lookups omitted `language` and routed to Make, returning `workspace trust required: lookup: make`; no source state changed.
+* Workaround: repeat the lookups with `language: "go"`.
+* Root cause: the selected Go source paths were not enough to prevent automatic language inference from choosing Make.
+
+## 2026-10-21: review inspection used a guessed Go helper file path
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: `publishPreparedSource` in the guessed path `internal/astedit/refactor_publication.go`.
+* Observed failure: the selected file did not exist, so the helper could not be inspected; no source state changed.
+* Workaround: locate the declaration with `semantic_lookup` using explicit `language: "go"`, then inspect it in its reported defining file.
+* Root cause: the reviewer inferred a filename from the helper's role instead of resolving the declaration location.
+
+## 2026-10-21: Go source-buffer outline defaulted to Make during review
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: Go package scope `internal/sourcebuf`.
+* Observed failure: the request omitted `language` and automatic routing selected Make, returning `workspace trust required: outline: make`; no source state changed.
+* Workaround: retry with `language: "go"`.
+* Root cause: the package-scoped Go request did not constrain automatic language selection.
+
+## 2026-10-21: Scala lint cleanup batch verification required Bash trust
+
+* Tool: `semantic_batch` (`mcp__semedit`)
+* Targets: `internal/backend/scala/codeactions.go`, `internal/backend/scala/extraction_lifecycle_test.go`.
+* Observed failure: all five semantic edits were applied in the working buffer, but final verification stopped because the configured Bash hook required workspace trust.
+* Workaround: inspect the applied changes and run targeted Scala package verification; do not run repository-wide verification for this cleanup.
+* Root cause: batch verification included workspace-wide Bash hooks without the trust parameter.
+
+## 2026-10-21: Java backend outline defaulted to Make during review
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: Go package scope `internal/backend/java`, including tests.
+* Observed failure: the request omitted `language` and automatic routing selected Make, returning `workspace trust required: outline: make`; no source state changed.
+* Workaround: retry with `language: "go"`.
+* Root cause: automatic language inference chose Make for a Go package directory.
+
+## 2026-10-21: Rust lifecycle review inspected a guessed test helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: `assertRustInlineLifecycleFailure` in the Rust inline lifecycle test file.
+* Observed failure: the guessed symbol was not found; no source state changed.
+* Workaround: inspect the declared helper `assertRustInlineProtocolFailure`.
+* Root cause: the reviewer guessed a helper name instead of resolving it from the test outline.
+
+## 2026-10-21: Go callable-extraction outline required workspace trust
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: `internal/astedit`
+* Observed failure: the initial outline request returned `workspace trust required: outline: make: .../semantic-editor`; no source state changed.
+* Workaround: retry the Go scope with explicit `language: "go"` and `trust_workspace: true` after confirming this is the task workspace.
+* Root cause: the automatic router selected the Make backend for a Go package scope, and its outline operation requires explicit workspace trust.
+
+## 2026-10-21: Go callable-extraction signature change routed to Make
+
+* Tool: `semantic_change_signature` (`mcp__semedit`)
+* Target: `internal/astedit/extract.go`, `rewriteExtractedStatements`
+* Observed failure: an explicit Go request returned `dispatch "change_signature" for language "make": operation is not supported for language`; no source state changed.
+* Workaround: apply the one private signature extension surgically after recording this routing failure, then verify the declaration and its caller with Go tooling.
+* Root cause: the semantic tool router ignored or failed to apply the explicit Go language selection in this repository workspace.
+
+## 2026-10-21: Go directive-helper test outline used a guessed filename
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: guessed path `internal/astedit/doc_comment_plan_test.go`
+* Observed failure: the file does not exist; no source state changed.
+* Workaround: locate the actual test declaration with `rg --files` and inspect its defining file.
+* Root cause: the reviewer inferred a test filename rather than resolving the package's existing test files.
+
+## 2026-10-21: Go extraction review inspected a guessed declaration name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: `renderExtractedDeclaration` in `internal/astedit/extract.go`
+* Observed failure: the declaration was not found; no source state changed.
+* Workaround: inspect the existing `extractionDeclaration` declaration.
+* Root cause: the reviewer guessed a helper name instead of resolving it from the package outline.
+
+## 2026-10-21: Go extraction outline used a guessed file path
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: guessed path `internal/astedit/extract_conditional.go`
+* Observed failure: the file does not exist; no source state changed.
+* Workaround: inspect the existing `extract.go` and `extract_flow.go` outlines and locate conditional-flow declarations there.
+* Root cause: the file name was inferred instead of resolving the declaration's file from package files.
+
+## 2026-10-21: Go extraction symbol inspection used an unsupported parameter
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: `validateExtractStatement`, `visitExtractFlowStatement`, `validateTypedExtractionAliases`, and `validateTypedExtractedScope`
+* Observed failure: all four requests were rejected because `path` is not a supported parameter; the tool accepts `file`. No source state changed.
+* Workaround: retry with `file` after confirming the declarations from the successful file outlines.
+* Root cause: the request used a guessed parameter name rather than the tool's declared schema.
+
+## 2026-10-21: Go counted-loop helper insertion included multiple declarations
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`)
+* Target: `internal/astedit/extract_flow.go`
+* Observed failure: function insertion rejected the snippet because it contained two function declarations; no source state changed.
+* Workaround: insert each helper as a separate function declaration.
+* Root cause: the insertion contract accepts exactly one function declaration per request.
+
+## 2026-10-21: Go range-extraction design review inspected a guessed selector
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: guessed selector `visitExtractStatementFlow` in `internal/astedit/extract_flow.go`
+* Observed failure: the symbol was not found; no source state changed.
+* Workaround: use the successful `semantic_outline` declaration selectors before inspecting symbols.
+* Root cause: the reviewer guessed a declaration name instead of resolving it from the outline.
+
+## 2026-10-21: Go extraction case insertion could not locate a type switch
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`)
+* Target: the type switch in `visitExtractFlowStatement` in `internal/astedit/extract_flow.go`
+* Observed failure: `placement: "before_default"` returned `locate switch "" in visitExtractFlowStatement: switch statement not found`; no source state changed.
+* Workaround: use the smallest targeted source edit after logging this tool-routing limitation.
+* Root cause: the insertion request did not carry a switch discriminator, and the tool did not resolve the unique type switch from its enclosing function.
+
+## 2026-10-21: Rust backend outline inferred the wrong language
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: directory `internal/backend/rust`
+* Observed failure: automatic language inference treated the directory basename `rust` as Make and refused with `workspace trust required: outline: make`; no source state changed.
+* Workaround: retry with an explicit supported language after identifying the relevant declarations through repository file/package discovery.
+* Root cause: the directory name collided with a language identifier and auto inference did not resolve the directory's source language from its contents.
+
+## 2026-10-21: Go statement insertion rejected a valid multi-statement snippet
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`)
+* Target: `standaloneStatementRange` in `internal/astedit/inline.go`
+* Observed failure: inserting a declaration plus a guarding `if` as one `statement/expression` construct returned `expected exactly one statement`; no source state changed.
+* Workaround: insert each statement separately and replace the original statement with one construct.
+* Root cause: Go statement insertion validates exactly one statement per request.
+
+## 2026-10-22: Go construct replacement used a stale loop selector after lint fixes
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`)
+* Target: `validateInlineStructLiteral` in `internal/astedit/inline_struct.go`
+* Observed failure: replacing the original indexed struct-field loop returned `not_found` and listed the updated `for field := range structure.Fields()` candidate; the tool made no write.
+* Workaround: retain the equivalent loop already produced by the configured Go linter fixer and refresh selectors from the current source before any further semantic edit.
+* Root cause: `make check` ran the linter's safe integer-range rewrite before the semantic request, invalidating the pre-fix loop discriminator.
+
+## 2026-10-22: Go peer review inspected an unresolved symbol guess
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: guessed selector `extractionTypeIdentity` in `internal/astedit/extraction_analysis.go`
+* Observed failure: the selected-file inspection returned no match; no source state changed.
+* Workaround: resolve the declaration through `semantic_lookup` or `semantic_outline`, then inspect the selector they return.
+* Root cause: the reviewer guessed a helper name instead of starting from a verified declaration selector.
+
+## 2026-10-22: Go peer review lookup auto-routed to Make
+
+* Tool: `semantic_lookup` (`mcp__semedit`)
+* Target: `extractionTypeIdentity` in the mixed-language workspace
+* Observed failure: omitting `language` auto-selected Make and returned `workspace trust required: lookup: make`; no source state changed.
+* Workaround: retry with explicit `language: go` and a Go source path.
+* Root cause: automatic language selection did not infer Go for an unscoped selector in this polyglot repository.
+
+## 2026-10-22: Backend directory outlines auto-routed to Make
+
+* Tool: `semantic_outline` (`mcp__semedit`)
+* Target: implementation directories `internal/backend/{java,rust,scala,haskell,kotlin,bash,makefile}`.
+* Observed failure: directory-scope requests with automatic language selection chose Make and returned `workspace trust required: outline: make`; no source state changed.
+* Workaround: retry with explicit `language: go` and the repository workspace root, because these backend adapters are implemented in Go; inspect file-level declarations after a successful outline.
+* Root cause: automatic routing did not detect the Go implementation language for nested backend directories and instead selected the Make backend, whose outline path requires trust and selected-file scope.
+
+## 2026-10-22: Cross-backend position audit used guessed symbols
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`)
+* Target: guessed file `internal/backend/readlsp/position.go` and guessed selector `HaskellBackend.Outline`.
+* Observed failure: the file and declaration were not found; no source state changed.
+* Workaround: locate the package's actual file and declarations with `rg --files` and a successful explicit-Go outline, then inspect only resolved selectors (`internal/backend/readlsp/read.go` contains the position helpers).
+* Root cause: the audit inferred file and method names instead of using returned source declarations.
+
+## 2026-10-22: Semantic construct replacement could not select the static-import guard
+
+* `semantic_replace_construct` could not select the `if strings.HasPrefix(importName, "static ")` guard in `internal/backend/java/codeactions.go`; it listed nested candidates but did not resolve the compound statement from the supplied discriminator. The Go linter's safe fix converted it to `strings.CutPrefix`. Root cause: compound statement matching did not accept the rendered compact form.
+
+## 2026-10-22: Haskell and Kotlin semantic batch verification stopped at Bash workspace trust
+
+* Tool: `semantic_batch` applying Haskell and Kotlin source-position refactors.
+* Target: `internal/backend/haskell` and `internal/backend/kotlin`.
+* Observed failure: all eight mutation children succeeded, but automatic final verification stopped at `tools/benchmark-harness/scripts/benchmark-ram-common.sh` with `workspace trust required`; the batch returned `applied_with_diagnostics`.
+* Workaround: inspect the applied changes and run the focused Haskell/Kotlin tests followed by the repository's trusted `make check` before treating the lane as verified.
+* Root cause: batch verification traversed the configured Bash workspace hook outside the Go adapter changes and did not have explicit trust for that path.
+
+## 2026-10-22: Repeated Haskell and Kotlin batch verification stopped at Bash workspace trust
+
+* Tool: `semantic_batch` applying Haskell and Kotlin public lookup-position cases.
+* Target: `internal/backend/haskell/lookup_position_test.go` and `internal/backend/kotlin/lookup_position_test.go`.
+* Observed failure: all ten mutation children succeeded, but automatic final verification again stopped at `tools/benchmark-harness/scripts/benchmark-ram-common.sh` with `workspace trust required`; the batch returned `applied_with_diagnostics`.
+* Workaround: inspect the test changes, run the focused package tests, then use the trusted `make check` for integrated verification.
+* Root cause: as above, the batch includes the configured Bash workspace hook even though these changes only test Go adapters.
+
+## 2026-10-22: Java peer review outline auto-routed to Make
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/java`.
+* Observed failure: automatic language routing selected Make and returned `workspace trust required`; no source state changed.
+* Workaround: retry the adapter inspection with explicit `language: go`.
+* Root cause: automatic language routing treated a Go implementation directory named for a backend language as Make instead of recognizing its Go source files.
+
+## 2026-10-22: Java import repair batch could not load workspace diagnostics
+
+* Tool: `semantic_batch` preparing Java import-preservation helpers.
+* Target: `internal/backend/java/imports.go`.
+* Observed failure: pre-edit diagnostics failed on `internal/mcptest/validate.go` with `no package metadata for file`; the tool returned `application_state: unknown`, so mutation state must be checked before continuing.
+* Workaround: inspect the target files and git diff, then use a narrowly scoped edit and repository checks if the semantic batch did not apply its children.
+* Root cause: workspace-wide gopls diagnostics could not load package metadata for an unrelated Go file in the active tree.
+
+## 2026-10-22: Java follow-up review guessed a Go helper selector
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: guessed selector `buildSourceIndex` during read-only review of shared Haskell/Kotlin position handling.
+* Observed failure: the declaration was not found; no source state changed.
+* Workaround: inspect the successful file outline and use the actual selector `newSourceIndex`.
+* Root cause: the reviewer guessed a helper name instead of resolving the declaration from the outline.
+
+## 2026-10-22: Java CST type insertion rejected multiple declarations
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `internal/javacst/locator.go`.
+* Observed failure: the request supplied two type declarations together and was refused with `type insertion requires exactly one type declaration`; no source state changed.
+* Workaround: insert each named type separately.
+* Root cause: the construct insertion contract accepts exactly one type declaration per type insertion.
+
+## 2026-10-22: Java CST function replacement refused a symbol rename
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `JavaImportDeclarations` in `internal/javacst/locator.go`.
+* Observed failure: replacement with the new selector `ParseJavaImports` was refused because construct replacement must preserve the selected function symbol; no source state changed.
+* Workaround: remove the old function and insert the new named API as separate semantic edits.
+* Root cause: construct replacement preserves declaration identity and cannot rename the selected function.
+
+## 2026-10-22: Go construct replacement rejected a multi-statement lint fix
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `findVariableCandidates` in `internal/astedit/extract_variable.go`.
+* Observed failure: replacing the one-case type switch with its equivalent type assertion and `if` guard was refused with `syntax error: expected exactly one statement`; no source state changed.
+* Workaround: use a minimal source edit to apply the Go linter's behavior-preserving rewrite, then rerun repository checks.
+* Root cause: `semantic_replace_construct` parses replacement source as exactly one statement, while this control-flow rewrite requires multiple statements.
+
+## 2026-10-22: Go package outline required workspace trust
+
+* Tool: `semantic_workspace_outline` (`mcp__semedit`).
+* Target: `internal/astedit` in the active worktree.
+* Observed failure: the read-only outline request returned `workspace trust required: outline: make`; no source state changed.
+* Workaround: use the established CLI and source inspection to continue the review fixes; retry the semantic outline only after the workspace trust contract is explicitly satisfied.
+* Root cause: the active semantic server requires explicit workspace trust for the package outline operation.
+
+## 2026-10-22: Go package outline rejected its trust option
+
+* Tool: `semantic_workspace_outline` (`mcp__semedit`).
+* Target: `internal/astedit` in the active worktree.
+* Observed failure: retrying with `trust_workspace: true` returned `unknown param "trust_workspace"`; the advertised parameter is not accepted by this operation. No source state changed.
+* Workaround: continue with read-only CLI/source inspection and use semantic mutation tools only when their own trust contract is available.
+* Root cause: the tool's runtime schema does not expose the trust parameter needed to satisfy its reported trust precondition.
+
+## 2026-10-22: Go extraction batch could not capture final verification
+
+* Tool: `semantic_batch` (`mcp__semedit`).
+* Target: `internal/astedit/extract_variable.go`.
+* Observed failure: all four ordered Go source edits applied to the working buffer, then final diagnostics were unavailable because automatic verification required workspace trust for `tools/benchmark-harness/scripts/benchmark-ram-common.sh`; the result was `applied_with_diagnostics` and `workspace trust required: verify: bash`. No disk publication was claimed by the child receipts.
+* Workaround: inspect the final source diff and run focused Go tests followed by the repository `make check` before publication.
+* Root cause: the semantic batch runs configured workspace verification across the repository, including trusted Bash hooks, and the request did not grant that trust.
+
+## 2026-10-22: Go declaration lookup auto-selected Make during review
+
+* Tool: `semantic_lookup` (`mcp__semedit`).
+* Target: `collectStatementExpressionCandidates` in `internal/astedit/extract_variable.go`.
+* Observed failure: a read-only lookup with `workspace_root: dc11` auto-selected the Make backend and returned `workspace trust required: lookup: make`; no source state changed.
+* Workaround: retry the lookup with the explicit `language: "go"` selector.
+* Root cause: automatic language selection resolved the source target to the Make backend despite the Go declaration and file context.
+
+## 2026-10-22: Go symbol inspection used a mismatched symbol selector during review
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `prepareVariableExtraction` in `internal/astedit/extraction_analysis.go`.
+* Observed failure: inspection returned `symbol not found` because the selected symbol was not present in the specified source file; no source state changed.
+* Workaround: locate the declaration with explicit Go language selection, then inspect it using the returned file and selector.
+* Root cause: the review's selected-file assumption did not match the declaration's actual file.
+
+## 2026-10-22: Go symbol lookup received a non-existent relative workspace root
+
+* Tool: `semantic_lookup` (`mcp__semedit`).
+* Target: `variableDeclarationCandidate` in `internal/astedit/extract_variable.go`.
+* Observed failure: lookup with `language: "go"` and `workspace_root: "dc11"` failed while canonicalizing `/Users/alessandro/.codex/worktrees/dc11/semantic-editor/dc11`; no source state changed.
+* Workaround: pass the active worktree's absolute path as `workspace_root`.
+* Root cause: the supplied relative root was resolved beneath the already configured worktree root instead of identifying the worktree.
+
+## 2026-10-22: Java package outlines required workspace trust
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/java` and `internal/operation` in the active worktree.
+* Observed failure: both package-scoped outline requests returned `workspace trust required: outline: make`; no source state changed.
+* Workaround: use the successful workspace-wide `semantic_workspace_outline` result to orient, then inspect the bounded declarations with read-only source queries.
+* Root cause: the scoped outline path auto-selected the Make backend for this workspace and required trust, while the outline request schema provides no trust parameter.
+
+## 2026-10-22: Java backend outline auto-selected Make during review
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/java` in the active worktree.
+* Observed failure: a read-only outline request auto-selected the Make backend and returned `workspace trust required: outline: make`; no source state changed.
+* Workaround: retry the outline with an explicit language selector and use direct read-only source inspection for review.
+* Root cause: automatic language selection resolved the Java implementation directory to the Make backend for this scoped outline request.
+
+## 2026-10-22: Go contract inspection guessed a nonexistent symbol
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `goLanguageContract` in `internal/operation/language_contracts.go`.
+* Observed failure: inspection returned `symbol not found`; no source state changed.
+* Workaround: enumerate declarations with the Go outline and inspect only a returned exact selector.
+* Root cause: the review guessed a symbol name rather than resolving it from the target file.
+
+## 2026-10-22: Go move contract review guessed a nonexistent selector
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: guessed `applyCrossPackageMove` in `internal/astedit/move_cross_package.go`.
+* Observed failure: symbol lookup returned not found; no source state changed.
+* Workaround: inspect the declaration outline and use the actual declaration, `applyBufferedMove`.
+* Root cause: the review guessed an implementation selector instead of resolving it from the outline.
+
+## 2026-10-22: Go move type planner failed semantic package typecheck
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `crossPackageMoveTarget` in `internal/astedit/move_cross_package.go`.
+* Observed failure: the field insertion was refused before mutation because the new type planner passed `*ast.TypeSpec` to `declarationNameCollision`, which requires `ast.Decl`.
+* Workaround: correct the helper's target declaration representation, then retry the semantic field insertion.
+* Root cause: a type specification is nested inside a `GenDecl`; it is not itself a declaration node.
+
+## 2026-10-22: Go move type planner was incomplete during semantic field insertion
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `crossPackageMoveTarget` in `internal/astedit/move_cross_package.go`.
+* Observed failure: the retry was refused before mutation because the new planner imported `go/format` before the candidate-formatting helpers were added.
+* Workaround: finish the type planner and validation helpers before retrying the semantic field insertion.
+* Root cause: the semantic edit validates the whole package and the staged helper file was incomplete.
+
+## 2026-10-22: Go move type review guessed a nonexistent helper selector
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: guessed `validateCrossPackageMovedTypeShape` in `internal/astedit/move_cross_package_type.go`.
+* Observed failure: inspection returned `symbol not found`; no source state changed.
+* Workaround: use the current declaration outline and inspect only exact returned selectors.
+* Root cause: the review guessed a helper name that was not in the implementation.
+
+## 2026-10-22: Go lookup inferred the Make backend without a selected file
+
+* Tool: `semantic_lookup` (`mcp__semedit`), two calls.
+* Target: Go helpers `sameResolvedVariableType` and `loadVariableTypeContext` in the workspace.
+* Observed failure: automatic backend selection returned `workspace trust required: lookup: make` before symbol lookup; no source state changed.
+* Workaround: select `language: "go"` explicitly and constrain the lookup to the known Go file.
+* Root cause: the request omitted both language and file in a workspace with a Makefile, allowing automatic routing to select the wrong backend.
+
+## 2026-10-22: Concurrent Rust source update interrupted Go construct finalization
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: the nonliteral-initializer branch in `planInlineVariable`, `internal/astedit/inline.go`.
+* Observed failure: the call reported `clean imports after construct replacement: buffered source changed on disk` for the concurrently edited `internal/backend/rust/extract_constant.go`; application state was unknown.
+* Workaround: inspect the target declaration to determine whether the Go mutation persisted, then retry only if needed.
+* Root cause: standalone semantic finalization observes workspace buffers outside the selected Go edit while another language lane is writing them.
+
+## 2026-10-22: Concurrent Scala source update interrupted Go helper replacement
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `inlineImmediateReturnUse`, `internal/astedit/inline_struct.go`.
+* Observed failure: finalization reported `buffered source changed on disk` for concurrently edited `internal/backend/scala/backend.go`; application state was unknown.
+* Workaround: inspect the helper and apply the smallest targeted diagnostic-text fallback if the semantic replacement was not published.
+* Root cause: the standalone semantic transaction includes workspace snapshots outside the selected Go file while the Scala lane is writing them.
+
+## 2026-10-22: Patch context did not match Rust fake-server harness
+
+* Tool: `apply_patch` (`functions.exec` nested tool).
+* Target: `cmd/semedit/language_txtar_test.go`.
+* Observed failure: the patch was rejected because its expected `handleFakeDocumentChange` context did not match the current source; no files were changed by the failed patch.
+* Workaround: re-read the exact surrounding declarations and apply smaller patches against current code.
+* Root cause: the combined patch assumed an outdated/incorrect context around Rust source-buffer updates.
+
+## 2026-10-22: Resolve-handler patch context did not match
+
+* Tool: `apply_patch` (`functions.exec` nested tool).
+* Target: `cmd/semedit/language_txtar_test.go`.
+* Observed failure: a small patch could not find the expected Rust callable resolve-handler context; no files were changed by the failed patch.
+* Workaround: inspect the current function boundaries and insert the new branch at the actual location.
+* Root cause: the patch guessed a nearby block from a different handler layout.
+
+## 2026-10-22: Constant-name patch context did not match
+
+* Tool: `apply_patch` (`functions.exec` nested tool).
+* Target: `internal/backend/rust/extract_constant.go`.
+* Observed failure: the patch expected the constant-kind declaration before the import block, but it follows the imports; no files were changed.
+* Workaround: inspect the current file header and patch the exact declaration/function lines.
+* Root cause: patch context did not follow Go declaration ordering.
+
+## 2026-10-22: Sol 6.1 diff review could not access the worktree
+
+* Tool: `codex_review_diff` (`mcp__gemini_mcp`).
+* Target: the Rust extract-constant implementation and its focused tests.
+* Observed failure: the requested `gpt-6.1-sol` review returned `Operation not permitted`; no review was produced.
+* Workaround: continue with focused local checks and retry review through an available review path.
+* Root cause: the review service could not read this managed worktree.
+
+## 2026-10-22: Sol review outline routed Rust backend to Make
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/rust`.
+* Observed failure: automatic routing selected the Make backend and returned `workspace trust required`; no source state changed.
+* Workaround: use explicit Go-language inspection for this backend implementation directory, then inspect the current Rust diff read-only.
+* Root cause: automatic language detection selected Make from repository-level context instead of the Go source package.
+
+## 2026-10-22: Sol review guessed a nonexistent Rust helper file
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `rustSuffixedIntegerLiteral` in the guessed `internal/backend/rust/inline_value.go`.
+* Observed failure: the target file does not exist, so symbol inspection could not run; no source state changed.
+* Workaround: resolve the helper location from the Rust backend outline and retry with the exact source file.
+* Root cause: the review guessed a filename from the helper's conceptual role instead of resolving its declaration location.
+
+## 2026-10-22: Rust re-review outline again routed to Make
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/rust`, including tests.
+* Observed failure: automatic routing selected Make and returned `workspace trust required`; no source state changed.
+* Workaround: retry with explicit Go-language inspection and a package-relative target.
+* Root cause: automatic language detection again selected Make for this Go implementation package.
+
+## 2026-10-22: Semantic batch diagnostics could not load the Go module
+
+* Tool: `semantic_batch` (`mcp__semedit`).
+* Target: `internal/backend/rust/generic_scope.go`.
+* Observed failure: the batch stopped before reporting child outcomes because its workspace-wide pre-edit diagnostic pass asked `gopls` for `internal/mcptest/validate.go`, which had no package metadata; application state was unknown.
+* Workaround: inspect the target declarations and disk state before retrying; if the Go semantic transaction remains unavailable, use a narrowly scoped source edit and run the configured Go checks.
+* Root cause: batch-wide diagnostics include a virtual validation file outside a loadable package in this worktree.
+
+## 2026-10-22: Semantic doc-comment edit routed Go source to Make
+
+* Tool: `semantic_set_doc_comment` (`mcp__semedit`).
+* Target: `internal/backend/backend.go`, declaration `LanguageRust`.
+* Observed failure: despite `language: "go"` and an explicit workspace root, dispatch reported `set_doc_comment` unsupported for language `make`; no source state changed.
+* Workaround: record this routing failure, then use a surgical declaration-comment patch and verify with the configured checks.
+* Root cause: backend dispatch selected Make for a Go file in this worktree, matching earlier semantic-tool language-routing failures.
+
+## 2026-10-22: Semantic inspection used a nonexistent selector name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `collectStatementExpressionCandidates` in `internal/astedit/construct_inspection.go`.
+* Observed failure: the requested symbol could not be resolved; no source state changed.
+* Workaround: use `semantic_outline` on the selected Go package to resolve the declared helper name, then inspect the exact declaration.
+* Root cause: the helper name was inferred from behavior instead of read from the package outline.
+
+## 2026-10-22: Semantic inspection used a nonexistent path helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `childLoopPath` in `internal/astedit/construct_span.go`.
+* Observed failure: the requested symbol could not be resolved; no source state changed.
+* Workaround: use `semantic_outline` on the selected Go file to identify the declared path helper before inspection.
+* Root cause: the helper name was guessed from a call site instead of resolved from the declaration list.
+
+## 2026-10-22: Semantic field insertion rejected an unqualified field anchor
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `extractionInput` in `internal/astedit/extract.go`.
+* Observed failure: the tool rejected `target_symbol: "selected"` because its field selector requires a qualified field target; no source state changed.
+* Workaround: retry field insertion using the supported unanchored `last` placement.
+* Root cause: the selected field anchor omitted the owning type qualification required by this tool's schema.
+
+## 2026-10-22: Semantic field insertion rejected generic `last` placement
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `extractionInput` in `internal/astedit/extract.go`.
+* Observed failure: the tool rejected `placement: "last"` as unsupported for fields; no source state changed.
+* Workaround: use the field-specific `type_end` placement.
+* Root cause: generic declaration placement names do not apply to Go struct fields.
+
+## 2026-10-22: Semantic inspection used the wrong source-buffer helper file
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `prepareExtractionBuffer` guessed in `internal/astedit/extraction_target.go`.
+* Observed failure: the requested symbol was not declared in that file; no source state changed.
+* Workaround: resolve the helper's declaration file with the package outline, then inspect its exact name and path.
+* Root cause: an outdated or inferred filename was used for a helper whose current package decomposition differs.
+
+## 2026-10-22: Semantic doc-comment edit routed Go source to Make again
+
+* Tool: `semantic_set_doc_comment` (`mcp__semedit`).
+* Target: `ExtractFunction` in `internal/astedit/extract.go`.
+* Observed failure: explicit Go dispatch was routed to Make, which does not support declaration doc-comment edits; no source state changed.
+* Workaround: use a targeted source patch for the function comment and verify formatting and tests.
+* Root cause: semantic dispatch selected Make for a Go implementation file in this worktree.
+
+## 2026-10-22: Semantic inspection used a nonexistent live-out helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `extractObjectUsedAfter` in `internal/astedit/extract.go`.
+* Observed failure: the symbol was not declared in the requested file; no source state changed.
+* Workaround: locate the declaration with `rg` and inspect its actual file in `internal/astedit/extract_flow.go`.
+* Root cause: the helper belongs to the extraction-flow package split and was searched in the entry-point file.
+
+## 2026-10-22: Semantic batch applied Go edits but verification required workspace trust
+
+* Tool: `semantic_batch` (`mcp__semedit`).
+* Target: `validateExtractionRangeLoop` and `validateExtractionLoopInputs` in `internal/astedit/extract_flow.go`.
+* Observed failure: both selected Go function replacements were applied to the working overlay, then automatic verification stopped because the workspace's Bash verification hook required explicit trust; no final diagnostic inventory was captured.
+* Workaround: rerun `semantic_verify` for the changed Go package with explicit workspace trust, then run repository checks.
+* Root cause: the compound edit request omitted `trust_workspace` even though this repository configures a Bash verification hook.
+
+## 2026-10-22: Semantic verification stopped on the Go lint hook
+
+* Tool: `semantic_verify` (`mcp__semedit`).
+* Target: Go package scope `internal/astedit`.
+* Observed failure: gopls reported verified module coverage, but the configured `golangci-lint` hook exited with status 3 and no final diagnostic inventory was returned.
+* Workaround: rely on the repository's `make check` lint and test gates after recording the hook failure; inspect the captured hook diagnostics before treating this tool result as verification.
+* Root cause: the semantic verification hook's lint invocation failed independently of gopls analysis; the precise lint stderr needs inspection.
+
+## 2026-10-22: Semantic construct replacement could not select a test setup expression
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: the environment-variable slice in `TestREQ001SemanticIntentCLIContracts` in `cmd/semedit/main_test.go`.
+* Observed failure: the exact slice-literal discriminator was not recognized as a standalone construct; no source state changed.
+* Workaround: use a narrow source patch to add `GOFLAGS` to the explicitly propagated testscript environment.
+* Root cause: the selector matches the enclosing statement or nested expression candidates reported by inspection, not arbitrary source-shaped text supplied as a discriminator.
+
+## 2026-10-22: Semantic inspection used an unresolved operation symbol
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `wireRemoveConstruct` in `internal/operation/wire_remove.go`.
+* Observed failure: the requested symbol was not declared in the file; no source state changed.
+* Workaround: locate the registered removal operation's actual function name before retrying inspection.
+* Root cause: the guessed symbol name did not match the repository's operation wiring convention.
+
+## 2026-10-22: Semantic construct replacement treated declaration as a nested kind
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: the `removeParams` variable declaration in `internal/operation/wire_remove.go`.
+* Observed failure: `kind: "declaration"` was rejected because the operation requires `in_function` for that unsupported nested kind; no source state changed.
+* Workaround: use the registered Go `var` construct kind, or make a narrow manual edit if the selector cannot safely identify this grouped package variable.
+* Root cause: the semantic replacement schema uses syntax-specific construct kinds (`var`, `const`, `function`, `type`) rather than a generic `declaration` value.
+
+## 2026-10-22: Go directory outline was routed through Make trust validation
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: Go directory scope `internal/astedit`.
+* Observed failure: the auto-language request returned a workspace-trust refusal from the Make backend; no outline was produced and no source state changed.
+* Workaround: explicitly select the Go backend for the outline request.
+* Root cause: auto backend routing considered Make trust validation for a Go directory scope.
+
+## 2026-10-22: Semantic replacement rejected a multi-declaration snippet
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `helperNameShadowedAtReplacement` in `internal/astedit/extract.go`.
+* Observed failure: replacing one function with a snippet containing a second helper declaration returned `multiple declarations found in snippet`; no source state changed.
+* Workaround: replace the existing declaration by itself and add any new helper through a separate operation.
+* Root cause: declaration replacement requires exactly one declaration in its source snippet.
+
+## 2026-10-22: Inspection used an undeclared removal helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `selectRemoveStatementTarget` in `internal/astedit/remove.go`.
+* Observed failure: symbol lookup returned `symbol not found`; no source state changed.
+* Workaround: inspect the declaration outline before selecting the removal helper.
+* Root cause: the requested helper name was guessed instead of resolved from the file outline.
+
+## 2026-10-22: Callable inline read-set capture included generated test-main source
+
+* Tool: Go `refactor_inline_callable` through the CLI.
+* Target: the cross-file method fixture with an existing `caller_test.go`.
+* Observed failure: capture attempted to read a generated Go test-main cache file outside the workspace and refused before mutation.
+* Workaround: stage the runtime-only verification source under `.scratch/`, copy it to `caller_test.go` after the edit, and run the runtime assertions then.
+* Root cause: `collectRefactorPackageInputs` treats the generated test-main package's cache source as a local module input. This pre-existing capture limitation is outside the bounded cross-file method extension.
+
+## 2026-10-22: Statement insertion rejected a multi-statement literal-plan sequence
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `buildExtractTypeSourcePlan` in `internal/operation/wire_extract_type.go`.
+* Observed failure: a declaration, error check, and append sequence was rejected with `expected exactly one statement`; no source state changed.
+* Workaround: replace the complete function declaration through the semantic declaration tool.
+* Root cause: anchored statement insertion accepts exactly one statement per call.
+
+## 2026-10-22: Go lookup selected the Make backend without an explicit language
+
+* Tool: `semantic_lookup` (`mcp__semedit`).
+* Target: the proposed Go type-extraction preparation symbol in the semantic-editor workspace.
+* Observed failure: auto-language lookup returned `workspace trust required: lookup: make`; no source state changed.
+* Workaround: explicitly select `language: go` for subsequent Go navigation.
+* Root cause: auto backend routing selected the Make backend for an unscoped lookup in this mixed-language workspace.
+
+## 2026-10-22: Type-extraction inspection used a nonexistent helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `ensureNoExtractedTypeEscape` in `internal/operation/wire_extract_type.go`.
+* Observed failure: the guessed helper name was not found; no source state changed.
+* Workaround: obtain the real helper name from `semantic_outline` before inspection.
+* Root cause: inspection used an inferred helper name rather than an outline-produced selector.
+
+## 2026-10-22: Go operation outline targeted a nonexistent source file
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/operation/wire_change_signature.go`.
+* Observed failure: navigation reported that the requested file does not exist; no source state changed.
+* Workaround: use the discovered `internal/operation/wire_signature.go` file.
+* Root cause: the filename was inferred from the operation name instead of taken from workspace discovery.
+
+## 2026-10-22: Rust backend outline was routed to trusted Make verification
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/rust` in the semantic-editor workspace.
+* Observed failure: auto-language outline returned `workspace trust required: outline: make`; no source state changed.
+* Workaround: inspect the already-discovered Rust package using ordinary read-only source tools while resolving explicit language routing for semantic navigation.
+* Root cause: auto backend routing selected the Make backend for an unscoped Go-hosted Rust adapter directory.
+
+## 2026-10-22: Semantic scaffold rejected source content
+
+* Tool: `semantic_scaffold_file` through `semantic_batch` (`mcp__semedit`).
+* Target: new `internal/backend/rust/promote_local_to_const.go`.
+* Observed failure: the batch rejected `source` as an unknown parameter; the scaffold schema accepts only a path and purpose/package metadata. No file was created.
+* Workaround: create the file through the supported scaffold operation, then add source declarations with the applicable semantic insertion tool; if the semantic tool cannot express the required complete file, use the smallest built-in file edit fallback.
+* Root cause: the scaffold operation initializes a package header and does not accept complete source contents.
+
+## 2026-10-22: Rust scaffold verification stopped at untrusted Bash hooks
+
+* Tool: `semantic_scaffold_file` through `semantic_batch` (`mcp__semedit`).
+* Target: new `internal/backend/rust/promote_local_to_const.go`.
+* Observed failure: scaffolding applied, but the automatic workspace verification failed before checks because `tools/benchmark-harness/scripts/benchmark-ram-common.sh` requires Bash workspace trust. The file contains only the scaffold header; no feature declaration was added.
+* Workaround: use a targeted semantic batch with workspace trust only for the trusted verification hooks, then verify the selected Go file separately.
+* Root cause: the default batch verification scope includes all configured workspace hooks, including a trusted external Bash backend.
+
+## 2026-10-22: Rust statement insertion verification surfaced workspace lint failures
+
+* Tool: `semantic_insert_construct` through `semantic_batch` (`mcp__semedit`).
+* Target: `ApplyCodeAction` in `internal/backend/rust/codeactions.go`.
+* Observed failure: the insertion applied, but automatic verification stopped at the `golangci-lint` hook. The diagnostic report also contained pre-existing unrelated Go errors and expected unresolved symbols while the Rust operation was still being wired.
+* Workaround: keep the applied statement and finish the declared operation integration before running focused Rust/Go checks; do not treat the incomplete-state diagnostics as final validation.
+* Root cause: the batch runs workspace-wide hooks against a heavily modified shared tree before a multi-file feature is complete.
+
+## 2026-10-22: Typed reference lookup encountered concurrent Rust compile state
+
+* Tool: `semantic_find_references` (`mcp__semedit`).
+* Target: `SignaturePlan.Permutation` in `internal/astedit/signature_plan.go`.
+* Observed failure: workspace type loading failed because concurrent Rust work temporarily imported unused `pathutil` in `internal/backend/rust/promote_local_to_const.go`; no source state changed.
+* Workaround: restrict Go navigation to selected-file syntax tools until the Rust lane compiles.
+* Root cause: cross-module typed navigation ran while another lane had an intermediate compiler error in the shared worktree.
+
+## 2026-10-22: Retained semantic buffer rejected concurrent CLI test edit
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `internal/astedit/signature_plan.go` while adding signature-parameter removal evidence.
+* Observed failure: publication stopped with `published 0 of 1 files` because the retained buffer detected on-disk drift in `cmd/semedit/language_txtar_test.go`, which another lane had edited; no source write occurred for this operation.
+* Workaround: start a fresh CLI semantic process for owned-file edits to avoid the stale retained buffer.
+* Root cause: a long-lived semantic buffer spanned concurrent edits to a separate file in the shared worktree.
+
+## 2026-10-22: Semantic replacement import cleanup could not read Go build cache
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `SignatureCallSetProof` in `internal/astedit/signature_plan.go`.
+* Observed failure: import cleanup stopped before publication with an operation-not-permitted error while opening a path under `~/Library/Caches/go-build`; no source was written by this operation. The same failure repeated even with `--auto-organize-imports=false`.
+* Workaround: stop retrying this semantic replacement path and use the smallest targeted source-edit fallback after reviewing the exact AST change; organize only owned files after the implementation compiles.
+* Root cause: import cleanup attempted to inspect the Go build cache outside the writable sandbox roots.
+
+## 2026-10-22: Sol review semantic lookup auto-routed to Make
+
+* Tool: `semantic_lookup` (`mcp__semedit`).
+* Target: Rust helpers `rustSourceMayShadowPrimitiveType` and `decodeRustSingleFileWorkspaceEdit`.
+* Observed failure: auto-language routing selected Make and returned `workspace trust required`; no files changed.
+* Workaround: continue review with explicit file/language selection and read-only source inspection.
+* Root cause: auto-language routing selected the Make backend for Rust source inspection.
+
+## 2026-10-22: Go review outlines targeted guessed signature files
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: guessed `internal/astedit/signature_projection.go` and `internal/operation/signature_projection.go` paths.
+* Observed failure: both selected-file outlines returned no-such-file; no files changed.
+* Workaround: discover current files and outline the actual `signature_permutation.go` sources.
+* Root cause: the review prompt named conceptual projection files instead of using workspace discovery before semantic navigation.
+
+## 2026-10-22: Semantic outline auto-routed Rust directory to Make
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/backend/rust`.
+* Observed failure: auto-language routing selected Make and returned `workspace trust required`; no files changed.
+* Workaround: use the Go outline only on the selected Rust adapter file and inspect other declarations through targeted source navigation.
+* Root cause: directory-scope auto-language detection routed a Rust subdirectory to the Make backend; explicit `language: "go"` may be needed for Go source declarations under that path.
+
+## 2026-10-22: Semantic construct replacement found concurrent buffer drift
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `collectSignatureProjectionEvidence` in `internal/operation/wire_signature_permutation.go`.
+* Observed failure: import cleanup refused publication because the retained buffer detected an on-disk change to `internal/operation/wire_rust_promote_const.go`; no replacement was written.
+* Workaround: re-read the owned function and apply the isolated control-flow simplification with an atomic targeted source edit; continue work on non-overlapping files.
+* Root cause: the semantic edit buffer's package-wide snapshot became stale while another lane changed a separate file in the package.
+
+## 2026-10-22: Semantic batch verification selected untrusted Bash source
+
+* Tool: `semantic_batch` (`mcp__semedit`).
+* Target: `internal/mcp/schema_test.go`, adjusting batch-schema expectation filtering to the tools exposed in the fixture catalog.
+* Observed failure: both source replacements staged successfully, but final verification auto-routed `tools/benchmark-harness/scripts/benchmark-ram-common.sh` to Bash and returned `workspace trust required`; no final diagnostic inventory was captured.
+* Workaround: inspect the staged diff, then run the normal repository checks for Go source after the focused change; use explicit-language, selected-file verification if needed.
+* Root cause: workspace-wide final verification traversed Bash sources and required trust even though the batch changed only a Go test file.
+
+## 2026-10-22: Semantic construct replacement omitted nested owner
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: Java method continuation projection in `internal/operation/inspect_projection.go`.
+* Observed failure: replacing the nested `if` returned `in_function is required`; no files changed.
+* Workaround: retry with the enclosing `ProjectInspectResult` function explicitly selected.
+* Root cause: the selector contract requires an owner for nested `if` constructs even when the discriminator uniquely matches in the file.
+
+## 2026-10-22: Semantic construct replacement required a complete if
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: Java method continuation projection in `internal/operation/inspect_projection.go`.
+* Observed failure: after selecting the enclosing function, the replacement was rejected because `kind: if` requires a complete Go `if` construct; no files changed.
+* Workaround: replace only the selected conditional or insert the Java-specific projection adjacent to the existing Go branch.
+* Root cause: the edit attempted to replace a Go `if` node with a `switch` node, which violates the construct-kind contract.
+
+## 2026-10-22: Semantic insertion used incorrect inspection fixture fields
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `TestJavaMakeTypeExplicitReceivesProjectedMethodContinuation` in `internal/operation/wire_java_explicit_type_test.go`.
+* Observed failure: the inserted fixture used nonexistent `QualifiedName`, `Kind`, and `File` fields on `backend.InspectedSymbol`; diagnostics reported the mismatches and persisted the test with diagnostics.
+* Workaround: inspect the actual `backend.InspectedSymbol` declaration and replace the new test with fields matching that type.
+* Root cause: the fixture was authored from an incorrect assumption about the inspection match API shape.
+
+## 2026-10-22: Semantic path replacement found duplicate test literals
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches` in `internal/operation/value_schema_test.go`.
+* Observed failure: the Java file literal occurred in both the fixture input and expected output; replacement was refused as ambiguous before writing.
+* Workaround: use the returned construct paths and selection revision to replace each literal independently.
+* Root cause: identical path literals occur in separate AST positions within the test.
+
+## 2026-10-22: Semantic path replacement required discriminator with construct path
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: `TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches` in `internal/operation/value_schema_test.go`.
+* Observed failure: supplying the returned `construct_path` without the matching `discriminator` was refused before writing.
+* Workaround: retry with both the exact discriminator and construct path plus the current selection revision.
+* Root cause: nested statement/expression replacement requires both selector fields even when the path is already explicit.
+
+## 2026-10-22: Semantic construct replacement could not target nested test argument
+
+* Tool: `semantic_replace_construct` (`mcp__semedit`).
+* Target: expected-source string literal inside the `complete condition` subtest callback in `internal/astedit/extract_variable_test.go`.
+* Observed failure: the expression selector did not expose arguments nested inside the `t.Run` function literal, so replacement returned `not_found` without writing.
+* Workaround: use a narrow text patch for the single test-data string literal; continue semantic editing for Go declarations and executable constructs.
+* Root cause: the construct candidate walker treats the nested function literal as one expression and does not traverse its body for argument literals.
+
+## 2026-10-22: Semantic inspection used a guessed inline helper name
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: helper in `internal/astedit/inline_struct.go` during the computed-value inline-use audit.
+* Observed failure: the requested `inlineImmediateValueIdentifier` symbol did not exist; the tool identified `inlineImmediateValueUseIdentifier` as the actual target. No files changed.
+* Workaround: inspect the suggested exact declaration name.
+* Root cause: the caller inferred a declaration name from the type rather than using the workspace outline's listed function name.
+
+## 2026-10-22: Semantic inspection used a nonexistent inline operand helper
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `inlineReturnInitializerOperands` in `internal/astedit/inline_struct.go` during the computed-value inline-use audit.
+* Observed failure: the selected-file lookup returned `symbol not found`; no files changed.
+* Workaround: inspect the package outline and query the helper's actual declaration name after locating it.
+* Root cause: the helper had been assumed to live in `inline_struct.go`, but its declaration is in another source file.
+
+## 2026-10-22: Semantic outline received a symbol-like path
+
+* Tool: `semantic_outline` (`mcp__semedit`).
+* Target: `internal/astedit/inline` during the computed-value inline-use audit.
+* Observed failure: the tool treated the supplied path as a filesystem path and returned `no such file or directory`; no files changed.
+* Workaround: request the containing package outline and select the relevant source file from its declarations.
+* Root cause: the path was composed from a filename stem instead of an existing package or source file.
+
+## 2026-10-22: Semantic inspection used a guessed inline context type
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `variableTypeContext` in `internal/astedit/inline.go` during the inline candidate identity audit.
+* Observed failure: the selected-file lookup returned `symbol not found`; no files changed.
+* Workaround: query the actual type name from the selected-file outline before inspection.
+* Root cause: the context type name was inferred from a field usage without confirming its declaration file or exact name.
+
+## 2026-10-22: Semantic inspection searched the wrong file for a type helper
+
+* Tool: `semantic_inspect_symbol` (`mcp__semedit`).
+* Target: `extractionTypeIdentity` in `internal/astedit/extract.go` during the assignment-target identity audit.
+* Observed failure: the selected-file lookup returned `symbol not found`; no files changed.
+* Workaround: locate the helper with the already-scoped package outline before inspecting its declaration.
+* Root cause: the helper's declaration file was guessed from its name rather than resolved from the outline.
+
+## 2026-10-22: Semantic batch verification required workspace trust
+
+* Tool: `semantic_batch` (`mcp__semedit`).
+* Target: computed-value inline helpers in `internal/astedit/inline_struct.go`.
+* Observed failure: all requested Go edits applied, but final diagnostics were unavailable because automatic verification reached Bash sources under `tools/benchmark-harness` and required explicit workspace trust.
+* Workaround: record the applied state, then run the focused Go tests and repository checks with the already authorized test workflow; retry automatic semantic verification only with explicit workspace trust when needed.
+* Root cause: batch verification inventories workspace sources across languages, including untrusted Bash project hooks, before reporting final diagnostics.
+
+## 2026-10-22: Semantic function insertion rejected multiple declarations
+
+* Tool: `semantic_insert_construct` (`mcp__semedit`).
+* Target: `internal/astedit/inline_computed_test.go`.
+* Observed failure: a single insertion request containing two test function declarations was refused with “function insertion requires exactly one function declaration”; no files changed.
+* Workaround: insert each test function with a separate semantic edit.
+* Root cause: the function insertion contract accepts exactly one declaration per request.
+
+## 2026-10-22: Semantic safe-delete scan refused nested module workspace
+
+* Tool: `semantic_remove_construct` (`mcp__semedit`).
+* Target: the now-unused `sameInlineVariableDefinition` helper in `internal/astedit/inline_struct.go`.
+* Observed failure: safe deletion refused before writing because the active module source scan encountered the nested `identityservice/go.mod` module.
+* Workaround: remove the single unexported helper with a narrow semantic declaration edit after confirming it has no references.
+* Root cause: the module-wide safe-delete scan does not scope past nested Go modules, even though the target is in the root module.
+
+## 2026-10-22 semantic batch verification trust failure
+
+* Tool: `semantic_batch` with two `semantic_replace_construct` edits.
+* Target: `internal/astedit/extract_flow.go`.
+* Observed: both AST edits were applied, but final batch verification failed before capturing diagnostics because the repository's Bash verification hook required workspace trust.
+* Workaround: record the failure, inspect the changed declarations, then run focused Go and CLI txtar checks; full repository verification remains a required lane gate.
+* Root cause: the batch attempted configured Bash checks without `trust_workspace` enabled.
+
+## 2026-10-22 semantic batch lint failure during range validation edit
+
+* Tool: `semantic_batch` with `trust_workspace: true` and `semantic_replace_construct`.
+* Target: `internal/astedit/extract_flow.go`, `validateExtractionRangeLoop`.
+* Observed: the AST edit was applied, but configured `golangci-lint` exited with status 3 and the batch returned `applied_with_diagnostics` without a completed verification inventory.
+* Workaround: record the failure, inspect the lint diagnostics and source, then use focused Go tests while repairing the reported issue; run full `make check` at the lane gate.
+* Root cause: not yet established; the tool response omitted the linter's diagnostic text.
+
+## 2026-10-22 semantic batch lint failure after range-proof reuse
+
+* Tool: `semantic_batch` with `semantic_insert_function` and two `semantic_replace_construct` edits.
+* Target: `internal/astedit/extract_flow.go`, shared range operand validation.
+* Observed: the edits were applied, but the configured `golangci-lint` hook again exited with status 3. The accompanying diagnostics inventory points to unrelated worktree compile errors in `internal/astedit/inspect.go`, `internal/backend/backend_test.go`, and `internal/operation` tests.
+* Workaround: continue with lane-local compilation and CLI tests, then rerun integrated checks after those independent worktree edits settle.
+* Root cause: the shared worktree currently contains unrelated compile errors that prevent repository-wide lint verification.
+
+## 2026-10-22 semantic batch lint failure after AST coverage insertion
+
+* Tool: `semantic_batch` with `semantic_insert_function`.
+* Target: `internal/astedit/extract_test.go`, map-range type-boundary coverage.
+* Observed: the test function was inserted, but the repository's configured `golangci-lint` hook exited with status 3; Go diagnostics for the selected package completed.
+* Workaround: retain the test, inspect the current diagnostic report and lane-local linter output, then run focused tests and the integrated check after correcting any actionable errors.
+* Root cause: the hook returned no linter text in its failure summary; the accompanying diagnostic inventory must be inspected to distinguish lane-local errors from unrelated worktree state.
+
+## 2026-10-22 semantic batch verification trust failure during slice-expression range edit
+
+* Tool: `semantic_batch` with two `semantic_replace_construct` edits.
+* Target: `internal/astedit/extract_flow.go`, range-operand and slice-binding validation.
+* Observed failure: both function edits were applied, but final verification returned an error before producing diagnostics because the configured Bash verification hook required workspace trust.
+* Workaround: record the failure, inspect the applied declarations, and run focused Go/CLI checks; subsequent semantic verification must explicitly trust this workspace.
+* Root cause: the batch request omitted `trust_workspace: true`, so the project Bash hook could not run.
+
+## 2026-10-22: Diff-review backend could not access the inline-callable worktree
+
+* Tool: `mcp__gemini_mcp__codex_review_diff`.
+* Target: the multi-call Go `refactor_inline_callable` changes in `/Users/alessandro/.codex/worktrees/dc11/semantic-editor`, including `internal/astedit/inline_function.go`, its focused tests, `internal/operation/wire_inline_function.go`, its schema tests, and dedicated CLI txtars.
+* Observed failure: review attempts using the Codex backend returned `Operation not permitted (os error 1)`. A separate Agy attempt was rejected because the requested `gemini-3.8-pro` model was not recognized by that backend. No files changed.
+* Workaround: reuse the already-active Sol reviewer through the collaboration tools for the narrowed review; do not retry Gemini or edit files through the review backend.
+* Root cause: likely backend access restrictions for this worktree and a model identifier that is not recognized by the Agy backend; neither failure established a code-review result.
+
+## 2026-10-22 semantic symbol inspection used an absent function name
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/operation/wire_inline_function.go`.
+* Observed: the request for `parseInlineFunctionCallSite` failed because that symbol does not exist in the file; no source was changed.
+* Workaround: inspect the declaration outline and request the actual parser declaration before continuing the contract review.
+* Root cause: the requested symbol name was inferred instead of copied from the declaration outline.
+
+## 2026-10-22 semantic field insertion rejected advertised placement
+
+* Tool: `semantic_insert_construct` with `kind: field`.
+* Target: `internal/astedit/inline_struct.go`, `inlineImmediateValueUse`.
+* Observed: both attempts to append a field with `placement: last` failed with `unsupported field placement "last"`; no source changes were published.
+* Workaround: use a construct-level replacement for the small private struct declaration, then continue using semantic edits for supported declarations and functions.
+* Root cause: the tool schema advertised `last` for field placement, but the Go field insertion implementation does not accept it.
+
+## 2026-10-22 semantic statement selector rejected listed composite candidate
+
+* Tool: `semantic_replace_construct` with `kind: statement/expression`.
+* Target: `internal/astedit/inline_struct.go`, the operand-selection `if` in `planInlineImmediateReturnVariable`.
+* Observed: the selector returned `not_found` for the exact listed `if use.callArgument || use.assignment {` statement, while its candidate inventory showed that statement verbatim. No source changes were published.
+* Workaround: replace the containing function declaration with the narrowly updated condition, preserving its remaining source exactly.
+* Root cause: the statement/expression discriminator did not resolve a composite statement candidate that the same response listed as selectable.
+
+## 2026-10-22 semantic statement selector could not target a nested capability description
+
+* Tool: `semantic_replace_construct` with `kind: statement/expression`.
+* Target: `internal/backend/golang/backend.go`, the `refactor_inline_value` description in `goEditCapabilities`.
+* Observed: selecting the exact description text in the map literal returned `not_found`; the tool listed the enclosing return and map expressions but not the nested field value as a candidate. No source changes were published.
+* Workaround: update only the capability description string with a targeted text edit, then verify the generated operation description and CLI tests.
+* Root cause: the construct selector does not expose nested keyed-literal field values in this context.
+
+## 2026-10-22 semantic statement selector missed a switch expression
+
+* Tool: `semantic_replace_construct` with `kind: statement/expression`.
+* Target: `internal/astedit/move_cross_package_const.go`, the `switch reference.kind` in `validateCrossPackageConstantReferenceBindings`.
+* Observed: selecting `switch reference.kind` returned `not_found` and listed the surrounding `ast.Inspect` call but not the nested switch as a candidate; no source changes were published.
+* Workaround: use the smallest available semantic construct operation to add the exhaustive enum case; if no applicable selector is exposed, apply a surgical patch and run the configured formatter and checks.
+* Root cause: the construct selector does not expose switches nested inside function literals.
+
+## 2026-10-23 semantic batch verification required workspace trust
+
+* Tool: `semantic_batch` with two `semantic_replace_construct` edits.
+* Target: `internal/astedit/move_cross_package_var.go`.
+* Observed: both construct edits returned `applied_working`, but the batch's automatic verification stopped before checks because the repository Bash hook required workspace trust. The batch returned `applied_with_diagnostics`; no completed diagnostic inventory was captured.
+* Workaround: log the failed verification, inspect the resulting buffer, then explicitly trust this repository for semantic verification or run the authorized focused Go checks after the edits are published.
+* Root cause: this worktree's configured verification includes Bash sources and the request omitted `trust_workspace: true`.
+
+## 2026-10-23 semantic batch golangci-lint hook failed
+
+* Tool: `semantic_batch` with two `semantic_replace_construct` edits.
+* Target: `internal/astedit/move_cross_package_var.go` and `internal/astedit/move_cross_package_type.go`.
+* Observed: both Go edits returned `applied_working`, but automatic verification failed because the configured `golangci-lint` hook exited with status 3; the batch reported `applied_with_diagnostics` and no completed final diagnostic inventory.
+* Workaround: record the failed hook, inspect its captured output, then use the targeted Go checks and repository lint/check commands for this change before review.
+* Root cause: the batch invokes the repository-wide `golangci-lint` hook; its status 3 prevents the semantic tool from completing verification. The captured diagnostics identify unrelated type errors in `internal/astedit/inspect.go`, `internal/backend/backend_test.go`, and operation tests referencing `backend.InspectedSymbol`; no finding points to either edited move file. These existing workspace errors are outside this relocation change.
+
+## 2026-10-23 semantic inspection requested a symbol from the wrong file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/astedit/move_cross_package.go`, requested symbol `resolveCrossPackageTypeAlias`.
+* Observed: the call failed because the symbol is not declared in the selected file; no source changed.
+* Workaround: inspect the declaration outline for the type-move file and request the symbol from its actual declaration path.
+* Root cause: the selected file was inferred from the shared entry-point file rather than confirmed from the outline.
+
+## 2026-10-23 semantic diagnostics rejected an unsupported workspace argument
+
+* Tool: `semantic_diagnostics`.
+* Target: report `EVJOBYIVV766MMVNIUJCLT5ADH` for `internal/astedit/extract.go`.
+* Observed: the request failed with `unknown field "workspace_root"`; no source changed.
+* Workaround: request the report by ID without a workspace argument.
+* Root cause: I assumed this read-only report tool shared the workspace-root parameter accepted by semantic edit tools, but its schema does not include that field.
+
+## 2026-10-23 semantic batch verification reported unrelated Go type errors
+
+* Tool: `semantic_batch` with two `semantic_replace_construct` edits.
+* Target: `internal/astedit/extract.go`, `findExtractStatementPath` and `findExtractStatementRange`.
+* Observed: both edits were applied to the working buffer, but automatic diagnostics reported 37 active issues, including `backend.InspectedSymbol` field/type errors in `internal/astedit/inspect.go`, backend tests, and operation tests. The report did not identify an issue in `extract.go`; its package verification remained partial.
+* Workaround: inspect the captured diagnostics and run focused Go tests plus the repository check before relying on this edit.
+* Root cause: the semantic batch's broad verification returned type errors outside the edited file and inconsistent with the preceding successful full `make check`; the source of that verification-state mismatch is not yet established.
+
+## 2026-10-23 semantic batch did not capture final diagnostics during extraction cleanup
+
+* Tool: `semantic_batch` with two function insertions and two body replacements.
+* Target: `internal/astedit/extract.go`, `findExtractStatementRange` and `findExtractStatementPath`.
+* Observed: all four semantic edits returned `applied_working`, but the batch returned `applied_with_diagnostics` with `diagnostic_report.status=unavailable` and no completed final diagnostic inventory.
+* Workaround: inspect the staged source and run focused Go tests followed by the repository's full check before relying on the edits.
+* Root cause: the batch verification hook did not capture a completed final diagnostic report for this workspace.
+
+## 2026-10-23 semantic batch verification remained partial during extraction cleanup
+
+* Tool: `semantic_batch` with one `semantic_replace_body` edit.
+* Target: `internal/astedit/extract.go`, `findExtractPathRange`.
+* Observed: the edit returned `applied_working`; automatic verification reported partial coverage and 37 active diagnostics outside `extract.go`, including existing Go type errors in `inspect.go` and unrelated Bash-language-server findings. Filtering the captured report for `extract.go` returned no diagnostics.
+* Workaround: inspect the targeted source diagnostics, then run focused Go tests and the repository check.
+* Root cause: the semantic batch verifies the broader configured workspace and inherits existing diagnostics outside the changed declaration.
+
+## 2026-10-23 semantic batch applied case-assignment extraction but failed workspace lint
+
+* Tool: `semantic_batch` with one `semantic_replace_body` edit.
+* Target: `internal/astedit/extract.go`, `findExtractPathRange`.
+* Observed: the replacement was applied, then the automatic `golangci-lint` hook exited with status 3 and reported `backend.InspectedSymbol` field errors in `internal/astedit/inspect.go`, outside the edited file. The prior full `make check` had passed, so the discrepancy is unresolved.
+* Workaround: inspect the exact working-tree diff and run targeted AST/CLI tests; repeat the repository check before the lane review gate.
+* Root cause: the semantic batch hook's workspace-wide lint verification failed on diagnostics outside the target. The discrepancy with the prior full check has not been explained.
+
+## 2026-10-23 semantic batch rollback also failed workspace lint
+
+* Tool: `semantic_batch` with one `semantic_replace_body` edit.
+* Target: `internal/astedit/extract.go`, `findExtractPathRange`.
+* Observed: the rollback edit was applied, then the same `golangci-lint` hook exited with status 3 on the same `internal/astedit/inspect.go` `backend.InspectedSymbol` field errors outside the target.
+* Workaround: confirm the function body with a fresh semantic inspection and run the focused AST/CLI contracts before the required final workspace check.
+* Root cause: unchanged from the preceding entry; the broad hook still reports the same unexplained workspace lint failure.
+
+## 2026-10-23 semantic batch applied inline-condition support but failed workspace lint
+
+* Tool: `semantic_batch` with one type replacement and four `semantic_replace_body` edits.
+* Target: `internal/astedit/inline_struct.go`, the inline-use record and immediate-use planning/validation functions.
+* Observed: every source edit was applied, then the automatic workspace `golangci-lint` hook exited with status 3 on the same `backend.InspectedSymbol` field errors in `internal/astedit/inspect.go` outside the target.
+* Workaround: inspect each changed declaration, run focused AST/CLI tests, and repeat the repository check before the lane review gate.
+* Root cause: the same unresolved semantic-batch/workspace-lint discrepancy recorded above; the unrelated `inspect.go` diagnostics recur despite the earlier successful full check.
+
+## 2026-10-23 semantic batch inline candidate validation also failed workspace lint
+
+* Tool: `semantic_batch` with one `semantic_replace_body` edit.
+* Target: `internal/astedit/inline_struct.go`, `validateInlineImmediateCandidate`.
+* Observed: the edited function was applied, then the automatic workspace `golangci-lint` hook exited with status 3 on the repeated `backend.InspectedSymbol` field errors in `internal/astedit/inspect.go` outside the target.
+* Workaround: run the focused AST and CLI inline tests, then use the successful full `make check` as the lane gate.
+* Root cause: the unresolved workspace-wide semantic hook discrepancy already recorded above.
+
+## 2026-10-23 semantic function insertion rejected two declarations
+
+* Tool: `semantic_insert_construct` with `kind: function`.
+* Target: `internal/astedit/inline_computed_test.go`.
+* Observed: the operation rejected the supplied source because function insertion requires exactly one function declaration; the snippet contained a success test and a refusal test. No source was changed.
+* Workaround: split the test functions into separate semantic insertion calls.
+* Root cause: the insertion contract accepts one declaration per call and does not unpack multiple function declarations from a source snippet.
+
+## 2026-10-23 semantic function replacement rejected unsupported revision guard
+
+* Tool: `semantic_replace_construct` with `kind: function`.
+* Target: `internal/astedit/inline_computed_test.go`, `TestInlineComputedVariableDeferCall`.
+* Observed: the tool rejected `expected_revision` as an unknown parameter before editing. No source was changed.
+* Workaround: inspect the declaration immediately before replacement and use its unique function symbol selector without the unsupported whole-file revision parameter.
+* Root cause: the function-declaration replacement schema has no `expected_revision` field; revision guarding is available only for the documented nested construct selection.
+
+## 2026-10-23 semantic construct replacement rejected function selector with expression kind
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/backend/golang/backend.go`, the `goExtractionCapabilities` description string.
+* Observed: combining `symbol: goExtractionCapabilities` with `kind: statement/expression` returned `symbol cannot be combined with nested kind=statement/expression`; no source was changed.
+* Workaround: replace the enclosing function declaration with the semantic construct tool, or use a narrowly scoped documented source-edit fallback if no applicable semantic selector exists.
+* Root cause: the tool schema treats symbol-based declaration selection and nested expression selection as mutually exclusive.
+
+## 2026-10-23 semantic batch could not verify trusted Bash hooks
+
+* Tool: `semantic_batch` with one `semantic_insert_function` and one `semantic_replace_construct` edit.
+* Target: `internal/astedit/extract.go`, extracting switch-assignment validation from `loadExtractionInput` into `validateExtractSwitchAssignment`.
+* Observed: both Go edits were applied, but the batch's final `semantic_verify` failed because the workspace was not trusted to run `tools/benchmark-harness/scripts/benchmark-ram-common.sh`.
+* Workaround: inspect the edited functions and run focused tests, then complete the required `make check` lane gate.
+* Root cause: the batch did not enable the trusted workspace option required by the configured Bash project hook.
+
+## 2026-10-23 semantic expression replacement could not resolve summary discriminator
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_extract.go`, `extractFunctionDef` summary expression.
+* Observed: the tool treated a sentence inside the summary string as a complete expression discriminator and returned `not_found`; it made no changes and listed the current expression construct paths.
+* Workaround: retry with the listed construct path and its selection revision; use the narrowest text edit only if semantic selection still cannot address the string literal.
+* Root cause: nested expression replacement selects AST expressions and does not match arbitrary substrings within a string literal.
+
+## 2026-10-23 semantic expression replacement required discriminator with construct path
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_extract.go`, `extractFunctionDef` summary string literal.
+* Observed: retrying with the expression path and selection revision but without `discriminator` failed schema validation before editing. No source was changed.
+* Workaround: supply both the selected construct path and the exact current string-literal discriminator, then use a surgical text edit only if the semantic selector cannot address the literal.
+* Root cause: the replacement schema requires `discriminator` for `statement/expression` even when a construct path is supplied.
+
+## 2026-10-23 semantic expression replacement rejected an outdated selection token
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_extract.go`, `extractFunctionDef` summary string literal.
+* Observed: supplying the literal as discriminator and its listed path with the token from the preceding failed request returned `selection_revision_mismatch`; no source was changed.
+* Workaround: retry once with the recomputed token returned by the tool, or use a surgical text edit if the selector cannot be kept current.
+* Root cause: the failed selector request recomputed the ordered candidate token; the token from its earlier candidate listing was stale.
+
+## 2026-10-23 semantic expression replacement could not match the listed string-literal path
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/operation/wire_extract.go`, `extractFunctionDef` summary string literal.
+* Observed: supplying the recomputed selection token, listed literal path, and exact old literal discriminator returned `invalid_path` with no candidates; no source was changed.
+* Workaround: use a narrow textual edit for this string literal, then inspect and format the source and run the focused operation tests.
+* Root cause: the listed construct path could not be resolved back to the expression candidate once a full string-literal discriminator was supplied.
+
+## 2026-10-23 semantic function replacement rejected whole-file revision field
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/astedit/extract.go`, `validateExtractSwitchAssignment`.
+* Observed: replacing the inspected function with `expected_revision` failed schema validation before editing; no source was changed.
+* Workaround: re-inspect the function and use its unique declaration symbol without a whole-file revision field.
+* Root cause: declaration replacement supports direct symbol selection but does not accept `expected_revision`.
+
+## 2026-10-23 semantic expression replacement needed both construct path and discriminator
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/astedit/extract_test.go`, the named-parameter switch-assignment regression inside `TestExtractFunctionSelectsRevisionBoundStatementPaths`.
+* Observed: selecting the full `t.Run` statement by discriminator alone returned ambiguity between its statement and expression candidates. Retrying with the candidate path but omitting `discriminator` failed schema validation before editing. Neither failed request changed source.
+* Workaround: insert the extracted regression helper with `semantic_insert_construct`, then replace the uniquely selected statement using both its construct path, current selection revision, and exact discriminator.
+* Root cause: `statement/expression` replacement requires a discriminator even when a construct path is supplied, and a full call discriminator can match both the statement and its call expression.
+
+## 2026-10-23 semantic expression replacement could not select return-refusal string literals
+
+* Tool: `semantic_replace_construct`.
+* Target: `internal/astedit/extract_variable.go`, the return-result refusal messages in `validateVariableExtractionTarget` and `originalVariableExpressionType`.
+* Observed: selecting the quoted string literal through `in_function` and `discriminator` returned `not_found` and listed statement candidates; no source was changed.
+* Workaround: re-inspect the current constructs and replace the enclosing exact expression or statement with its current construct path, or use a minimal text edit for only the literal if the semantic selector remains unable to target it.
+* Root cause: a quoted literal used as a nested argument was not resolved as a standalone expression candidate by this `in_function` selector.
+
+## 2026-10-23 semantic lookup used a stale Go implementation symbol
+
+* Tool: `semantic_lookup`.
+* Target: `internal/astedit/move_cross_package_type.go`, cross-package type-alias move implementation.
+* Observed: lookup of the guessed symbol `moveCrossPackageAlias` returned `symbol not found`; no source was changed. A subsequent `rg` located the current implementation as `resolveCrossPackageTypeAlias`.
+* Workaround: inspect the current declaration name and continue read-only discovery using its actual symbol.
+* Root cause: the caller relied on an outdated or guessed symbol name instead of resolving the declaration from the current workspace.
+
+## 2026-10-23 semantic inspection targeted a helper in the wrong file
+
+* Tool: `semantic_inspect_symbol`.
+* Target: `internal/astedit/move_cross_package.go`, helper `mergeMoveImports`.
+* Observed: inspection returned `symbol not found`; no source was changed. The helper is not declared in that file.
+* Workaround: inspect the import helper from its defining file after locating its declaration in the workspace outline.
+* Root cause: the caller assumed the merge helper lived alongside its call site rather than locating its defining package file first.
+
+## 2026-10-23 semantic outline targeted a nonexistent move helper file
+
+* Tool: `semantic_outline`.
+* Target: `internal/astedit/move_cross_package_value.go`.
+* Observed: outline preparation failed because the guessed path does not exist; no source was changed.
+* Workaround: locate the current move helper file through the workspace package outline before requesting its declarations.
+* Root cause: the caller inferred a filename from the implementation's conceptual role instead of checking the workspace's actual file layout.

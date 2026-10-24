@@ -1,0 +1,55 @@
+# Search and index generation reject malformed source metadata and preserve the authored index.
+! exec semedit search-adrs --query workspace
+stderr 'ADR 0001-incomplete-metadata.md: metadata row 5 must contain non-empty key "area"'
+! exec semedit generate-adr-index
+stderr 'ADR 0001-incomplete-metadata.md: metadata row 5 must contain non-empty key "area"'
+cmp docs/adr/README.md original-README.md
+
+-- .adr-dir --
+docs/adr
+-- docs/adr/README.md --
+# ADR Index
+
+Authored introduction.
+
+<!-- semedit-adr-register:start -->
+preserve this generated section until source records validate
+<!-- semedit-adr-register:end -->
+-- original-README.md --
+# ADR Index
+
+Authored introduction.
+
+<!-- semedit-adr-register:start -->
+preserve this generated section until source records validate
+<!-- semedit-adr-register:end -->
+-- docs/adr/0001-incomplete-metadata.md --
+# ADR-0001: Incomplete Metadata
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Keep an incomplete source record from publishing. |
+| description | Reject a missing required metadata row. |
+| role | contract |
+| scope | documentation |
+| languages | generic |
+
+## Context
+
+Malformed records cannot safely feed a generated register.
+
+## Decision
+
+Reject records that omit required metadata.
+
+## Invariants
+
+* Index generation validates every source record.
+
+## Consequences
+
+An incomplete record cannot produce misleading search results.

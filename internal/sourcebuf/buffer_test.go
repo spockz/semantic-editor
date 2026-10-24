@@ -6,13 +6,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/atomicfile"
-	"github.com/spockz/semantic-editor/internal/gocache"
-	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spockz/semantic-editor/internal/atomicfile"
+	"github.com/spockz/semantic-editor/internal/gocache"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 func TestGenericTreeObservationDoesNotRequireGo(t *testing.T) {
@@ -347,10 +348,78 @@ func assertPublishedRevision(t *testing.T, root, first string, final []byte, bef
 }
 
 func TestBufferedPublicationRejectsConflicts(t *testing.T) {
-	for _, scenario := range []string{"changed_sibling", "added_source", "replaced_identity", "changed_mode", "missing_input_appeared", "symlink_target"} {
+	for _, scenario := range []string{"changed_sibling", "replaced_identity", "changed_mode", "missing_input_appeared", "symlink_target"} {
 		t.Run(scenario, func(t *testing.T) {
 			testPublicationConflict(t, scenario)
 		})
+	}
+}
+
+func TestBufferedPublicationAllowsUnobservedSourceAddition(t *testing.T) {
+	root := t.TempDir()
+	target, sibling := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
+	original := []byte("package sample\nfunc Value()int{return 1}\n")
+	updated := []byte("package sample\nfunc Value()int{return 2}\n")
+	newSource := []byte("package sample\nfunc NewCaller() {}\n")
+	writeFiles(t, []string{target, sibling}, original)
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := sourcebuf.ObserveTree(ctx, root, ".go"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.WriteFile(ctx, target, updated); err != nil {
+		t.Fatal(err)
+	}
+	newPath := filepath.Join(root, "new.go")
+	if err := atomicfile.WriteAtomic(newPath, newSource); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Flush(t.Context()); err != nil {
+		t.Fatalf("Flush() after an unrelated source addition = %v", err)
+	}
+	for path, want := range map[string][]byte{target: updated, newPath: newSource} {
+		got, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("source %s = %q, %v; want %q", path, got, err, want)
+		}
+	}
+}
+
+func TestObservedTreeSymlinkTargetMutationConflicts(t *testing.T) {
+	root := t.TempDir()
+	linkedSource := filepath.Join(root, "shared.go")
+	targetRoot := t.TempDir()
+	target := filepath.Join(targetRoot, "shared.go")
+	local := filepath.Join(root, "local.go")
+	original := []byte("package sample\nfunc Shared() int { return 1 }\n")
+	writeFiles(t, []string{target, local}, original)
+	if err := os.Symlink(target, linkedSource); err != nil {
+		t.Fatal(err)
+	}
+	buffer, err := sourcebuf.New(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.ObserveTree(ctx, root, ".go"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sourcebuf.WriteFile(ctx, local, []byte("package sample\nfunc Local() int { return 2 }\n")); err != nil {
+		t.Fatal(err)
+	}
+	writeFiles(t, []string{target}, []byte("package sample\nfunc Shared() int { return 3 }\n"))
+	if err := buffer.Flush(ctx); !errors.Is(err, sourcebuf.ErrConflict) {
+		t.Fatalf("Flush() after linked target changes = %v, want ErrConflict", err)
+	}
+	got, readErr := os.ReadFile(local)
+	if readErr != nil || !bytes.Equal(got, original) {
+		t.Fatalf("local source after conflict = %q, %v; want unchanged %q", got, readErr, original)
 	}
 }
 
@@ -562,8 +631,8 @@ func TestBufferedSourceSetIgnoresExplicitGoBaseDir(t *testing.T) {
 		t.Fatalf("explicit Go state changed source read set: %v", err)
 	}
 	writeFiles(t, []string{filepath.Join(root, "app.go")}, []byte("package sample\n"))
-	if err := buffer.AssertDisk(); !errors.Is(err, sourcebuf.ErrConflict) {
-		t.Fatalf("application source appeared without conflict: %v", err)
+	if err := buffer.AssertDisk(); err != nil {
+		t.Fatalf("unobserved source addition changed captured file preimages: %v", err)
 	}
 }
 
@@ -591,7 +660,7 @@ func testPublicationConflict(t *testing.T, scenario string) {
 	if err := sourcebuf.WriteFile(ctx, target, []byte("package sample\nfunc Value()int{return 2}\n")); err != nil {
 		t.Fatal(err)
 	}
-	if err := alterPublicationInput(scenario, root, target, sibling, missing, original); err != nil {
+	if err := alterPublicationInput(scenario, target, sibling, missing, original); err != nil {
 		t.Fatal(err)
 	}
 	if err := buffer.Flush(t.Context()); !errors.Is(err, sourcebuf.ErrConflict) {
@@ -609,12 +678,10 @@ func writeFiles(t *testing.T, paths []string, data []byte) {
 	}
 }
 
-func alterPublicationInput(scenario, root, target, sibling, missing string, original []byte) error {
+func alterPublicationInput(scenario, target, sibling, missing string, original []byte) error {
 	switch scenario {
 	case "changed_sibling":
 		return atomicfile.WriteAtomic(sibling, []byte("package sample\nfunc Other(){}\n"))
-	case "added_source":
-		return atomicfile.WriteAtomic(filepath.Join(root, "c.go"), []byte("package sample\n"))
 	case "replaced_identity":
 		return atomicfile.WriteAtomic(sibling, original)
 	case "changed_mode":
@@ -648,10 +715,14 @@ func assertUnpublishedConflict(ctx context.Context, t *testing.T, target string,
 func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 	root := t.TempDir()
 	first := filepath.Join(root, "a.go")
-	second := filepath.Join(root, strings.Repeat("z", 250)+".go")
+	secondDir := filepath.Join(root, "second")
+	if err := os.Mkdir(secondDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	second := filepath.Join(secondDir, "b.go")
 	original := []byte("package sample\n")
 	for _, path := range []string{first, second} {
-		initial := filepath.Join(root, "initial.go")
+		initial := filepath.Join(filepath.Dir(path), "initial.go")
 		if err := atomicfile.WriteAtomic(initial, original); err != nil {
 			t.Fatal(err)
 		}
@@ -669,8 +740,10 @@ func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := buffer.Flush(t.Context()); !errors.Is(err, atomicfile.ErrAtomicWrite) {
-		t.Fatalf("flush=%v", err)
+	makeDirectoryReadOnlyForTest(t, secondDir)
+	flushErr := buffer.Flush(t.Context())
+	if !errors.Is(flushErr, atomicfile.ErrAtomicWrite) {
+		t.Fatalf("flush=%v", flushErr)
 	}
 	for _, path := range []string{first, second} {
 		disk, err := os.ReadFile(path)
@@ -681,12 +754,41 @@ func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 			t.Fatalf("staging failure published %s", path)
 		}
 	}
-	matches, err := filepath.Glob(filepath.Join(root, ".*.tmp-*"))
-	if err != nil {
-		t.Fatal(err)
+	var matches []string
+	for _, directory := range []string{root, secondDir} {
+		files, err := filepath.Glob(filepath.Join(directory, ".*.tmp-*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		matches = append(matches, files...)
 	}
 	if len(matches) != 0 {
 		t.Fatalf("staged files remain: %v", matches)
+	}
+}
+
+func makeDirectoryReadOnlyForTest(t *testing.T, directory string) {
+	t.Helper()
+	if err := os.Chmod(directory, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(directory, 0o700); err != nil {
+			t.Errorf("restore staging directory permissions: %v", err)
+		}
+	})
+	probe, probeErr := os.CreateTemp(directory, ".permission-check-*")
+	if probeErr == nil {
+		if err := probe.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(probe.Name()); err != nil {
+			t.Fatal(err)
+		}
+		t.Skip("the current user can write to a directory without write permission")
+	}
+	if !errors.Is(probeErr, os.ErrPermission) {
+		t.Fatalf("create staging permission probe: %v", probeErr)
 	}
 }
 
@@ -979,4 +1081,69 @@ func prepareCreateConflict(t *testing.T, scenario string) createConflictFixture 
 		plan = append(plan, sourcebuf.Change{Path: existing, Before: prior, After: original})
 	}
 	return createConflictFixture{buffer: buffer, ctx: ctx, existing: existing, created: created, prior: prior, plan: plan, diskTarget: scenario == "existing-empty" || scenario == "appeared"}
+}
+
+func TestApplyAndPublishPreservesBufferOwnership(t *testing.T) {
+	t.Run("owned buffer publishes", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "source.go")
+		before := []byte("package example\n")
+		after := []byte("package example\n\nvar value = 1\n")
+		if err := os.WriteFile(path, before, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := sourcebuf.ApplyAndPublish(t.Context(), root, "rust extraction", []sourcebuf.Change{{Path: path, Before: before, After: after}}); err != nil {
+			t.Fatal(err)
+		}
+		actual, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(actual, after) {
+			t.Fatalf("published source = %q, want %q", actual, after)
+		}
+	})
+	t.Run("shared buffer remains staged", func(t *testing.T) {
+		root := t.TempDir()
+		path := filepath.Join(root, "source.go")
+		before := []byte("package example\n")
+		after := []byte("package example\n\nvar value = 1\n")
+		if err := os.WriteFile(path, before, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		buffer, err := sourcebuf.New(t.Context(), root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+		err = sourcebuf.ApplyAndPublish(ctx, root, "scala extraction", []sourcebuf.Change{{Path: path, Before: before, After: after}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		disk, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(disk, before) {
+			t.Fatalf("shared edit reached disk before its owner published it: %q", disk)
+		}
+		staged, err := sourcebuf.ReadFile(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(staged, after) {
+			t.Fatalf("staged source = %q, want %q", staged, after)
+		}
+		err = buffer.Flush(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		published, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(published, after) {
+			t.Fatalf("caller-published source = %q, want %q", published, after)
+		}
+	})
 }

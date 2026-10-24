@@ -174,5 +174,8 @@ func registerWorkspaceOps(registry *Registry) error {
 	if err := Register(registry, snapshotDef()); err != nil {
 		return err
 	}
-	return Register(registry, undoDef())
+	if err := Register(registry, undoDef()); err != nil {
+		return err
+	}
+	return registerADROps(registry)
 }

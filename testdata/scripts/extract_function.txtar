@@ -1,29 +1,28 @@
-# Extract safe call statements through the CLI and reject local data flow without mutation.
-! exec semedit extract-function --file api/emitter.go --symbol increment --in-function Increment --kind function --start-line 12 --end-line 12
-stderr 'only one leading := declaration with matching named results'
-cmp api/emitter.go original/api/emitter.go
-exec semedit extract-function --file api/emitter.go --symbol writeMessages --in-function Emit --kind function --start-line 6 --end-line 7
+# Extract safe call statements and one plain assignment to a named scalar parameter through the CLI.
+exec semedit refactor-extract-callable --file api/emitter.go --symbol increment --in-function Increment --kind function --start-line 12 --end-line 12
+stdout 'symbol: increment'
+exec semedit refactor-extract-callable --file api/emitter.go --symbol writeMessages --in-function Emit --kind function --start-line 6 --end-line 7
 stdout 'symbol: writeMessages'
 stdout 'in_function: Emit'
 stdout 'diagnostic_status:'
 cmp api/emitter.go want/api/emitter.go
-exec semedit extract-function --file api/value.go --symbol buildValue --in-function Build --kind function --start-line 6 --end-line 7
+exec semedit refactor-extract-callable --file api/value.go --symbol buildValue --in-function Build --kind function --start-line 6 --end-line 7
 stdout 'symbol: buildValue'
 cmp api/value.go want/api/value.go
-! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function AddressTaken --kind function --start-line 5 --end-line 5
-stderr 'address-taken in the owner body'
+! exec semedit refactor-extract-callable --file api/unsafe.go --symbol extracted --in-function AddressTaken --kind function --start-line 5 --end-line 5
+stderr 'address-taken values'
 cmp api/unsafe.go original/api/unsafe.go
-! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function Captured --kind function --start-line 11 --end-line 11
-stderr 'captured by a closure'
+! exec semedit refactor-extract-callable --file api/unsafe.go --symbol extracted --in-function Captured --kind function --start-line 11 --end-line 11
+stderr 'closure-captured values'
 cmp api/unsafe.go original/api/unsafe.go
-! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function Recover --kind function --start-line 16 --end-line 16
+! exec semedit refactor-extract-callable --file api/unsafe.go --symbol extracted --in-function Recover --kind function --start-line 16 --end-line 16
 stderr 'direct recover\(\) calls'
 cmp api/unsafe.go original/api/unsafe.go
-! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function ValueCall --kind function --start-line 24 --end-line 24
-stderr 'implicit pointer receiver'
+! exec semedit refactor-extract-callable --file api/unsafe.go --symbol extracted --in-function ValueCall --kind function --start-line 24 --end-line 24
+stderr 'implicit pointer-receiver calls'
 cmp api/unsafe.go original/api/unsafe.go
-! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function OutputAddress --kind function --start-line 28 --end-line 29
-stderr 'result local "result" is address-taken'
+! exec semedit refactor-extract-callable --file api/unsafe.go --symbol extracted --in-function OutputAddress --kind function --start-line 28 --end-line 29
+stderr 'address-taken values in the owner'
 cmp api/unsafe.go original/api/unsafe.go
 exec go test ./api
 
@@ -71,6 +70,7 @@ func Emit(prefix string, count int) {
 
 func Increment(value int) {
 	value = value + 1
+	println(value)
 }
 
 -- original/api/emitter.go --
@@ -86,6 +86,7 @@ func Emit(prefix string, count int) {
 
 func Increment(value int) {
 	value = value + 1
+	println(value)
 }
 
 -- api/unsafe.go --
@@ -170,5 +171,11 @@ func writeMessages(prefix string, count int) {
 }
 
 func Increment(value int) {
+	value = increment(value)
+	println(value)
+}
+
+func increment(value int) int {
 	value = value + 1
+	return value
 }

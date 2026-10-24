@@ -41,9 +41,30 @@ func (r InspectReq) GetProjectContext() backend.ProjectContext { return r.Projec
 func (r *InspectReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var inspectReadParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: append(append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol, sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol), "semantic_extract_type.result.edit_receipt.continuations[].symbol"), signatureReceiptSourceFields("symbol")...)},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file that constrains symbol search scope", Type: ParamString, Role: RoleTarget, SourceFields: append(append(append(append(append([]string(nil), sourceFileContinuations...), sourceContractExtractFile, sourceContractImplementFile), sourceConcreteTargetFile, sourceGeneratedMethodFile), "semantic_extract_type.result.edit_receipt.continuations[].file"), signatureReceiptSourceFields("file")...)},
+	ParameterContract{
+		Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Role: RoleTarget, Required: true,
+		SourceFields: inspectReadSourceFields(sourceSymbolContinuations, []string{
+			sourceExtractCallableReceiptSymbol, sourceExtractValueReceiptSymbol, sourceInlineValueReceiptSymbol,
+			sourceContractExtractSymbol, sourceContractImplementSymbol, sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol,
+			"refactor_extract_type.result.edit_receipt.continuations[].symbol", sourceExtractDelegateReceiptSymbol,
+			"refactor_make_static.result.continuations[].symbol",
+		}, "symbol"),
+	},
+	ParameterContract{
+		Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file that constrains symbol search scope", Type: ParamString, Role: RoleTarget,
+		SourceFields: inspectReadSourceFields(sourceFileContinuations, []string{
+			sourceContractExtractFile, sourceContractImplementFile, sourceConcreteTargetFile, sourceGeneratedMethodFile,
+			"refactor_extract_type.result.edit_receipt.continuations[].file", sourceExtractDelegateReceiptFile,
+			"refactor_make_static.result.continuations[].file",
+		}, "file"),
+	},
 )
+
+func inspectReadSourceFields(base, additional []string, signatureField string) []string {
+	fields := append([]string(nil), base...)
+	fields = append(fields, additional...)
+	return append(fields, signatureReceiptSourceFields(signatureField)...)
+}
 
 const (
 	wireIncludeTests    = "include_tests"
@@ -163,11 +184,11 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Output: &OperationOutputContract{
 			ResultSchema: &projectionSchema,
 			Continuations: []OutputContinuation{
-				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer}},
-				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, signatureChangeConsumer}},
-				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, signatureChangeConsumer, semanticExtractConstantToolName, semanticExtractVariableToolName}},
-				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractConstantToolName, semanticExtractVariableToolName, semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName, semanticInspectConstructToolName, semanticRemoveConstructToolName}},
-				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName, extractTypeToolName, semanticInsertConstructToolName}},
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, extractDelegateToolName, semanticExtractFunctionToolName, signatureChangeConsumer, canonicalMakeStaticKey, canonicalPromoteLocalToConstKey, canonicalMakeTypeExplicitKey}},
+				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, extractDelegateToolName, signatureChangeConsumer, canonicalMakeStaticKey, canonicalPromoteLocalToConstKey}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticInsertConstructToolName, extractTypeToolName, extractDelegateToolName, semanticExtractFunctionToolName, signatureChangeConsumer, semanticExtractVariableToolName, canonicalPromoteLocalToConstKey, canonicalMakeTypeExplicitKey}},
+				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractVariableToolName, semanticInlineVariableToolName, semanticInsertCaseToolName, semanticInsertConstructToolName, semanticInspectConstructToolName, semanticRemoveConstructToolName, canonicalPromoteLocalToConstKey, canonicalMakeTypeExplicitKey}},
+				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName, extractTypeToolName, extractDelegateToolName, semanticInsertConstructToolName}},
 				{Path: "result.continuations[].in_declaration", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticInsertConstructToolName}},
 			},
 		},

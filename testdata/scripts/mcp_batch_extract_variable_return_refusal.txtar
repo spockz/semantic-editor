@@ -1,0 +1,26 @@
+# A failed return extraction after an earlier body edit retains only that prior edit and contributes no temporary declaration.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'return expression must contain a resolved typed Go input'
+cmp render.go .scratch/want/render.go
+
+-- go.mod --
+module example.com/extractvariablereturnrefusal
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"return 1 + 2"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","discriminator":"1 + 2"}}]}}}
+-- render.go --
+package render
+
+func Render() int {
+	return 0
+}
+-- .scratch/want/render.go --
+package render
+
+func Render() int {
+	return 1 + 2
+}

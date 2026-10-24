@@ -20,6 +20,7 @@ const (
 	wireExpectedSelectionRevision    = "expected_selection_revision"
 	wireCLIExpectedSelectionRevision = "expected-selection-revision"
 	wireCandidates                   = "candidates"
+	wireEndConstructPath             = "end_construct_path"
 )
 
 // InspectConstructReq requests current candidates for a nested construct selector.
@@ -39,6 +40,7 @@ type InspectConstructRes struct {
 	Discriminator     string                           `json:"discriminator,omitempty"`
 	Candidates        []astedit.ConstructCandidateInfo `json:"candidates"`
 	SelectionRevision string                           `json:"expected_selection_revision"`
+	ExpectedRevision  string                           `json:"expected_revision"`
 }
 
 // GetProjectContext returns the project selected for construct inspection dispatch.
@@ -95,6 +97,7 @@ func inspectConstructRun(ctx context.Context, cc CallContext, request InspectCon
 	return InspectConstructRes{
 		File: displayWorkPath(cc.WorkDir, request.File), InFunction: set.InFunction, Kind: set.Kind,
 		Discriminator: set.Discriminator, Candidates: set.Candidates, SelectionRevision: set.SelectionRevision,
+		ExpectedRevision: set.SourceRevision,
 	}, nil
 }
 
@@ -120,7 +123,7 @@ func inspectConstructRunJava(ctx context.Context, cc CallContext, request Inspec
 	}
 	infos := make([]astedit.ConstructCandidateInfo, 0, len(candidates))
 	for _, candidate := range candidates {
-		infos = append(infos, astedit.ConstructCandidateInfo{ConstructPath: candidate.ConstructPath, Syntax: candidate.Syntax})
+		infos = append(infos, astedit.ConstructCandidateInfo{ConstructPath: candidate.ConstructPath, EndConstructPath: candidate.ConstructPath, Syntax: candidate.Syntax})
 	}
 	owner := method.QualifiedName
 	revision, err := javacst.SelectionRevision(owner, request.Kind, request.Discriminator, candidates)
@@ -130,6 +133,7 @@ func inspectConstructRunJava(ctx context.Context, cc CallContext, request Inspec
 	return InspectConstructRes{
 		File: displayWorkPath(cc.WorkDir, request.File), InFunction: owner, Kind: request.Kind,
 		Discriminator: request.Discriminator, Candidates: infos, SelectionRevision: revision,
+		ExpectedRevision: method.Revision,
 	}, nil
 }
 
@@ -144,8 +148,8 @@ func formatInspectConstruct(result InspectConstructRes) (string, error) {
 func constructCandidateSchema() *ValueSchema {
 	text := nonEmptyStringSchema()
 	return &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		wireConstructPath: text, "syntax": text,
-	}, Required: []string{wireConstructPath, "syntax"}}
+		wireConstructPath: text, wireEndConstructPath: text, "syntax": text,
+	}, Required: []string{wireConstructPath, wireEndConstructPath, "syntax"}}
 }
 
 func inspectConstructResultSchema() *ValueSchema {
@@ -153,24 +157,27 @@ func inspectConstructResultSchema() *ValueSchema {
 	return &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"file": text, wireInFunction: text, "kind": text, wireDiscriminator: {Kind: SchemaString},
 		wireCandidates: {Kind: SchemaArray, Items: constructCandidateSchema()}, wireExpectedSelectionRevision: text,
-	}, Required: []string{"file", wireInFunction, "kind", wireCandidates, wireExpectedSelectionRevision}}
+		wireExpectedRevision: text,
+	}, Required: []string{"file", wireInFunction, "kind", wireCandidates, wireExpectedSelectionRevision, wireExpectedRevision}}
 }
 
 func inspectConstructDef() Def[InspectConstructReq, InspectConstructRes] {
 	return Def[InspectConstructReq, InspectConstructRes]{
-		Key: "inspect_construct", Summary: ("Use this tool instead of guessing nested construct selectors when current choices are unavailable after selection drift or a selector has multiple matches. Lists current candidates with canonical selector context, reusable construct_path values, and an opaque expected_selection_revision for the ordered current candidate list."),
+		Key: "inspect_construct", Summary: ("Use this tool instead of guessing nested construct selectors when current choices are unavailable after selection drift or a selector has multiple matches. Lists current candidates with canonical selector context, reusable construct_path and end_construct_path values, an opaque expected_selection_revision for the ordered candidate list, and the full-file expected_revision captured with those candidates."),
 		Params: inspectConstructParams, Level: LevelFile, CLIName: "inspect-construct", MCPName: semanticInspectConstructToolName,
 		ReadOnly: true, Batchable: true, BufferedBatch: true, Parse: parseInspectConstruct, NormalizeInput: NormalizeConstructKindInput,
 		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, InspectConstructReq) (InspectConstructRes, error){backend.LanguageGo: inspectConstructRun, backend.LanguageJava: inspectConstructRunJava},
 		Format:     formatInspectConstruct,
 		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", "kind": "if", wireDiscriminator: "err != nil", "language": "go"},
 		Output: &OperationOutputContract{ResultSchema: inspectConstructResultSchema(), Continuations: []OutputContinuation{
-			{Path: "result.file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
-			{Path: "result.in_function", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
+			{Path: "result.file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticInsertCaseToolName}},
+			{Path: "result.in_function", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticInsertCaseToolName}},
 			{Path: "result.kind", Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName}},
 			{Path: "result.discriminator", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}, Optional: true},
-			{Path: "result." + wireCandidates + "[]." + wireConstructPath, Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
+			{Path: "result." + wireCandidates + "[]." + wireConstructPath, Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticReplaceConstructToolName, semanticExtractFunctionToolName, semanticExtractVariableToolName, semanticInsertCaseToolName}},
+			{Path: "result." + wireCandidates + "[]." + wireEndConstructPath, Schema: nonEmptyStringSchema(), Role: RoleSelector, Consumers: []string{semanticExtractVariableToolName}},
 			{Path: "result." + wireExpectedSelectionRevision, Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticReplaceConstructToolName, semanticInsertCaseToolName}},
+			{Path: "result." + wireExpectedRevision, Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: []string{semanticExtractFunctionToolName, semanticExtractVariableToolName}},
 		}},
 		ProjectOutput: func(result InspectConstructRes) (any, error) { return result, nil },
 	}

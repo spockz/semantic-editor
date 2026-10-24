@@ -43,7 +43,7 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 	root := schemaWorkspace(t)
 	base := toolsForOptions(t, root, mcp.WithToolProfile("base"))
 	baseNames := toolNameSet(base)
-	for _, name := range []string{"semantic_insert_construct", "semantic_replace_construct", "semantic_remove_construct", "semantic_move_construct", "semantic_rename", "semantic_lookup", "semantic_inspect_symbol", "semantic_outline", "semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment", "semantic_find_references", "semantic_verify", "semantic_batch", "semantic_snapshot", "semantic_undo"} {
+	for _, name := range []string{"semantic_insert_construct", "semantic_replace_construct", "semantic_remove_construct", "refactor_move_declaration", "refactor_rename", "semantic_lookup", "semantic_inspect_symbol", "semantic_outline", "semantic_workspace_outline", "refactor_change_signature", "refactor_extract_callable", "semantic_set_doc_comment", "semantic_find_references", "semantic_verify", "semantic_batch", "semantic_snapshot", "semantic_undo"} {
 		if !baseNames[name] {
 			t.Errorf("base tools/list omitted %s", name)
 		}
@@ -55,7 +55,7 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 	}
 
 	full := toolNameSet(toolsForOptions(t, root, mcp.WithToolProfile("full")))
-	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body", "semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body", "semantic_workspace_outline", "refactor_change_signature", "refactor_extract_callable", "semantic_set_doc_comment"} {
 		if !full[name] {
 			t.Errorf("full tools/list omitted %s", name)
 		}
@@ -67,7 +67,7 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 			t.Errorf("mutations-only tools/list exposed read-only %s", name)
 		}
 	}
-	for _, name := range []string{"semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+	for _, name := range []string{"refactor_change_signature", "refactor_extract_callable", "semantic_set_doc_comment"} {
 		if !mutationsOnly[name] {
 			t.Errorf("mutations-only tools/list omitted mutation %s", name)
 		}
@@ -118,7 +118,7 @@ func TestMCPDefaultToolCatalogAfterInitialize(t *testing.T) {
 		t.Fatal(err)
 	}
 	names := toolNameSet(listed.Result.Tools)
-	for _, name := range []string{"semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+	for _, name := range []string{"semantic_workspace_outline", "refactor_change_signature", "refactor_extract_callable", "semantic_set_doc_comment"} {
 		if !names[name] {
 			t.Errorf("default tools/list omitted %s", name)
 		}
@@ -472,7 +472,7 @@ func assertContractOutputSchema(t *testing.T, name string, schema any) {
 		}
 	}
 	fields := []string{"contract", "contract_file"}
-	if name == "semantic_implement_contract" {
+	if name == "refactor_implement_contract" {
 		fields = []string{"type_target", "generated_methods"}
 	}
 	for _, field := range fields {
@@ -728,21 +728,21 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		t.Fatalf("%s omitted outputSchema", name)
 	}
 	switch name {
-	case "semantic_set_doc_comment", "semantic_extract_type", "semantic_change_signature", "semantic_introduce_parameter", "semantic_introduce_parameter_object":
+	case "semantic_set_doc_comment", "refactor_extract_type", "refactor_extract_delegate", "refactor_change_signature", "refactor_introduce_parameter", "refactor_introduce_parameter_object":
 		assertStructuralOutputSchema(t, output, name)
 	case fieldInsertionToolName:
 		assertInsertFieldOutputSchema(t, output)
 	case "semantic_remove_construct":
 		assertRemoveConstructOutputSchema(t, output)
-	case "semantic_extract_interface", "semantic_implement_contract":
+	case "refactor_extract_interface", "refactor_implement_contract":
 		assertContractOutputSchema(t, name, output)
-	case "semantic_inline_function", "semantic_migrate_type", "semantic_extract_constant", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
+	case "refactor_inline_callable", "refactor_migrate_type", "refactor_extract_callable", "refactor_extract_value", "refactor_inline_value", "refactor_make_static", "refactor_make_type_explicit":
 		assertSemanticEditReceiptOutputSchema(t, name, output)
-	case "semantic_rename", "semantic_organize_imports", "semantic_maven_compile", "semantic_maven_test", "semantic_verify":
+	case "refactor_rename", "semantic_organize_imports", "semantic_maven_compile", "semantic_maven_test", "semantic_verify":
 		assertTypedOutcomeOrLegacyStringSchema(t, name, output)
 	case "semantic_lookup":
 		assertRegisteredTypedOutputSchema(t, name, output)
-	case "semantic_assertion_mode", "semantic_add_build_dependency", "semantic_find_references", "semantic_outline", "semantic_snapshot", "semantic_undo", "semantic_workspace_outline":
+	case "semantic_assertion_mode", "semantic_add_build_dependency", "semantic_find_references", "semantic_generate_adr_index", "semantic_outline", "semantic_search_adrs", "semantic_snapshot", "semantic_undo", "semantic_workspace_outline":
 		assertRemainingTypedOutputSchema(t, name, output)
 	case "semantic_inspect_construct":
 		assertTypedObjectRequiredFields(t, name, output, "file", "in_function", "kind", "candidates", "expected_selection_revision")
@@ -755,8 +755,8 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 	case "semantic_insert_construct":
 		assertFileEditOutputSchema(t, name, output)
 		assertCompositeElementOutputSchema(t, output)
-	case "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_move_construct", "semantic_move_file", "semantic_scaffold_file":
+	case "semantic_insert_declaration", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "refactor_encapsulate_field",
+		"semantic_replace_decl", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "refactor_move_declaration", "refactor_move_file", "semantic_scaffold_file":
 		assertFileEditOutputSchema(t, name, output)
 	case "semantic_batch":
 		assertBatchOutputSchema(t, output)
@@ -792,7 +792,9 @@ func assertRemainingTypedOutputSchema(t *testing.T, name string, output any) {
 		"semantic_assertion_mode":       {"status", "file", "swapped", "edit_receipt"},
 		"semantic_add_build_dependency": {"status", "package", "go_mod"},
 		"semantic_find_references":      {"summary", "scope", "symbol", "reference_count", "file_count"},
+		"semantic_generate_adr_index":   {"status"},
 		"semantic_outline":              {"summary", "scope", "file_count", "symbol_count"},
+		"semantic_search_adrs":          {"total", "offset", "limit", "items"},
 		"semantic_snapshot":             {"status", "snapshot_id", "created_at", "captured_files", "captured_file_count", "captured_files_truncated"},
 		"semantic_undo":                 {"status", "restored_files", "restored_file_count", "restored_files_truncated", "diagnostics", "diagnostic_count", "diagnostics_truncated", "diagnostic_status"},
 		"semantic_workspace_outline":    {"scope", "modules", "packages"},
@@ -902,9 +904,10 @@ func assertFileEditOutputSchema(t *testing.T, name string, output any) {
 		"semantic_replace_body":       {"file", "symbol", "diff"},
 		"semantic_replace_construct":  {"file", "in_function", "diff"},
 		"semantic_insert_case":        {"file", "in_function", "discriminator", "diff"},
-		"semantic_move_construct":     {"file", "symbol", "origin_file", "diff"},
-		"semantic_move_file":          {"file", "changed_files", "diff", "application_state"},
+		"refactor_move_declaration":   {"file", "symbol", "origin_file", "diff"},
+		"refactor_move_file":          {"file", "changed_files", "diff", "application_state"},
 		"semantic_scaffold_file":      {"file", "package"},
+		"refactor_encapsulate_field":  {"file", "symbol", "destination_file", "diff"},
 	}
 	for _, field := range fieldsByTool[name] {
 		if properties[field] == nil {
@@ -1012,7 +1015,11 @@ func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
 func assertSemanticEditReceiptOutputSchema(t *testing.T, name string, schema any) {
 	t.Helper()
 	assertStandardOutputSchema(t, schema, "object")
-	result := schema.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := schema.(map[string]any)["properties"].(map[string]any)
+	result, nested := properties["edit_receipt"].(map[string]any)
+	if !nested {
+		result = properties["result"].(map[string]any)
+	}
 	for _, field := range []string{"schema_version", "status", "operation", "changes", "read_set", "continuations"} {
 		if _, ok := result["properties"].(map[string]any)[field]; !ok {
 			t.Errorf("%s receipt schema omitted %q", name, field)
@@ -1327,7 +1334,10 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 
 func schemaWorkspace(t *testing.T) string {
 	t.Helper()
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	writeTestGoModule(t, root)
 	for name, source := range map[string]string{"main.go": "package sample\n", "Main.java": "class Main {}\n"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
@@ -1395,7 +1405,7 @@ func assertBatchSchemaProfile(t *testing.T, profile string) {
 	item := edits["items"].(map[string]any)
 	properties := item["properties"].(map[string]any)
 	toolSchema := properties["tool"].(map[string]any)
-	expected := expectedBatchSchemaEntries(profile)
+	expected := expectedBatchSchemaEntries(profile, tools)
 	expectedNames := make([]string, 0, len(expected.ByName))
 	for name := range expected.ByName {
 		expectedNames = append(expectedNames, name)
@@ -1420,10 +1430,10 @@ type batchSchemaExpectations struct {
 	Names  []string
 }
 
-func expectedBatchSchemaEntries(profile string) batchSchemaExpectations {
+func expectedBatchSchemaEntries(profile string, tools []map[string]any) batchSchemaExpectations {
 	expected := batchSchemaExpectations{ByName: make(map[string]operation.Entry)}
 	for _, entry := range operation.DefaultRegistry().All() {
-		if entry.MCPName == "" || !entry.Batchable || (profile == "mutations-only" && entry.ReadOnly) {
+		if entry.MCPName == "" || !entry.Batchable || !hasTool(tools, entry.MCPName) || (entry.ReadOnly && entry.Key != "lookup") || (profile == "mutations-only" && entry.ReadOnly) {
 			continue
 		}
 		expected.ByName[entry.MCPName] = entry
@@ -1552,7 +1562,7 @@ func TestMCPEnabledLanguagesFilterMixedAndSourceLessWorkspaces(t *testing.T) {
 	if !byName["semantic_replace_construct"] {
 		t.Fatal("Go construct tool missing from enabled mixed workspace")
 	}
-	for _, name := range []string{"semantic_workspace_outline", "semantic_change_signature", "semantic_extract_function", "semantic_set_doc_comment"} {
+	for _, name := range []string{"semantic_workspace_outline", "refactor_change_signature", "refactor_extract_callable", "semantic_set_doc_comment"} {
 		if !byName[name] {
 			t.Errorf("Go-capable %s missing from enabled mixed workspace", name)
 		}
@@ -1902,7 +1912,7 @@ func assertMCPContinuationDescriptionsCoverConstructSources(t *testing.T, catalo
 		}
 	}
 	assertGuidance("semantic_insert_decl", "file")
-	for _, toolName := range []string{"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable"} {
+	for _, toolName := range []string{"refactor_extract_callable", "refactor_extract_value"} {
 		entry, ok := operation.DefaultRegistry().LookupMCP(toolName)
 		if !ok {
 			t.Fatalf("default registry omitted %s", toolName)
@@ -1922,18 +1932,18 @@ func assertMCPContinuationDescriptionsCoverConstructSources(t *testing.T, catalo
 
 func assertMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T, catalog []map[string]any) {
 	t.Helper()
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_move_construct")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_move_declaration")
 	if !ok || !entry.Batchable {
-		t.Fatalf("semantic_move_construct registry entry = %+v, present=%v; want batchable", entry, ok)
+		t.Fatalf("refactor_move_declaration registry entry = %+v, present=%v; want batchable", entry, ok)
 	}
 	tools := (catalog)
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
 		byName[tool["name"].(string)] = tool
 	}
-	move := byName["semantic_move_construct"]
+	move := byName["refactor_move_declaration"]
 	if move == nil {
-		t.Fatal("tools/list omitted semantic_move_construct")
+		t.Fatal("tools/list omitted refactor_move_declaration")
 	}
 	moveInput := move["inputSchema"].(map[string]any)
 	moveProperties := moveInput["properties"].(map[string]any)
@@ -1969,15 +1979,15 @@ func assertMoveBatchSchema(t *testing.T, batch map[string]any) {
 	t.Helper()
 	items := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
 	names := items["properties"].(map[string]any)["tool"].(map[string]any)["enum"].([]any)
-	if !schemaEnumContains(names, "semantic_move_construct") {
-		t.Fatal("semantic_batch schema omitted semantic_move_construct")
+	if !schemaEnumContains(names, "refactor_move_declaration") {
+		t.Fatal("semantic_batch schema omitted refactor_move_declaration")
 	}
 	output := batch["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
 	results := output["results"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
 	for _, rawBranch := range results {
 		branch := rawBranch.(map[string]any)
 		properties := branch["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] != "semantic_move_construct" {
+		if properties["tool"].(map[string]any)["const"] != "refactor_move_declaration" {
 			continue
 		}
 		file := properties["file"].(map[string]any)
@@ -1994,7 +2004,7 @@ func assertMoveBatchSchema(t *testing.T, batch map[string]any) {
 		}
 		return
 	}
-	t.Fatal("batch output schema omitted semantic_move_construct result branch")
+	t.Fatal("batch output schema omitted refactor_move_declaration result branch")
 }
 
 func assertMCPStaleContinuationsAreNotAdvertised(t *testing.T, catalog []map[string]any) {
@@ -2007,10 +2017,10 @@ func assertMCPStaleContinuationsAreNotAdvertised(t *testing.T, catalog []map[str
 		tool   string
 		fields []string
 	}{
-		{tool: "semantic_inline_variable", fields: []string{"symbol"}},
-		{tool: "semantic_extract_variable", fields: []string{"discriminator"}},
+		{tool: "refactor_inline_value", fields: []string{"symbol"}},
+		{tool: "refactor_extract_value", fields: []string{"discriminator"}},
 		{tool: "semantic_remove_construct", fields: []string{"symbol", "in_function", "discriminator", "target_case", "construct_path"}},
-		{tool: "semantic_move_construct", fields: []string{"destination_file"}},
+		{tool: "refactor_move_declaration", fields: []string{"destination_file"}},
 	} {
 		output := tools[check.tool]["outputSchema"].(map[string]any)
 		properties := output["properties"].(map[string]any)
@@ -2898,7 +2908,7 @@ func assertLanguageSpecificTools(t *testing.T, byName map[string]map[string]any,
 		if _, ok := byName["semantic_verify"]["inputSchema"].(map[string]any)["examples"]; ok {
 			t.Error("Java-only verify schema retained an example with an unsupported language")
 		}
-		renameDescription := byName["semantic_rename"]["description"].(string)
+		renameDescription := byName["refactor_rename"]["description"].(string)
 		if !strings.Contains(renameDescription, "java:") || strings.Contains(renameDescription, "go:") {
 			t.Errorf("Java-only rename description has unfiltered language contracts: %s", renameDescription)
 		}
@@ -2920,10 +2930,10 @@ func assertBatchRenameLanguageEnum(t *testing.T, byName map[string]map[string]an
 	items := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
 	toolSchema := items["properties"].(map[string]any)["tool"].(map[string]any)
 	names := toolSchema["enum"].([]any)
-	if !schemaEnumContains(names, "semantic_rename") {
-		t.Fatal("batch schema omitted semantic_rename")
+	if !schemaEnumContains(names, "refactor_rename") {
+		t.Fatal("batch schema omitted refactor_rename")
 	}
-	rename := byName["semantic_rename"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+	rename := byName["refactor_rename"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
 	if got := rename["enum"]; !reflect.DeepEqual(got, toAnySlice(languages)) {
 		t.Errorf("standalone rename language enum = %#v, want %#v", got, languages)
 	}
@@ -3126,8 +3136,8 @@ func assertDirectSymbolTargeting(t *testing.T, byName map[string]map[string]any)
 			}
 		}
 	}
-	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Optional for Go if the symbol is unique across the workspace", "recommended to disambiguate common names", "Required for Rust or Java")
-	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Direct short names are resolved in-place", "calling semantic_lookup first is not required")
+	assertContains("refactor_rename.file", paramDescription("refactor_rename", "file"), "Optional for Go if the symbol is unique across the workspace", "recommended to disambiguate common names", "Required for Rust or Java")
+	assertContains("refactor_rename.symbol", paramDescription("refactor_rename", "symbol"), "Direct short names are resolved in-place", "calling semantic_lookup first is not required")
 	assertContains("semantic_replace_body.symbol", paramDescription("semantic_replace_body", "symbol"), "short function name or Receiver.Method", "resolved directly in the given file")
 	assertContains("semantic_replace_construct.symbol", paramDescription("semantic_replace_construct", "symbol"), "short declaration name or Receiver.Method", "resolved directly in the given file")
 }
@@ -3227,24 +3237,24 @@ func assertMCPFaultContractDescriptions(t *testing.T, tools []map[string]any) {
 
 func assertMCPInlineVariableCatalog(t *testing.T, tools []map[string]any) {
 	t.Helper()
-	tool := namedMCPTools(tools)["semantic_inline_variable"]
+	tool := namedMCPTools(tools)["refactor_inline_value"]
 	if tool == nil {
-		t.Fatal("tools/list omitted semantic_inline_variable")
+		t.Fatal("tools/list omitted refactor_inline_value")
 	}
 	input := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
 	for key, role := range map[string]string{"symbol": "Target:", "file": "Target:", "in_function": "Selector:"} {
 		field, ok := input[key].(map[string]any)
 		if !ok {
-			t.Fatalf("semantic_inline_variable input omitted %s", key)
+			t.Fatalf("refactor_inline_value input omitted %s", key)
 		}
 		if !strings.Contains(field["description"].(string), role) {
-			t.Errorf("semantic_inline_variable.%s description omitted role %q", key, role)
+			t.Errorf("refactor_inline_value.%s description omitted role %q", key, role)
 		}
 	}
-	assertSemanticEditReceiptOutputSchema(t, "semantic_inline_variable", tool["outputSchema"])
+	assertSemanticEditReceiptOutputSchema(t, "refactor_inline_value", tool["outputSchema"])
 	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := output["in_function"]; ok {
-		t.Error("semantic_inline_variable output advertises an in_function alias absent from its receipt")
+		t.Error("refactor_inline_value output advertises an in_function alias absent from its receipt")
 	}
 }
 
@@ -3262,7 +3272,7 @@ func mcpIntegerRequests(t *testing.T, cases []mcpIntegerCase, batch bool) *bytes
 			"file": "main.go", "symbol": "Helper", "in_function": "Example", "kind": "function",
 			"start_line": json.Number(item.start), "end_line": json.Number(item.end),
 		}
-		tool := "semantic_extract_function"
+		tool := "refactor_extract_callable"
 		if batch {
 			arguments = map[string]any{"edits": []map[string]any{{"tool": tool, "params": arguments}}}
 			tool = "semantic_batch"

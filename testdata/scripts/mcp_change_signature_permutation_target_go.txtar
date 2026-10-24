@@ -1,0 +1,34 @@
+# The finalized permutation target carries the exact revision used by the following standalone body edit.
+stdin input.json
+exec semedit mcp
+stdout '"function_target":\{[^}]*"expected_revision":"a715666e5a5a6e4dc4b473b654ce78b48d14e8689894d77fb9579489656a17d6"[^}]*"file":"service.go"[^}]*"symbol":"combine"'
+! stdout '"isError":true'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+exec go test ./...
+-- go.mod --
+module example.com/permutationtarget
+
+go 1.24
+-- service.go --
+package sample
+
+func combine(left, right int) int { return left*100 + right }
+-- calls.go --
+package sample
+
+func first() int { return combine(1, 2) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"refactor_change_signature","arguments":{"file":"service.go","symbol":"combine","parameters":[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"service.go","symbol":"combine","expected_revision":"a715666e5a5a6e4dc4b473b654ce78b48d14e8689894d77fb9579489656a17d6","body":"return left*100 + right"}}}
+-- .scratch/want/service.txt --
+package sample
+
+func combine(right int, left int) int {
+	return left*100 + right
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int { return combine(2, 1) }

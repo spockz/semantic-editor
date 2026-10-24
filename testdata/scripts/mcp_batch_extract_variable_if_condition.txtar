@@ -1,0 +1,45 @@
+# Extract a complete condition from an unsaved branch body and verify the staged result keeps it branch-local.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"status":"applied_working"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableifconditionbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"render.go","symbol":"Render","body":"if count > 0 { return count }; return 0"}},{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","discriminator":"count > 0"}}]}}}
+-- render.go --
+package render
+
+func Render(count int) int {
+	return count
+}
+-- .scratch/want/render.go --
+package render
+
+func Render(count int) int {
+	selected := count > 0
+	if selected {
+		return count
+	}
+	return 0
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestBatchExtractCondition(t *testing.T) {
+	if got := Render(7); got != 7 {
+		t.Fatalf("Render(7) = %d, want 7", got)
+	}
+	if got := Render(-1); got != 0 {
+		t.Fatalf("Render(-1) = %d, want 0", got)
+	}
+}

@@ -2,7 +2,7 @@
 stdin input.json
 exec semedit mcp --enable-batching
 stdout 'Critical result \(JSON\):'
-stdout '"operation":"migrate-type"'
+stdout '"operation":"refactor_migrate_type"'
 stdout '"schema_version":"semedit.edit-receipt/v1"'
 stdout '"status":"applied_working"'
 cmp settings.go .scratch/want/settings.go
@@ -27,4 +27,4 @@ type Settings struct {
 	timeout Duration
 }
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_migrate_type","params":{"file":"settings.go","symbol":"Settings.timeout","type":"Duration"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_migrate_type","params":{"file":"settings.go","symbol":"Settings.timeout","type":"Duration"}}]}}}

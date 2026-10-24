@@ -1,0 +1,28 @@
+# Scalar named types remain eligible and retain their direct value receiver.
+exec semedit refactor-move-declaration --file legacy/amount.go --destination-file api/api.go --symbol Amount --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/amount.go .scratch/_want/legacy/amount.go
+cmp api/api.go .scratch/_want/api/api.go
+exec go test ./...
+
+-- go.mod --
+module example.com/typecrossscalar
+
+go 1.23
+
+-- legacy/amount.go --
+package legacy
+
+type Amount int
+
+func (a Amount) Add(value int) Amount { return a + Amount(value) }
+-- api/api.go --
+package api
+-- .scratch/_want/legacy/amount.go --
+package legacy
+-- .scratch/_want/api/api.go --
+package api
+
+type Amount int
+
+func (a Amount) Add(value int) Amount { return a + Amount(value) }

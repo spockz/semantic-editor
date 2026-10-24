@@ -1,0 +1,59 @@
+# Every rejected native envelope keeps the complete source unchanged.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=disabled SEMEDIT_JAVA_ORGANIZE=1
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'must be enabled and eager'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=extra
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'requires one unannotated text edit'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=foreign
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'must replace exactly'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=command
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'must be enabled and eager'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=lazy
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'must be enabled and eager'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=duplicate
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'found 2'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=missing
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'found 0'
+cmp src/Service.java original.java
+env SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=1
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function 'Service.count()' --symbol total --expected-revision stale
+stderr 'source revision changed'
+cmp src/Service.java original.java
+! exec semedit refactor-make-type-explicit --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Service.java --in-function count --symbol total --expected-revision acb3f3ab91bab42907e4b22dc610bd24cce4d83ee537477215b5b54b19a41d86
+stderr 'exact signature-qualified method'
+cmp src/Service.java original.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Service.java --
+class Service {
+  int count() {
+    var total = 1 + 2;
+    return total;
+  }
+}
+-- original.java --
+class Service {
+  int count() {
+    var total = 1 + 2;
+    return total;
+  }
+}

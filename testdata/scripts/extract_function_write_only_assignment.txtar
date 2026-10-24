@@ -1,0 +1,337 @@
+# Preserve dead local writes, initializers, right-hand evaluation order, and package-global effects.
+exec semedit refactor-extract-callable --file write_only.go --symbol writeOnly --in-function WriteOnly --kind function --start-line 13 --end-line 13
+stdout 'symbol: writeOnly'
+cmp write_only.go want/write_only.go
+exec semedit refactor-extract-callable --file last_read.go --symbol lastRead --in-function LastRead --kind function --start-line 12 --end-line 13
+stdout 'symbol: lastRead'
+cmp last_read.go want/last_read.go
+exec semedit refactor-extract-callable --file mixed.go --symbol mixWrites --in-function Mixed --kind function --start-line 13 --end-line 13
+stdout 'symbol: mixWrites'
+cmp mixed.go want/mixed.go
+exec semedit refactor-extract-callable --file parallel.go --symbol parallelWrites --in-function Parallel --kind function --start-line 13 --end-line 13
+stdout 'symbol: parallelWrites'
+cmp parallel.go want/parallel.go
+exec semedit refactor-extract-callable --file global.go --symbol updateGlobal --in-function UpdateGlobal --kind function --start-line 12 --end-line 12
+stdout 'symbol: updateGlobal'
+cmp global.go want/global.go
+exec semedit refactor-extract-callable --file panic.go --symbol panicWrites --in-function PanicWrites --kind function --start-line 18 --end-line 18
+stdout 'symbol: panicWrites'
+cmp panic.go want/panic.go
+exec semedit refactor-extract-callable --file paren.go --symbol extractParenthesized --in-function ParenthesizedWrite --kind function --start-line 6 --end-line 7
+stdout 'symbol: extractParenthesized'
+cmp paren.go want/paren.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionwriteonly
+
+go 1.23
+-- write_only.go --
+package sample
+
+var writeEvents []string
+
+func recordWrite(label string) int {
+	writeEvents = append(writeEvents, label)
+	return 1
+}
+
+func WriteOnly() {
+	x := 0
+	println(x)
+	x = recordWrite("selected")
+	println("done")
+}
+-- want/write_only.go --
+package sample
+
+var writeEvents []string
+
+func recordWrite(label string) int {
+	writeEvents = append(writeEvents, label)
+	return 1
+}
+
+func WriteOnly() {
+	x := 0
+	println(x)
+	writeOnly()
+	println("done")
+}
+
+func writeOnly() {
+	var x int
+	x = recordWrite("selected")
+	_ = x
+}
+-- last_read.go --
+package sample
+
+var lastEvents []string
+
+func recordLast(label string) int {
+	lastEvents = append(lastEvents, label)
+	return 1
+}
+
+func LastRead() {
+	x := recordLast("init")
+	x = recordLast("selected")
+	println(x)
+}
+-- want/last_read.go --
+package sample
+
+var lastEvents []string
+
+func recordLast(label string) int {
+	lastEvents = append(lastEvents, label)
+	return 1
+}
+
+func LastRead() {
+	x := recordLast("init")
+	lastRead()
+	_ = x
+}
+
+func lastRead() {
+	var x int
+	x = recordLast("selected")
+	println(x)
+}
+-- mixed.go --
+package sample
+
+var mixedEvents []string
+
+func mixedEffect(label string) int {
+	mixedEvents = append(mixedEvents, label)
+	return len(mixedEvents)
+}
+
+func Mixed() {
+	x := 0
+	println(x)
+	x, y := mixedEffect("x"), mixedEffect("y")
+	println(y)
+}
+-- want/mixed.go --
+package sample
+
+var mixedEvents []string
+
+func mixedEffect(label string) int {
+	mixedEvents = append(mixedEvents, label)
+	return len(mixedEvents)
+}
+
+func Mixed() {
+	x := 0
+	println(x)
+	y := mixWrites()
+	println(y)
+}
+
+func mixWrites() int {
+	var x int
+	x, y := mixedEffect("x"), mixedEffect("y")
+	_ = x
+	return y
+}
+-- parallel.go --
+package sample
+
+var parallelEvents []string
+
+func parallelEffect(label string) int {
+	parallelEvents = append(parallelEvents, label)
+	return len(parallelEvents)
+}
+
+func Parallel() {
+	x, y := 0, 0
+	println(x, y)
+	x, y = parallelEffect("x"), parallelEffect("y")
+	println("done")
+}
+-- want/parallel.go --
+package sample
+
+var parallelEvents []string
+
+func parallelEffect(label string) int {
+	parallelEvents = append(parallelEvents, label)
+	return len(parallelEvents)
+}
+
+func Parallel() {
+	x, y := 0, 0
+	println(x, y)
+	parallelWrites()
+	println("done")
+}
+
+func parallelWrites() {
+	var x int
+	var y int
+	x, y = parallelEffect("x"), parallelEffect("y")
+	_ = x
+	_ = y
+}
+-- global.go --
+package sample
+
+var events []string
+var global int
+
+func effect(label string) int {
+	events = append(events, label)
+	return len(events)
+}
+
+func UpdateGlobal() {
+	global = effect("global")
+}
+-- want/global.go --
+package sample
+
+var events []string
+var global int
+
+func effect(label string) int {
+	events = append(events, label)
+	return len(events)
+}
+
+func UpdateGlobal() {
+	updateGlobal()
+}
+
+func updateGlobal() {
+	global = effect("global")
+}
+-- panic.go --
+package sample
+
+var panicEvents []string
+
+func panicWriteEffect(label string) int {
+	panicEvents = append(panicEvents, label)
+	return len(panicEvents)
+}
+
+func panicEffect() int {
+	panicEvents = append(panicEvents, "panic")
+	panic("stop")
+}
+
+func PanicWrites() {
+	x, y, z := 0, 0, 0
+	println(x, y, z)
+	x, y, z = panicWriteEffect("first"), panicEffect(), panicWriteEffect("last")
+	println("done")
+}
+-- want/panic.go --
+package sample
+
+var panicEvents []string
+
+func panicWriteEffect(label string) int {
+	panicEvents = append(panicEvents, label)
+	return len(panicEvents)
+}
+
+func panicEffect() int {
+	panicEvents = append(panicEvents, "panic")
+	panic("stop")
+}
+
+func PanicWrites() {
+	x, y, z := 0, 0, 0
+	println(x, y, z)
+	panicWrites()
+	println("done")
+}
+
+func panicWrites() {
+	var x int
+	var y int
+	var z int
+	x, y, z = panicWriteEffect("first"), panicEffect(), panicWriteEffect("last")
+	_ = x
+	_ = y
+	_ = z
+}
+-- paren.go --
+package sample
+
+func ParenthesizedWrite() {
+	x := 0
+	(x) = 1
+	x = 2
+	println(x)
+}
+-- want/paren.go --
+package sample
+
+func ParenthesizedWrite() {
+	x := 0
+	(x) = 1
+	extractParenthesized()
+	_ = x
+}
+
+func extractParenthesized() {
+	var x int
+	x = 2
+	println(x)
+}
+-- behavior_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestWriteOnlyExtractionPreservesEvaluation(t *testing.T) {
+	writeEvents = nil
+	WriteOnly()
+	if want := []string{"selected"}; !reflect.DeepEqual(writeEvents, want) {
+		t.Fatalf("WriteOnly events = %v, want %v", writeEvents, want)
+	}
+	lastEvents = nil
+	LastRead()
+	if want := []string{"init", "selected"}; !reflect.DeepEqual(lastEvents, want) {
+		t.Fatalf("LastRead events = %v, want %v", lastEvents, want)
+	}
+	mixedEvents = nil
+	Mixed()
+	if want := []string{"x", "y"}; !reflect.DeepEqual(mixedEvents, want) {
+		t.Fatalf("Mixed events = %v, want %v", mixedEvents, want)
+	}
+	parallelEvents = nil
+	Parallel()
+	if want := []string{"x", "y"}; !reflect.DeepEqual(parallelEvents, want) {
+		t.Fatalf("Parallel events = %v, want %v", parallelEvents, want)
+	}
+	events = nil
+	global = 0
+	UpdateGlobal()
+	if global != 1 || !reflect.DeepEqual(events, []string{"global"}) {
+		t.Fatalf("UpdateGlobal = (%d, %v), want (1, [global])", global, events)
+	}
+	panicEvents = nil
+	func() {
+		defer func() {
+			if recover() != "stop" {
+				t.Fatal("PanicWrites() did not preserve panic")
+			}
+		}()
+		PanicWrites()
+	}()
+	if want := []string{"first", "panic"}; !reflect.DeepEqual(panicEvents, want) {
+		t.Fatalf("PanicWrites events = %v, want %v", panicEvents, want)
+	}
+}

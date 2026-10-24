@@ -72,7 +72,8 @@ func prepareOutlineSuggestionRequest(cc CallContext, entry Entry, raw map[string
 		ctx = context.Background()
 	}
 	budget := 1500 * time.Millisecond
-	if entry.Key == string(backend.OperationFindReferences) || entry.Key == string(backend.OperationRename) {
+	key := backendOperationKey(entry.Key)
+	if key == string(backend.OperationFindReferences) || key == string(backend.OperationRename) {
 		budget = 5 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, budget)
@@ -80,7 +81,7 @@ func prepareOutlineSuggestionRequest(cc CallContext, entry Entry, raw map[string
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	return &outlineSuggestionRequest{ctx: ctx, cancel: cancel, project: project, query: query, selectorKey: selectorKey, operation: entry.Key, mode: mode, language: resolvedLanguage, service: service}, true
+	return &outlineSuggestionRequest{ctx: ctx, cancel: cancel, project: project, query: query, selectorKey: selectorKey, operation: key, mode: mode, language: resolvedLanguage, service: service}, true
 }
 
 // suggestNativeOutlineFailedTarget enriches only exact native misses for selected-file read operations.
@@ -91,7 +92,7 @@ func suggestNativeOutlineFailedTarget(cc CallContext, entry Entry, raw map[strin
 	}
 	defer request.cancel()
 	language := request.language
-	if !nativeOutlineFailureAllowed(language, entry.Key, cause) {
+	if !nativeOutlineFailureAllowed(language, backendOperationKey(entry.Key), cause) {
 		return cause
 	}
 	native := make([]suggestions.Candidate, 0, min(maxNativeSuggestionCandidates, 128))

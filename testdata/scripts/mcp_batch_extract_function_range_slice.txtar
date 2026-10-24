@@ -1,0 +1,134 @@
+# Extract a direct scalar-slice range in a buffered batch while preserving captured length and alias behavior.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchextractrangeslice
+
+go 1.23
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visitValues","in_function":"RunAndMutate","kind":"function","start_line":16,"end_line":25}}]}}}
+-- service.go --
+package sample
+
+type Values []int
+
+var alias Values
+var seen map[int]int
+var forceAppendAllocation bool
+var iterationCount int
+var markers []int
+var rangedLength int
+var firstFutureValue int
+var appendedBackingValue int
+
+func RunAndMutate(values Values) {
+	alias, forceAppendAllocation = values, len(values) == cap(values)
+	for index, value := range values {
+		if index == 3 {
+			break
+		}
+		recordAndMutate(index, value)
+		if index == 0 {
+			continue
+		}
+		recordAfterContinue(index)
+	}
+}
+
+func recordAfterContinue(index int) {
+	markers = append(markers, index)
+}
+
+func recordAndMutate(index, value int) {
+	iterationCount++
+	seen[index] = value
+	if index == 0 {
+		rangedLength = len(alias)
+		if forceAppendAllocation {
+			alias = append(alias, 77)
+			alias[1] = 55
+			return
+		}
+		alias[1] = 99
+		firstFutureValue = alias[1]
+		alias = append(alias[:1], 77)
+		appendedBackingValue = alias[1]
+	}
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestSliceRangeExtractionPreservesBackingArray(t *testing.T) {
+	seen = map[int]int{}
+	backing := make(Values, 5, 6)
+	copy(backing, Values{100, 1, 2, 3, 4})
+	values := backing[1:5]
+	RunAndMutate(values)
+	want := map[int]int{0: 1, 1: 77, 2: 3}
+	if !reflect.DeepEqual(seen, want) || values[1] != 77 || backing[0] != 100 || rangedLength != 4 || firstFutureValue != 99 || appendedBackingValue != 77 || iterationCount != 3 || !reflect.DeepEqual(markers, []int{1, 2}) {
+		t.Fatalf("seen=%v values=%v backing=%v length=%d future=%d appended=%d iterations=%d markers=%v", seen, values, backing, rangedLength, firstFutureValue, appendedBackingValue, iterationCount, markers)
+	}
+}
+-- .scratch/want/service.go --
+package sample
+
+type Values []int
+
+var alias Values
+var seen map[int]int
+var forceAppendAllocation bool
+var iterationCount int
+var markers []int
+var rangedLength int
+var firstFutureValue int
+var appendedBackingValue int
+
+func RunAndMutate(values Values) {
+	alias, forceAppendAllocation = values, len(values) == cap(values)
+	visitValues(values)
+}
+
+func visitValues(values Values) {
+	for index, value := range values {
+		if index == 3 {
+			break
+		}
+		recordAndMutate(index, value)
+		if index == 0 {
+			continue
+		}
+		recordAfterContinue(index)
+	}
+}
+
+func recordAfterContinue(index int) {
+	markers = append(markers, index)
+}
+
+func recordAndMutate(index, value int) {
+	iterationCount++
+	seen[index] = value
+	if index == 0 {
+		rangedLength = len(alias)
+		if forceAppendAllocation {
+			alias = append(alias, 77)
+			alias[1] = 55
+			return
+		}
+		alias[1] = 99
+		firstFutureValue = alias[1]
+		alias = append(alias[:1], 77)
+		appendedBackingValue = alias[1]
+	}
+}

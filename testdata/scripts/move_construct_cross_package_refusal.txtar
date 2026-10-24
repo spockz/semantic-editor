@@ -1,31 +1,31 @@
 # Cross-package move refuses methods, unexported functions, source-local dependencies, and hidden callers.
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol Widget.Method --placement file_end
-stderr 'cross-package move requires an exported free function name'
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol Widget.Method --placement file_end
+stderr 'cross-package move requires an exported declaration name'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol privateFunc --placement file_end
-stderr 'cross-package move requires an exported free function name'
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol privateFunc --placement file_end
+stderr 'cross-package move requires an exported declaration name'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol NeedsHelper --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol NeedsHelper --placement file_end
 stderr 'source-package dependency "helper"'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol HiddenTarget --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol HiddenTarget --placement file_end
 stderr 'possible reference to "HiddenTarget"'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
 cmp api/dest.go .scratch/_want/api/dest.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol ShadowTarget --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol ShadowTarget --placement file_end
 stderr 'resolves to a different declaration'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
 cmp api/dest.go .scratch/_want/api/dest.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol ShadowAliasTarget --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol ShadowAliasTarget --placement file_end
 stderr 'resolves to a different declaration'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
 cmp api/dest.go .scratch/_want/api/dest.go
 cmp callers/use.go .scratch/_want/callers/use.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol UnlistedTarget --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol UnlistedTarget --placement file_end
 stderr 'untyped Go file.*_private/reference.go'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
 cmp api/dest.go .scratch/_want/api/dest.go
-! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol TestdataTarget --placement file_end
+! exec semedit refactor-move-declaration --file legacy/decls.go --destination-file api/dest.go --symbol TestdataTarget --placement file_end
 stderr 'untyped Go file.*testdata/reference.go'
 cmp legacy/decls.go .scratch/_want/legacy/decls.go
 cmp api/dest.go .scratch/_want/api/dest.go

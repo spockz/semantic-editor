@@ -1,0 +1,69 @@
+# WHY: Extraction must group the earlier unsaved initializer and expose its generated type to the next buffered rename.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout 'applied_working'
+! stdout '"continuations":'
+cmp record.go .scratch/want/record.go
+cp .scratch/runtime_test.txt runtime_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypekeyedbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"record.go","symbol":"build","body":"return record{second: mark(\"second\", 22), first: mark(\"first\", 11), tail: mark(\"tail\", 33)}"}},{"tool":"refactor_extract_type","params":{"file":"record.go","symbol":"recordState","in_type":"record","members":[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}],"field":"state"}},{"tool":"refactor_rename","params":{"file":"record.go","symbol":"recordState","to":"stateData"}}]}}}
+-- record.go --
+package sample
+
+type record struct {
+	first int
+	second int
+	tail int
+}
+
+var events string
+
+func mark(name string, value int) int {
+	events += name + ","
+	return value
+}
+
+func build() record { return record{first: 1, second: 2, tail: 3} }
+func values(value record) [3]int { return [3]int{value.first, value.second, value.tail} }
+-- .scratch/runtime_test.txt --
+package sample
+
+import "testing"
+
+func TestOverlayInitializer(t *testing.T) {
+	got := values(build())
+	if got != [3]int{11, 22, 33} || events != "second,first,tail," {
+		t.Fatalf("values=%v trace=%q", got, events)
+	}
+}
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	state stateData
+	tail  int
+}
+
+type stateData struct {
+	first  int
+	second int
+}
+
+var events string
+
+func mark(name string, value int) int {
+	events += name + ","
+	return value
+}
+
+func build() record {
+	return record{state: stateData{second: mark("second", 22), first: mark("first", 11)}, tail: mark("tail", 33)}
+}
+func values(value record) [3]int { return [3]int{value.state.first, value.state.second, value.tail} }

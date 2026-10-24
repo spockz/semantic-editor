@@ -1,0 +1,34 @@
+# Insert a field and caller, encapsulate it, rename the generated getter, and replace the generated setter body through one overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_encapsulate_field"'
+stdout '"status":"applied_working"'
+stdout 'refactor_rename'
+stdout 'semantic_replace_body'
+cmp config.go .scratch/want/config.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_field","params":{"file":"config.go","in_type":"config","symbol":"config.counter","source":"counter int","placement":"type_end"}},{"tool":"semantic_insert_function","params":{"file":"config.go","source":"func (c *config) readCounter() int { return c.counter }"}},{"tool":"refactor_encapsulate_field","params":{"file":"config.go","symbol":"config.counter","getter":"counterValue","setter":"setCounter"}},{"tool":"refactor_rename","params":{"file":"config.go","symbol":"counterValue","to":"count"}},{"tool":"semantic_replace_body","params":{"file":"config.go","symbol":"config.setCounter","body":"receiver.counter = value"}}]}}}
+-- config.go --
+package sample
+
+type config struct{}
+-- .scratch/want/config.go --
+package sample
+
+func (c *config) readCounter() int { return c.count() }
+
+type config struct {
+	counter int
+}
+
+func (receiver *config) count() int { return receiver.counter }
+func (receiver *config) setCounter(value int) {
+	receiver.counter = value
+}

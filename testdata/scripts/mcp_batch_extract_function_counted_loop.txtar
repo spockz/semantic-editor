@@ -1,0 +1,38 @@
+# Extract one complete counted loop from the shared batch overlay and assert its unpublished source.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+
+-- go.mod --
+module example.com/extractcountedloopbatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"dispatch","in_function":"Run","kind":"function","start_line":4,"end_line":6}}]}}}
+-- service.go --
+package sample
+
+func Run(limit int) {
+	for i := 0; i < limit; i++ {
+		record(i)
+	}
+}
+
+func record(int) {}
+-- .scratch/want/service.go --
+package sample
+
+func Run(limit int) {
+	dispatch(limit)
+}
+
+func dispatch(limit int) {
+	for i := 0; i < limit; i++ {
+		record(i)
+	}
+}
+
+func record(int) {}

@@ -1,4 +1,4 @@
-// Package scala adapts trusted, read-only Scala lookup through Metals behind the neutral backend contract.
+// Package scala adapts trusted Scala lookup and bounded refactoring through Metals behind the neutral backend contract.
 package scala
 
 import (
@@ -8,16 +8,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
-	"github.com/spockz/semantic-editor/internal/backend/pathutil"
-	"github.com/spockz/semantic-editor/internal/backend/readlsp"
-	"github.com/spockz/semantic-editor/internal/lsp"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+
+	neutralbackend "github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/backend/pathutil"
+	"github.com/spockz/semantic-editor/internal/backend/readlsp"
+	"github.com/spockz/semantic-editor/internal/lsp"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 var (
@@ -51,7 +53,9 @@ var (
 	ErrScalaSymbolNotFound = errors.New("scala symbol not found")
 )
 
-// ScalaError identifies a failure in the read-only Scala lookup adapter.
+const scalaTextDocumentKey = "textDocument"
+
+// ScalaError identifies a failure in the trusted Scala backend.
 type ScalaError struct {
 	Op        string
 	File      string
@@ -86,11 +90,7 @@ type ScalaSession interface {
 }
 
 // ScalaSessionFactory allows hermetic tests to replace the process-backed session.
-// Implementations may accept either (context.Context, string) or
-// (context.Context, string, neutralbackend.ScalaConfig); the latter receives request settings.
-type ScalaSessionFactory any
-
-type scalaSessionFactory func(context.Context, string, neutralbackend.ScalaConfig) (ScalaSession, error)
+type ScalaSessionFactory func(context.Context, string, neutralbackend.ScalaConfig) (ScalaSession, error)
 
 // ScalaBackendOption configures a ScalaBackend.
 type ScalaBackendOption func(*ScalaBackend)
@@ -98,23 +98,14 @@ type ScalaBackendOption func(*ScalaBackend)
 // WithScalaSessionFactory injects a fake or managed LSP transport for tests.
 func WithScalaSessionFactory(factory ScalaSessionFactory) ScalaBackendOption {
 	return func(backend *ScalaBackend) {
-		switch typed := factory.(type) {
-		case func(context.Context, string, neutralbackend.ScalaConfig) (ScalaSession, error):
-			backend.factory = scalaSessionFactory(typed)
-		case func(context.Context, string) (ScalaSession, error):
-			backend.factory = scalaSessionFactory(func(ctx context.Context, root string, _ neutralbackend.ScalaConfig) (ScalaSession, error) {
-				return typed(ctx, root)
-			})
-		default:
-			backend.factory = nil
-		}
+		backend.factory = factory
 	}
 }
 
-// ScalaBackend provides trusted, file-scoped, read-only lookup through Metals.
+// ScalaBackend provides trusted, file-scoped lookup and bounded refactorings through Metals.
 type ScalaBackend struct {
 	mu      sync.Mutex
-	factory scalaSessionFactory
+	factory ScalaSessionFactory
 	root    string
 	session ScalaSession
 }
@@ -124,7 +115,7 @@ func (b *ScalaBackend) TrustedWorkspaceRoot(project neutralbackend.ProjectContex
 	return scalaWorkspaceRoot(project)
 }
 
-// NewScalaBackend constructs the managed JDT LS lookup adapter.
+// NewScalaBackend constructs the managed Metals adapter.
 func NewScalaBackend(options ...ScalaBackendOption) *ScalaBackend {
 	backend := &ScalaBackend{factory: defaultScalaSessionFactory}
 	for _, option := range options {
@@ -143,9 +134,9 @@ func NewScalaBackendWithFactory(factory ScalaSessionFactory) *ScalaBackend {
 // Language returns the Scala language identifier.
 func (*ScalaBackend) Language() neutralbackend.LanguageID { return neutralbackend.LanguageScala }
 
-// Capabilities declares Scala's trusted read-only lookup capability.
+// Capabilities declares Scala's trusted lookup and bounded refactoring capabilities.
 func (*ScalaBackend) Capabilities() neutralbackend.Capabilities {
-	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationOutline)
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationOutline, neutralbackend.OperationExtractVariable, neutralbackend.OperationExtractFunction)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Scala backend.
@@ -153,7 +144,7 @@ func (*ScalaBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 	return neutralbackend.LanguageMatrix{
 		Language:    "scala",
 		DisplayName: "Scala",
-		Maturity:    "Read-only preview",
+		Maturity:    "Bounded refactoring preview",
 		Operations: map[string]neutralbackend.OpCapability{
 			"lookup": {
 				Supported:    true,
@@ -171,11 +162,25 @@ func (*ScalaBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 				Level:        "symbol",
 				ReadOnly:     true,
 			},
+			"refactor_extract_value": {
+				Supported:    true,
+				Description:  "Extract one integer-literal arithmetic expression from an expression-bodied Int method's sole direct strict-Int call argument using a captured Metals action and bound local rename.",
+				CLICommand:   "semedit refactor-extract-value --language scala --trust-workspace --file <path.scala> --symbol <name> --in-function <method> --discriminator <expression> --metals-bin <path> --java-bin <path> --java-version <major>",
+				MCPTool:      "refactor_extract_value",
+				PlacementKey: false,
+			},
+			"refactor_extract_callable": {
+				Supported:    true,
+				Description:  "Extract one or more contiguous complete direct calls to the same unshadowed callee with literal-only arguments into a method-local Unit helper using a resolved Metals action and validated local rename.",
+				CLICommand:   "semedit refactor-extract-callable --language scala --trust-workspace --file <path.scala> --symbol <helper> --in-function <method> --kind function --start-line <n> --end-line <n> --metals-bin <path> --java-bin <path> --java-version <major>",
+				MCPTool:      "refactor_extract_callable",
+				PlacementKey: false,
+			},
 		},
 		Limitations: []neutralbackend.Constraint{
 			{
-				Title:       "Lookup Only",
-				Description: "Scala rename, formatting, imports, verification, build import, and structural edits are unavailable.",
+				Title:       "Bounded Refactoring",
+				Description: "Scala value extraction is limited to integer arithmetic in a two-method object with a zero-argument Int owner and a strict Int identity callee. Callable extraction accepts contiguous direct calls to one same-file callee with literal-only arguments and emits a validated method-local Unit helper. Inline-value is not supported because the configured Metals runtime has not returned its command action in the required live probe. Rename, formatting, imports, verification, build import, and other structural refactorings are unavailable.",
 				Severity:    "error",
 			},
 			{
@@ -192,7 +197,7 @@ func (*ScalaBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 	}
 }
 
-// Close terminates the managed JDT LS server, if one is active.
+// Close terminates the managed Metals server, if one is active.
 func (b *ScalaBackend) Close() error {
 	if b == nil {
 		return nil
@@ -213,7 +218,7 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project neutralbackend.Projec
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	root, file, source, err := resolveScalaProject(project)
+	root, file, source, err := resolveScalaProject(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -230,7 +235,18 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project neutralbackend.Projec
 	if err != nil {
 		return nil, err
 	}
-	return selectScalaSymbol(query, file, symbols)
+	result, err := selectScalaSymbol(query, file, symbols)
+	if result != nil {
+		result.SourceView = scalaSourceView(ctx)
+	}
+	return result, err
+}
+
+func scalaSourceView(ctx context.Context) string {
+	if sourcebuf.FromContext(ctx) != nil {
+		return "working"
+	}
+	return "disk"
 }
 
 // Rename is intentionally unavailable for the Scala lookup-only slice.
@@ -255,6 +271,9 @@ var scalaMetalsSettings = map[string]any{
 }
 
 func rejectScalaServerRequest(_ context.Context, request lsp.Request) (json.RawMessage, *lsp.ErrorObject) {
+	if request.Method == "workspace/configuration" {
+		return scalaWorkspaceConfiguration(request.Params)
+	}
 	// Metals may ask the client to import a build or create configuration. This
 	// slice is file-scoped and has no safe response for either operation.
 	method := strings.ToLower(request.Method)
@@ -264,18 +283,57 @@ func rejectScalaServerRequest(_ context.Context, request lsp.Request) (json.RawM
 		strings.Contains(params, "import") || strings.Contains(params, "create") {
 		return nil, &lsp.ErrorObject{Code: -32001, Message: "Scala build import and configuration prompts are disabled"}
 	}
-	return nil, &lsp.ErrorObject{Code: -32601, Message: "server request is not supported by read-only Scala lookup"}
+	return nil, &lsp.ErrorObject{Code: -32601, Message: "server request is not supported by the Scala operation contract"}
 }
 
-func initializeScalaSession(ctx context.Context, session ScalaSession, root string) error {
+func scalaWorkspaceConfiguration(raw json.RawMessage) (json.RawMessage, *lsp.ErrorObject) {
+	var request struct {
+		Items []struct {
+			Section string `json:"section"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &request); err != nil {
+		return nil, &lsp.ErrorObject{Code: -32602, Message: "invalid Scala workspace/configuration request"}
+	}
+	values := make([]any, len(request.Items))
+	for index, item := range request.Items {
+		switch item.Section {
+		case "":
+			values[index] = scalaMetalsSettings
+		case "metals":
+			values[index] = scalaMetalsSettings["metals"]
+		case "metals.autoImportBuild":
+			values[index] = false
+		}
+	}
+	encoded, err := json.Marshal(values)
+	if err != nil {
+		return nil, &lsp.ErrorObject{Code: -32603, Message: "encode Scala workspace configuration"}
+	}
+	return encoded, nil
+}
+
+func initializeScalaSession(ctx context.Context, session ScalaSession, root string, allowApplyEdit bool) error {
+	workspaceCapabilities := map[string]any{"workspaceFolders": true, "configuration": true}
+	if allowApplyEdit {
+		workspaceCapabilities["applyEdit"] = true
+	}
 	params := map[string]any{
 		"processId":        nil,
 		"rootUri":          pathutil.FileURI(root),
 		"workspaceFolders": []map[string]string{{"uri": pathutil.FileURI(root), "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
-			"general":      map[string]any{"positionEncodings": []string{"utf-16"}},
-			"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
-			"workspace":    map[string]any{"workspaceFolders": true, "configuration": true},
+			"general": map[string]any{"positionEncodings": []string{"utf-16"}},
+			scalaTextDocumentKey: map[string]any{
+				"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true},
+				"codeAction": map[string]any{
+					"dynamicRegistration": false,
+					"codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{"valueSet": []string{
+						"quickfix", "refactor", "refactor.extract", neutralbackend.CodeActionInlineKind,
+					}}},
+				},
+			},
+			"workspace": workspaceCapabilities,
 		},
 		"initializationOptions": map[string]any{
 			"statusBarProvider": "off",
@@ -321,11 +379,13 @@ func defaultScalaSessionFactory(ctx context.Context, root string, config neutral
 	}
 	cmd := exec.CommandContext(ctx, metalsBin, "--stdio", "--no-http-server", "--data", dataPath) // #nosec G204 -- path and fixed arguments are explicitly configured.
 	cmd.Dir = root
-	client, err := lsp.NewProcessClient(cmd, lsp.WithRequestHandler(rejectScalaServerRequest))
+	processSession := &scalaProcessSession{}
+	client, err := lsp.NewProcessClient(cmd, lsp.WithRequestHandler(processSession.handleServerRequest))
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+	processSession.client = client
+	return processSession, nil
 }
 
 func validateScalaJavaRuntime(ctx context.Context, javaBin, recorded string) error {
@@ -409,7 +469,7 @@ func stableScalaRootHash(root string) string {
 	return hex.EncodeToString(digest[:])[:24]
 }
 
-func resolveScalaProject(project neutralbackend.ProjectContext) (string, string, []byte, error) {
+func resolveScalaProject(ctx context.Context, project neutralbackend.ProjectContext) (string, string, []byte, error) {
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".scala") {
 		return "", "", nil, &ScalaError{Op: "project", File: project.File, Err: ErrScalaFileRequired}
 	}
@@ -432,7 +492,7 @@ func resolveScalaProject(project neutralbackend.ProjectContext) (string, string,
 	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &ScalaError{Op: "project", File: file, Workspace: root, Err: ErrScalaFileOutsideWorkspace}
 	}
-	source, err := os.ReadFile(file) // #nosec G304 -- file is explicitly selected by the caller.
+	source, err := sourcebuf.ReadFile(ctx, file)
 	if err != nil {
 		return "", "", nil, &ScalaError{Op: "read", File: file, Workspace: root, Err: err}
 	}
@@ -674,6 +734,30 @@ func scalaByteOffset(source []byte, position scalaPosition) (int, error) {
 	return readlsp.ByteOffset(source, neutralbackend.Position(position))
 }
 
+func (b *ScalaBackend) ensureScalaSessionLocked(ctx context.Context, root string, config neutralbackend.ScalaConfig, operation string) error {
+	if b.session != nil {
+		if b.root != root {
+			return &ScalaError{Op: operation, Workspace: root, Err: ErrScalaSessionConflict}
+		}
+		return nil
+	}
+	if b.factory == nil {
+		return &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
+	}
+	session, err := b.factory(ctx, root, config)
+	if err != nil || session == nil {
+		if err == nil {
+			err = ErrMetalsUnavailable
+		}
+		return &ScalaError{Op: "start", Workspace: root, Err: err}
+	}
+	b.session, b.root = session, root
+	if err := initializeScalaSession(ctx, session, root, false); err != nil {
+		return &ScalaError{Op: "initialize", Workspace: root, Err: errors.Join(err, b.closeSessionLocked())}
+	}
+	return nil
+}
+
 func (b *ScalaBackend) closeSessionLocked() error {
 	if b.session == nil {
 		b.root = ""
@@ -702,35 +786,18 @@ func validateScalaDocumentSymbolURI(symbols []scalaDocumentSymbol, selectedURI s
 }
 
 func (b *ScalaBackend) readScalaDocumentSymbolsLocked(ctx context.Context, root, file string, source []byte, config neutralbackend.ScalaConfig, query, operation string) ([]scalaDocumentSymbol, error) {
-	if b.session != nil && b.root != root {
-		return nil, &ScalaError{Op: operation, Workspace: root, Err: ErrScalaSessionConflict}
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
-		}
-		session, err := b.factory(ctx, root, config)
-		if err != nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: err}
-		}
-		if session == nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
-		}
-		b.session, b.root = session, root
-		if err := initializeScalaSession(ctx, session, root); err != nil {
-			closeErr := b.closeSessionLocked()
-			return nil, &ScalaError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
-		}
+	if err := b.ensureScalaSessionLocked(ctx, root, config, operation); err != nil {
+		return nil, err
 	}
 	session := b.session
 	uri := pathutil.FileURI(file)
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{scalaTextDocumentKey: map[string]any{
 		"uri": uri, "languageId": "scala", "version": 1, "text": string(source),
 	}}); err != nil {
 		closeErr := b.closeSessionLocked()
 		return nil, &ScalaError{Op: "didOpen", File: file, Err: errors.Join(err, closeErr)}
 	}
-	raw, requestErr := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	raw, requestErr := session.Request(ctx, "textDocument/documentSymbol", map[string]any{scalaTextDocumentKey: map[string]string{"uri": uri}})
 	var symbols []scalaDocumentSymbol
 	if requestErr == nil {
 		symbols, requestErr = decodeScalaDocumentSymbols(raw, root, source)
@@ -738,7 +805,7 @@ func (b *ScalaBackend) readScalaDocumentSymbolsLocked(ctx context.Context, root,
 	if requestErr == nil {
 		requestErr = validateScalaDocumentSymbolURI(symbols, uri)
 	}
-	closeErr := session.Notify(ctx, "textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	closeErr := session.Notify(ctx, "textDocument/didClose", map[string]any{scalaTextDocumentKey: map[string]string{"uri": uri}})
 	if closeErr != nil {
 		retireErr := b.closeSessionLocked()
 		return nil, &ScalaError{Op: "didClose", File: file, Symbol: query, Err: errors.Join(requestErr, closeErr, retireErr)}
@@ -819,7 +886,7 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 	request.Path = target.path
 	project := request.Project
 	project.File = target.path
-	root, file, source, err := resolveScalaProject(project)
+	root, file, source, err := resolveScalaProject(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -838,7 +905,14 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 		return nil, err
 	}
 	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageScala, Source: source, Symbols: symbols, Complete: true}
-	return readlsp.Outline(document, request)
+	result, err := readlsp.Outline(document, request)
+	if err != nil {
+		return nil, err
+	}
+	for index := range result.Files {
+		result.Files[index].SourceView = scalaSourceView(ctx)
+	}
+	return result, nil
 }
 
 type scalaOutlineTarget struct {

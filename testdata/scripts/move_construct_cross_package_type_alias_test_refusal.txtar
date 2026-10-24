@@ -1,0 +1,36 @@
+# Fail closed when moving a scalar alias would require rewriting a Go test variant.
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Count --placement file_end
+stderr 'refuses test-file reference to "Count"'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp caller/use_test.go .scratch/_want/caller/use_test.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossaliastest
+
+go 1.23
+
+-- legacy/types.go --
+package legacy
+
+type Count = int
+-- caller/use_test.go --
+package caller
+
+import "example.com/typecrossaliastest/legacy"
+
+func useCount(value legacy.Count) legacy.Count { return value }
+-- api/api.go --
+package api
+-- .scratch/_want/legacy/types.go --
+package legacy
+
+type Count = int
+-- .scratch/_want/caller/use_test.go --
+package caller
+
+import "example.com/typecrossaliastest/legacy"
+
+func useCount(value legacy.Count) legacy.Count { return value }
+-- .scratch/_want/api/api.go --
+package api

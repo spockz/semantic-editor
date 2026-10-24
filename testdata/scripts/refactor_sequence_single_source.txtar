@@ -1,0 +1,353 @@
+# Compose value/callable extraction, inlining, signature and parameter refactors, type/field migration, interface extraction, contract implementation, rename, and declaration movement in one source file.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-inline-value --file service.go --symbol offset --in-function update
+exec semedit refactor-extract-value --file service.go --symbol extra --in-function update --discriminator 'value + 2'
+exec semedit refactor-rename --file service.go --symbol extra --to loggedValue
+exec semedit refactor-extract-value --file service.go --symbol retryWindow --in-function update --discriminator '3*60' --kind constant
+exec semedit refactor-extract-callable --file service.go --symbol increment --in-function update --kind function --start-line 7 --end-line 7
+exec semedit refactor-change-signature --file service.go --symbol update --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]'
+exec semedit refactor-rename --file service.go --symbol update --to transform
+exec semedit refactor-move-declaration --file service.go --symbol increment --placement before_symbol --target-symbol transform
+exec semedit refactor-inline-callable --file service.go --symbol one --call-site '{"file":"service.go","in_function":"inlineCaller","discriminator":"one()"}'
+exec semedit refactor-introduce-parameter --file service.go --symbol choose --parameters '[{"source_index":0,"parameter":{"name":"value","type":"int"}},{"parameter":{"name":"step","type":"int"},"argument":"2"}]' --discriminator '2'
+exec semedit refactor-introduce-parameter-object --file service.go --symbol assemble --destination-file service.go --parameter '{"name":"options","type":"assembleOptions"}' --fields '[{"source_index":0,"field":{"name":"request","type":"Request"}},{"source_index":1,"field":{"name":"value","type":"int"}}]'
+exec semedit refactor-extract-delegate --file service.go --symbol recordState --in-type record --members '[{"file":"service.go","symbol":"record.entries"},{"file":"service.go","symbol":"record.limit"}]' --field state --method Lookup
+exec semedit refactor-migrate-type --file service.go --symbol settings.timeout --type duration
+exec semedit refactor-extract-type --file service.go --symbol cacheState --in-type localCache --members '[{"file":"service.go","symbol":"localCache.entries"}]' --field state
+exec semedit refactor-encapsulate-field --file service.go --symbol worker.timeout --getter timeoutValue --setter setTimeout
+exec semedit refactor-extract-interface --file service.go --in-type proto --symbol ProtoAPI --destination-file service.go --receiver-kind pointer --members '[{"file":"service.go","symbol":"(*proto).Read"}]'
+exec semedit refactor-implement-contract --file service.go --symbol worker --contract ProtoAPI --contract-file service.go --destination-file service.go --receiver-kind pointer --body-policy panic_stub
+cmp service.go want_service.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/refactorsequence
+
+go 1.24
+-- service.go --
+package sample
+
+func Print(int) {}
+
+func update(value int) int {
+	offset := 2
+	Print(offset)
+	value = value + 1
+	Print(value + 2)
+	return value + 3*60
+}
+
+func caller() int { return update(1) }
+
+func one() int { return 1 }
+
+func inlineCaller() int { return one() }
+
+type Request struct {
+	ID      int
+	Name    string
+	Enabled bool
+}
+
+type Result struct {
+	Request Request
+	Value   int
+	Valid   bool
+}
+
+func NormalizeName(name string) string {
+	return name
+}
+
+func NewRequest(id int, name string) Request {
+	return Request{ID: id, Name: NormalizeName(name), Enabled: true}
+}
+
+func ValidateRequest(request Request) bool {
+	return request.ID > 0 && request.Name != ""
+}
+
+func BuildResult(request Request, value int) Result {
+	return Result{Request: request, Value: value, Valid: ValidateRequest(request)}
+}
+
+func Add(left, right int) int {
+	return left + right
+}
+
+func Double(value int) int {
+	return Add(value, value)
+}
+
+func Summarize(result Result) string {
+	if result.Valid {
+		return result.Request.Name
+	}
+	return "invalid"
+}
+
+func IsEnabled(request Request) bool {
+	return request.Enabled && ValidateRequest(request)
+}
+
+func Convert(value int) Result {
+	request := NewRequest(value, "record")
+	return BuildResult(request, Double(value))
+}
+
+func choose(value int) int { return value + 2 }
+
+func callerChoose() int { return choose(3) }
+
+func assemble(request Request, value int) Result {
+	return Result{Request: request, Value: value, Valid: ValidateRequest(request)}
+}
+
+func callerAssemble() Result { return assemble(Request{}, 1) }
+
+type record struct {
+	entries map[string]int
+	limit   int
+}
+
+func (r *record) Lookup(key string) (int, bool) {
+	value, ok := r.entries[key]
+	if ok {
+		return value, true
+	}
+	return r.limit, false
+}
+
+type duration = int64
+
+type settings struct {
+	timeout int64
+}
+
+type proto struct{}
+
+func (*proto) Read() {}
+
+type worker struct {
+	timeout int
+}
+
+func (w *worker) Timeout() int { return w.timeout }
+
+func (w *worker) SetTimeout(value int) { w.timeout = value }
+
+type localCache struct {
+	entries map[string]int
+	limit   int
+}
+
+func (c *localCache) Get(key string) int {
+	if value, ok := c.entries[key]; ok {
+		return value
+	}
+	return c.limit
+}
+
+func newLocalCache() *localCache {
+	cache := &localCache{}
+	cache.entries = map[string]int{"key": 5}
+	cache.limit = 1
+	return cache
+}
+
+
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestCaller(t *testing.T) {
+	if got := caller(); got != 182 {
+		t.Fatalf("caller() = %d, want 182", got)
+	}
+	if got := inlineCaller(); got != 1 {
+		t.Fatalf("inlineCaller() = %d, want 1", got)
+	}
+	value := &worker{timeout: 3}
+	value.SetTimeout(8)
+	if got := value.Timeout(); got != 8 {
+		t.Fatalf("worker timeout = %d, want 8", got)
+	}
+	cache := newLocalCache()
+	if got := cache.Get("key"); got != 5 {
+		t.Fatalf("cache.Get(key) = %d, want 5", got)
+	}
+}
+-- want_service.txt --
+package sample
+
+func Print(int) {}
+
+func increment(value int) int {
+	value = value + 1
+	return value
+}
+
+func transform(value int, enabled bool) int {
+	Print(int(2))
+	value = increment(value)
+	loggedValue := value + 2
+	Print(loggedValue)
+	return value + retryWindow
+}
+
+func caller() int { return transform(1, true) }
+
+func one() int { return 1 }
+
+func inlineCaller() int { return int(1) }
+
+type Request struct {
+	ID      int
+	Name    string
+	Enabled bool
+}
+
+type Result struct {
+	Request Request
+	Value   int
+	Valid   bool
+}
+
+func NormalizeName(name string) string {
+	return name
+}
+
+func NewRequest(id int, name string) Request {
+	return Request{ID: id, Name: NormalizeName(name), Enabled: true}
+}
+
+func ValidateRequest(request Request) bool {
+	return request.ID > 0 && request.Name != ""
+}
+
+func BuildResult(request Request, value int) Result {
+	return Result{Request: request, Value: value, Valid: ValidateRequest(request)}
+}
+
+func Add(left, right int) int {
+	return left + right
+}
+
+func Double(value int) int {
+	return Add(value, value)
+}
+
+func Summarize(result Result) string {
+	if result.Valid {
+		return result.Request.Name
+	}
+	return "invalid"
+}
+
+func IsEnabled(request Request) bool {
+	return request.Enabled && ValidateRequest(request)
+}
+
+func Convert(value int) Result {
+	request := NewRequest(value, "record")
+	return BuildResult(request, Double(value))
+}
+
+func choose(value int, step int) int { return value + step }
+
+func callerChoose() int { return choose(3, 2) }
+
+func assemble(options assembleOptions) Result {
+	return Result{Request: options.request, Value: options.value, Valid: ValidateRequest(options.request)}
+}
+
+func callerAssemble() Result { return assemble(assembleOptions{request: Request{}, value: 1}) }
+
+type record struct {
+	state recordState
+}
+
+type recordState struct {
+	entries map[string]int
+	limit   int
+}
+
+func (r *recordState) Lookup(key string) (int, bool) {
+	value, ok := r.entries[key]
+	if ok {
+		return value, true
+	}
+	return r.limit, false
+}
+
+func (r *record) Lookup(key string) (int, bool) {
+	var delegate *recordState
+	if r != nil {
+		delegate = &r.state
+	}
+	return delegate.Lookup(key)
+}
+
+type duration = int64
+
+type settings struct {
+	timeout duration
+}
+
+type proto struct{}
+
+func (*proto) Read() {}
+
+type worker struct {
+	timeout int
+}
+
+func (w *worker) Timeout() int { return w.timeoutValue() }
+
+func (w *worker) SetTimeout(value int) {
+	{
+		receiver := w
+		receiver.setTimeout(value)
+	}
+}
+
+type localCache struct {
+	state cacheState
+	limit int
+}
+
+type cacheState struct {
+	entries map[string]int
+}
+
+func (c *localCache) Get(key string) int {
+	if value, ok := c.state.entries[key]; ok {
+		return value
+	}
+	return c.limit
+}
+
+func newLocalCache() *localCache {
+	cache := &localCache{}
+	cache.state.entries = map[string]int{"key": 5}
+	cache.limit = 1
+	return cache
+}
+
+const retryWindow int = 3 * 60
+
+type assembleOptions struct {
+	request Request
+	value   int
+}
+
+func (receiver *worker) timeoutValue() int    { return receiver.timeout }
+func (receiver *worker) setTimeout(value int) { receiver.timeout = value }
+
+type ProtoAPI interface {
+	Read()
+}
+
+func (*worker) Read() { panic(`TODO: implement`) }

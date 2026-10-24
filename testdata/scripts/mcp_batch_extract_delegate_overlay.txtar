@@ -1,0 +1,44 @@
+# Insert a method, extract it into a delegate, rename that type, and replace the moved method body through one overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout 'applied_working'
+! stdout '"continuations":'
+cmp counter.go .scratch/want/counter.go
+exec go test ./...
+
+-- go.mod --
+module example.com/delegatebatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_function","params":{"file":"counter.go","source":"func (c *counter) Add(delta int) int { c.value += delta; return c.value }"}},{"tool":"refactor_extract_delegate","params":{"file":"counter.go","symbol":"counterState","in_type":"counter","members":[{"file":"counter.go","symbol":"counter.value"}],"field":"state","method":"Add"}},{"tool":"refactor_rename","params":{"file":"counter.go","symbol":"counterState","to":"ledgerState"}},{"tool":"semantic_replace_body","params":{"file":"counter.go","symbol":"ledgerState.Add","body":"c.value += delta * 2\nreturn c.value"}}]}}}
+-- counter.go --
+package sample
+
+type counter struct {
+	value int
+}
+-- .scratch/want/counter.go --
+package sample
+
+func (c *counter) Add(delta int) int {
+	var delegate *ledgerState
+	if c != nil {
+		delegate = &c.state
+	}
+	return delegate.Add(delta)
+}
+
+type counter struct {
+	state ledgerState
+}
+
+type ledgerState struct {
+	value int
+}
+
+func (c *ledgerState) Add(delta int) int {
+	c.value += delta * 2
+	return c.value
+}

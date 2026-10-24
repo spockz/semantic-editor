@@ -8,9 +8,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/sourcebuf"
 	"os"
 	"path/filepath"
+
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
 )
 
 // EditReceiptDraft carries handler evidence for final receipt projection.
@@ -60,7 +61,7 @@ func prepareReceipt(draft EditReceiptDraft, inBatch bool) (EditReceipt, bool, er
 	if draft.Operation == "" {
 		return EditReceipt{}, false, fmt.Errorf("finalize receipt: operation is empty")
 	}
-	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: draft.Operation, ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
+	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: publicOperationKeyFromHandler(draft.Operation), ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
 	if inBatch && draft.Status != EditRefused && draft.Status != EditNoOp {
 		receipt.Status = EditAppliedWorking
 	}

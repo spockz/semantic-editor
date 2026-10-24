@@ -24,7 +24,7 @@ type fileEditCostCase struct {
 
 var fileEditCostCaseTable = []fileEditCostCase{
 	{
-		name: "rename", tool: "semantic_rename",
+		name: "rename", tool: "refactor_rename",
 		files:    map[string]string{"cost_rename.go": "package sample\n\nfunc costRenameValue() int { return 1 }\nfunc costRenameCaller() int { return costRenameValue() }\n"},
 		args:     map[string]any{"file": "cost_rename.go", "symbol": "costRenameValue", "to": "costRenamedValue"},
 		expected: map[string][]string{"cost_rename.go": {"func costRenamedValue()", "return costRenamedValue()"}}, absent: map[string][]string{"cost_rename.go": {"costRenameValue"}},
@@ -114,7 +114,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_replace_construct.go": {"if v >= 0"}}, absent: map[string][]string{"cost_replace_construct.go": {"if v > 0"}},
 	},
 	{
-		name: "move_construct", tool: "semantic_move_construct",
+		name: "move_construct", tool: "refactor_move_declaration",
 		files: map[string]string{
 			"cost_move_source.go":      "package sample\n\nimport \"strings\"\n\nfunc costNormalize(value string) string { return strings.TrimSpace(value) }\n",
 			"cost_move_destination.go": "package sample\n\nfunc costDestination() {}\n",
@@ -123,7 +123,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_move_destination.go": {"func costNormalize", "\"strings\""}}, absent: map[string][]string{"cost_move_source.go": {"costNormalize", "\"strings\""}},
 	},
 	{
-		name: "move_file", tool: "semantic_move_file",
+		name: "move_file", tool: "refactor_move_file",
 		files: map[string]string{
 			"cost_move_file.go":         "package sample\n\nfunc CostMovedValue() int { return 2 }\n",
 			"cost_move_target/value.go": "package moved\n",
@@ -133,31 +133,31 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		absent:   map[string][]string{"cost_move_file.go": {"CostMovedValue"}},
 	},
 	{
-		name: "extract_function", tool: "semantic_extract_function",
+		name: "extract_function", tool: "refactor_extract_callable",
 		files:    map[string]string{"cost_extract_function.go": "package sample\n\nimport \"fmt\"\n\nfunc costEmit() {\n\tfmt.Println(\"selected\")\n\tfmt.Println(\"after\")\n}\n"},
 		args:     map[string]any{"file": "cost_extract_function.go", "symbol": "costSendSelected", "in_function": "costEmit", "kind": "function", "start_line": 6, "end_line": 6},
 		expected: map[string][]string{"cost_extract_function.go": {"func costSendSelected()", "costSendSelected()"}},
 	},
 	{
-		name: "extract_variable", tool: "semantic_extract_variable",
+		name: "extract_variable", tool: "refactor_extract_value",
 		files:    map[string]string{"cost_extract_variable.go": "package sample\n\nfunc costConsume(int) {}\nfunc costRender(distance int) { costConsume(distance) }\n"},
 		args:     map[string]any{"file": "cost_extract_variable.go", "symbol": "costDistance", "in_function": "costRender", "discriminator": "distance"},
 		expected: map[string][]string{"cost_extract_variable.go": {"costDistance := distance", "costConsume(costDistance)"}},
 	},
 	{
-		name: "extract_constant", tool: "semantic_extract_constant",
+		name: "extract_constant", tool: "refactor_extract_value",
 		files:    map[string]string{"cost_extract_constant.go": "package sample\n\nfunc costRetry() int { return 3 * 60 }\n"},
-		args:     map[string]any{"file": "cost_extract_constant.go", "symbol": "costRetryWindow", "in_function": "costRetry", "discriminator": "3 * 60"},
+		args:     map[string]any{"file": "cost_extract_constant.go", "symbol": "costRetryWindow", "in_function": "costRetry", "discriminator": "3 * 60", "kind": "constant"},
 		expected: map[string][]string{"cost_extract_constant.go": {"const costRetryWindow", "return costRetryWindow"}},
 	},
 	{
-		name: "inline_variable", tool: "semantic_inline_variable",
+		name: "inline_variable", tool: "refactor_inline_value",
 		files:    map[string]string{"cost_inline_variable.go": "package sample\n\nfunc costInlineValue() int {\n\tvalue := 2\n\treturn value\n}\n"},
 		args:     map[string]any{"file": "cost_inline_variable.go", "symbol": "value", "in_function": "costInlineValue"},
 		expected: map[string][]string{"cost_inline_variable.go": {"return int(2)"}}, absent: map[string][]string{"cost_inline_variable.go": {"value :="}},
 	},
 	{
-		name: "inline_function", tool: "semantic_inline_function",
+		name: "inline_function", tool: "refactor_inline_callable",
 		files: map[string]string{
 			"cost_inline_callee.go": "package sample\n\nfunc costAdjust() int { return 2 }\n",
 			"cost_inline_caller.go": "package sample\n\nfunc costRun() int { return costAdjust() }\n",
@@ -166,7 +166,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_inline_callee.go": {"func costAdjust() int"}, "cost_inline_caller.go": {"return int(2)"}}, absent: map[string][]string{"cost_inline_caller.go": {"costAdjust()"}},
 	},
 	{
-		name: "migrate_type", tool: "semantic_migrate_type",
+		name: "migrate_type", tool: "refactor_migrate_type",
 		files:    map[string]string{"cost_migrate_type.go": "package sample\n\ntype costDuration = int64\ntype costSettings struct { timeout int64 }\nfunc costTimeout(s costSettings) int64 { return s.timeout }\n"},
 		args:     map[string]any{"file": "cost_migrate_type.go", "symbol": "costSettings.timeout", "type": "costDuration"},
 		expected: map[string][]string{"cost_migrate_type.go": {"timeout costDuration"}}, absent: map[string][]string{"cost_migrate_type.go": {"timeout int64"}},
@@ -183,7 +183,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_insert_case.go": {"case 2:", "return 2"}},
 	},
 	{
-		name: "change_signature", tool: "semantic_change_signature",
+		name: "change_signature", tool: "refactor_change_signature",
 		files: map[string]string{"cost_change_signature.go": "package sample\n\nfunc costTransform(id int) int { return id + 1 }\nfunc costTransformCaller() int { return costTransform(1) }\n"},
 		args: map[string]any{"file": "cost_change_signature.go", "symbol": "costTransform", "parameters": []any{
 			map[string]any{"source_index": 0, "parameter": map[string]any{"name": "id", "type": "int"}},
@@ -192,7 +192,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_change_signature.go": {"costTransform(id int, label string)", "costTransform(1, \"ready\")"}},
 	},
 	{
-		name: "introduce_parameter", tool: "semantic_introduce_parameter",
+		name: "introduce_parameter", tool: "refactor_introduce_parameter",
 		files: map[string]string{"cost_introduce_parameter.go": "package sample\n\nfunc costProcess(id int) int { return id + 3 }\nfunc costProcessCaller() int { return costProcess(1) }\n"},
 		args: map[string]any{"file": "cost_introduce_parameter.go", "symbol": "costProcess", "parameters": []any{
 			map[string]any{"source_index": 0, "parameter": map[string]any{"name": "id", "type": "int"}},
@@ -201,7 +201,7 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_introduce_parameter.go": {"costProcess(id int, mode int)", "return id + mode", "costProcess(1, 3)"}},
 	},
 	{
-		name: "introduce_parameter_object", tool: "semantic_introduce_parameter_object",
+		name: "introduce_parameter_object", tool: "refactor_introduce_parameter_object",
 		files: map[string]string{"cost_parameter_object.go": "package sample\n\nfunc costWrite(path string, mode uint32) string { return path }\nfunc costWriteCaller() string { return costWrite(\"file\", 7) }\n"},
 		args: map[string]any{"file": "cost_parameter_object.go", "symbol": "costWrite", "destination_file": "cost_parameter_object.go", "parameter": map[string]any{"name": "options", "type": "costWriteOptions"}, "fields": []any{
 			map[string]any{"source_index": 0, "field": map[string]any{"name": "path", "type": "string"}},
@@ -216,7 +216,13 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_insert_field.go": {"timeout int"}},
 	},
 	{
-		name: "extract_type", tool: "semantic_extract_type",
+		name: "encapsulate_field", tool: "refactor_encapsulate_field",
+		files:    map[string]string{"cost_encapsulate_field.go": "package sample\n\ntype costConfig struct { timeout int }\nfunc (config *costConfig) read() int { return config.timeout }\nfunc (config *costConfig) write(value int) { config.timeout = value }\n"},
+		args:     map[string]any{"file": "cost_encapsulate_field.go", "symbol": "costConfig.timeout", "getter": "timeoutValue", "setter": "setTimeoutValue"},
+		expected: map[string][]string{"cost_encapsulate_field.go": {"config.timeoutValue()", "config.setTimeoutValue(value)", "func (receiver *costConfig) timeoutValue() int"}},
+	},
+	{
+		name: "extract_type", tool: "refactor_extract_type",
 		files:    map[string]string{"cost_extract_type.go": "package sample\n\ntype costCache struct {\n\tentries map[string]int\n\tsize int\n}\nfunc costCacheSize(cache costCache) int { return cache.size }\n"},
 		args:     map[string]any{"file": "cost_extract_type.go", "symbol": "costCacheState", "in_type": "costCache", "members": []any{map[string]any{"file": "cost_extract_type.go", "symbol": "costCache.size"}}, "field": "state"},
 		expected: map[string][]string{"cost_extract_type.go": {"type costCacheState struct", "state costCacheState", "cache.state.size"}},
@@ -228,13 +234,13 @@ var fileEditCostCaseTable = []fileEditCostCase{
 		expected: map[string][]string{"cost_doc.go": {"// costServe handles benchmark requests.", "func costServe()"}},
 	},
 	{
-		name: "extract_interface", tool: "semantic_extract_interface",
+		name: "extract_interface", tool: "refactor_extract_interface",
 		files:    map[string]string{"cost_extract_interface.go": "package sample\n\ntype costStore struct{}\nfunc (*costStore) Read() int { return 1 }\n"},
 		args:     map[string]any{"file": "cost_extract_interface.go", "in_type": "costStore", "symbol": "costStoreAPI", "receiver_kind": "pointer", "members": []any{map[string]any{"file": "cost_extract_interface.go", "symbol": "(*costStore).Read"}}},
 		expected: map[string][]string{"cost_extract_interface.go": {"type costStoreAPI interface", "Read() int"}},
 	},
 	{
-		name: "implement_contract", tool: "semantic_implement_contract",
+		name: "implement_contract", tool: "refactor_implement_contract",
 		files:    map[string]string{"cost_implement_contract.go": "package sample\n\ntype costRunner interface { Run() error }\ntype costWorker struct{}\n"},
 		args:     map[string]any{"file": "cost_implement_contract.go", "symbol": "costWorker", "contract": "costRunner", "contract_file": "cost_implement_contract.go", "destination_file": "cost_implement_contract.go", "receiver_kind": "pointer", "body_policy": "panic_stub"},
 		expected: map[string][]string{"cost_implement_contract.go": {"func (", "*costWorker", "Run() error", "panic("}},
@@ -253,12 +259,14 @@ func TestGoSourceEditBenchmarkCoverage(t *testing.T) {
 	classified := validateFileEditCostCaseSchemas(t, registry, cases)
 	excluded := map[string]string{
 		"semantic_add_build_dependency": "manifest and network operation outside source-edit costs",
+		"semantic_generate_adr_index":   "documentation index update outside source-edit costs",
 		"semantic_snapshot":             "undo setup lifecycle operation",
 		"semantic_stage":                "retained-session lifecycle operation",
 		"semantic_stage_drop":           "retained-session lifecycle operation",
 		"semantic_commit":               "retained-session lifecycle operation",
 		"semantic_stage_abort":          "retained-session lifecycle operation",
 		"semantic_verify":               "verification and normalization boundary",
+		"refactor_extract_delegate":     "bounded structural extraction; source-edit cost benchmark coverage is not yet established",
 	}
 	for _, entry := range registry.All() {
 		if entry.ReadOnly || !slices.Contains(entry.Languages, backend.LanguageGo) && !slices.Contains(entry.Languages, backend.LanguageAuto) {
@@ -375,7 +383,7 @@ func validateFileEditCostCaseSchemas(t *testing.T, registry *operation.Registry,
 		if _, err := entry.Parse(scenario.args); err != nil {
 			t.Errorf("%s arguments: %v", scenario.name, err)
 		}
-		classified[scenario.tool] = true
+		classified[entry.MCPName] = true
 	}
 	return classified
 }

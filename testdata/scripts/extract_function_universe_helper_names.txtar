@@ -1,8 +1,8 @@
 # Refuse helper names that would capture predeclared true or nil in existing functions.
-! exec semedit extract-function --file emit.go --symbol true --in-function Emit --kind function --start-line 4 --end-line 4
+! exec semedit refactor-extract-callable --file emit.go --symbol true --in-function Emit --kind function --start-line 4 --end-line 4
 stderr 'collides with a predeclared Go identifier'
 cmp emit.go original/emit.go
-! exec semedit extract-function --file emit.go --symbol nil --in-function Emit --kind function --start-line 4 --end-line 4
+! exec semedit refactor-extract-callable --file emit.go --symbol nil --in-function Emit --kind function --start-line 4 --end-line 4
 stderr 'collides with a predeclared Go identifier'
 cmp emit.go original/emit.go
 

@@ -2,6 +2,7 @@
 package rust
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,17 @@ import (
 	"github.com/spockz/semantic-editor/internal/backend/readlsp"
 	"github.com/spockz/semantic-editor/internal/lsp"
 	"github.com/spockz/semantic-editor/internal/pipeline"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+)
+
+const (
+	rustLanguageID       = "rust"
+	rustLanguageIDKey    = "languageId"
+	rustOpCodeAction     = "codeAction"
+	rustOpDocumentSymbol = "documentSymbol"
+	rustOpPrepareRename  = "prepareRename"
+	rustOpResolveAction  = "codeAction/resolve"
+	rustRefactorExtract  = "refactor.extract"
 )
 
 var (
@@ -80,6 +92,31 @@ type RustSession interface {
 	Close() error
 }
 
+type rustAnalyzerSession struct {
+	client   *lsp.Client
+	statuses chan json.RawMessage
+	statusMu sync.RWMutex
+	latest   json.RawMessage
+}
+
+func (s *rustAnalyzerSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	return s.client.Request(ctx, method, params)
+}
+
+func (s *rustAnalyzerSession) Notify(ctx context.Context, method string, params any) error {
+	return s.client.Notify(ctx, method, params)
+}
+
+func (s *rustAnalyzerSession) Close() error { return s.client.Close() }
+
+func (s *rustAnalyzerSession) ServerStatuses() <-chan json.RawMessage { return s.statuses }
+
+func (s *rustAnalyzerSession) LatestServerStatus() json.RawMessage {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+	return bytes.Clone(s.latest)
+}
+
 // RustSessionFactory creates one managed rust-analyzer session for a canonical root.
 type RustSessionFactory func(context.Context, string) (RustSession, error)
 
@@ -123,9 +160,9 @@ func NewRustBackendWithFactory(factory RustSessionFactory) *RustBackend {
 // Language returns the Rust language identifier.
 func (*RustBackend) Language() neutralbackend.LanguageID { return neutralbackend.LanguageRust }
 
-// Capabilities declares Rust's read-only lookup capability.
+// Capabilities declares Rust's trusted lookup and bounded refactoring capabilities.
 func (*RustBackend) Capabilities() neutralbackend.Capabilities {
-	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationRename, neutralbackend.OperationOutline)
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationRename, neutralbackend.OperationOutline, neutralbackend.OperationExtractVariable, neutralbackend.OperationExtractFunction, neutralbackend.OperationInlineVariable, neutralbackend.OperationInlineFunction, neutralbackend.OperationPromoteLocalToConst)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Rust backend.
@@ -135,11 +172,11 @@ func (*RustBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 		DisplayName: "Rust",
 		Maturity:    "Selected-file refactoring preview",
 		Operations: map[string]neutralbackend.OpCapability{
-			"rename": {
+			"refactor_rename": {
 				Supported:    true,
 				Description:  "Trusted rust-analyzer semantic rename confined to one selected canonical Rust file; workspace-wide edits are rejected.",
-				CLICommand:   "semedit rename --language rust --trust-workspace --file <path.rs> --symbol <sym> --to <name>",
-				MCPTool:      "semantic_rename",
+				CLICommand:   "semedit refactor-rename --language rust --trust-workspace --file <path.rs> --symbol <sym> --to <name>",
+				MCPTool:      "refactor_rename",
 				PlacementKey: false,
 			},
 			"lookup": {
@@ -158,23 +195,62 @@ func (*RustBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 				Level:        "symbol",
 				ReadOnly:     true,
 			},
+			"refactor_extract_value": {
+				Supported:    true,
+				Description:  "Trusted rust-analyzer extraction of one value from a direct call or one bounded positive decimal integer initializer as a local constant; exact versioned same-file edits and generated-name renames are validated before publication. Other expressions, overflow, shadowed primitive names, command-only actions, and unexpected edits are refused.",
+				CLICommand:   "semedit refactor-extract-value --language rust --trust-workspace --file <path.rs> --symbol <name> --in-function <function> --discriminator <expression>",
+				MCPTool:      "refactor_extract_value",
+				PlacementKey: false,
+			},
+			"refactor_extract_callable": {
+				Supported:    true,
+				Description:  "Trusted rust-analyzer extraction of one or more contiguous direct calls to the same callee with literal-only integer arguments from an ordinary top-level Rust function, when a same-file unit-returning callee and exact helper edit are proven.",
+				CLICommand:   "semedit refactor-extract-callable --language rust --trust-workspace --file <path.rs> --symbol <name> --in-function <function> --kind function --start-line <line> --end-line <line>",
+				MCPTool:      "refactor_extract_callable",
+				PlacementKey: false,
+			},
+			"refactor_inline_value": {
+				Supported:    true,
+				Description:  "Trusted rust-analyzer inline of one untyped immutable local initialized by a suffixed decimal integer literal and used only as direct arguments on the immediately following call line. The full-file assist result must exactly match this proven substitution.",
+				CLICommand:   "semedit refactor-inline-value --language rust --trust-workspace --file <path.rs> --symbol <name> --in-function <function>",
+				MCPTool:      "refactor_inline_value",
+				PlacementKey: false,
+			},
+			"refactor_inline_callable": {
+				Supported:    true,
+				Description:  "Inline one same-file zero-argument call to an ordinary free function whose body is one explicitly typed decimal integer literal, when the caller is a matching direct tail call and rust-analyzer returns the exact single-call substitution.",
+				CLICommand:   "semedit refactor-inline-callable --language rust --trust-workspace --file <path.rs> --symbol <callee> --call-site '{\"file\":\"<path.rs>\",\"in_function\":\"<caller>\",\"discriminator\":\"<callee>()\"}'",
+				MCPTool:      "refactor_inline_callable",
+				PlacementKey: false,
+			},
+			"refactor_promote_local_to_const": {
+				Supported:    true,
+				Description:  "Promote one immutable local with an explicit fixed-width integer type and range-valid decimal literal when its only use is the direct value argument of the immediately following call. The native same-file versioned edit is accepted only when it exactly matches the independently derived full-file result.",
+				CLICommand:   "semedit refactor-promote-local-to-const --language rust --trust-workspace --file <path.rs> --symbol <name> --in-function <function>",
+				MCPTool:      "refactor_promote_local_to_const",
+				PlacementKey: false,
+			},
 		},
-		Limitations: []neutralbackend.Constraint{
-			{
-				Title:       "Selected-File Rename Only",
-				Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
-				Severity:    "error",
-			},
-			{
-				Title:       "Trusted Explicit Workspace",
-				Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
-				Severity:    "error",
-			},
-			{
-				Title:       "Hierarchical Document Symbols",
-				Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
-				Severity:    "info",
-			},
+		Limitations: rustCapabilityLimitations(),
+	}
+}
+
+func rustCapabilityLimitations() []neutralbackend.Constraint {
+	return []neutralbackend.Constraint{
+		{
+			Title:       "Selected-File Refactoring Boundaries",
+			Description: "Rust supports selected-file rename, bounded local-variable, direct-call, and typed-constant extraction, verified literal-only inline value/callable slices, and one scalar promote-local-to-const shape; formatting, imports, diagnostics, move, signature changes, and other structural refactorings are unavailable.",
+			Severity:    "error",
+		},
+		{
+			Title:       "Trusted Explicit Workspace",
+			Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer. Rust-analyzer may run Cargo metadata while loading the project; this backend disables build scripts, procedural macros, and check-on-save.",
+			Severity:    "error",
+		},
+		{
+			Title:       "Hierarchical Document Symbols",
+			Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
+			Severity:    "info",
 		},
 	}
 }
@@ -207,31 +283,14 @@ func (b *RustBackend) closeSessionLocked() error {
 }
 
 func (b *RustBackend) readRustDocumentSymbolsLocked(ctx context.Context, root, file string, source []byte, query, operation string) ([]rustDocumentSymbol, error) {
-	if b.session != nil && b.root != root {
-		return nil, &RustError{Op: operation, Workspace: root, Err: ErrRustSessionConflict}
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-		}
-		session, err := b.factory(ctx, root)
-		if err != nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: err}
-		}
-		if session == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-		}
-		b.session, b.root = session, root
-		if err := initializeRustSession(ctx, session, root); err != nil {
-			closeErr := b.closeSessionLocked()
-			return nil, &RustError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
-		}
+	if err := b.ensureRustSessionLocked(ctx, root); err != nil {
+		return nil, &RustError{Op: operation, File: file, Symbol: query, Workspace: root, Err: err}
 	}
 
 	session := b.session
 	uri := pathutil.FileURI(file)
 	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{
-		"uri": uri, "languageId": "rust", "version": 1, "text": string(source),
+		"uri": uri, rustLanguageIDKey: rustLanguageID, "version": 1, "text": string(source),
 	}}); err != nil {
 		closeErr := b.closeSessionLocked()
 		return nil, &RustError{Op: "didOpen", File: file, Err: errors.Join(err, closeErr)}
@@ -254,7 +313,7 @@ func (b *RustBackend) readRustDocumentSymbolsLocked(ctx context.Context, root, f
 		return nil, &RustError{Op: "didClose", File: file, Symbol: query, Err: errors.Join(requestErr, closeErr, retireErr)}
 	}
 	if requestErr != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: requestErr}
+		return nil, &RustError{Op: rustOpDocumentSymbol, File: file, Symbol: query, Err: requestErr}
 	}
 	return symbols, nil
 }
@@ -280,7 +339,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	root, file, source, err := resolveRustProject(project)
+	root, file, source, err := resolveRustProject(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +355,11 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 	if err != nil {
 		return nil, err
 	}
-	return selectRustSymbol(query, file, symbols)
+	result, err := selectRustSymbol(query, file, symbols)
+	if result != nil {
+		result.SourceView = rustSourceView(ctx)
+	}
+	return result, err
 }
 
 // Rename executes one trusted, file-scoped rust-analyzer rename transaction.
@@ -304,7 +367,7 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	root, file, source, err := resolveRustProject(request.Project)
+	root, file, source, err := resolveRustProject(ctx, request.Project)
 	if err != nil {
 		return nil, err
 	}
@@ -355,19 +418,19 @@ func (b *RustBackend) executeRustRenameLocked(ctx context.Context, root, file st
 
 func performRustRename(ctx context.Context, session RustSession, root, file string, source []byte, request neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
 	uri := pathutil.FileURI(file)
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, rustLanguageIDKey: rustLanguageID, "version": 1, "text": string(source)}}); err != nil {
 		return nil, &RustError{Op: "didOpen", File: file, Err: err}
 	}
 	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
 	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+		return nil, &RustError{Op: rustOpDocumentSymbol, File: file, Err: err}
 	}
 	symbols, err := decodeRustDocumentSymbols(raw, root, source)
 	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+		return nil, &RustError{Op: rustOpDocumentSymbol, File: file, Err: err}
 	}
 	if validationErr := validateRustDocumentSymbolURI(symbols, uri); validationErr != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Err: validationErr}
+		return nil, &RustError{Op: rustOpDocumentSymbol, File: file, Err: validationErr}
 	}
 	lookup, err := selectRustSymbol(request.Symbol, file, symbols)
 	if err != nil {
@@ -378,15 +441,15 @@ func performRustRename(ctx context.Context, session RustSession, root, file stri
 		if renderErr != nil {
 			return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: renderErr}
 		}
-		return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: fmt.Errorf("%w: rename requires one unique target in disk source:\n%s", neutralbackend.ErrAmbiguous, locations)}
+		return nil, &RustError{Op: "rename", File: file, Symbol: request.Symbol, Err: fmt.Errorf("%w: rename requires one unique target in %s source:\n%s", neutralbackend.ErrAmbiguous, rustSourceView(ctx), locations)}
 	}
 	position := lookup.Definition.Location.Range.Start
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position})
 	if err != nil {
-		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
+		return nil, &RustError{Op: rustOpPrepareRename, File: file, Err: err}
 	}
 	if !validPrepareRename(prepRaw) {
-		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
+		return nil, &RustError{Op: rustOpPrepareRename, File: file, Err: ErrRustRenameInvalidEdit}
 	}
 	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position, "newName": request.To})
 	if err != nil {
@@ -429,11 +492,37 @@ func decodeRustTextEdits(raw json.RawMessage) ([]rustTextEdit, error) {
 		if _, ok := object["annotationId"]; ok {
 			return nil, ErrRustRenameInvalidEdit
 		}
+		if encoded, ok := object["insertTextFormat"]; ok {
+			var format int
+			if json.Unmarshal(encoded, &format) != nil || format != 1 {
+				return nil, ErrRustRenameInvalidEdit
+			}
+		}
 		if json.Unmarshal(value, &edits[i]) != nil {
 			return nil, ErrRustRenameInvalidEdit
 		}
 	}
 	return edits, nil
+}
+
+func validateRustChangeAnnotations(object map[string]json.RawMessage) error {
+	encoded, exists := object["changeAnnotations"]
+	if !exists {
+		return nil
+	}
+	var annotations map[string]json.RawMessage
+	if json.Unmarshal(encoded, &annotations) != nil || annotations == nil {
+		return ErrRustRenameInvalidEdit
+	}
+	for id, encodedAnnotation := range annotations {
+		var annotation struct {
+			Label string `json:"label"`
+		}
+		if id == "" || json.Unmarshal(encodedAnnotation, &annotation) != nil || annotation.Label == "" {
+			return ErrRustRenameInvalidEdit
+		}
+	}
+	return nil
 }
 
 func validPrepareRename(raw json.RawMessage) bool {
@@ -476,7 +565,7 @@ func decodeRustWorkspaceEdits(file string, raw json.RawMessage) ([]rustTextEdit,
 	if hasChanges == hasDocuments {
 		return nil, ErrRustRenameInvalidEdit
 	}
-	if _, ok := object["changeAnnotations"]; ok {
+	if err := validateRustChangeAnnotations(object); err != nil {
 		return nil, ErrRustRenameInvalidEdit
 	}
 	if _, ok := object["resourceOperations"]; ok {
@@ -578,6 +667,13 @@ func (b *RustBackend) Verify(context.Context, neutralbackend.VerifyRequest) ([]n
 	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationVerify, Language: neutralbackend.LanguageRust, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
+func rustSourceView(ctx context.Context) string {
+	if sourcebuf.FromContext(ctx) != nil {
+		return "working"
+	}
+	return "disk"
+}
+
 const rustAnalyzerSettings = `{"cargo":{"buildScripts":{"enable":false}},"procMacro":{"enable":false},"checkOnSave":{"enable":false}}`
 
 func initializeRustSession(ctx context.Context, session RustSession, root string) error {
@@ -593,8 +689,24 @@ func initializeRustSession(ctx context.Context, session RustSession, root string
 			"name": filepath.Base(root),
 		}},
 		"capabilities": map[string]any{
-			"general":   map[string]any{"positionEncodings": []string{"utf-16"}},
-			"workspace": map[string]any{"workspaceFolders": true, "configuration": true},
+			"general":      map[string]any{"positionEncodings": []string{"utf-16"}},
+			"experimental": map[string]any{"serverStatusNotification": true},
+			"textDocument": map[string]any{
+				"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true},
+				rustOpCodeAction: map[string]any{
+					"dynamicRegistration":      false,
+					"codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{"valueSet": []string{"refactor", rustRefactorExtract}}},
+					"dataSupport":              true,
+					"resolveSupport":           map[string]any{"properties": []string{"edit"}},
+				},
+			},
+			"workspace": map[string]any{
+				"workspaceFolders": true,
+				"configuration":    true,
+				"workspaceEdit": map[string]any{
+					"changeAnnotationSupport": map[string]any{"groupsOnLabel": false},
+				},
+			},
 		},
 		"initializationOptions": settings,
 	}
@@ -617,14 +729,28 @@ func defaultRustSessionFactory(ctx context.Context, root string) (RustSession, e
 	}
 	cmd := exec.CommandContext(ctx, path) // #nosec G204 -- path is resolved by exec.LookPath and receives no project arguments.
 	cmd.Dir = root
-	client, err := lsp.NewProcessClient(cmd)
+	statuses := make(chan json.RawMessage, 64)
+	session := &rustAnalyzerSession{statuses: statuses}
+	client, err := lsp.NewProcessClient(cmd, lsp.WithNotificationHandler(func(notification lsp.Notification) {
+		if notification.Method != "experimental/serverStatus" {
+			return
+		}
+		session.statusMu.Lock()
+		session.latest = bytes.Clone(notification.Params)
+		session.statusMu.Unlock()
+		select {
+		case statuses <- notification.Params:
+		default:
+		}
+	}))
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+	session.client = client
+	return session, nil
 }
 
-func resolveRustProject(project neutralbackend.ProjectContext) (string, string, []byte, error) {
+func resolveRustProject(ctx context.Context, project neutralbackend.ProjectContext) (string, string, []byte, error) {
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".rs") {
 		return "", "", nil, &RustError{Op: "project", File: project.File, Err: ErrRustFileRequired}
 	}
@@ -648,7 +774,7 @@ func resolveRustProject(project neutralbackend.ProjectContext) (string, string, 
 	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &RustError{Op: "project", File: file, Workspace: root, Err: ErrRustFileOutsideWorkspace}
 	}
-	source, err := os.ReadFile(file) // #nosec G304 -- file is explicitly selected by the caller.
+	source, err := sourcebuf.ReadFile(ctx, file)
 	if err != nil {
 		return "", "", nil, &RustError{Op: "read", File: file, Workspace: root, Err: err}
 	}
@@ -822,6 +948,8 @@ func rustKindName(kind int) string {
 	switch kind {
 	case 2:
 		return "module"
+	case 6:
+		return "method"
 	case 10:
 		return "enum"
 	case 11:
@@ -990,7 +1118,7 @@ func (b *RustBackend) Outline(ctx context.Context, request neutralbackend.Outlin
 	}
 	project := request.Project
 	project.File = selected
-	root, file, source, err := resolveRustProject(project)
+	root, file, source, err := resolveRustProject(ctx, project)
 	if err != nil {
 		return nil, err
 	}
@@ -1008,5 +1136,12 @@ func (b *RustBackend) Outline(ctx context.Context, request neutralbackend.Outlin
 		return nil, err
 	}
 	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageRust, Source: source, Symbols: symbols, Complete: true}
-	return readlsp.Outline(document, request)
+	result, err := readlsp.Outline(document, request)
+	if err != nil {
+		return nil, err
+	}
+	for index := range result.Files {
+		result.Files[index].SourceView = rustSourceView(ctx)
+	}
+	return result, nil
 }

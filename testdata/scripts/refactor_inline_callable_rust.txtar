@@ -1,0 +1,55 @@
+env SEMEDIT_TEST_RUST_INLINE_CALLABLE=1
+# Go master: inline_function_mcp_batch.txtar. Rust inlines one typed literal-return call and preserves its callee.
+exec semedit refactor-inline-callable --language rust --trust-workspace --file src/lib.rs --symbol one --call-site '{"file":"src/lib.rs","in_function":"run_one","discriminator":"one()"}'
+stdout 'Successfully inlined one call'
+cmp src/lib.rs want-lib.rs
+mkdir .scratch
+[exec:rustc] exec rustc --edition=2021 --test src/lib.rs -o .scratch/rust-inline-callable-tests
+[exec:rustc] exec ./.scratch/rust-inline-callable-tests
+exec cp original-lib.rs src/lib.rs
+! exec env SEMEDIT_TEST_RUST_INLINE_CALLABLE=corrupt semedit refactor-inline-callable --language rust --trust-workspace --file src/lib.rs --symbol one --call-site '{"file":"src/lib.rs","in_function":"run_one","discriminator":"one()"}'
+stderr 'whole-file substitution'
+cmp src/lib.rs original-lib.rs
+! exec env SEMEDIT_TEST_RUST_INLINE_CALLABLE=foreign semedit refactor-inline-callable --language rust --trust-workspace --file src/lib.rs --symbol one --call-site '{"file":"src/lib.rs","in_function":"run_one","discriminator":"one()"}'
+stderr 'invalid rust rename edit'
+cmp src/lib.rs original-lib.rs
+! exec env SEMEDIT_TEST_RUST_INLINE_CALLABLE=stale semedit refactor-inline-callable --language rust --trust-workspace --file src/lib.rs --symbol one --call-site '{"file":"src/lib.rs","in_function":"run_one","discriminator":"one()"}'
+stderr 'invalid rust rename edit'
+cmp src/lib.rs original-lib.rs
+
+-- Cargo.toml --
+[package]
+name = "rust-inline-callable-fixture"
+version = "0.1.0"
+edition = "2021"
+build = false
+-- src/lib.rs --
+fn one() -> i32 { 7_i32 }
+
+fn run_one() -> i32 { one() }
+
+#[test]
+fn inlined_call_and_callee_keep_the_same_value() {
+    assert_eq!(run_one(), 7);
+    assert_eq!(one(), 7);
+}
+-- original-lib.rs --
+fn one() -> i32 { 7_i32 }
+
+fn run_one() -> i32 { one() }
+
+#[test]
+fn inlined_call_and_callee_keep_the_same_value() {
+    assert_eq!(run_one(), 7);
+    assert_eq!(one(), 7);
+}
+-- want-lib.rs --
+fn one() -> i32 { 7_i32 }
+
+fn run_one() -> i32 { 7_i32 }
+
+#[test]
+fn inlined_call_and_callee_keep_the_same_value() {
+    assert_eq!(run_one(), 7);
+    assert_eq!(one(), 7);
+}

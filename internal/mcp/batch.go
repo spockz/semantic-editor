@@ -152,11 +152,11 @@ func (entry *BatchEntry) unmarshalNamedBatchEntry(raw map[string]json.RawMessage
 
 func (entry *BatchEntry) unmarshalShorthandBatchEntry(raw map[string]json.RawMessage) error {
 	if len(raw) != 1 {
-		return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one 'semantic_*' tool key")
+		return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one registered operation key")
 	}
 	for tool, params := range raw {
-		if !strings.HasPrefix(tool, "semantic_") {
-			return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one 'semantic_*' tool key")
+		if !strings.HasPrefix(tool, "semantic_") && !strings.HasPrefix(tool, "refactor_") {
+			return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one registered operation key")
 		}
 		if len(params) == 0 || string(params) == "null" {
 			return fmt.Errorf("batch edit shorthand for %q requires a JSON argument object", tool)
@@ -195,8 +195,13 @@ type batchSkipHooksKey struct{}
 const batchStatusAppliedWithDiagnostics = "applied_with_diagnostics"
 
 var batchVerificationOptionKeys = []string{
-	trustWorkspaceField, "skip_hooks", "jdtls_home", "java_bin", "import_maven", "metals_home", "metals_bin",
-	"java_version", "standalone_haskell", "ghc_bin", "hls_bin", "ghc_version", "hls_version",
+	trustWorkspaceField, "skip_hooks", "jdtls_home", "java_bin", "import_maven",
+	"kotlin_bin", "bash_bin", "make_bin",
+}
+
+var batchConfigurationConsistencyKeys = []string{
+	"jdtls_home", "java_bin", "import_maven", "metals_home", "metals_bin", "java_version",
+	"standalone_haskell", "ghc_bin", "hls_bin", "ghc_version", "hls_version",
 	"kotlin_bin", "bash_bin", "make_bin",
 }
 
@@ -324,10 +329,24 @@ func decodeArgumentObject(data []byte, target *map[string]any) error {
 	return nil
 }
 
+func decodeBatchEntryParams(index int, entry BatchEntry) (map[string]any, error) {
+	if len(entry.Params) == 0 || string(entry.Params) == "null" {
+		return nil, fmt.Errorf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"refactor_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, entry.Tool)
+	}
+	raw := map[string]any{}
+	if err := decodeArgumentObject(entry.Params, &raw); err != nil {
+		return nil, fmt.Errorf("edit %d params: invalid JSON object: %w", index, err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"refactor_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)
+	}
+	return raw, nil
+}
+
 func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, error) {
 	entry, ok := s.registry.LookupMCP(batchEntry.Tool)
-	if !ok || !entry.Batchable {
-		return BatchResult{}, fmt.Errorf("tool is not batchable: %s", batchEntry.Tool)
+	if !ok || !entry.Batchable || (s.profile == "mutations-only" && entry.ReadOnly) {
+		return BatchResult{}, fmt.Errorf(("tool is not batchable or unavailable in the active profile: %s"), batchEntry.Tool)
 	}
 	raw := map[string]any{}
 	if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
@@ -336,7 +355,7 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 	if err := s.validateLanguageAllowed(entry, raw); err != nil {
 		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
 	}
-	result, err := s.registry.Dispatch(operation.CallContext{
+	result, err := s.registry.DispatchEntry(operation.CallContext{
 		Ctx:               ctx,
 		WorkDir:           s.workDir,
 		Project:           backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
@@ -346,7 +365,7 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		InBatch:           true,
 		DeferImports:      true,
 		DeferVerification: true,
-	}, entry.Key, raw)
+	}, entry, raw)
 	if err != nil {
 		return s.projectBatchDispatchError(batchEntry, entry, raw, err), err
 	}
@@ -401,7 +420,7 @@ func projectBatchDispatchSuccess(batchEntry BatchEntry, entry operation.Entry, d
 }
 
 func batchMoveReceipt(tool string, raw map[string]any, workDir string) BatchResult {
-	if tool != "semantic_move_construct" {
+	if tool != semanticMoveConstructTool && tool != "refactor_move_declaration" {
 		return BatchResult{}
 	}
 	file, _ := raw["file"].(string)
@@ -635,45 +654,36 @@ func parseBatchToolRequest(configuredRoot string, raw []byte) (parsedBatchToolRe
 func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	response := &BatchResponse{Status: "ok", WorkspaceRoot: s.workDir, Results: make([]BatchResult, 0, len(edits))}
 	verifyOptions := make(map[string]any)
+	configurationOptions := make(map[string]any)
 	if batchSkipsHooks(ctx) {
 		verifyOptions["skip_hooks"] = true
 	}
 	for index, batchEntry := range edits {
-		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
-		if !ok || !entry.Batchable {
+		entry, resultTool, ok := resolvedBatchEntry(s.registry, batchEntry.Tool)
+		if !ok || !entry.Batchable || (s.profile == "mutations-only" && entry.ReadOnly) {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d: tool is not batchable: %s", index, batchEntry.Tool)})
+			response.Results = append(response.Results, BatchResult{Tool: resultTool, Status: "error", Error: fmt.Sprintf(("edit %d: tool is not batchable or unavailable in the active profile: %s"), index, batchEntry.Tool)})
 			return response, nil
 		}
-		raw := map[string]any{}
-		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
+		raw, err := decodeBatchEntryParams(index, batchEntry)
+		if err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, batchEntry.Tool)})
-			return response, nil
-		}
-		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
-			return response, nil
-		}
-		if raw == nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
-			return response, nil
+			response.Results = append(response.Results, BatchResult{Tool: resultTool, Status: "error", Error: err.Error()})
+			return response, nil //nolint:nilerr // Batch validation failures are represented in-band in BatchResponse.
 		}
 		if err := validateBatchEntry(entry, raw); err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			response.Results = append(response.Results, BatchResult{Tool: resultTool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
 			return response, nil
 		}
-		if err := mergeBatchVerificationOptions(verifyOptions, raw); err != nil {
+		if err := mergeBatchVerificationOptions(verifyOptions, configurationOptions, raw); err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			response.Results = append(response.Results, BatchResult{Tool: resultTool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
 			return response, nil
 		}
 		if err := s.validateLanguageAllowed(entry, raw); err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			response.Results = append(response.Results, BatchResult{Tool: resultTool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
 			return response, nil
 		}
 	}
@@ -696,6 +706,14 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		return response, nil
 	}
 	return s.verifyFinishedBatch(ctx, response, workspaceBefore, baseline, verifyOptions, normalizationPaths)
+}
+
+func resolvedBatchEntry(registry *operation.Registry, tool string) (operation.Entry, string, bool) {
+	entry, ok := registry.LookupMCP(tool)
+	if !ok {
+		return operation.Entry{}, tool, false
+	}
+	return entry, entry.MCPName, true
 }
 
 func (s *Server) finishFailedBatchEdits(ctx context.Context, buffer *sourcebuf.Buffer, response *BatchResponse, workspaceBefore map[string]string, cause error) (*BatchResponse, error) {
@@ -847,7 +865,20 @@ func batchGoFormattingPaths(paths []string, goEnabled bool) []string {
 	return formatted
 }
 
-func mergeBatchVerificationOptions(options, raw map[string]any) error {
+func mergeBatchVerificationOptions(options, configurationOptions, raw map[string]any) error {
+	for _, key := range batchConfigurationConsistencyKeys {
+		value, present := raw[key]
+		if !present {
+			value, present = raw[strings.ReplaceAll(key, "_", "-")]
+		}
+		if !present {
+			continue
+		}
+		if previous, exists := configurationOptions[key]; exists && !reflect.DeepEqual(previous, value) {
+			return fmt.Errorf("conflicting backend configuration option %q across batch", key)
+		}
+		configurationOptions[key] = value
+	}
 	for _, key := range batchVerificationOptionKeys {
 		if key == trustWorkspaceField {
 			continue

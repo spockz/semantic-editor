@@ -1,15 +1,15 @@
 # The CLI replaces every parameter of a private function with one same-file object, rewrites bound body uses, and preserves call argument order in keyed literals.
 cp write.go .scratch/write-before.txt
-! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"_"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+! exec semedit refactor-introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"_"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
 stderr 'private identifiers'
 cmp write.go .scratch/write-before.txt
-! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"status","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+! exec semedit refactor-introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"status","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
 stderr 'conflicts with an existing body binding'
 cmp write.go .scratch/write-before.txt
-! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}}]'
+! exec semedit refactor-introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}}]'
 stderr 'every original parameter'
 cmp write.go .scratch/write-before.txt
-exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+exec semedit refactor-introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
 stdout 'Replaced all function parameters'
 cmp write.go .scratch/want/write.txt
 cmp calls.go .scratch/want/calls.txt

@@ -143,7 +143,11 @@ func TestManagedBufferedFullCaptureDoesNotSeedDiskDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create source buffer: %v", err)
 	}
-	if applyErr := buffer.Apply(fixture.ctx, []sourcebuf.Change{{Path: filepath.Join(fixture.root, "value.go"), Before: []byte(diskSource), After: []byte(workingSource)}}); applyErr != nil {
+	valuePath, err := sourcebuf.CanonicalPath(fixture.ctx, filepath.Join(fixture.root, "value.go"))
+	if err != nil {
+		t.Fatalf("canonicalize buffered source: %v", err)
+	}
+	if applyErr := buffer.Apply(fixture.ctx, []sourcebuf.Change{{Path: valuePath, Before: []byte(diskSource), After: []byte(workingSource)}}); applyErr != nil {
 		t.Fatalf("apply working source: %v", applyErr)
 	}
 	bufferedCtx := sourcebuf.WithBuffer(fixture.ctx, buffer)

@@ -106,11 +106,12 @@ func languageWireProbeRegistry(t *testing.T) *operation.Registry {
 		return "handler reached", nil
 	}
 	definition := operation.Def[languageWireProbeInput, string]{
-		Key:       "language-probe",
-		Summary:   "Probe language snapshot dispatch",
-		MCPName:   "semantic_language_probe",
-		Batchable: true,
-		ReadOnly:  true,
+		Key:           "lookup",
+		Summary:       "Probe language snapshot dispatch",
+		MCPName:       "semantic_language_probe",
+		Batchable:     true,
+		BufferedBatch: true,
+		ReadOnly:      true,
 		Params: []operation.ParameterContract{{
 			Name: "language", CLIName: "language", JSONName: "language", Type: operation.ParamString,
 			Description: "Language to dispatch", Required: true, Enums: []string{"go", "rust"}, LanguageSelector: true,

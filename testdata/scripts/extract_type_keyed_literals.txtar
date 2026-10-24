@@ -1,0 +1,124 @@
+# WHY: Group keyed state without changing field identity, initializer source order, zero values, or panic timing.
+exec go test ./...
+cp sibling.go .scratch/before-sibling.go
+exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.second"}]' --field state
+stdout 'Extracted selected fields'
+cmp record.go .scratch/want/record.go
+cmp sibling.go .scratch/before-sibling.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypekeyed
+
+go 1.24
+-- record.go --
+package sample
+
+type record struct {
+	first int
+	second int
+	tail int
+}
+
+type unrelated struct {
+	first int
+	second int
+}
+
+var events string
+
+func mark(name string, value int) int {
+	events += name + ","
+	if name == "panic" {
+		panic(name)
+	}
+	return value
+}
+
+func full() record { return record{second: mark("second", 2), first: mark("first", 1), tail: mark("tail", 3)} }
+func partial() *record { return &record{first: mark("first", 1), tail: mark("tail", 3)} }
+func omitted() record { return record{tail: mark("tail", 3)} }
+func zero() record { return record{} }
+func failing() record { return record{second: mark("second", 2), first: mark("panic", 1), tail: mark("tail", 3)} }
+func values(value record) [3]int { return [3]int{value.first, value.second, value.tail} }
+func other() unrelated { return unrelated{first: 4, second: 5} }
+-- sibling.go --
+package sample
+
+// Preserve this spacing.
+var untouched =    9
+-- record_test.go --
+package sample
+
+import "testing"
+
+func TestInitializers(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		build func() record
+		want [3]int
+		trace string
+	}{
+		{"full", full, [3]int{1, 2, 3}, "second,first,tail,"},
+		{"partial", func() record { return *partial() }, [3]int{1, 0, 3}, "first,tail,"},
+		{"omitted", omitted, [3]int{0, 0, 3}, "tail,"},
+		{"zero", zero, [3]int{}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			events = ""
+			got := values(test.build())
+			if got != test.want || events != test.trace {
+				t.Fatalf("values=%v trace=%q; want %v, %q", got, events, test.want, test.trace)
+			}
+		})
+	}
+	if got := other(); got.first != 4 || got.second != 5 {
+		t.Fatalf("unrelated fields changed: %#v", got)
+	}
+}
+
+func TestPanicStopsLaterInitializers(t *testing.T) {
+	events = ""
+	defer func() {
+		if recovered := recover(); recovered != "panic" || events != "second,panic," {
+			t.Fatalf("panic=%v trace=%q", recovered, events)
+		}
+	}()
+	_ = failing()
+	t.Fatal("initializer did not panic")
+}
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	state recordState
+	tail int
+}
+
+type recordState struct {
+	first int
+	second int
+}
+
+type unrelated struct {
+	first int
+	second int
+}
+
+var events string
+
+func mark(name string, value int) int {
+	events += name + ","
+	if name == "panic" {
+		panic(name)
+	}
+	return value
+}
+
+func full() record { return record{state: recordState{second: mark("second", 2), first: mark("first", 1)}, tail: mark("tail", 3)} }
+func partial() *record { return &record{state: recordState{first: mark("first", 1)}, tail: mark("tail", 3)} }
+func omitted() record { return record{tail: mark("tail", 3)} }
+func zero() record { return record{} }
+func failing() record { return record{state: recordState{second: mark("second", 2), first: mark("panic", 1)}, tail: mark("tail", 3)} }
+func values(value record) [3]int { return [3]int{value.state.first, value.state.second, value.tail} }
+func other() unrelated { return unrelated{first: 4, second: 5} }

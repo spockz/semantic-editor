@@ -1,0 +1,82 @@
+env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=multi
+# The Rust backend must preserve order while extracting a contiguous run of direct calls.
+exec semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 3
+stdout 'Extracted the Rust statement into a function through a rust-analyzer assist'
+cmp src/lib.rs want-lib.txt
+[exec:rustc] exec rustc --edition=2021 src/lib.rs -o runner
+[exec:rustc] exec ./runner
+exec cp original-lib.txt src/lib.rs
+! exec env SEMEDIT_TEST_RUST_EXTRACT_CALLABLE=multi-corrupt-suffix semedit refactor-extract-callable --language rust --trust-workspace --file src/lib.rs --symbol extracted --in-function run --kind function --start-line 2 --end-line 3
+stderr 'exact extraction postimage'
+cmp src/lib.rs original-lib.txt
+
+-- Cargo.toml --
+[package]
+name = "extract-function-multiple-fixture"
+version = "0.1.0"
+edition = "2021"
+build = false
+-- src/lib.rs --
+fn run() {
+    consume(1_i32);
+    consume(2_i32);
+}
+
+static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn consume(value: i32) {
+    let previous = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    SEQUENCE.store(previous * 10 + value as usize, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn main() {
+    run();
+    let observed = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    if observed < 12 || observed > 12 {
+        std::process::exit(1);
+    }
+}
+-- original-lib.txt --
+fn run() {
+    consume(1_i32);
+    consume(2_i32);
+}
+
+static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn consume(value: i32) {
+    let previous = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    SEQUENCE.store(previous * 10 + value as usize, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn main() {
+    run();
+    let observed = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    if observed < 12 || observed > 12 {
+        std::process::exit(1);
+    }
+}
+-- want-lib.txt --
+fn run() {
+    extracted();
+}
+
+fn extracted() {
+    consume(1_i32);
+    consume(2_i32);
+}
+
+static SEQUENCE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn consume(value: i32) {
+    let previous = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    SEQUENCE.store(previous * 10 + value as usize, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn main() {
+    run();
+    let observed = SEQUENCE.load(std::sync::atomic::Ordering::SeqCst);
+    if observed < 12 || observed > 12 {
+        std::process::exit(1);
+    }
+}

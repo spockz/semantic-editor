@@ -1,0 +1,74 @@
+# Constants whose declarations, expressions, test references, or directives exceed the proof boundary remain unchanged.
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol IotaValue --placement file_end
+stderr 'refuses iota'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol Named --placement file_end
+stderr 'predeclared basic constant types'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol ImportedType --placement file_end
+stderr 'type dependency'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol Dependent --placement file_end
+stderr 'package or import initializer dependency'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol Grouped --placement file_end
+stderr 'one standalone ungrouped constant'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol First --placement file_end
+stderr 'one standalone ungrouped constant'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol TestReferenced --placement file_end
+stderr 'test reference'
+cmp legacy/limits.go .scratch/_want/legacy/limits.go
+cmp api/limits.go .scratch/_want/api/limits.go
+
+-- go.mod --
+module example.com/constantrefusals
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+import "example.com/constantrefusals/types"
+
+const IotaValue = iota
+type RetryDuration int
+const Named RetryDuration = 2
+const ImportedType types.Count = 8
+const Base = 3
+const Dependent = Base
+const ( Grouped = 4 )
+const First, Second = 5, 5
+const TestReferenced = 6
+-- api/limits.go --
+package api
+-- legacy/limits_test.go --
+package legacy
+
+var _ = TestReferenced
+-- .scratch/_want/legacy/limits.go --
+package legacy
+
+import "example.com/constantrefusals/types"
+
+const IotaValue = iota
+type RetryDuration int
+const Named RetryDuration = 2
+const ImportedType types.Count = 8
+const Base = 3
+const Dependent = Base
+const ( Grouped = 4 )
+const First, Second = 5, 5
+const TestReferenced = 6
+-- .scratch/_want/api/limits.go --
+package api
+-- types/types.go --
+package types
+
+type Count = int

@@ -8,6 +8,9 @@ import (
 	"fmt"
 )
 
+// CodeActionInlineKind is the LSP kind used for inline refactoring actions.
+const CodeActionInlineKind = "refactor.inline"
+
 // CodeActionRequest selects one server-provided refactoring over an exact source range.
 type CodeActionRequest struct {
 	Operation                Operation
@@ -23,6 +26,7 @@ type CodeActionRequest struct {
 	Parameters               []CodeActionParameter
 	Expression               string
 	ExpressionPath           string
+	EnclosingSymbol          string
 	ParameterName            string
 	ExpectedRevision         string
 	ParameterObjectType      string

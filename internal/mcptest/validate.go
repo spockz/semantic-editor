@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/spockz/semantic-editor/internal/mcp"
+	"github.com/spockz/semantic-editor/internal/operation"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 )
@@ -349,6 +350,15 @@ func (v *responseValidator) validateToolResult(tool string, raw json.RawMessage)
 		fallback = schema != nil
 		if catalogErr == nil {
 			catalogErr = v.fullErr
+		}
+	}
+	if schema == nil {
+		if entry, ok := operation.DefaultRegistry().LookupMCP(tool); ok {
+			schema = v.advertised[entry.MCPName]
+			if schema == nil {
+				schema = v.full[entry.MCPName]
+				fallback = schema != nil
+			}
 		}
 	}
 	v.mu.Unlock()

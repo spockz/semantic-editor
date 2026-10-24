@@ -1,0 +1,53 @@
+# Search and index generation reject an appended duplicate metadata row without altering the register.
+! exec semedit search-adrs --query schema
+stderr 'metadata table has unexpected or duplicate rows after "languages"'
+! exec semedit generate-adr-index
+stderr 'metadata table has unexpected or duplicate rows after "languages"'
+cmp docs/adr/README.md original-README.md
+
+-- .adr-dir --
+docs/adr
+-- docs/adr/README.md --
+# ADR Index
+
+<!-- semedit-adr-register:start -->
+authored generated content
+<!-- semedit-adr-register:end -->
+-- original-README.md --
+# ADR Index
+
+<!-- semedit-adr-register:start -->
+authored generated content
+<!-- semedit-adr-register:end -->
+-- docs/adr/0001-duplicate-metadata.md --
+# ADR-0001: Duplicate Metadata
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Reject duplicate metadata rows. |
+| description | Keep the schema unambiguous. |
+| role | contract |
+| scope | documentation |
+| area | generic |
+| languages | generic |
+| role | principle |
+
+## Context
+
+Metadata rows must follow the fixed schema.
+
+## Decision
+
+Reject duplicate metadata rows.
+
+## Invariants
+
+The schema is unambiguous.
+
+## Consequences
+
+Invalid ADRs do not produce search results.

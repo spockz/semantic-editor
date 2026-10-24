@@ -1,0 +1,33 @@
+# Replace a Go function body in a batch overlay, then inline a literal at later same-block uses.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpinlinelater
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"calc.go","symbol":"Run","body":"value := 42; record(1); record(value)"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Run"}},{"tool":"semantic_insert_construct","params":{"file":"calc.go","kind":"statement/expression","in_function":"Run","anchor":"after","discriminator":"record(int(42))","source":"record(7)"}}]}}}
+-- calc.go --
+package calc
+
+func Run() {
+	return
+}
+
+func record(int) {}
+-- .scratch/want/calc.go --
+package calc
+
+func Run() {
+	record(1)
+	record(int(42))
+	record(7)
+}
+
+func record(int) {}

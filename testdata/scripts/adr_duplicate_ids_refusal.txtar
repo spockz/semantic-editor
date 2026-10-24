@@ -1,0 +1,87 @@
+# Reject duplicate ADR identifiers before search or generated-index publication.
+! exec semedit search-adrs --query duplicate
+stderr 'duplicate ADR ID 0001'
+! exec semedit generate-adr-index
+stderr 'duplicate ADR ID 0001'
+cmp docs/adr/README.md original-README.md
+
+-- .adr-dir --
+docs/adr
+-- docs/adr/README.md --
+# ADR Index
+
+Authored introduction.
+
+<!-- semedit-adr-register:start -->
+preserve this existing register when source records are invalid
+<!-- semedit-adr-register:end -->
+-- original-README.md --
+# ADR Index
+
+Authored introduction.
+
+<!-- semedit-adr-register:start -->
+preserve this existing register when source records are invalid
+<!-- semedit-adr-register:end -->
+-- docs/adr/0001-alpha.md --
+# ADR-0001: Alpha
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | First duplicate decision. |
+| description | Duplicate identifier fixture. |
+| role | architecture |
+| scope | project |
+| area | documentation |
+| languages | generic |
+
+## Context
+
+The first record occupies identifier 0001.
+
+## Decision
+
+Keep the first record.
+
+## Invariants
+
+* The record is individually valid.
+
+## Consequences
+
+Its identifier conflicts with the next record.
+-- docs/adr/0001-beta.md --
+# ADR-0001: Beta
+
+* **Status**: Accepted
+* **Date**: 2026-10-21
+
+<!-- semedit-adr-metadata:v1 keys=summary,description,role,scope,area,languages; do not change key names or order. -->
+| Key | Value |
+| :--- | :--- |
+| summary | Second duplicate decision. |
+| description | Duplicate identifier fixture. |
+| role | architecture |
+| scope | project |
+| area | documentation |
+| languages | generic |
+
+## Context
+
+The second record uses an identifier already in use.
+
+## Decision
+
+Reject duplicate identifiers.
+
+## Invariants
+
+* The record is individually valid.
+
+## Consequences
+
+This fixture must fail repository loading.

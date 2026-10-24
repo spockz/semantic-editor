@@ -102,7 +102,7 @@ func javaSignatureChangeResult(cc CallContext, project backend.ProjectContext, f
 	if result == nil || result.File != project.File {
 		return structuralPlanResult{}, fmt.Errorf("java change_signature backend returned an unexpected target file")
 	}
-	readSet, planned, err := javaCodeActionFileRevisions(cc, result)
+	readSet, planned, err := codeActionFileRevisions(cc, result)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}

@@ -1,0 +1,47 @@
+# Alias moves refuse when the changed package import graph would alter package initialization.
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Count --placement file_end
+stderr 'package initialization function'
+cmp legacy/types.go .scratch/_want/legacy.go
+cmp api/api.go .scratch/_want/api.go
+cmp caller/use.go .scratch/_want/caller.go
+
+-- go.mod --
+module example.com/typecrossaliasinit
+
+go 1.23
+-- legacy/types.go --
+package legacy
+
+type Count = int
+
+func Local(value Count) Count { return value }
+-- api/api.go --
+package api
+
+var initialized = false
+
+func init() { initialized = true }
+-- caller/use.go --
+package caller
+
+import "example.com/typecrossaliasinit/legacy"
+
+func Use(value legacy.Count) legacy.Count { return legacy.Count(value) }
+-- .scratch/_want/legacy.go --
+package legacy
+
+type Count = int
+
+func Local(value Count) Count { return value }
+-- .scratch/_want/api.go --
+package api
+
+var initialized = false
+
+func init() { initialized = true }
+-- .scratch/_want/caller.go --
+package caller
+
+import "example.com/typecrossaliasinit/legacy"
+
+func Use(value legacy.Count) legacy.Count { return legacy.Count(value) }

@@ -2,7 +2,7 @@
 stdin input.json
 exec semedit mcp --enable-batching
 stdout '"isError":false'
-stdout '"operation":"extract_function"'
+stdout '"operation":"refactor_extract_callable"'
 stdout '"status":"applied_working"'
 ! stdout '"isError":true'
 cmp emit.go .scratch/want/emit.go
@@ -14,7 +14,7 @@ module example.com/extractfunctionbatch
 
 go 1.23
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"seed.go","source":"func Seed() int { return 1 }"}},{"tool":"semantic_extract_function","params":{"file":"emit.go","symbol":"writeSummary","in_function":"Emit","kind":"function","start_line":4,"end_line":5}},{"tool":"semantic_rename","params":{"file":"emit.go","symbol":"writeSummary","to":"writePair"}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"seed.go","source":"func Seed() int { return 1 }"}},{"tool":"refactor_extract_callable","params":{"file":"emit.go","symbol":"writeSummary","in_function":"Emit","kind":"function","start_line":4,"end_line":5}},{"tool":"refactor_rename","params":{"file":"emit.go","symbol":"writeSummary","to":"writePair"}}]}}}
 -- seed.go --
 package sample
 -- emit.go --

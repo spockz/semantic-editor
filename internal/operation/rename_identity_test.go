@@ -13,13 +13,17 @@ import (
 
 func TestRenameContinuationMatchesFreshInspection(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/renameproof\n\ngo 1.23\n"), 0o600); err != nil {
-		t.Fatal(err)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("canonicalize rename proof workspace: %v", err)
+	}
+	if moduleWriteErr := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/renameproof\n\ngo 1.23\n"), 0o600); moduleWriteErr != nil {
+		t.Fatal(moduleWriteErr)
 	}
 	file := filepath.Join(root, "server.go")
 	source := "package sample\n\ntype Server struct{}\nfunc (Server) Start() {}\n\ntype Other struct{}\nfunc (Other) Serve() {}\n"
-	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
-		t.Fatal(err)
+	if sourceWriteErr := os.WriteFile(file, []byte(source), 0o600); sourceWriteErr != nil {
+		t.Fatal(sourceWriteErr)
 	}
 
 	project := backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageGo}

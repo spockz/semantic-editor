@@ -136,7 +136,7 @@ runs can be long when a tool exceeds its latency budget. Focused runs support:
 
 ```sh
 make bench-mcp-tools TOOL_FILTER=semantic_lookup COLD_SAMPLES=100 HOT_SAMPLES=100
-make bench-mcp-tools TOOL_FILTER=semantic_rename ENFORCE_BUDGETS=true
+make bench-mcp-tools TOOL_FILTER=refactor_rename ENFORCE_BUDGETS=true
 ```
 
 `TOOL_FILTER` selects a matching tool name. `ENFORCE_BUDGETS=true` additionally
@@ -189,7 +189,7 @@ retains its twenty-package corpus.
 
 ```sh
 make bench-mcp-tools CORPUS=repository
-make bench-mcp-tools CORPUS=repository TOOL_FILTER=semantic_move_construct
+make bench-mcp-tools CORPUS=repository TOOL_FILTER=refactor_move_construct
 ```
 
 For method-level attribution, run the focused in-process benchmark through
@@ -285,7 +285,7 @@ Git export and fixture cloning live in
 The exported corpus excludes archived benchmark data and `.agents` configuration.
 The latter contains a skill symlink unrelated to compilation; source symlinks
 remain intact so checked file moves retain their normal refusal behavior.
-The source-edit matrix includes cross-package `semantic_move_file` publication.
+The source-edit matrix includes cross-package `refactor_move_file` publication.
 Per-module session accounting and its semantic tests live in
 [`file_edit_session_cost_test.go`](../../internal/mcp/file_edit_session_cost_test.go).
 
@@ -444,7 +444,7 @@ Every semedit-enabled run asks for tooling-improvement feedback after the task a
 
 An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after the matching app-server `turn/completed` notification reports completed status; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
 
-Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
+Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*` and `refactor_*` operations with `semedit/`, `mcp__semedit__`, or OpenCode's `semedit_` provider prefixes; a provider may also identify the server separately as `semedit`. Prefixed terminal events therefore count as MCP use even when their event omits a server field.
 
 Task elapsed time is finalized before diagnostic questioning. A non-use, batching, integration, timeout, or tooling-improvement reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every semedit run with a continuation identity receives tooling-improvement feedback after any behavior-specific reflection, regardless of task success or observed tool use. A timed-out semedit session receives a timeout diagnosis followed by tooling feedback. Save the timeout diagnosis as `diagnostic_timeout_reflection` and the improvement response as `semantic_integration_reflection` for report compatibility. Reflection prompts prohibit edits, tools, and retries. Reports label feedback as agent opinion; browser metric rows exclude the entire object.
 

@@ -1,0 +1,47 @@
+# This archive proves a staged zero-value structural type edit flows through cross-package move and rename in one MCP buffer.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout 'destination_file":"api/state.go'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchzerocompositemove
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+var Cache map[string]int
+
+func Local() { _ = Cache }
+-- api/state.go --
+package api
+-- caller/use.go --
+package caller
+
+import "example.com/batchzerocompositemove/legacy"
+
+func Use() { _ = legacy.Cache }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"legacy/state.go","kind":"var","symbol":"Cache","source":"var Cache map[int]string"}},{"tool":"refactor_move_declaration","params":{"file":"legacy/state.go","destination_file":"api/state.go","symbol":"Cache"}},{"tool":"refactor_rename","params":{"file":"api/state.go","symbol":"Cache","to":"MapIndex"}}]}}}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/batchzerocompositemove/api"
+
+func Local() { _ = api.MapIndex }
+-- .scratch/want/api.go --
+package api
+
+var MapIndex map[int]string
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/batchzerocompositemove/api"
+
+func Use() { _ = api.MapIndex }

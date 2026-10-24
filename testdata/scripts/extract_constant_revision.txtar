@@ -1,5 +1,5 @@
 # Reject stale full-file revisions without changing the selected source.
-! exec semedit extract-constant --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60' --expected-revision stale
+! exec semedit refactor-extract-value --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60' --expected-revision stale --kind constant
 stderr 'source revision mismatch'
 cmp retry.go retry.expected
 exec go test ./...

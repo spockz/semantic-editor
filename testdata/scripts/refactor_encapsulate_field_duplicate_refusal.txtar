@@ -1,0 +1,19 @@
+# Repeating an already completed request refuses the accessor collision without changing bytes.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --symbol config.value --getter readValue --setter setValue
+exec cp config.go completed-config.txt
+! exec semedit refactor-encapsulate-field --file config.go --symbol config.value --getter readValue --setter setValue
+stderr 'already exists on the selected owner'
+cmp config.go completed-config.txt
+
+-- go.mod --
+module example.com/encapsulateduplicate
+
+go 1.24
+-- config.go --
+package sample
+
+type config struct { value int }
+
+func (c *config) read() int { return c.value }

@@ -1,0 +1,29 @@
+# Refuse extraction when its helper would conflict with an import in an internal test variant.
+! exec semedit refactor-extract-callable --file service.go --symbol testing --in-function Run --kind function --start-line 4 --end-line 4
+stderr 'validate complete extracted package'
+cmp service.go original/service.go
+
+-- go.mod --
+module example.com/extracttestingcollision
+
+go 1.23
+-- service.go --
+package sample
+
+func Run() {
+	println("ready")
+}
+-- original/service.go --
+package sample
+
+func Run() {
+	println("ready")
+}
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	t.Helper()
+}

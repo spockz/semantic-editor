@@ -1,0 +1,38 @@
+# A persisted encapsulation receipt names both live accessors with the same resulting file revision.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_encapsulate_field"'
+stdout '"schema_version":"semedit.edit-receipt/v1"'
+stdout '"status":"persisted_with_diagnostics"'
+stdout '"continuations":'
+stdout '"file":"config.go"'
+stdout '"symbol":"\(\*config\)\.timeoutValue"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+stdout '"symbol":"\(\*config\)\.setTimeoutValue"'
+stdout 'Successfully renamed config.readTimeout'
+cmp config.go .scratch/want/config.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefieldreceipt
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"refactor_encapsulate_field","arguments":{"file":"config.go","symbol":"config.timeout","getter":"timeoutValue","setter":"setTimeoutValue"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"refactor_rename","arguments":{"file":"config.go","symbol":"(*config).timeoutValue","to":"readTimeout"}}}
+-- config.go --
+package sample
+
+type config struct { timeout int }
+
+func read(c *config) int { return c.timeout }
+-- .scratch/want/config.go --
+package sample
+
+type config struct{ timeout int }
+
+func read(c *config) int { return c.readTimeout() }
+
+func (receiver *config) readTimeout() int          { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value int) { receiver.timeout = value }

@@ -23,7 +23,7 @@ import (
 )
 
 func TestMoveConstructDefaultsDestinationToSourceFile(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupCLI("move-construct")
+	entry, ok := operation.DefaultRegistry().LookupCLI("refactor-move-declaration")
 	if !ok {
 		t.Fatal("move_construct registry entry missing")
 	}
@@ -38,7 +38,7 @@ func TestMoveConstructDefaultsDestinationToSourceFile(t *testing.T) {
 }
 
 func TestMoveConstructRejectsTargetWithoutRelativePlacement(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupCLI("move-construct")
+	entry, ok := operation.DefaultRegistry().LookupCLI("refactor-move-declaration")
 	if !ok {
 		t.Fatal("move_construct registry entry missing")
 	}
@@ -78,7 +78,7 @@ func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing
 
 	registry := operation.DefaultRegistry()
 	for _, name := range []string{
-		"semantic_rename",
+		"refactor_rename",
 		"semantic_insert_declaration",
 		"semantic_insert_function",
 		"semantic_insert_type",
@@ -86,9 +86,8 @@ func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing
 		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_replace_body",
-		"semantic_extract_function",
-		"semantic_extract_variable",
-		"semantic_extract_constant",
+		"refactor_extract_callable",
+		"refactor_extract_value",
 	} {
 		entry, ok := registry.LookupMCP(name)
 		if !ok {
@@ -123,8 +122,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 46 {
-		t.Errorf("registered operations = %d, want 46", len(entries))
+	if len(entries) != 52 {
+		t.Errorf("registered operations = %d, want 52", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -157,7 +156,7 @@ func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
 }
 
 func zeroArgumentStageControl(key string) bool {
-	return key == "stage_start" || key == "stage_abort"
+	return key == "stage_start" || key == "stage_abort" || key == "generate_adr_index"
 }
 
 func assertBooleanCLIStringsParse(t *testing.T, entry operation.Entry) {
@@ -265,7 +264,7 @@ func TestOperationExamplesUseSupportedJSONParameters(t *testing.T) {
 }
 
 func TestChangeSignatureExampleArgumentParsesAsGoExpression(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupCLI("change-signature")
+	entry, ok := operation.DefaultRegistry().LookupCLI("refactor-change-signature")
 	if !ok {
 		t.Fatal("change-signature registry entry missing")
 	}
@@ -296,8 +295,8 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	if _, ok := registry.LookupMCP("semantic_lookup"); !ok {
 		t.Error("LookupMCP(semantic_lookup) missed")
 	}
-	if _, ok := registry.LookupMCP("semantic_rename"); !ok {
-		t.Error("LookupMCP(semantic_rename) missed")
+	if _, ok := registry.LookupMCP("refactor_rename"); !ok {
+		t.Error("LookupMCP(refactor_rename) missed")
 	}
 	if _, ok := registry.LookupMCP("semantic_verify"); !ok {
 		t.Error("LookupMCP(semantic_verify) missed")
@@ -311,8 +310,8 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	if _, ok := registry.LookupCLI("lookup"); !ok {
 		t.Error("LookupCLI(lookup) missed")
 	}
-	if _, ok := registry.LookupCLI("rename"); !ok {
-		t.Error("LookupCLI(rename) missed")
+	if _, ok := registry.LookupCLI("refactor-rename"); !ok {
+		t.Error("LookupCLI(refactor-rename) missed")
 	}
 	if _, ok := registry.LookupCLI("verify"); !ok {
 		t.Error("LookupCLI(verify) missed")
@@ -332,7 +331,7 @@ func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	if err != nil {
 		t.Errorf("Matrix(go) failed: %v", err)
 	}
-	for _, key := range []string{"lookup", "rename", "verify", "find_references"} {
+	for _, key := range []string{"lookup", "refactor_rename", "verify", "find_references"} {
 		capability, ok := matrix.Operations[key]
 		if !ok {
 			t.Errorf("go matrix misses operation %q", key)
@@ -349,7 +348,10 @@ func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	if !scala.Operations["lookup"].Supported {
 		t.Error("scala matrix marks lookup unsupported")
 	}
-	if scala.Operations["rename"].Supported {
+	if scala.Operations["refactor_inline_value"].Supported {
+		t.Error("scala matrix advertises inline-value without a verified Metals action")
+	}
+	if scala.Operations["refactor_rename"].Supported {
 		t.Error("scala matrix marks rename supported")
 	}
 	if scala.Operations["verify"].Supported {
@@ -364,7 +366,7 @@ func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "inspect_construct" || entry.Key == "outline" || entry.Key == "find_references" || entry.Key == "workspace_outline"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "inspect_construct" || entry.Key == "outline" || entry.Key == "find_references" || entry.Key == "workspace_outline" || entry.Key == "search_adrs"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
@@ -518,7 +520,7 @@ func TestRemoveConstructSelectorContract(t *testing.T) {
 }
 
 func TestRenameProjectionUsesOneVerifiedPostRenameIdentity(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_rename")
 	if !ok {
 		t.Fatal("rename operation missing")
 	}
@@ -556,7 +558,7 @@ func TestRenameProjectionUsesOneVerifiedPostRenameIdentity(t *testing.T) {
 }
 
 func TestRenameDiagnosticErrorProjectionHasNoLiveIdentity(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_rename")
 	if !ok {
 		t.Fatal("rename operation missing")
 	}
@@ -582,7 +584,7 @@ func TestRenameDiagnosticErrorProjectionHasNoLiveIdentity(t *testing.T) {
 }
 
 func TestRenameProjectionIncludesPublicTypeTargetFile(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_rename")
 	if !ok {
 		t.Fatal("rename operation missing")
 	}
@@ -604,7 +606,7 @@ func TestRenameProjectionIncludesPublicTypeTargetFile(t *testing.T) {
 
 func TestRenameContinuationConsumersMatchLiveInputFields(t *testing.T) {
 	registry := operation.DefaultRegistry()
-	producer, ok := registry.LookupMCP("semantic_rename")
+	producer, ok := registry.LookupMCP("refactor_rename")
 	if !ok || producer.Output == nil {
 		t.Fatal("rename output contract missing")
 	}
@@ -731,7 +733,7 @@ func TestVerifyPolicyKeepsNilUnrestrictedAndEmptyFailClosed(t *testing.T) {
 }
 
 func TestRenameProjectionDoesNotRepeatExistingWorkspaceDiagnostics(t *testing.T) {
-	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	entry, ok := operation.DefaultRegistry().LookupMCP("refactor_rename")
 	if !ok {
 		t.Fatal("rename operation missing")
 	}

@@ -1,24 +1,24 @@
 # The CLI replaces one typed constant in a private function body, updates every direct caller, and refuses mutable reads and unknown nested fields without changing files.
 cp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode --expected-revision stale
+! exec semedit refactor-introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode --expected-revision stale
 stderr 'expected_revision'
 cmp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"4"}]' --discriminator defaultMode
+! exec semedit refactor-introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"4"}]' --discriminator defaultMode
 stderr 'selected expression'
 cmp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol shadowed --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
+! exec semedit refactor-introduce-parameter --file service.go --symbol shadowed --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
 stderr 'compile-time typed constant'
 cmp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol repeated --parameters '[{"source_index":0,"parameter":{"name":"flag","type":"bool"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
+! exec semedit refactor-introduce-parameter --file service.go --symbol repeated --parameters '[{"source_index":0,"parameter":{"name":"flag","type":"bool"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
 stderr 'resolve uniquely'
 cmp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol constantDecl --parameters '[{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
+! exec semedit refactor-introduce-parameter --file service.go --symbol constantDecl --parameters '[{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
 stderr 'is not constant'
 cmp service.go .scratch/service-before.txt
-! exec semedit introduce-parameter --file service.go --symbol overflow --parameters '[{"parameter":{"name":"small","type":"int8"},"argument":"257"}]' --discriminator large
+! exec semedit refactor-introduce-parameter --file service.go --symbol overflow --parameters '[{"parameter":{"name":"small","type":"int8"},"argument":"257"}]' --discriminator large
 stderr 'assignable to the appended parameter type'
 cmp service.go .scratch/service-before.txt
-exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
+exec semedit refactor-introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
 stdout 'Replaced the selected constant expression'
 cmp service.go .scratch/want/service.txt
 cmp calls.go .scratch/want/calls.txt
@@ -26,10 +26,10 @@ cmp other.go .scratch/want/other.txt
 cmp service_test.go .scratch/want/service_test.txt
 exec go test ./...
 cp service.go .scratch/service.txt
-! exec semedit introduce-parameter --file service.go --symbol unsafe --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"2"}]' --discriminator mutableMode
+! exec semedit refactor-introduce-parameter --file service.go --symbol unsafe --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"2"}]' --discriminator mutableMode
 stderr 'compile-time typed constant'
 cmp service.go .scratch/service.txt
-! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3","unknown":true}]' --discriminator defaultMode
+! exec semedit refactor-introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3","unknown":true}]' --discriminator defaultMode
 stderr 'unknown property'
 cmp service.go .scratch/service.txt
 -- go.mod --

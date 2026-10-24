@@ -1,0 +1,95 @@
+# Refuse method names that shadow promoted methods or change interface satisfaction.
+! exec semedit refactor-extract-callable --file service.go --symbol helper --in-function Service.Run --kind method --start-line 14 --end-line 14
+stderr 'receiver method set'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol helper --in-function Runner.Run --kind method --start-line 20 --end-line 20
+stderr 'package declaration "helper" already exists'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol hook --in-function Runner.Run --kind method --start-line 20 --end-line 20
+stderr 'package declaration "hook" already exists'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol callback --in-function FieldService.Run --kind method --start-line 35 --end-line 35
+stderr 'promoted field'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol Close --in-function Runner.Run --kind method --start-line 20 --end-line 20
+stderr 'must be unexported to preserve external interface satisfaction'
+cmp service.go original/service.go
+
+-- go.mod --
+module example.com/extractmethodcollision
+
+go 1.23
+-- service.go --
+package sample
+
+type Embedded struct{}
+
+func (*Embedded) helper() {}
+
+type Service struct{ Embedded }
+
+func CallPromoted(s Service) {
+	s.helper()
+}
+
+func (s Service) Run() {
+	println("new")
+}
+
+type Runner struct{}
+
+func (r Runner) Run() {
+	println("new")
+}
+
+type CanHelp interface{ helper() }
+type CanHook interface{ hook() }
+
+type FieldEmbedded struct{ callback func() }
+
+type FieldService struct{ FieldEmbedded }
+
+func CallPromotedField(s FieldService) {
+	s.callback()
+}
+
+func (s FieldService) Run() {
+	println("new")
+}
+-- original/service.go --
+package sample
+
+type Embedded struct{}
+
+func (*Embedded) helper() {}
+
+type Service struct{ Embedded }
+
+func CallPromoted(s Service) {
+	s.helper()
+}
+
+func (s Service) Run() {
+	println("new")
+}
+
+type Runner struct{}
+
+func (r Runner) Run() {
+	println("new")
+}
+
+type CanHelp interface{ helper() }
+type CanHook interface{ hook() }
+
+type FieldEmbedded struct{ callback func() }
+
+type FieldService struct{ FieldEmbedded }
+
+func CallPromotedField(s FieldService) {
+	s.callback()
+}
+
+func (s FieldService) Run() {
+	println("new")
+}

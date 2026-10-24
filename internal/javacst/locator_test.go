@@ -280,6 +280,29 @@ func TestByteOffsetFromPositionUsesUTF16Units(t *testing.T) {
 	}
 }
 
+func TestParseJavaImportsIgnoresCommentsAndTracksInsertionPoint(t *testing.T) {
+	source := []byte("/* header */\npackage sample;\n/*\nimport static sample.Kind.CREDIT;\n*/\nimport static sample.Kind.CREDIT; /* retained */\nimport java.util.*;\nclass Example {}\n")
+	imports, err := ParseJavaImports(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !imports.HasPackage {
+		t.Fatal("package declaration was not detected")
+	}
+	want := []string{"static:sample\x00.\x00Kind\x00.\x00CREDIT", "ordinary:java\x00.\x00util\x00.\x00*"}
+	if len(imports.Declarations) != len(want) {
+		t.Fatalf("import declarations = %#v, want %d", imports.Declarations, len(want))
+	}
+	for index, expected := range want {
+		if imports.Declarations[index].Identity != expected {
+			t.Errorf("import identity[%d] = %q, want %q", index, imports.Declarations[index].Identity, expected)
+		}
+	}
+	if got := string(source[imports.InsertionOffset:]); got != "\nclass Example {}\n" {
+		t.Fatalf("insertion suffix = %q, want trailing import separator and class declaration", got)
+	}
+}
+
 func TestReplaceCandidateParsesCompleteUpdatedMethod(t *testing.T) {
 	method := []byte(`void run() { if (ready()) done(); }`)
 	candidate, _, err := Resolve(method, backend.ConstructIf, "ready()", "")

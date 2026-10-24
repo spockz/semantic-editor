@@ -17,8 +17,8 @@ func TestExtractionSuggestionsValidateOwnerRetries(t *testing.T) {
 		key string
 		raw map[string]any
 	}{
-		{"extract_function", map[string]any{"kind": "function", "start_line": 4, "end_line": 4}},
-		{"extract_variable", map[string]any{"discriminator": "x"}},
+		{canonicalExtractCallableKey, map[string]any{"kind": "function", "start_line": 4, "end_line": 4}},
+		{canonicalExtractValueKey, map[string]any{"discriminator": "x"}},
 	} {
 		t.Run(test.key, func(t *testing.T) {
 			cc, buffer := suggestionFixture(t, map[string]string{

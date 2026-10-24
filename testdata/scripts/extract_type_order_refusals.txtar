@@ -1,0 +1,69 @@
+# Field extraction refuses non-contiguous and reversed selections because struct equality observes source-order evaluation.
+exec go test ./...
+! exec semedit refactor-extract-type --file record.go --symbol recordState --in-type record --members '[{"file":"record.go","symbol":"record.first"},{"file":"record.go","symbol":"record.last"}]' --field state
+stderr 'selected fields must be contiguous and ordered'
+cmp record.go .scratch/want/record.go
+! exec semedit refactor-extract-type --file record.go --symbol pairState --in-type pair --members '[{"file":"record.go","symbol":"pair.second"},{"file":"record.go","symbol":"pair.first"}]' --field state
+stderr 'selected fields must be contiguous and ordered'
+cmp record.go .scratch/want/record.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypeorderrefusals
+
+go 1.24
+-- record.go --
+package sample
+
+type record struct {
+	first   int
+	payload any
+	last    int
+}
+
+func equalityProbe() bool {
+	var left, right record
+	left.first, right.first = 1, 1
+	left.payload, right.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}
+
+type pair struct {
+	first  int
+	second int
+}
+-- equality_test.go --
+package sample
+
+import "testing"
+
+func TestEqualityEvaluatesInterfaceFieldBeforeLaterMismatch(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("comparison did not panic at the uncomparable interface value")
+		}
+	}()
+	_ = equalityProbe()
+}
+-- .scratch/want/record.go --
+package sample
+
+type record struct {
+	first   int
+	payload any
+	last    int
+}
+
+func equalityProbe() bool {
+	var left, right record
+	left.first, right.first = 1, 1
+	left.payload, right.payload = []int{1}, []int{1}
+	left.last, right.last = 1, 2
+	return left == right
+}
+
+type pair struct {
+	first  int
+	second int
+}

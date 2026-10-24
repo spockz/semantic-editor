@@ -1,0 +1,130 @@
+# Inline one pure scalar local into the immediately following simple assignment; refuse other assignment shapes without writing.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Build
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function PackageTarget
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function NonAdjacent
+stderr 'immediate direct return'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function Compound
+stderr 'immediate simple assignment'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function MultipleTargets
+stderr 'immediate simple assignment'
+cmp calc.go .scratch/want/calc.go
+! exec semedit refactor-inline-value --file calc.go --symbol value --in-function SelectorTarget
+stderr 'simple identifier'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedassignment
+
+go 1.23
+-- calc.go --
+package calc
+
+func Build(seed int) int {
+	var total int
+	value := seed + 2
+	total = value
+	return total
+}
+
+func NonAdjacent(seed int) int {
+	var total int
+	value := seed + 2
+	total++
+	total = value
+	return total
+}
+
+func Compound(seed int) int {
+	var total int
+	value := seed + 2
+	total += value
+	return total
+}
+
+func MultipleTargets(seed int) int {
+	var other, total int
+	value := seed + 2
+	other, total = 0, value
+	return total + other
+}
+
+type totals struct{ value int }
+
+var state totals
+
+func SelectorTarget(seed int) {
+	value := seed + 2
+	state.value = value
+}
+
+func PackageTarget(seed int) int {
+	value := seed + 2
+	total = value
+	return total
+}
+
+var total int
+-- .scratch/want/calc.go --
+package calc
+
+func Build(seed int) int {
+	var total int
+	total = seed + 2
+	return total
+}
+
+func NonAdjacent(seed int) int {
+	var total int
+	value := seed + 2
+	total++
+	total = value
+	return total
+}
+
+func Compound(seed int) int {
+	var total int
+	value := seed + 2
+	total += value
+	return total
+}
+
+func MultipleTargets(seed int) int {
+	var other, total int
+	value := seed + 2
+	other, total = 0, value
+	return total + other
+}
+
+type totals struct{ value int }
+
+var state totals
+
+func SelectorTarget(seed int) {
+	value := seed + 2
+	state.value = value
+}
+
+func PackageTarget(seed int) int {
+	total = seed + 2
+	return total
+}
+
+var total int
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuild(t *testing.T) {
+	if got := Build(5); got != 7 {
+		t.Fatalf("Build(5) = %d, want 7", got)
+	}
+	if got := PackageTarget(5); got != 7 {
+		t.Fatalf("PackageTarget(5) = %d, want 7", got)
+	}
+}

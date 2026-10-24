@@ -1,0 +1,195 @@
+# Safe deletion removes unused private standalone types and aliases after module-wide reference and compiler checks.
+exec semedit remove-construct --file api/decls.go --kind type --symbol obsoleteCount --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file api/decls.go --kind type --symbol obsoleteRecord --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file api/decls.go --kind type --symbol aliasCount --safe-delete
+stdout 'Safe deletion checks run'
+exec semedit remove-construct --file api/decls.go --kind type --symbol aliasMethodCount --safe-delete
+stdout 'Safe deletion checks run'
+cmp api/decls.go .scratch/want/api/decls.go
+exec go test ./...
+
+! exec semedit remove-construct --file api/decls.go --kind type --symbol referencedCount --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol testReferencedCount --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol inactiveCount --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol methodCount --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol ExportedCount --safe-delete
+stderr 'unexported standalone'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol ExportedRecord --safe-delete
+stderr 'unexported standalone'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol referencedAlias --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol genericCount --safe-delete
+stderr 'generic types'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol referencedRecord --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol testReferencedRecord --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol inactiveRecord --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol methodRecord --safe-delete
+stderr 'safe_delete found another Go identifier'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol promotedRecord --safe-delete
+stderr 'empty value and pointer method sets'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol pointerPromotedRecord --safe-delete
+stderr 'empty value and pointer method sets'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol interfaceCount --safe-delete
+stderr 'empty value and pointer method sets'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol groupedCount --safe-delete
+stderr 'grouped type declarations'
+! exec semedit remove-construct --file api/decls.go --kind type --symbol importedCount --safe-delete
+stderr 'final use of an import'
+cmp api/decls.go .scratch/want/api/decls.go
+
+stdin remove-type.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"safe_delete":true'
+cmp api/mcp.go .scratch/want/api/mcp.go
+exec go test ./...
+
+-- go.mod --
+module example.com/safe-type
+
+go 1.23
+
+-- api/decls.go --
+package api
+
+import (
+	"fmt"
+	"example.com/safe-type/counter"
+)
+
+type obsoleteCount int
+type obsoleteRecord struct { Count int }
+type referencedCount int
+var referencedValue referencedCount
+type referencedRecord struct{}
+var referencedValueRecord referencedRecord
+type testReferencedCount int
+type testReferencedRecord struct{}
+type inactiveCount int
+type inactiveRecord struct{}
+type methodCount int
+func (methodCount) marker() {}
+type methodRecord struct{}
+func (methodRecord) marker() {}
+type promotedComponent struct{}
+func (promotedComponent) promotedValue() {}
+type promotedRecord struct { promotedComponent }
+type pointerComponent struct{}
+func (*pointerComponent) promotedPointer() {}
+type pointerPromotedRecord struct { pointerComponent }
+type ExportedCount int
+type ExportedRecord struct{}
+type genericCount[T any] int
+type referencedAlias = string
+type aliasCount = int
+type aliasMethodCount = methodCount
+type structCount struct{}
+type interfaceCount interface{ Marker() }
+type (
+	groupedCount int
+)
+type importedCount counter.Count
+
+func Keep() { fmt.Println("kept") }
+
+-- api/decls_test.go --
+package api
+
+import "testing"
+
+var _ testReferencedCount
+var _ testReferencedRecord
+var _ referencedAlias
+
+func TestRetainedCodeRuns(t *testing.T) {
+	Keep()
+}
+
+-- api/inactive_windows.go --
+//go:build windows
+
+package api
+
+func inactive() inactiveCount { return 0 }
+func inactiveRecordUse() inactiveRecord { return inactiveRecord{} }
+
+-- counter/counter.go --
+package counter
+
+type Count int
+
+-- api/mcp.go --
+package api
+
+type mcpObsolete struct{ Count int }
+
+func KeepMCP() int { return 1 }
+
+-- .scratch/want/api/decls.go --
+package api
+
+import (
+	"fmt"
+
+	"example.com/safe-type/counter"
+)
+
+type referencedCount int
+
+var referencedValue referencedCount
+
+type referencedRecord struct{}
+
+var referencedValueRecord referencedRecord
+
+type testReferencedCount int
+type testReferencedRecord struct{}
+type inactiveCount int
+type inactiveRecord struct{}
+type methodCount int
+
+func (methodCount) marker() {}
+
+type methodRecord struct{}
+
+func (methodRecord) marker() {}
+
+type promotedComponent struct{}
+
+func (promotedComponent) promotedValue() {}
+
+type promotedRecord struct{ promotedComponent }
+type pointerComponent struct{}
+
+func (*pointerComponent) promotedPointer() {}
+
+type pointerPromotedRecord struct{ pointerComponent }
+type ExportedCount int
+type ExportedRecord struct{}
+type genericCount[T any] int
+type referencedAlias = string
+
+type structCount struct{}
+type interfaceCount interface{ Marker() }
+type (
+	groupedCount int
+)
+type importedCount counter.Count
+
+func Keep() { fmt.Println("kept") }
+-- .scratch/want/api/mcp.go --
+package api
+
+func KeepMCP() int { return 1 }
+-- remove-type.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_remove_construct","arguments":{"file":"api/mcp.go","kind":"type","symbol":"mcpObsolete","safe_delete":true}}}

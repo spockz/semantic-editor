@@ -1,44 +1,44 @@
 # Move construct relocates a function within a file with comments intact.
-exec semedit move-construct --file api/server.go --symbol Run --placement before_symbol --target-symbol Init
+exec semedit refactor-move-declaration --file api/server.go --symbol Run --placement before_symbol --target-symbol Init
 stdout 'Successfully moved construct'
 cmp api/server.go .scratch/_want/api/server.go
 
 # A self-anchor still resolves the symbol before returning success.
-exec semedit move-construct --file api/server.go --symbol Init --placement before_symbol --target-symbol Init
-! exec semedit move-construct --file api/server.go --symbol Missing --placement before_symbol --target-symbol Missing
+exec semedit refactor-move-declaration --file api/server.go --symbol Init --placement before_symbol --target-symbol Init
+! exec semedit refactor-move-declaration --file api/server.go --symbol Missing --placement before_symbol --target-symbol Missing
 stderr 'symbol.*not found'
 cmp api/server.go .scratch/_want/api/server.go
 
 # Move a function between files in the same package and carry its required import.
-exec semedit move-construct --file api/source.go --destination-file api/dest.go --symbol Normalize --placement file_end
+exec semedit refactor-move-declaration --file api/source.go --destination-file api/dest.go --symbol Normalize --placement file_end
 cmp api/source.go .scratch/_want/api/source.go
 cmp api/dest.go .scratch/_want/api/dest.go
 stdout 'import'
 
 # Resolve an implicit import name from the package instead of guessing from its path.
-exec semedit move-construct --file api/alias_source.go --destination-file api/alias_dest.go --symbol UseNamed --placement file_end
+exec semedit refactor-move-declaration --file api/alias_source.go --destination-file api/alias_dest.go --symbol UseNamed --placement file_end
 cmp api/alias_source.go .scratch/_want/api/alias_source.go
 cmp api/alias_dest.go .scratch/_want/api/alias_dest.go
 
 # Move an exported function across packages and update callers in the source and third packages.
-exec semedit move-construct --file other/source.go --destination-file api/cross.go --symbol MoveMe --placement file_end
+exec semedit refactor-move-declaration --file other/source.go --destination-file api/cross.go --symbol MoveMe --placement file_end
 stdout 'Successfully moved construct'
 cmp other/source.go .scratch/_want/other/source.go
 cmp api/cross.go .scratch/_want/api/cross.go
 cmp callers/use.go .scratch/_want/callers/use.go
 
 # A selected member of an iota group fails without moving its siblings or changing values.
-! exec semedit move-construct --file api/group.go --destination-file api/dest.go --symbol First --placement file_end
+! exec semedit refactor-move-declaration --file api/group.go --destination-file api/dest.go --symbol First --placement file_end
 stderr 'grouped constant with implicit expressions or iota'
 cmp api/group.go .scratch/_want/api/group.go
 
 # A single literal variable spec moves with its documentation while the sibling remains.
-exec semedit move-construct --file api/group_var.go --destination-file api/group_var_dest.go --symbol GroupedB --placement before_symbol --target-symbol KeepGroupedVar
+exec semedit refactor-move-declaration --file api/group_var.go --destination-file api/group_var_dest.go --symbol GroupedB --placement before_symbol --target-symbol KeepGroupedVar
 cmp api/group_var.go .scratch/_want/api/group_var.go
 cmp api/group_var_dest.go .scratch/_want/api/group_var_dest.go
 
 # A grouped type member moves with its documentation, and the sibling remains unchanged.
-exec semedit move-construct --file api/group_type.go --destination-file api/group_type_dest.go --symbol MoveType --placement before_symbol --target-symbol KeepGroupType
+exec semedit refactor-move-declaration --file api/group_type.go --destination-file api/group_type_dest.go --symbol MoveType --placement before_symbol --target-symbol KeepGroupType
 cmp api/group_type.go .scratch/_want/api/group_type.go
 cmp api/group_type_dest.go .scratch/_want/api/group_type_dest.go
 exec go test ./...

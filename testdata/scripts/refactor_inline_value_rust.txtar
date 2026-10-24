@@ -1,0 +1,25 @@
+env SEMEDIT_TEST_RUST_INLINE_VALUE=1
+# The native assist is accepted only when its whole-file edit equals the proven literal substitution.
+exec semedit refactor-inline-value --language rust --trust-workspace --file src/lib.rs --symbol value --in-function run
+stdout 'Inlined one suffixed-integer Rust local'
+stdout 'diagnostic_status: unavailable'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "inline-value-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    let value = 42_i32;
+    consume(value, value);
+}
+
+fn consume(left: i32, right: i32) {}
+-- want/lib.rs --
+fn run() {
+    consume(42_i32, 42_i32);
+}
+
+fn consume(left: i32, right: i32) {}

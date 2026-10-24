@@ -1,0 +1,29 @@
+# Safe deletion accepts unused private defined types with any underlying type when their value and pointer method sets are empty.
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteArray --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteSlice --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteMap --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteChannel --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoletePointer --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteFunction --safe-delete
+exec semedit remove-construct --file api/types.go --kind type --symbol obsoleteInterface --safe-delete
+cmp api/types.go .scratch/want/api/types.go
+exec go test ./...
+
+-- go.mod --
+module example.com/safe-method-free-types
+
+go 1.23
+
+-- api/types.go --
+package api
+
+type obsoleteArray [2]int
+type obsoleteSlice []string
+type obsoleteMap map[string]int
+type obsoleteChannel <-chan int
+type obsoletePointer *int
+type obsoleteFunction func(int) string
+type obsoleteInterface interface{}
+
+-- .scratch/want/api/types.go --
+package api

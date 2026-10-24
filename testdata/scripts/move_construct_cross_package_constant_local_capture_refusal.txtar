@@ -1,0 +1,38 @@
+# Rewriting a destination package selector to an unqualified constant must refuse when a local shadows that name.
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol RetryWindow --placement file_end
+stderr 'resolves to a different declaration'
+cmp legacy/limits.go .scratch/_want/legacy.go
+cmp api/limits.go .scratch/_want/api.go
+
+-- go.mod --
+module example.com/constantlocalcapture
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+const RetryWindow int = 180
+-- api/limits.go --
+package api
+
+import "example.com/constantlocalcapture/legacy"
+
+func Existing() int {
+	RetryWindow := 999
+	_ = RetryWindow
+	return legacy.RetryWindow
+}
+-- .scratch/_want/legacy.go --
+package legacy
+
+const RetryWindow int = 180
+-- .scratch/_want/api.go --
+package api
+
+import "example.com/constantlocalcapture/legacy"
+
+func Existing() int {
+	RetryWindow := 999
+	_ = RetryWindow
+	return legacy.RetryWindow
+}

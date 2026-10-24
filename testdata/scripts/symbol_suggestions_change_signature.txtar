@@ -1,10 +1,10 @@
 # A failed signature-change selector suggests a native-valid private function target for explicit retry.
 env SEMEDIT_SUGGESTIONS=generic
 cp service.go original.txt
-! exec semedit change-signature --file service.go --symbol proces --parameters '[{"source_index":0,"parameter":{"name":"x","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"0"}]'
+! exec semedit refactor-change-signature --file service.go --symbol proces --parameters '[{"source_index":0,"parameter":{"name":"x","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"0"}]'
 stderr 'Suggested target: process'
 cmp service.go original.txt
-exec semedit change-signature --file service.go --symbol process --parameters '[{"source_index":0,"parameter":{"name":"x","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"0"}]'
+exec semedit refactor-change-signature --file service.go --symbol process --parameters '[{"source_index":0,"parameter":{"name":"x","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"0"}]'
 stdout 'Updated the function signature'
 cmp service.go want/service.go
 

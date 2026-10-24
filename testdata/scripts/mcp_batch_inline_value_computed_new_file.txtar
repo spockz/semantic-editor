@@ -1,0 +1,35 @@
+# WHY: Proves inline operates on a newly scaffolded source file inside a caller-owned MCP batch buffer.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp value.go .scratch/want/value.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputednewfile
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_scaffold_file","params":{"file":"value.go","package":"sample"}},{"tool":"semantic_insert_function","params":{"file":"value.go","source":"func Build(seed int) int {\n\tvalue := seed + Seed\n\treturn value\n}"}},{"tool":"refactor_inline_value","params":{"file":"value.go","symbol":"value","in_function":"Build"}}]}}}
+-- base.go --
+package sample
+
+const Seed = 1
+-- .scratch/want/value.go --
+package sample
+
+func Build(seed int) int {
+	return seed + Seed
+}
+-- value_test.go --
+package sample
+
+import "testing"
+
+func TestBuild(t *testing.T) {
+	if got := Build(2); got != 3 {
+		t.Fatalf("Build(2) = %d, want 3", got)
+	}
+}

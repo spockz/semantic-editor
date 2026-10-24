@@ -1,0 +1,36 @@
+# Create a scalar range loop in the batch overlay, extract it from that overlay, and assert the staged source.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+
+-- go.mod --
+module example.com/extractrangebatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"Run","body":"for index, value := range input { record(index, value) }"}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visit","in_function":"Run","kind":"function","start_line":4,"end_line":6}}]}}}
+-- service.go --
+package sample
+
+func Run(input string) {
+	return
+}
+
+func record(int, rune) {}
+-- .scratch/want/service.go --
+package sample
+
+func Run(input string) {
+	visit(input)
+}
+
+func visit(input string) {
+	for index, value := range input {
+		record(index, value)
+	}
+}
+
+func record(int, rune) {}

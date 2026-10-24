@@ -1,7 +1,7 @@
 # One buffered batch sees the first unsaved caller edit during signature planning, advertises the tool, and publishes only the final typed callers.
 stdin input.json
 exec semedit mcp --enable-batching
-stdout '"name"\s*:\s*"semantic_change_signature"'
+stdout '"name"\s*:\s*"refactor_change_signature"'
 stdout '"isError":false'
 cmp service.go .scratch/want/service.txt
 cmp calls.go .scratch/want/calls.txt
@@ -16,7 +16,7 @@ go 1.24
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_change_signature","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func verifySignature() int { return transform(9, nil) }"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"refactor_change_signature","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func verifySignature() int { return transform(9, nil) }"}}]}}}
 -- service.go --
 package sample
 

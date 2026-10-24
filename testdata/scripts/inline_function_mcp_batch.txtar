@@ -1,9 +1,10 @@
 # Inline one typed direct literal-return call after a preceding child changes the caller overlay.
 stdin input.json
 exec semedit mcp --enable-batching --live-reload
-! stdout '"name"\s*:\s*"semantic_inline_function"'
+! stdout '"name"\s*:\s*"refactor_inline_callable"'
 ! stdout '"isError":true'
-stdout '"operation":"inline-function"'
+stdout '"tool":"refactor_inline_callable"'
+stdout '"operation":"refactor_inline_callable"'
 stdout '"status":"applied_working"'
 cmp caller.go .scratch/want/caller.go
 exec go test ./...
@@ -27,7 +28,7 @@ func Run() int { return int(7); return adjust() }
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"caller.go","symbol":"Prelude","body":"return 2"}},{"tool":"semantic_inline_function","params":{"file":"callee.go","symbol":"adjust","call_site":{"file":"caller.go","in_function":"Run","discriminator":"adjust()","expected_revision":"42e0af5579e8990f360b99948332e6a6f62d76df2249134683290d1df8170902"}}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"caller.go","symbol":"Prelude","body":"return 2"}},{"tool":"refactor_inline_callable","params":{"file":"callee.go","symbol":"adjust","call_site":{"file":"caller.go","in_function":"Run","discriminator":"adjust()","expected_revision":"42e0af5579e8990f360b99948332e6a6f62d76df2249134683290d1df8170902"}}}]}}}
 -- .scratch/want/caller.go --
 package sample
 

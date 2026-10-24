@@ -18,7 +18,13 @@ does not indicate a clean workspace. Use verification only for a fresh report.
 Rename returns `active_count` and diagnostic changes rather than every existing
 workspace warning; request `semantic_verify` for a full diagnostic inventory.
 
-This reference provides workflows for executing Rust refactorings with `semedit` primitives. Read this document only when refactoring or inspecting Rust source files.
+Install the external server from the official rust-analyzer source checkout with
+`cargo xtask install --server` using the latest stable Rust toolchain. Ensure
+the installed `rust-analyzer` executable is on the MCP server process's `PATH`;
+the backend does not invoke Cargo to install or build it. See the official
+[rust-analyzer binary installation guide](https://rust-analyzer.github.io/book/rust_analyzer_binary.html).
+
+This reference provides workflows for executing Rust refactorings with `semedit` primitives. Read it when working with Rust source files. For exact eligibility rules, edit-capture contracts, and refusal boundaries for `refactor_extract_value`, `refactor_extract_callable`, `refactor_inline_value`, `refactor_inline_callable`, and `refactor_promote_local_to_const`, read the [Rust refactoring boundaries](rust/refactoring-boundaries.md). Common operation routing remains in the primary [tool guide](../SKILL.md#choose-the-operation-by-intent).
 
 ---
 
@@ -46,7 +52,7 @@ When strengthening domain types from primitive values (e.g., `u64` $\to$ `UserId
    - Define tuple struct: `#[derive(Debug, Clone, Copy, PartialEq, Eq)] pub struct UserId(pub u64);`.
 3. **Signature Updates & Symbol Rename**:
    - Update target function parameters to require `UserId`.
-   - Use `semantic_rename` with `file` and `trust_workspace: true` to update symbol names consistently across the target file.
+   - Use `refactor_rename` with `file` and `trust_workspace: true` to update symbol names consistently across the target file.
 4. **Call-Site Wrapping & Verification**:
    - Wrap raw arguments with `UserId(...)` at call sites.
    - Verify zero compiler warnings via `cargo check` or `cargo test`.

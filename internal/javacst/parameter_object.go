@@ -53,7 +53,7 @@ func ParseJavaMethodParameters(method []byte) ([]JavaParameter, error) {
 			switch child.Type(lang) {
 			case javaNodeIdentifier:
 				name = string(method[child.StartByte():child.EndByte()])
-			case "type", "integral_type", "floating_point_type", "boolean_type", "void_type", "array_type", "generic_type", "scoped_type_identifier", "type_identifier":
+			case "type", "integral_type", "floating_point_type", "boolean_type", "void_type", "array_type", "generic_type", "scoped_type_identifier", javaNodeTypeIdentifier:
 				if typeName == "" {
 					typeName = strings.TrimSpace(string(method[child.StartByte():child.EndByte()]))
 				}

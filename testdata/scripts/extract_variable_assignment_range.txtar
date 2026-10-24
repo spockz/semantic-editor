@@ -1,0 +1,165 @@
+# Share a typed scalar RHS across an explicitly selected direct assignment range and refuse stale, ambiguous, or mixed ranges.
+exec semedit refactor-extract-value --file render.go --symbol adjusted --in-function RenderRange --kind variable --discriminator 'input + 1' --construct-path 2 --end-construct-path 3 --expected-revision 69ab3275ebe86beeeb7f79fdc7ce634ba8a501e4e0ddea71049d132d24cbae03
+cmp render.go want/render.go
+exec semedit refactor-extract-value --file compact.go --symbol adjusted --in-function RenderCompact --kind variable --discriminator 'input+1' --construct-path 2 --end-construct-path 3 --expected-revision 3e6cee9475c0a64b087bcf69c9f9794f1af13f9bdb0d3c9077a403b9e8935162
+cmp compact.go want/compact.go
+! exec semedit refactor-extract-value --file stale.go --symbol adjusted --in-function RenderStale --kind variable --discriminator 'input + 1' --construct-path 1 --end-construct-path 2 --expected-revision stale
+stderr 'selected source revision mismatch'
+cmp stale.go original/stale.go
+! exec semedit refactor-extract-value --file ambiguous.go --symbol adjusted --in-function RenderAmbiguous --kind variable --discriminator 'input + 1'
+stderr 'expression selection is ambiguous'
+cmp ambiguous.go original/ambiguous.go
+! exec semedit refactor-extract-value --file mixed.go --symbol adjusted --in-function RenderMixed --kind variable --discriminator 'input + 1' --construct-path 2 --end-construct-path 4 --expected-revision b633fd8371d8499462fad8f0700ee13d2d316267757b86d505f0fdd81788b72d
+stderr 'not a matching direct simple assignment'
+cmp mixed.go original/mixed.go
+! exec semedit refactor-extract-value --file nested.go --symbol adjusted --in-function RenderNested --kind variable --discriminator 'input + 1' --construct-path 2.0.0 --end-construct-path 2.0.1 --expected-revision 5f28994adab393437ddb1ddb710df303e2bc5c37a27bf47b0bf70639544eb0c7
+stderr 'nested or control-flow assignments'
+cmp nested.go original/nested.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariableassignmentrange
+
+go 1.24
+-- render.go --
+package render
+
+func RenderRange(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	return first + second
+}
+-- compact.go --
+package render
+
+func RenderCompact(input int) int {
+	var first int
+	var second int
+	first = input+1
+	second = input+1
+	return first + second
+}
+-- want/compact.go --
+package render
+
+func RenderCompact(input int) int {
+	var first int
+	var second int
+	adjusted := input + 1
+	first = adjusted
+	second = adjusted
+	return first + second
+}
+-- want/render.go --
+package render
+
+func RenderRange(input int) int {
+	var first int
+	var second int
+	adjusted := input + 1
+	first = adjusted
+	second = adjusted
+	return first + second
+}
+-- stale.go --
+package render
+
+func RenderStale(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	return first + second
+}
+-- original/stale.go --
+package render
+
+func RenderStale(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	return first + second
+}
+-- ambiguous.go --
+package render
+
+func RenderAmbiguous(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	return first + second
+}
+-- original/ambiguous.go --
+package render
+
+func RenderAmbiguous(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	second = input + 1
+	return first + second
+}
+-- mixed.go --
+package render
+
+func touch() {}
+
+func RenderMixed(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	touch()
+	second = input + 1
+	return first + second
+}
+-- original/mixed.go --
+package render
+
+func touch() {}
+
+func RenderMixed(input int) int {
+	var first int
+	var second int
+	first = input + 1
+	touch()
+	second = input + 1
+	return first + second
+}
+-- nested.go --
+package render
+
+func RenderNested(input int) int {
+	var first int
+	var second int
+	if input > 0 {
+		first = input + 1
+		second = input + 1
+	}
+	return first + second
+}
+-- original/nested.go --
+package render
+
+func RenderNested(input int) int {
+	var first int
+	var second int
+	if input > 0 {
+		first = input + 1
+		second = input + 1
+	}
+	return first + second
+}
+-- render_test.go --
+package render
+
+import "testing"
+
+func TestAssignmentRangePreservesRuntimeResult(t *testing.T) {
+	if got := RenderRange(4); got != 10 {
+		t.Fatalf("RenderRange(4) = %d, want 10", got)
+	}
+}

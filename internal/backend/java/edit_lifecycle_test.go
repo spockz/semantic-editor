@@ -205,7 +205,7 @@ func lifecycleDocumentUpdate(params any, open bool) (int, []byte, error) {
 }
 
 func TestApplyCodeActionKeepsJavaCSTEditInOverlayUntilFormattedSave(t *testing.T) {
-	root := t.TempDir()
+	root := backend.CanonicalWorkspaceRoot(t.TempDir())
 	file := filepath.Join(root, "Thing.java")
 	original := []byte("import java.util.List;\nclass Thing {\nint value() { return 1; }\n}\n")
 	action := []byte("import java.util.List;\nclass Thing {\nint value() { return 2; }\n}\n")

@@ -1,0 +1,486 @@
+# This executable fulfillment-library migration composes all bounded Go refactoring families from RQ-0060.
+# Each named step occurs once; variable/constant and function/method extraction exercise distinct supported kinds.
+# Source fixtures model ordering, inventory, shipping, fulfillment and pricing, rather than unrelated API samples.
+# PLACEHOLDER: general signature removals/result changes, arbitrary expression/control-flow extraction, resource/type-member safe deletion,
+# cross-module/package-directory moves, positional literal insertion, and generic/interface dispatch inlining remain deferred.
+# PLACEHOLDER: extract-value(kind=field) and make-static have no Go implementation; use existing struct fields and receiver methods.
+# No fabricated command stands in for a placeholder. Dependency installation is unnecessary for this standard-library-only service.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+
+# Simplify an incidental temporary before extracting the reusable pricing computation.
+exec semedit refactor-inline-value --file dispatch/workflow.go --symbol offset --in-function prepare
+exec semedit refactor-extract-value --file dispatch/workflow.go --symbol auditValue --in-function prepare --discriminator 'quantity + 2'
+exec semedit refactor-extract-value --file dispatch/workflow.go --symbol handlingFee --in-function prepare --discriminator '3*60' --kind constant
+exec semedit refactor-extract-callable --file dispatch/workflow.go --symbol increment --in-function prepare --kind function --start-line 10 --end-line 10
+
+# Evolve the private workflow API and migrate the caller before naming the final operation.
+exec semedit refactor-change-signature --file dispatch/workflow.go --symbol prepare --parameters '[{"source_index":0,"parameter":{"name":"quantity","type":"int"}},{"parameter":{"name":"priority","type":"bool"},"argument":"true"}]'
+exec semedit refactor-rename --file dispatch/workflow.go --symbol prepare --to prepareShipment
+exec semedit refactor-inline-callable --file dispatch/workflow.go --symbol defaultQuantity --call-site '{"file":"dispatch/workflow.go","in_function":"previewQuantity","discriminator":"defaultQuantity()"}'
+exec semedit refactor-introduce-parameter --file dispatch/workflow.go --symbol addPackaging --parameters '[{"source_index":0,"parameter":{"name":"quantity","type":"int"}},{"parameter":{"name":"extra","type":"int"},"argument":"2"}]' --discriminator '2'
+exec semedit refactor-introduce-parameter-object --file dispatch/order.go --symbol assemble --destination-file dispatch/order.go --parameter '{"name":"options","type":"shipmentOptions"}' --fields '[{"source_index":0,"field":{"name":"order","type":"Order"}},{"source_index":1,"field":{"name":"quantity","type":"int"}}]'
+
+# Split ownership of cached stock and inventory lookup while retaining the inventory method contract.
+exec semedit refactor-extract-type --file dispatch/inventory.go --symbol stockState --in-type stockCache --members '[{"file":"dispatch/inventory.go","symbol":"stockCache.entries"}]' --field state
+exec semedit refactor-extract-delegate --file dispatch/inventory.go --symbol inventoryState --in-type inventory --members '[{"file":"dispatch/inventory.go","symbol":"inventory.entries"},{"file":"dispatch/inventory.go","symbol":"inventory.fallback"}]' --field state --method Lookup
+exec semedit refactor-migrate-type --file dispatch/policy.go --symbol shippingPolicy.timeout --type seconds
+exec semedit refactor-extract-callable --file dispatch/worker.go --symbol adjustedQuantity --in-function worker.Adjust --kind method --start-line 18 --end-line 19
+exec semedit refactor-encapsulate-field --file dispatch/worker.go --symbol worker.timeout --getter timeoutValue --setter setTimeout
+
+# Extract the existing carrier contract, generate its implementation, then replace the generated panic stub.
+exec semedit refactor-extract-interface --file dispatch/worker.go --in-type carrier --symbol Delivery --destination-file dispatch/contracts.go --receiver-kind pointer --members '[{"file":"dispatch/worker.go","symbol":"(*carrier).Deliver"}]'
+exec semedit refactor-implement-contract --file dispatch/worker.go --symbol worker --contract Delivery --contract-file dispatch/contracts.go --destination-file dispatch/contracts.go --receiver-kind pointer --body-policy panic_stub
+grep 'panic\(`TODO: implement`\)' dispatch/contracts.go
+exec semedit replace-body --file dispatch/contracts.go --symbol (*worker).Deliver --body 'return true'
+
+# Remove the obsolete constant only after its replacement is established; move the extracted helper into a dedicated file.
+exec semedit remove-construct --file dispatch/workflow.go --kind const --symbol oldHandlingFee --safe-delete
+exec semedit scaffold-file --file dispatch/calculation.go --package infer --purpose-header '// WHY: Isolate the extracted shipment quantity calculation.'
+exec semedit refactor-move-declaration --file dispatch/workflow.go --destination-file dispatch/calculation.go --symbol increment --placement file_end
+
+# Finish the policy evolution using focused field, statement and keyed-element edits.
+exec semedit insert-field --file dispatch/policy.go --in-type shippingPolicy --symbol shippingPolicy.tracked --source 'tracked bool' --placement type_end
+exec semedit insert-construct --file dispatch/workflow.go --kind statement/expression --in-function prepareShipment --anchor before_return --source 'record(priority)'
+exec semedit insert-construct --file dispatch/policy.go --kind element --in-declaration serviceLevels --discriminator 'map[string]int{"standard": 1}' --source '"express": 2'
+exec semedit set-doc-comment --file dispatch/order.go --scope declaration --symbol Fulfill --comment 'Fulfill prepares a shipment with the configured stock and pricing rules.'
+
+# Move the complete independent pricing source into its final package and update the typed dispatch caller.
+exec semedit refactor-move-file --file dispatch/price.go --destination-file pricing/price.go
+exec semedit imports --file dispatch/workflow.go
+cp .scratch/fulfillment-test.txt dispatch/fulfillment_test.go
+exec semedit assertion-mode --file dispatch/fulfillment_test.go --mode relax --trust-workspace
+
+# Every destination is specified completely; tests prove the connected workflow and both generated abstractions work.
+cmp dispatch/order.go .scratch/want/order.txt
+cmp dispatch/workflow.go .scratch/want/workflow.txt
+cmp dispatch/inventory.go .scratch/want/inventory.txt
+cmp dispatch/policy.go .scratch/want/policy.txt
+cmp dispatch/worker.go .scratch/want/worker.txt
+cmp dispatch/contracts.go .scratch/want/contracts.txt
+cmp dispatch/calculation.go .scratch/want/calculation.txt
+cmp dispatch/price.go .scratch/want/empty-price.txt
+cmp pricing/price.go .scratch/want/price.txt
+cmp dispatch/fulfillment_test.go .scratch/want/fulfillment-test.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/fulfillment
+
+go 1.24
+-- dispatch/order.go --
+// WHY: Keep order validation and shipment assembly at the fulfillment boundary.
+package dispatch
+
+type Order struct {
+	ID       int
+	SKU      string
+	Quantity int
+}
+
+type Shipment struct {
+	Order    Order
+	Quantity int
+	Charge   int
+	Valid    bool
+}
+
+func validOrder(order Order) bool {
+	return order.ID > 0 && order.SKU != "" && order.Quantity > 0
+}
+
+func assemble(order Order, quantity int) Shipment {
+	return Shipment{Order: order, Quantity: quantity, Charge: charge(5, quantity), Valid: validOrder(order)}
+}
+
+func Fulfill(order Order) Shipment {
+	return assemble(order, addPackaging(shipmentQuantity(order.Quantity)))
+}
+-- dispatch/workflow.go --
+// WHY: Keep shipment preparation steps together before extracting reusable calculations.
+package dispatch
+
+const oldHandlingFee = 180
+
+func record(any) {}
+
+func prepare(quantity int) int {
+	offset := 2
+	record(offset)
+	quantity = quantity + 1
+	record(quantity + 2)
+	return quantity + 3*60
+}
+
+func shipmentQuantity(quantity int) int { return prepare(quantity) }
+
+func defaultQuantity() int { return 1 }
+
+func previewQuantity() int { return defaultQuantity() }
+
+func addPackaging(quantity int) int { return quantity + 2 }
+
+func charge(unit, quantity int) int { return Total(unit, quantity) }
+-- dispatch/inventory.go --
+// WHY: Own the two stock lookup policies used during fulfillment.
+package dispatch
+
+type stockCache struct {
+	entries map[string]int
+	fallback int
+}
+
+func (c *stockCache) Available(sku string) int {
+	if value, ok := c.entries[sku]; ok {
+		return value
+	}
+	return c.fallback
+}
+
+func newStockCache() *stockCache {
+	cache := &stockCache{}
+	cache.entries = map[string]int{"book": 5}
+	cache.fallback = 1
+	return cache
+}
+
+type inventory struct {
+	entries map[string]int
+	fallback int
+}
+
+func (i *inventory) Lookup(sku string) (int, bool) {
+	value, ok := i.entries[sku]
+	if ok {
+		return value, true
+	}
+	return i.fallback, false
+}
+
+func newInventory() *inventory {
+	result := &inventory{}
+	result.entries = map[string]int{"book": 5}
+	result.fallback = 1
+	return result
+}
+-- dispatch/policy.go --
+// WHY: Name shipping units and supported service levels independently of the workflow.
+package dispatch
+
+type seconds = int64
+
+type shippingPolicy struct {
+	timeout int64
+}
+
+func serviceLevels() map[string]int { return map[string]int{"standard": 1} }
+
+func newShippingPolicy() shippingPolicy { return shippingPolicy{timeout: 30} }
+-- dispatch/worker.go --
+// WHY: Keep carrier compatibility and local worker state behind a concrete receiver.
+package dispatch
+
+type carrier struct{}
+
+func (*carrier) Deliver() bool { return true }
+
+type worker struct {
+	timeout int
+	multiplier int
+}
+
+func (w *worker) Timeout() int { return w.timeout }
+
+func (w *worker) SetTimeout(value int) { w.timeout = value }
+
+func (w worker) Adjust(delta int) int {
+	quantity := w.multiplier + delta
+	quantity = quantity * 2
+	return quantity
+}
+-- dispatch/contracts.go --
+// WHY: Hold extracted delivery contracts and their worker implementation together.
+package dispatch
+-- dispatch/price.go --
+// WHY: Isolate independent price arithmetic for relocation to the pricing package.
+package dispatch
+
+func Total(unit, quantity int) int { return unit * quantity }
+-- pricing/price.go --
+// WHY: Establish the destination package for independent price arithmetic.
+package pricing
+-- .scratch/fulfillment-test.txt --
+// WHY: Pin observable fulfillment behavior across the complete refactoring sequence.
+package dispatch
+
+import "testing"
+
+func TestFulfillment(t *testing.T) {
+	order := Order{ID: 7, SKU: "book", Quantity: 1}
+	shipment := Fulfill(order)
+	if shipment.Order != order || shipment.Quantity != 184 || shipment.Charge != 920 || !shipment.Valid {
+		t.Fatalf("Fulfill() = %+v", shipment)
+	}
+	if previewQuantity() != 1 {
+		t.Fatalf("preview quantity changed")
+	}
+	cache := newStockCache()
+	if cache.Available("book") != 5 || cache.Available("missing") != 1 {
+		t.Fatalf("cache lookup changed")
+	}
+	stock := newInventory()
+	if value, found := stock.Lookup("book"); value != 5 || !found {
+		t.Fatalf("inventory lookup = %d, %v", value, found)
+	}
+	if value, found := stock.Lookup("missing"); value != 1 || found {
+		t.Fatalf("inventory fallback = %d, %v", value, found)
+	}
+	processor := &worker{timeout: 3, multiplier: 2}
+	processor.SetTimeout(8)
+	if processor.Timeout() != 8 || processor.Adjust(3) != 10 {
+		t.Fatalf("worker state changed")
+	}
+	var delivery Delivery = processor
+	if !delivery.Deliver() {
+		t.Fatalf("delivery refused shipment")
+	}
+	levels := serviceLevels()
+	if policy := newShippingPolicy(); policy.timeout != 30 || policy.tracked || levels["express"] != 2 {
+		t.Fatalf("shipping policy = %+v, levels = %v", policy, levels)
+	}
+}
+-- .scratch/want/order.txt --
+// WHY: Keep order validation and shipment assembly at the fulfillment boundary.
+package dispatch
+
+type Order struct {
+	ID       int
+	SKU      string
+	Quantity int
+}
+
+type Shipment struct {
+	Order    Order
+	Quantity int
+	Charge   int
+	Valid    bool
+}
+
+func validOrder(order Order) bool {
+	return order.ID > 0 && order.SKU != "" && order.Quantity > 0
+}
+
+func assemble(options shipmentOptions) Shipment {
+	return Shipment{Order: options.order, Quantity: options.quantity, Charge: charge(5, options.quantity), Valid: validOrder(options.order)}
+}
+
+// Fulfill prepares a shipment with the configured stock and pricing rules.
+func Fulfill(order Order) Shipment {
+	return assemble(shipmentOptions{order: order, quantity: addPackaging(shipmentQuantity(order.Quantity), 2)})
+}
+
+type shipmentOptions struct {
+	order Order
+	quantity int
+}
+-- .scratch/want/workflow.txt --
+// WHY: Keep shipment preparation steps together before extracting reusable calculations.
+package dispatch
+
+import "example.com/fulfillment/pricing"
+
+func record(any) {}
+
+func prepareShipment(quantity int, priority bool) int {
+	record(int(2))
+	quantity = increment(quantity)
+	auditValue := quantity + 2
+	record(auditValue)
+	record(priority)
+	return quantity + handlingFee
+}
+
+func shipmentQuantity(quantity int) int { return prepareShipment(quantity, true) }
+
+func defaultQuantity() int { return 1 }
+
+func previewQuantity() int { return int(1) }
+
+func addPackaging(quantity int, extra int) int { return quantity + extra }
+
+func charge(unit, quantity int) int { return pricing.Total(unit, quantity) }
+
+const handlingFee int = 3 * 60
+-- .scratch/want/inventory.txt --
+// WHY: Own the two stock lookup policies used during fulfillment.
+package dispatch
+
+type stockCache struct {
+	state stockState
+	fallback int
+}
+
+type stockState struct {
+	entries map[string]int
+}
+
+func (c *stockCache) Available(sku string) int {
+	if value, ok := c.state.entries[sku]; ok {
+		return value
+	}
+	return c.fallback
+}
+
+func newStockCache() *stockCache {
+	cache := &stockCache{}
+	cache.state.entries = map[string]int{"book": 5}
+	cache.fallback = 1
+	return cache
+}
+
+type inventory struct {
+	state inventoryState
+}
+
+type inventoryState struct {
+	entries map[string]int
+	fallback int
+}
+
+func (i *inventoryState) Lookup(sku string) (int, bool) {
+	value, ok := i.entries[sku]
+	if ok {
+		return value, true
+	}
+	return i.fallback, false
+}
+
+func (i *inventory) Lookup(sku string) (int, bool) {
+	var delegate *inventoryState
+	if i != nil {
+		delegate = &i.state
+	}
+	return delegate.Lookup(sku)
+}
+
+func newInventory() *inventory {
+	result := &inventory{}
+	result.state.entries = map[string]int{"book": 5}
+	result.state.fallback = 1
+	return result
+}
+-- .scratch/want/policy.txt --
+// WHY: Name shipping units and supported service levels independently of the workflow.
+package dispatch
+
+type seconds = int64
+
+type shippingPolicy struct {
+	timeout seconds
+	tracked bool
+}
+
+func serviceLevels() map[string]int { return map[string]int{"standard": 1, "express": 2} }
+
+func newShippingPolicy() shippingPolicy { return shippingPolicy{timeout: 30} }
+-- .scratch/want/worker.txt --
+// WHY: Keep carrier compatibility and local worker state behind a concrete receiver.
+package dispatch
+
+type carrier struct{}
+
+func (*carrier) Deliver() bool { return true }
+
+type worker struct {
+	timeout    int
+	multiplier int
+}
+
+func (w *worker) Timeout() int { return w.timeoutValue() }
+
+func (w *worker) SetTimeout(value int) { {
+	receiver := w
+	receiver.setTimeout(value)
+} }
+
+func (w worker) Adjust(delta int) int {
+	quantity := w.adjustedQuantity(delta)
+	return quantity
+}
+
+func (w worker) adjustedQuantity(delta int) int {
+	quantity := w.multiplier + delta
+	quantity = quantity * 2
+	return quantity
+}
+
+func (receiver *worker) timeoutValue() int    { return receiver.timeout }
+func (receiver *worker) setTimeout(value int) { receiver.timeout = value }
+-- .scratch/want/contracts.txt --
+// WHY: Hold extracted delivery contracts and their worker implementation together.
+package dispatch
+
+type Delivery interface {
+	Deliver() bool
+}
+
+func (*worker) Deliver() bool {
+	return true
+}
+-- .scratch/want/calculation.txt --
+// WHY: Isolate the extracted shipment quantity calculation.
+
+package dispatch
+
+func increment(quantity int) int {
+	quantity = quantity + 1
+	return quantity
+}
+-- .scratch/want/empty-price.txt --
+// WHY: Isolate independent price arithmetic for relocation to the pricing package.
+package dispatch
+-- .scratch/want/price.txt --
+// WHY: Establish the destination package for independent price arithmetic.
+package pricing
+
+func Total(unit, quantity int) int { return unit * quantity }
+-- .scratch/want/fulfillment-test.txt --
+// WHY: Pin observable fulfillment behavior across the complete refactoring sequence.
+package dispatch
+
+import "testing"
+
+func TestFulfillment(t *testing.T) {
+	order := Order{ID: 7, SKU: "book", Quantity: 1}
+	shipment := Fulfill(order)
+	if shipment.Order != order || shipment.Quantity != 184 || shipment.Charge != 920 || !shipment.Valid {
+		t.Errorf("Fulfill() = %+v", shipment)
+	}
+	if previewQuantity() != 1 {
+		t.Errorf("preview quantity changed")
+	}
+	cache := newStockCache()
+	if cache.Available("book") != 5 || cache.Available("missing") != 1 {
+		t.Errorf("cache lookup changed")
+	}
+	stock := newInventory()
+	if value, found := stock.Lookup("book"); value != 5 || !found {
+		t.Errorf("inventory lookup = %d, %v", value, found)
+	}
+	if value, found := stock.Lookup("missing"); value != 1 || found {
+		t.Errorf("inventory fallback = %d, %v", value, found)
+	}
+	processor := &worker{timeout: 3, multiplier: 2}
+	processor.SetTimeout(8)
+	if processor.Timeout() != 8 || processor.Adjust(3) != 10 {
+		t.Fatalf("worker state changed")
+	}
+	var delivery Delivery = processor
+	if !delivery.Deliver() {
+		t.Errorf("delivery refused shipment")
+	}
+	levels := serviceLevels()
+	if policy := newShippingPolicy(); policy.timeout != 30 || policy.tracked || levels["express"] != 2 {
+		t.Errorf("shipping policy = %+v, levels = %v", policy, levels)
+	}
+}

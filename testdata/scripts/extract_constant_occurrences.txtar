@@ -1,0 +1,52 @@
+# Select a revision-bound subset of exact Go constant-expression matches and refuse stale or invalid indices without writes.
+! exec semedit refactor-extract-value --file duplicate.go --symbol sharedWindow --in-function DuplicateSelected --discriminator '3 * 60' --kind constant --occurrence-indices '[0,2]'
+stderr 'expected_revision is required'
+cmp duplicate.go original/duplicate.go
+! exec semedit refactor-extract-value --file duplicate.go --symbol sharedWindow --in-function DuplicateSelected --discriminator '3 * 60' --kind constant --occurrence-indices '[2,0]' --expected-revision cd47ee9beb98482f6c57d3314fca444f8421ba5adfbe79a08d6b492c92cc4574
+stderr 'strictly increasing and unique'
+cmp duplicate.go original/duplicate.go
+! exec semedit refactor-extract-value --file duplicate.go --symbol sharedWindow --in-function DuplicateSelected --discriminator '3 * 60' --kind constant --occurrence-indices '[3]' --expected-revision cd47ee9beb98482f6c57d3314fca444f8421ba5adfbe79a08d6b492c92cc4574
+stderr 'outside the 3 exact matches'
+cmp duplicate.go original/duplicate.go
+! exec semedit refactor-extract-value --file duplicate.go --symbol sharedWindow --in-function DuplicateSelected --discriminator '3 * 60' --kind constant --occurrence-indices '[0,2]' --expected-revision stale
+stderr 'source revision mismatch'
+cmp duplicate.go original/duplicate.go
+exec semedit refactor-extract-value --file duplicate.go --symbol sharedWindow --in-function DuplicateSelected --discriminator '3 * 60' --kind constant --occurrence-indices '[0,2]' --expected-revision cd47ee9beb98482f6c57d3314fca444f8421ba5adfbe79a08d6b492c92cc4574
+stdout 'symbol: sharedWindow'
+cmp duplicate.go want/duplicate.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantoccurrences
+
+go 1.23
+-- duplicate.go --
+package retry
+
+//line generated.go:1
+func DuplicateSelected() int {
+	return 3 * 60 + 3 * 60 + 3 * 60
+}
+-- sibling.go --
+package retry
+
+//line generated.go:1
+func F(sharedWindow int) int {
+	return sharedWindow
+}
+-- original/duplicate.go --
+package retry
+
+//line generated.go:1
+func DuplicateSelected() int {
+	return 3 * 60 + 3 * 60 + 3 * 60
+}
+-- want/duplicate.go --
+package retry
+
+//line generated.go:1
+func DuplicateSelected() int {
+	return sharedWindow + 3 * 60 + sharedWindow
+}
+
+const sharedWindow = 3 * 60

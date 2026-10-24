@@ -1,0 +1,71 @@
+# Move one exported standalone scalar variable and preserve all module references to its storage.
+exec semedit refactor-move-declaration --file legacy/state.go --destination-file api/state.go --symbol RetryWindow --placement file_end
+stdout 'Successfully moved construct'
+cmp legacy/state.go .scratch/want/legacy.go
+cmp api/state.go .scratch/want/api.go
+cmp caller/use.go .scratch/want/caller.go
+exec go run ./cmd/check
+
+-- go.mod --
+module example.com/variablemove
+
+go 1.23
+-- legacy/state.go --
+package legacy
+
+var RetryWindow int = 180
+func Local() int { return RetryWindow }
+-- api/state.go --
+package api
+
+import "example.com/variablemove/legacy"
+
+func Existing() int { return legacy.RetryWindow }
+func Address() *int { return &legacy.RetryWindow }
+-- caller/use.go --
+package caller
+
+import "example.com/variablemove/legacy"
+
+func Read() int { return legacy.RetryWindow }
+func Write(value int) { legacy.RetryWindow = value }
+func Address() *int { return &legacy.RetryWindow }
+func Pointer() *int { return &legacy.RetryWindow }
+-- cmd/check/main.go --
+package main
+
+import (
+	"example.com/variablemove/api"
+	"example.com/variablemove/caller"
+)
+
+func main() {
+	caller.Write(27)
+	if caller.Read() != 27 || api.Address() != caller.Pointer() {
+		panic("moved references no longer share one variable")
+	}
+}
+-- .scratch/want/legacy.go --
+package legacy
+
+import "example.com/variablemove/api"
+
+func Local() int { return api.RetryWindow }
+-- .scratch/want/api.go --
+package api
+
+func Existing() int { return RetryWindow }
+func Address() *int { return &RetryWindow }
+
+var RetryWindow int = 180
+-- .scratch/want/caller.go --
+package caller
+
+import "example.com/variablemove/api"
+
+func Read() int { return api.RetryWindow }
+func Write(value int) {
+	api.RetryWindow = value
+}
+func Address() *int { return &api.RetryWindow }
+func Pointer() *int { return &api.RetryWindow }

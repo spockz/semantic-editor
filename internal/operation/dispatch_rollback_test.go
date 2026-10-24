@@ -46,6 +46,10 @@ func assertDispatchFailureRollback(t *testing.T, failurePoint string) {
 func dispatchRollbackBuffer(t *testing.T) (string, context.Context, string, []byte) {
 	t.Helper()
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("canonicalize dispatch rollback workspace: %v", err)
+	}
 	path := filepath.Join(root, "value.go")
 	if writeErr := os.WriteFile(path, []byte("package sample\nfunc Value() int { return 1 }\n"), 0o600); writeErr != nil {
 		t.Fatal(writeErr)

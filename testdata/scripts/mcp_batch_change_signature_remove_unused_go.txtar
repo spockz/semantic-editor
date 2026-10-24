@@ -1,0 +1,80 @@
+# Removal consumes prior caller overlays, supports a subsequent body edit, and preserves an earlier child when a later removal refuses.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"applied_working"'
+stdin refusal.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'removed parameter is used'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cp .scratch/runtime.txt service_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/removalbatch
+
+go 1.24
+-- service.go --
+// WHY: Keep the declaration stable while buffered children evolve its callers and body.
+package sample
+
+func combine(left int, legacy string, right int) int { return left*100 + right }
+func note() string { return "before" }
+-- calls.go --
+// WHY: Keep effectful surviving arguments in their original relative order through the buffered removal.
+package sample
+
+var events string
+
+func step(label string, value int) int {
+	events += label
+	return value
+}
+
+func first() int { return combine(1, "old", 2) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return combine(step(\"L\", 3), \"new\", step(\"R\", 4))"}},{"tool":"refactor_change_signature","params":{"file":"service.go","symbol":"combine","parameters":[{"source_index":0,"parameter":{"name":"left","type":"int"}},{"source_index":2,"parameter":{"name":"right","type":"int"}}]}},{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"combine","body":"return left*1000 + right"}}]}}}
+-- refusal.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"note","body":"return \"after\""}},{"tool":"refactor_change_signature","params":{"file":"service.go","symbol":"combine","parameters":[{"source_index":0,"parameter":{"name":"left","type":"int"}}]}}]}}}
+-- .scratch/want/service.txt --
+// WHY: Keep the declaration stable while buffered children evolve its callers and body.
+package sample
+
+func combine(left int, right int) int {
+	return left*1000 + right
+}
+func note() string {
+	return "after"
+}
+-- .scratch/want/calls.txt --
+// WHY: Keep effectful surviving arguments in their original relative order through the buffered removal.
+package sample
+
+var events string
+
+func step(label string, value int) int {
+	events += label
+	return value
+}
+
+func first() int {
+	return combine(step("L", 3), step("R", 4))
+}
+-- .scratch/runtime.txt --
+// WHY: Pin buffered evaluation order, the subsequent body update, and earlier-child publication after refusal.
+package sample
+
+import "testing"
+
+func TestBufferedRemoval(t *testing.T) {
+	if got := first(); got != 3004 || events != "LR" {
+		t.Errorf("first = %d, events = %s", got, events)
+	}
+	if note() != "after" {
+		t.Error("earlier child did not publish")
+	}
+}

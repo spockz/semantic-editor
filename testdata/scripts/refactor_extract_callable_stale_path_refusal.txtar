@@ -1,0 +1,18 @@
+# Refuse a structured selection when its copied source revision is stale.
+exec cp service.go before-service.txt
+! exec semedit refactor-extract-callable --file service.go --symbol extracted --in-function emit --kind function --construct-path 0 --expected-revision stale
+stderr 'expected_revision does not match'
+cmp service.go before-service.txt
+
+-- go.mod --
+module example.com/staleextractpath
+
+go 1.24
+-- service.go --
+package sample
+
+func emit() {
+	Print(1)
+}
+
+func Print(int) {}

@@ -1,0 +1,148 @@
+# Extract a complete direct scalar-slice range while preserving backing-array mutation and loop exits.
+exec semedit refactor-extract-callable --file service.go --symbol visitValues --in-function RunAndMutate --kind function --start-line 16 --end-line 25
+stdout 'symbol: visitValues'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangeslice
+
+go 1.23
+
+-- service.go --
+package sample
+
+type Values []int
+
+var alias Values
+var seen map[int]int
+var forceAppendAllocation bool
+var iterationCount int
+var markers []int
+var rangedLength int
+var firstFutureValue int
+var appendedBackingValue int
+
+func RunAndMutate(values Values) {
+	alias, forceAppendAllocation = values, len(values) == cap(values)
+	for index, value := range values {
+		if index == 3 {
+			break
+		}
+		recordAndMutate(index, value)
+		if index == 0 {
+			continue
+		}
+		recordAfterContinue(index)
+	}
+}
+
+func recordAfterContinue(index int) {
+	markers = append(markers, index)
+}
+
+func recordAndMutate(index, value int) {
+	iterationCount++
+	seen[index] = value
+	if index == 0 {
+		rangedLength = len(alias)
+		if forceAppendAllocation {
+			alias = append(alias, 77)
+			alias[1] = 55
+			return
+		}
+		alias[1] = 99
+		firstFutureValue = alias[1]
+		alias = append(alias[:1], 77)
+		appendedBackingValue = alias[1]
+	}
+}
+-- service_test.go --
+package sample
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestSliceRangeExtractionPreservesNilEmptyAndBackingArray(t *testing.T) {
+	seen = map[int]int{}
+	markers = nil
+	RunAndMutate(nil)
+	RunAndMutate(Values{})
+	if len(seen) != 0 || iterationCount != 0 {
+		t.Fatalf("nil and empty slices produced values: seen=%v iterations=%d", seen, iterationCount)
+	}
+
+	backing := make(Values, 5, 6)
+	copy(backing, Values{100, 1, 2, 3, 4})
+	values := backing[1:5]
+	markers = nil
+	RunAndMutate(values)
+	want := map[int]int{0: 1, 1: 77, 2: 3}
+	if !reflect.DeepEqual(seen, want) || values[1] != 77 || backing[0] != 100 || rangedLength != 4 || firstFutureValue != 99 || appendedBackingValue != 77 || iterationCount != 3 || !reflect.DeepEqual(markers, []int{1, 2}) {
+		t.Fatalf("seen=%v values=%v backing=%v length=%d future=%d appended=%d iterations=%d markers=%v", seen, values, backing, rangedLength, firstFutureValue, appendedBackingValue, iterationCount, markers)
+	}
+
+	seen = map[int]int{}
+	iterationCount = 0
+	markers = nil
+	fullCapacity := Values{5, 6, 7}
+	RunAndMutate(fullCapacity)
+	want = map[int]int{0: 5, 1: 6, 2: 7}
+	if !reflect.DeepEqual(seen, want) || !reflect.DeepEqual(fullCapacity, Values{5, 6, 7}) || alias[1] != 55 || &alias[0] == &fullCapacity[0] || iterationCount != 3 || !reflect.DeepEqual(markers, []int{1, 2}) {
+		t.Fatalf("forced append allocation: seen=%v values=%v alias=%v iterations=%d markers=%v", seen, fullCapacity, alias, iterationCount, markers)
+	}
+}
+-- want/service.go --
+package sample
+
+type Values []int
+
+var alias Values
+var seen map[int]int
+var forceAppendAllocation bool
+var iterationCount int
+var markers []int
+var rangedLength int
+var firstFutureValue int
+var appendedBackingValue int
+
+func RunAndMutate(values Values) {
+	alias, forceAppendAllocation = values, len(values) == cap(values)
+	visitValues(values)
+}
+
+func visitValues(values Values) {
+	for index, value := range values {
+		if index == 3 {
+			break
+		}
+		recordAndMutate(index, value)
+		if index == 0 {
+			continue
+		}
+		recordAfterContinue(index)
+	}
+}
+
+func recordAfterContinue(index int) {
+	markers = append(markers, index)
+}
+
+func recordAndMutate(index, value int) {
+	iterationCount++
+	seen[index] = value
+	if index == 0 {
+		rangedLength = len(alias)
+		if forceAppendAllocation {
+			alias = append(alias, 77)
+			alias[1] = 55
+			return
+		}
+		alias[1] = 99
+		firstFutureValue = alias[1]
+		alias = append(alias[:1], 77)
+		appendedBackingValue = alias[1]
+	}
+}

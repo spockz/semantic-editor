@@ -47,7 +47,7 @@ func (e Entry) NormalizedInput(raw map[string]any) (map[string]any, error) {
 	return normalizedInput(e.NormalizeInput, raw, e.Params)
 }
 
-// SupportsBufferedBatch selects eligible Go and Java requests and preserves disk-only contracts.
+// SupportsBufferedBatch selects requests with verified overlay-aware editing paths.
 func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, error) {
 	if !e.BufferedBatch {
 		return false, nil
@@ -61,13 +61,29 @@ func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, 
 	if err != nil {
 		return false, err
 	}
-	if language != backend.LanguageGo && language != backend.LanguageJava {
-		return false, nil
-	}
 	if req, ok := request.(RemoveReq); ok {
 		return !req.SafeDelete, nil
 	}
-	return true, nil
+	switch language {
+	case backend.LanguageGo, backend.LanguageJava:
+		return true, nil
+	case backend.LanguageRust:
+		switch e.Key {
+		case canonicalRenameKey, canonicalExtractValueKey, canonicalExtractCallableKey, canonicalInlineCallableKey, canonicalInlineValueKey, canonicalPromoteLocalToConstKey:
+			return true, nil
+		default:
+			return e.ReadOnly, nil
+		}
+	case backend.LanguageScala:
+		switch e.Key {
+		case canonicalExtractValueKey, canonicalExtractCallableKey, canonicalInlineValueKey:
+			return true, nil
+		default:
+			return e.ReadOnly, nil
+		}
+	default:
+		return false, nil
+	}
 }
 
 // Def declares one semantic operation with typed parse, handlers, and formatting.
@@ -180,6 +196,7 @@ func NewRegistry() *Registry {
 // It is a function rather than a Registry method because Go methods cannot declare type parameters.
 // Type erasure lives only in the Parse, Invoke, and Format closures built here.
 func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
+	cloneOperationContracts(&def)
 	if err := validateRegistration(registry, def); err != nil {
 		return err
 	}
@@ -239,9 +256,16 @@ func (r *Registry) All() []Entry {
 	if r == nil {
 		return nil
 	}
-	return slices.SortedFunc(maps.Values(r.byKey), func(a, b Entry) int {
+	entries := make([]Entry, 0, len(r.byKey))
+	for key, entry := range r.byKey {
+		if key == entry.Key {
+			entries = append(entries, entry)
+		}
+	}
+	slices.SortFunc(entries, func(a, b Entry) int {
 		return cmp.Compare(a.Key, b.Key)
 	})
+	return entries
 }
 
 // ParametersForBackends builds parameter contracts using capabilities reported by

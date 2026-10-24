@@ -1,0 +1,27 @@
+# Refuse an invalid extracted helper signature in a Go test package without publishing it.
+! exec semedit refactor-extract-callable --file invalid_test.go --symbol extractPrint --in-function F --kind function --start-line 7 --end-line 7
+stderr 'validate complete extracted package'
+cmp invalid_test.go original/invalid_test.go
+
+-- go.mod --
+module example.com/extracttestvalidation
+
+go 1.23
+-- invalid_test.go --
+package sample
+
+var int = 0
+
+func F() {
+	v := 1
+	println(v)
+}
+-- original/invalid_test.go --
+package sample
+
+var int = 0
+
+func F() {
+	v := 1
+	println(v)
+}

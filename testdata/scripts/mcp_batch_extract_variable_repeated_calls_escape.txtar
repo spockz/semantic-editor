@@ -1,0 +1,73 @@
+# A repeated-call extraction refuses after proving an owner input can change through an earlier escape.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'an input read by the expression escapes through its address'
+cmp render.go .scratch/original.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerepeatedcallbatchescape
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"refactor_extract_value","params":{"file":"render.go","symbol":"selected","in_function":"Render","kind":"variable","discriminator":"count + step","construct_path":"1","end_construct_path":"2","expected_revision":"88d218c25a6073c86448f51ed4678ebde2dfa176e191da50128d51d5ebd18d76"}},{"tool":"refactor_rename","params":{"file":"render.go","symbol":"selected","to":"repeatedValue"}}]}}}
+-- render.go --
+package render
+
+var escaped *int
+var observed []int
+
+func leak(value *int) {
+	escaped = value
+}
+
+func sink(value int) {
+	observed = append(observed, value)
+	if escaped != nil {
+		(*escaped)++
+	}
+}
+
+func Render(count, step int) {
+	leak(&count)
+	sink(count + step)
+	sink(count + step)
+}
+-- .scratch/original.go --
+package render
+
+var escaped *int
+var observed []int
+
+func leak(value *int) {
+	escaped = value
+}
+
+func sink(value int) {
+	observed = append(observed, value)
+	if escaped != nil {
+		(*escaped)++
+	}
+}
+
+func Render(count, step int) {
+	leak(&count)
+	sink(count + step)
+	sink(count + step)
+}
+-- render_test.go --
+package render
+
+import (
+	"reflect"
+	"testing"
+)
+
+func TestRepeatedCallsObserveMutatedEscapedInput(t *testing.T) {
+	Render(4, 1)
+	if !reflect.DeepEqual(observed, []int{5, 6}) {
+		t.Fatalf("observed values = %v", observed)
+	}
+}

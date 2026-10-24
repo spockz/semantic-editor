@@ -1,0 +1,24 @@
+# Go directives on the selected source file make constant relocation ambiguous and must leave it unchanged.
+! exec semedit refactor-move-declaration --file legacy/limits.go --destination-file api/limits.go --symbol RetryWindow --placement file_end
+stderr 'directive'
+cmp legacy/limits.go .scratch/_want/legacy.go
+cmp api/limits.go .scratch/_want/api.go
+
+-- go.mod --
+module example.com/constantdirectiverefusal
+
+go 1.23
+-- legacy/limits.go --
+package legacy
+
+//go:generate true
+const RetryWindow = 180
+-- api/limits.go --
+package api
+-- .scratch/_want/legacy.go --
+package legacy
+
+//go:generate true
+const RetryWindow = 180
+-- .scratch/_want/api.go --
+package api

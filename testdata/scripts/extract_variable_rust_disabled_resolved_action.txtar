@@ -1,0 +1,22 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=disabled-resolved
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol total --in-function run --discriminator '1_i32 + 2_i32'
+stderr 'disabled'
+cmp src/lib.rs original/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-disabled-resolved-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}
+-- original/lib.rs --
+fn run() {
+    consume(1_i32 + 2_i32);
+}
+
+fn consume(value: i32) {}

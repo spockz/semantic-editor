@@ -1,0 +1,470 @@
+# WHY: Keep public CLI coverage for nested generated-call binding, mixed live-outs, and reads inside the selected region.
+exec semedit inspect-construct --file function.go --in-function RunFunctionShadow --kind statement/expression --discriminator expected()
+stdout '"construct_path": "0.0.2"'
+stdout '"expected_revision": "0d4eda6589f3f0ce82d3c4f6f43abab8f5a3bca374ad2ba245447e9e362e886d"'
+! exec semedit refactor-extract-callable --file function.go --symbol helper --in-function RunFunctionShadow --kind function --construct-path 0.0.2 --end-construct-path 0.0.2 --expected-revision 0d4eda6589f3f0ce82d3c4f6f43abab8f5a3bca374ad2ba245447e9e362e886d
+stderr 'generated call binding for "helper" is shadowed at the replacement site'
+cmp function.go original/function.go
+
+exec semedit inspect-construct --file method.go --in-function '(*T).RunMethodShadow' --kind statement/expression --discriminator println(1)
+stdout '"construct_path": "0.0.2"'
+stdout '"expected_revision": "636272caa5809056d906525d5265dfb36d23d748b534ebbb929312c52345c75d"'
+! exec semedit refactor-extract-callable --file method.go --symbol helper --in-function '(*T).RunMethodShadow' --kind method --construct-path 0.0.2 --end-construct-path 0.0.2 --expected-revision 636272caa5809056d906525d5265dfb36d23d748b534ebbb929312c52345c75d
+stderr 'generated call binding for "helper" is shadowed at the replacement site'
+cmp method.go original/method.go
+
+exec semedit inspect-construct --file mixed.go --in-function RunMixed --kind statement/expression --discriminator 'count = 1'
+stdout '"construct_path": "1.0.0"'
+stdout '"expected_revision": "0556e35db70d7d3ef34faae8960c9e92a337ca877f188080103c4c638763d278"'
+exec semedit refactor-extract-callable --file mixed.go --symbol extractValues --in-function RunMixed --kind function --construct-path 1.0.0 --end-construct-path 1.0.1 --expected-revision 0556e35db70d7d3ef34faae8960c9e92a337ca877f188080103c4c638763d278
+stdout 'symbol: extractValues'
+cmp mixed.go want/mixed.go
+
+exec semedit inspect-construct --file liveout.go --in-function RunLiveOut --kind statement/expression --discriminator 'value = 1'
+stdout '"construct_path": "0.0.1"'
+stdout '"expected_revision": "a1b11fa73f5e21439b4ca3b8e43f9926372a26048733ca7d14f4a5da64fa4dd4"'
+exec semedit refactor-extract-callable --file liveout.go --symbol updateValue --in-function RunLiveOut --kind function --construct-path 0.0.1 --end-construct-path 0.0.2 --expected-revision a1b11fa73f5e21439b4ca3b8e43f9926372a26048733ca7d14f4a5da64fa4dd4
+stdout 'symbol: updateValue'
+cmp liveout.go want/liveout.go
+
+! exec semedit refactor-extract-callable --file result_type_shadow.go --symbol extractResult --in-function RunShadowedResult --kind function --construct-path 2.0.0 --end-construct-path 2.0.2 --expected-revision 6d47041323d9f5dc5c04366be9a4d122c5f3b2ce79aa192991bfa908c4868a84
+stderr 'result type "Result" is shadowed at the replacement site'
+cmp result_type_shadow.go original/result_type_shadow.go
+
+! exec semedit refactor-extract-callable --file result_type_shadow.go --symbol extractGenericResult --in-function RunShadowedGenericResult --kind function --construct-path 2.0.0 --end-construct-path 2.0.2 --expected-revision 6d47041323d9f5dc5c04366be9a4d122c5f3b2ce79aa192991bfa908c4868a84
+stderr 'result type "Result" is shadowed at the replacement site'
+cmp result_type_shadow.go original/result_type_shadow.go
+
+exec semedit refactor-extract-callable --file result_type_shadow.go --symbol extractAlias --in-function RunImportedAlias --kind function --construct-path 1.0.0 --end-construct-path 1.0.2 --expected-revision 6d47041323d9f5dc5c04366be9a4d122c5f3b2ce79aa192991bfa908c4868a84
+stdout 'symbol: extractAlias'
+
+exec semedit refactor-extract-callable --file result_type_shadow.go --symbol extractError --in-function RunErrorOutput --kind function --construct-path 1.0.0 --end-construct-path 1.0.1 --expected-revision d6b0a1d8a7f990c678647b5c78b27c5cccfd62ed2bc24821651f73cf18498516
+stdout 'symbol: extractError'
+
+exec semedit refactor-extract-callable --file result_type_shadow.go --symbol extractAny --in-function RunAnyOutput --kind function --construct-path 1.0.0 --end-construct-path 1.0.1 --expected-revision 405c2da941c79c701b56b471430652d25781c98620e8ff70c245ac6785a5f403
+stdout 'symbol: extractAny'
+cmp result_type_shadow.go want/result_type_shadow.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractscope
+
+go 1.24
+-- function.go --
+package sample
+
+func expected() { println(1) }
+func unexpected() { println(2) }
+
+func RunFunctionShadow(enabled bool) {
+	if enabled {
+		helper := unexpected
+		_ = helper
+		expected()
+	}
+}
+-- original/function.go --
+package sample
+
+func expected() { println(1) }
+func unexpected() { println(2) }
+
+func RunFunctionShadow(enabled bool) {
+	if enabled {
+		helper := unexpected
+		_ = helper
+		expected()
+	}
+}
+-- method.go --
+package sample
+
+type T struct{}
+type U struct{}
+
+func (*U) helper() { println(2) }
+
+func (r *T) RunMethodShadow() {
+	if true {
+		r := new(U)
+		_ = r
+		println(1)
+	}
+}
+-- original/method.go --
+package sample
+
+type T struct{}
+type U struct{}
+
+func (*U) helper() { println(2) }
+
+func (r *T) RunMethodShadow() {
+	if true {
+		r := new(U)
+		_ = r
+		println(1)
+	}
+}
+-- mixed.go --
+package sample
+
+func RunMixed(enabled bool) int {
+	count := 0
+	if enabled {
+		count = 1
+		added := 2
+		println(count, added)
+	}
+	return count
+}
+-- want/mixed.go --
+package sample
+
+func RunMixed(enabled bool) int {
+	count := 0
+	if enabled {
+		var added int
+		count, added = extractValues()
+		println(count, added)
+	}
+	return count
+}
+
+func extractValues() (int, int) {
+	var count int
+	count = 1
+	added := 2
+	return count, added
+}
+-- liveout.go --
+package sample
+
+func RunLiveOut() {
+	if true {
+		value := 0
+		value = 1
+		println(value)
+	}
+}
+-- want/liveout.go --
+package sample
+
+func RunLiveOut() {
+	if true {
+		value := 0
+		updateValue()
+		_ = value
+	}
+}
+
+func updateValue() {
+	var value int
+	value = 1
+	println(value)
+}
+-- regression_test.go --
+package sample
+
+import "testing"
+
+func TestRunPreservesAncestorBinding(t *testing.T) {
+	if got := RunMixed(true); got != 1 {
+		t.Fatalf("RunMixed(true) = %d, want 1", got)
+	}
+	if got := RunMixed(false); got != 0 {
+		t.Fatalf("RunMixed(false) = %d, want 0", got)
+	}
+}
+
+func TestRunShadowedResultKeepsPackageTypeIdentity(t *testing.T) {
+	if !RunShadowedResult() {
+		t.Fatal("RunShadowedResult() = false, want true")
+	}
+}
+
+func TestRunShadowedGenericResultKeepsPackageTypeIdentity(t *testing.T) {
+	if !RunShadowedGenericResult() {
+		t.Fatal("RunShadowedGenericResult() = false, want true")
+	}
+}
+
+func TestRunErrorOutput(t *testing.T) {
+	if got := RunErrorOutput(); got != 1 {
+		t.Fatalf("RunErrorOutput() = %d, want 1", got)
+	}
+}
+
+func TestRunAnyOutput(t *testing.T) {
+	if got := RunAnyOutput(); got != 1 {
+		t.Fatalf("RunAnyOutput() = %d, want 1", got)
+	}
+}
+
+-- result_type_shadow.go --
+package sample
+
+import "reflect"
+import dep "example.com/extractscope/dep"
+
+type Result interface{}
+type Box[T any] interface{}
+
+func makeResult() Result { return 1 }
+func makeBox() Box[Result] { return 1 }
+
+func isPackageResult[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Result)(nil)).Elem()
+}
+
+func isPackageBox[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Box[Result])(nil)).Elem()
+}
+
+func RunShadowedResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeResult()
+		println(count)
+		return isPackageResult(added) && count == 1
+	}
+	return false
+}
+
+func RunShadowedGenericResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeBox()
+		println(count)
+		return isPackageBox(added) && count == 1
+	}
+	return false
+}
+
+func RunImportedAlias() int {
+	count := 0
+	if true {
+		count = 1
+		added := dep.New()
+		println(count)
+		if added == 1 {
+			return count
+		}
+	}
+	return count
+}
+
+func makeError() error { return nil }
+
+func RunErrorOutput() int {
+	count := 0
+	if true {
+		count = 1
+		added := makeError()
+		println(count, added)
+	}
+	return count
+}
+
+func makeAny() any { return 1 }
+
+func RunAnyOutput() int {
+	count := 0
+	if true {
+		count = 1
+		added := makeAny()
+		println(count, added)
+	}
+	return count
+}
+-- original/result_type_shadow.go --
+package sample
+
+import "reflect"
+import dep "example.com/extractscope/dep"
+
+type Result interface{}
+type Box[T any] interface{}
+
+func makeResult() Result { return 1 }
+func makeBox() Box[Result] { return 1 }
+
+func isPackageResult[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Result)(nil)).Elem()
+}
+
+func isPackageBox[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Box[Result])(nil)).Elem()
+}
+
+func RunShadowedResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeResult()
+		println(count)
+		return isPackageResult(added) && count == 1
+	}
+	return false
+}
+
+func RunShadowedGenericResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeBox()
+		println(count)
+		return isPackageBox(added) && count == 1
+	}
+	return false
+}
+
+func RunImportedAlias() int {
+	count := 0
+	if true {
+		count = 1
+		added := dep.New()
+		println(count)
+		if added == 1 {
+			return count
+		}
+	}
+	return count
+}
+
+func makeError() error { return nil }
+
+func RunErrorOutput() int {
+	count := 0
+	if true {
+		count = 1
+		added := makeError()
+		println(count, added)
+	}
+	return count
+}
+
+func makeAny() any { return 1 }
+
+func RunAnyOutput() int {
+	count := 0
+	if true {
+		count = 1
+		added := makeAny()
+		println(count, added)
+	}
+	return count
+}
+-- want/result_type_shadow.go --
+package sample
+
+import "reflect"
+import dep "example.com/extractscope/dep"
+
+type Result interface{}
+type Box[T any] interface{}
+
+func makeResult() Result   { return 1 }
+func makeBox() Box[Result] { return 1 }
+
+func isPackageResult[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Result)(nil)).Elem()
+}
+
+func isPackageBox[T any](value T) bool {
+	return reflect.TypeOf((*T)(nil)).Elem() == reflect.TypeOf((*Box[Result])(nil)).Elem()
+}
+
+func RunShadowedResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeResult()
+		println(count)
+		return isPackageResult(added) && count == 1
+	}
+	return false
+}
+
+func RunShadowedGenericResult() bool {
+	type Result interface{}
+	count := 0
+	if true {
+		count = 1
+		added := makeBox()
+		println(count)
+		return isPackageBox(added) && count == 1
+	}
+	return false
+}
+
+func RunImportedAlias() int {
+	count := 0
+	if true {
+		var added dep.Result
+		count, added = extractAlias()
+		if added == 1 {
+			return count
+		}
+	}
+	return count
+}
+
+func extractAlias() (int, dep.Result) {
+	var count int
+	count = 1
+	added := dep.New()
+	println(count)
+	return count, added
+}
+
+func makeError() error { return nil }
+
+func RunErrorOutput() int {
+	count := 0
+	if true {
+		var added error
+		count, added = extractError()
+		println(count, added)
+	}
+	return count
+}
+
+func extractError() (int, error) {
+	var count int
+	count = 1
+	added := makeError()
+	return count, added
+}
+
+func makeAny() any { return 1 }
+
+func RunAnyOutput() int {
+	count := 0
+	if true {
+		var added any
+		count, added = extractAny()
+		println(count, added)
+	}
+	return count
+}
+
+func extractAny() (int, any) {
+	var count int
+	count = 1
+	added := makeAny()
+	return count, added
+}
+-- dep/dep.go --
+package dep
+
+type Result = int
+
+func New() Result { return 1 }

@@ -1,0 +1,123 @@
+# Refuse map operands or types that cannot be passed safely to a package helper, preserving each source file.
+! exec semedit refactor-extract-callable --file service.go --symbol globalRange --in-function GlobalRange --kind function --start-line 9 --end-line 9
+stderr 'local or parameter map identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol fieldRange --in-function FieldRange --kind function --start-line 13 --end-line 13
+stderr 'local or parameter map identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol callRange --in-function CallRange --kind function --start-line 17 --end-line 17
+stderr 'local or parameter map identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol extraUse --in-function ExtraUse --kind function --start-line 21 --end-line 21
+stderr 'cannot copy non-scalar owner input "entries"'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol aggregateValue --in-function AggregateValue --kind function --start-line 25 --end-line 25
+stderr 'key and element types must be scalar'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol localType --in-function LocalType --kind function --start-line 31 --end-line 31
+stderr 'nameable from a package helper'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol escapedMap --in-function EscapedMap --kind function --start-line 39 --end-line 39
+stderr 'address-taken values in the owner'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol unsupportedBody --in-function UnsupportedBody --kind function --start-line 44 --end-line 44
+stderr 'loop body statements must be direct calls'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangemaprefusals
+
+go 1.23
+-- service.go --
+package sample
+
+type Payload struct{}
+type Holder struct{ entries map[int]int }
+
+var shared map[int]int
+
+func GlobalRange() {
+	for key, value := range shared { consume(key, value) }
+}
+
+func FieldRange(holder Holder) {
+	for key, value := range holder.entries { consume(key, value) }
+}
+
+func CallRange() {
+	for key, value := range entries() { consume(key, value) }
+}
+
+func ExtraUse(entries map[int]int) {
+	for key, value := range entries { consume(key, value); consumeMap(entries) }
+}
+
+func AggregateValue(entries map[int]Payload) {
+	for key, value := range entries { consume(key, value) }
+}
+
+func LocalType() {
+	type localEntries map[int]int
+	entries := localEntries{1: 2}
+	for key, value := range entries { consume(key, value) }
+}
+
+func entries() map[int]int { return map[int]int{1: 2} }
+func consume(int, any) {}
+func consumeMap(map[int]int) {}
+func EscapedMap(entries map[int]int) {
+	pointer := &entries
+	for key, value := range entries { consume(key, value) }
+	_ = pointer
+}
+
+func UnsupportedBody(entries map[int]int) {
+	for key := range entries { consume(key, 0); return }
+}
+-- original/service.go --
+package sample
+
+type Payload struct{}
+type Holder struct{ entries map[int]int }
+
+var shared map[int]int
+
+func GlobalRange() {
+	for key, value := range shared { consume(key, value) }
+}
+
+func FieldRange(holder Holder) {
+	for key, value := range holder.entries { consume(key, value) }
+}
+
+func CallRange() {
+	for key, value := range entries() { consume(key, value) }
+}
+
+func ExtraUse(entries map[int]int) {
+	for key, value := range entries { consume(key, value); consumeMap(entries) }
+}
+
+func AggregateValue(entries map[int]Payload) {
+	for key, value := range entries { consume(key, value) }
+}
+
+func LocalType() {
+	type localEntries map[int]int
+	entries := localEntries{1: 2}
+	for key, value := range entries { consume(key, value) }
+}
+
+func entries() map[int]int { return map[int]int{1: 2} }
+func consume(int, any) {}
+func consumeMap(map[int]int) {}
+func EscapedMap(entries map[int]int) {
+	pointer := &entries
+	for key, value := range entries { consume(key, value) }
+	_ = pointer
+}
+
+func UnsupportedBody(entries map[int]int) {
+	for key := range entries { consume(key, 0); return }
+}

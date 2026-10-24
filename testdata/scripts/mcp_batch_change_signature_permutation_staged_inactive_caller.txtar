@@ -1,0 +1,36 @@
+# A staged platform-specific caller is part of the same batch input and prevents an incomplete permutation.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'inactive source variant'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cmp inactive_windows.go .scratch/want/inactive_windows.txt
+exec go test ./...
+-- go.mod --
+module example.com/permutationstaged
+
+go 1.24
+-- service.go --
+package sample
+
+func combine(left, right int) int { return left*100 + right }
+-- calls.go --
+package sample
+
+func first() int { return combine(1, 2) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_scaffold_file","params":{"file":"inactive_windows.go","package":"sample"}},{"tool":"semantic_insert_function","params":{"file":"inactive_windows.go","source":"func inactive() int { return combine(1, 2) }"}},{"tool":"refactor_change_signature","params":{"file":"service.go","symbol":"combine","parameters":[{"source_index":1,"parameter":{"name":"right","type":"int"}},{"source_index":0,"parameter":{"name":"left","type":"int"}}]}}]}}}
+-- .scratch/want/service.txt --
+package sample
+
+func combine(left, right int) int { return left*100 + right }
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int { return combine(1, 2) }
+-- .scratch/want/inactive_windows.txt --
+package sample
+
+func inactive() int { return combine(1, 2) }

@@ -1,0 +1,102 @@
+# Refuse extra slice-owner uses, unsupported factory signatures, external factories, and effectful arguments without editing source.
+! exec semedit refactor-extract-callable --file service.go --symbol sliceVariable --in-function SliceVariable --kind function --start-line 18 --end-line 18
+stderr 'cannot copy non-scalar owner input "values"'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol mapRange --in-function MapFactory --kind function --start-line 19 --end-line 19
+stderr 'range-loop map operand must be a local or parameter map identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol arrayRange --in-function ArrayFactory --kind function --start-line 20 --end-line 20
+stderr 'return a slice of scalar elements'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol channelRange --in-function ChannelFactory --kind function --start-line 21 --end-line 21
+stderr 'channel operand must be a local receive-capable channel identifier'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol variadicRange --in-function VariadicFactory --kind function --start-line 22 --end-line 22
+stderr 'non-variadic call with matching arguments'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol genericRange --in-function GenericFactory --kind function --start-line 23 --end-line 23
+stderr 'cannot be generic'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol effectfulRange --in-function EffectfulArgument --kind function --start-line 24 --end-line 24
+stderr 'arguments must be pure scalar expressions'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol methodRange --in-function MethodFactory --kind function --start-line 27 --end-line 29
+stderr 'direct same-package function'
+cmp service.go original/service.go
+! exec semedit refactor-extract-callable --file service.go --symbol externalRange --in-function ExternalFactory --kind function --start-line 31 --end-line 31
+stderr 'declared in the current package'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractrangeslicefactoryrefusals
+
+go 1.23
+-- service.go --
+package sample
+
+import . "example.com/extractrangeslicefactoryrefusals/other"
+
+type source struct{}
+
+func (source) methodValues() []int { return nil }
+func consume(int, int) {}
+func sliceValues() []int { return nil }
+func mapValues() map[int]int { return nil }
+func arrayValues() [1]int { return [1]int{} }
+func channelValues() chan int { return nil }
+func variadicValues(values ...int) []int { return values }
+func genericValues[T ~int](values []T) []T { return values }
+func effectfulLimit() int { return 1 }
+func scalarValues(int) []int { return nil }
+
+func SliceVariable(values []int) { for i, v := range values { _ = values; consume(i, v) } }
+func MapFactory() { for i, v := range mapValues() { consume(i, v) } }
+func ArrayFactory() { for i, v := range arrayValues() { consume(i, v) } }
+func ChannelFactory() { for i := range channelValues() { consume(i, 0) } }
+func VariadicFactory() { for i, v := range variadicValues(1, 2) { consume(i, v) } }
+func GenericFactory() { for i, v := range genericValues([]int{1}) { consume(i, v) } }
+func EffectfulArgument() { for i, v := range scalarValues(effectfulLimit()) { consume(i, v) } }
+func MethodFactory() {
+	s := source{}
+	for i, v := range s.methodValues() {
+		consume(i, v)
+	}
+}
+func ExternalFactory() { for i, v := range ExternalValues() { consume(i, v) } }
+-- original/service.go --
+package sample
+
+import . "example.com/extractrangeslicefactoryrefusals/other"
+
+type source struct{}
+
+func (source) methodValues() []int { return nil }
+func consume(int, int) {}
+func sliceValues() []int { return nil }
+func mapValues() map[int]int { return nil }
+func arrayValues() [1]int { return [1]int{} }
+func channelValues() chan int { return nil }
+func variadicValues(values ...int) []int { return values }
+func genericValues[T ~int](values []T) []T { return values }
+func effectfulLimit() int { return 1 }
+func scalarValues(int) []int { return nil }
+
+func SliceVariable(values []int) { for i, v := range values { _ = values; consume(i, v) } }
+func MapFactory() { for i, v := range mapValues() { consume(i, v) } }
+func ArrayFactory() { for i, v := range arrayValues() { consume(i, v) } }
+func ChannelFactory() { for i := range channelValues() { consume(i, 0) } }
+func VariadicFactory() { for i, v := range variadicValues(1, 2) { consume(i, v) } }
+func GenericFactory() { for i, v := range genericValues([]int{1}) { consume(i, v) } }
+func EffectfulArgument() { for i, v := range scalarValues(effectfulLimit()) { consume(i, v) } }
+func MethodFactory() {
+	s := source{}
+	for i, v := range s.methodValues() {
+		consume(i, v)
+	}
+}
+func ExternalFactory() { for i, v := range ExternalValues() { consume(i, v) } }
+-- other/factory.go --
+package other
+
+func ExternalValues() []int { return []int{1} }

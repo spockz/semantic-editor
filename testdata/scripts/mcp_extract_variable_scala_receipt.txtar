@@ -1,0 +1,28 @@
+# Scala extraction returns a revision-guarded owner continuation after Metals edits are captured.
+env SEMEDIT_TEST_SCALA_EXTRACT_VARIABLE=1
+exec materialize-mcp-input input.json
+stdin input.expanded.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_value"'
+stdout '"continuations":'
+stdout '"file":"src/Thing.scala"'
+stdout '"symbol":"run"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+cmp src/Thing.scala expected.scala
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"refactor_extract_value","arguments":{"language":"scala","trust_workspace":true,"metals_bin":"@METALS_BIN@","java_bin":"@JAVA_BIN@","java_version":"21","file":"src/Thing.scala","symbol":"total","in_function":"run","discriminator":"1 + 2"}}}
+-- src/Thing.scala --
+object Thing {
+  def run(): Int = consume(1 + 2)
+  def consume(value: Int): Int = value
+}
+-- expected.scala --
+object Thing {
+  def run(): Int = {
+    val total = 1 + 2
+    consume(total)
+  }
+  def consume(value: Int): Int = value
+}

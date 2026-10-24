@@ -1,0 +1,45 @@
+# Require staged sibling type facts and preserve the computed expression during batch publication.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_inline_value"'
+stdout '"status":"applied_working"'
+cmp calc.go .scratch/want/calc.go
+cmp types.go .scratch/want/types.go
+exec go test ./...
+
+-- go.mod --
+module example.com/batchinlinecomputedreturn
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_construct","params":{"file":"types.go","kind":"type","symbol":"Count","source":"type Count int"}},{"tool":"refactor_inline_value","params":{"file":"calc.go","symbol":"value","in_function":"Build"}}]}}}
+-- types.go --
+package calc
+
+type Count struct{ Value int }
+-- calc.go --
+package calc
+
+func Build(seed Count) any {
+	value := seed + seed
+	return value
+}
+-- .scratch/want/types.go --
+package calc
+
+type Count int
+-- .scratch/want/calc.go --
+package calc
+
+func Build(seed Count) any {
+	return seed + seed
+}
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestBuild(t *testing.T) {
+	if got, ok := Build(3).(Count); !ok || got != 6 { t.Fatalf("Build = %#v (%T)", Build(3), Build(3)) }
+}

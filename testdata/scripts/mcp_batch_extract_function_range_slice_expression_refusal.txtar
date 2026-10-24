@@ -1,0 +1,40 @@
+# Refuse an extra slice-owner use in the batch overlay and leave the source unchanged.
+mkdir .scratch
+cp service.go .scratch/service.go
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'range-loop extraction cannot copy non-scalar owner input'
+cmp service.go .scratch/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpbatchrangesliceexpressionrefusal
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visit","in_function":"Run","kind":"function","start_line":4,"end_line":7}}]}}}
+-- service.go --
+package sample
+
+func Run(values []int) {
+	for index := range values[:] {
+		consume(index)
+		consumeSlice(values)
+	}
+}
+
+func consume(int)        {}
+func consumeSlice([]int) {}
+-- .scratch/want/service.go --
+package sample
+
+func Run(values []int) {
+	for index := range values[:] {
+		consume(index)
+		consumeSlice(values)
+	}
+}
+
+func consume(int)        {}
+func consumeSlice([]int) {}

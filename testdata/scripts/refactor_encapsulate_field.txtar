@@ -1,0 +1,60 @@
+# Encapsulate one typed private field, rewrite direct reads and writes, and preserve runtime behavior.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec semedit refactor-encapsulate-field --file config.go --symbol config.timeout --getter timeoutValue --setter setTimeoutValue
+cmp config.go want/config.go
+exec go test ./...
+
+-- go.mod --
+module example.com/encapsulatefield
+
+go 1.24
+-- config.go --
+package sample
+
+type config struct {
+	timeout int
+}
+
+func (c *config) read() int {
+	return c.timeout
+}
+
+func (c *config) write(value int) {
+	c.timeout = value
+}
+-- config_test.go --
+package sample
+
+import "testing"
+
+func TestFieldAccess(t *testing.T) {
+	value := &config{timeout: 3}
+	if got := value.read(); got != 3 {
+		t.Fatalf("read() = %d, want 3", got)
+	}
+	value.write(8)
+	if got := value.read(); got != 8 {
+		t.Fatalf("read() after write = %d, want 8", got)
+	}
+}
+-- want/config.go --
+package sample
+
+type config struct {
+	timeout int
+}
+
+func (c *config) read() int {
+	return c.timeoutValue()
+}
+
+func (c *config) write(value int) {
+	{
+		receiver := c
+		receiver.setTimeoutValue(value)
+	}
+}
+
+func (receiver *config) timeoutValue() int         { return receiver.timeout }
+func (receiver *config) setTimeoutValue(value int) { receiver.timeout = value }

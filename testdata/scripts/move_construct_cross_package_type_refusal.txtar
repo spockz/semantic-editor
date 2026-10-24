@@ -1,0 +1,81 @@
+# A private direct method carries source-package identity and makes a type move unsafe; refusal must leave all candidate files byte-identical.
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol Widget --placement file_end
+stderr 'refuses private method "private"'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+cmp caller/use_test.go .scratch/_want/caller/use_test.go
+! exec semedit refactor-move-declaration --file legacy/widget.go --destination-file api/api.go --symbol TestOnly --placement file_end
+stderr 'refuses test-file reference to "TestOnly"'
+cmp legacy/widget.go .scratch/_want/legacy/widget.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+cmp caller/use_test.go .scratch/_want/caller/use_test.go
+
+-- go.mod --
+module example.com/typecrossrefusal
+
+go 1.23
+
+-- legacy/widget.go --
+package legacy
+
+type Widget struct{}
+func (Widget) Exported() {}
+func (Widget) private() {}
+
+type local interface { private() }
+var _ local = Widget{}
+
+type TestOnly struct{}
+func (TestOnly) Ping() {}
+
+-- api/api.go --
+package api
+
+func Existing() {}
+
+-- caller/use.go --
+package caller
+
+import "example.com/typecrossrefusal/legacy"
+
+func Use() legacy.Widget { return legacy.Widget{} }
+
+-- caller/use_test.go --
+package caller
+
+import "example.com/typecrossrefusal/legacy"
+
+func testOnlyUse(v *legacy.TestOnly) { v.Ping() }
+-- .scratch/_want/legacy/widget.go --
+package legacy
+
+type Widget struct{}
+func (Widget) Exported() {}
+func (Widget) private() {}
+
+type local interface { private() }
+var _ local = Widget{}
+
+type TestOnly struct{}
+func (TestOnly) Ping() {}
+
+-- .scratch/_want/api/api.go --
+package api
+
+func Existing() {}
+
+-- .scratch/_want/caller/use.go --
+package caller
+
+import "example.com/typecrossrefusal/legacy"
+
+func Use() legacy.Widget { return legacy.Widget{} }
+
+-- .scratch/_want/caller/use_test.go --
+package caller
+
+import "example.com/typecrossrefusal/legacy"
+
+func testOnlyUse(v *legacy.TestOnly) { v.Ping() }

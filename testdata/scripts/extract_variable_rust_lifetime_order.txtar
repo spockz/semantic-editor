@@ -1,0 +1,30 @@
+env SEMEDIT_TEST_RUST_EXTRACT_VARIABLE=1
+! exec semedit refactor-extract-value --language rust --trust-workspace --file src/lib.rs --symbol guardValue --in-function run --discriminator '&make_guard()'
+stderr 'suffixed integer expression'
+cmp src/lib.rs want/lib.rs
+
+-- Cargo.toml --
+[package]
+name = "extract-variable-lifetime-order-fixture"
+version = "0.1.0"
+edition = "2021"
+-- src/lib.rs --
+fn run() {
+    consume(&make_guard());
+    after();
+}
+
+fn consume<T>(value: &T) {}
+fn make_guard() -> Guard { Guard }
+fn after() {}
+struct Guard;
+-- want/lib.rs --
+fn run() {
+    consume(&make_guard());
+    after();
+}
+
+fn consume<T>(value: &T) {}
+fn make_guard() -> Guard { Guard }
+fn after() {}
+struct Guard;

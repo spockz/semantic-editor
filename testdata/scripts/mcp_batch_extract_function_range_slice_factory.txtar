@@ -1,0 +1,39 @@
+# Create a slice-factory range in the MCP batch overlay, extract it, and compare the preserved range clause.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"refactor_extract_callable"'
+stdout '"status":"applied_working"'
+cmp service.go .scratch/want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpbatchrangeslicefactory
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"service.go","symbol":"Run","body":"for index, value := range values(limit) { record(index, value) }"}},{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"visit","in_function":"Run","kind":"function","start_line":4,"end_line":6}}]}}}
+-- service.go --
+package sample
+
+func Run(limit int) {
+	return
+}
+
+func values(limit int) []int { return []int{limit} }
+func record(int, int) {}
+-- .scratch/want/service.go --
+package sample
+
+func Run(limit int) {
+	visit(limit)
+}
+
+func visit(limit int) {
+	for index, value := range values(limit) {
+		record(index, value)
+	}
+}
+
+func values(limit int) []int { return []int{limit} }
+func record(int, int)        {}

@@ -6,8 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/astedit"
-	"github.com/spockz/semantic-editor/internal/backend"
 	"go/ast"
 	"go/constant"
 	"go/parser"
@@ -16,6 +14,9 @@ import (
 	"maps"
 	"path/filepath"
 	"strings"
+
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -74,7 +75,7 @@ func introduceParameterDef() Def[map[string]any, structuralPlanResult] {
 		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from the same finalized function_target record as file and symbol; stale body selections are refused.", false, true, RoleTarget, signatureTargetSourceFields(wireExpectedRevision)...),
 	}...)
 	params = append(params, readProjectParams[:5]...)
-	definition := signatureExpansionDef("introduce_parameter", "introduce-parameter", "semantic_introduce_parameter", "Use this tool instead of manually replacing one exact expression with a new parameter and updating its callers. Java delegates signature and call-site changes to JDT LS; Go requires a private free function and proves the closed constant argument and complete call set. Methods, exported or generic Go functions, function values, and ambiguous Java expressions are refused. Standalone results expose a finalized function_target; receipt continuations remain available for inspection.", params,
+	definition := signatureExpansionDef("refactor_introduce_parameter", "refactor-introduce-parameter", "refactor_introduce_parameter", "Use this tool instead of manually replacing one exact expression with a new parameter and updating its callers. Java delegates signature and call-site changes to JDT LS; Go requires a private free function and proves the closed constant argument and complete call set. Methods, exported or generic Go functions, function values, and ambiguous Java expressions are refused. Standalone results expose a finalized function_target; receipt continuations remain available for inspection.", params,
 		map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}}, map[string]any{"parameter": map[string]any{"name": "mode", "type": "int"}, "argument": "3"}}, wireDiscriminator: "3"}, runIntroduceParameter)
 	definition.Handlers[backend.LanguageJava] = runIntroduceParameterJava
 	return definition
@@ -95,7 +96,7 @@ func introduceParameterObjectDef() Def[map[string]any, structuralPlanResult] {
 		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from the same finalized function_target record as file and symbol; stale targets are refused.", false, true, RoleTarget, signatureTargetSourceFields(wireExpectedRevision)...),
 	}...)
 	params = append(params, readProjectParams[:5]...)
-	definition := signatureExpansionDef("introduce_parameter_object", "introduce-parameter-object", "semantic_introduce_parameter_object", "Use this tool instead of manually replacing a complete parameter list with one value object, rewriting bound body references, and updating every proven direct caller. Go requires a private free function; Java requires one same-package method with direct invocation references. Partial mappings, unresolved call sites, cross-package Java callers, and unsupported Java parameter shapes are refused.", params,
+	definition := signatureExpansionDef("refactor_introduce_parameter_object", "refactor-introduce-parameter-object", "refactor_introduce_parameter_object", "Use this tool instead of manually replacing a complete parameter list with one value object, rewriting bound body references, and updating every proven direct caller. Go requires a private free function; Java requires one same-package method with direct invocation references. Partial mappings, unresolved call sites, cross-package Java callers, and unsupported Java parameter shapes are refused.", params,
 		map[string]any{"file": "write.go", "symbol": "write", "destination_file": "write.go", "parameter": map[string]any{"name": "options", "type": "writeOptions"}, "fields": []any{map[string]any{wireSourceIndex: 0, "field": map[string]any{"name": "path", "type": "string"}}}}, runIntroduceParameterObject)
 	definition.Handlers[backend.LanguageJava] = runIntroduceParameterObjectJava
 	return definition
@@ -139,7 +140,13 @@ func runIntroduceParameter(ctx context.Context, cc CallContext, raw map[string]a
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
-	return applySignatureExpansion(ctx, cc, snapshot, file, symbol, "Replaced the selected constant expression with a parameter and updated every proven direct caller.", plan)
+	return applySignaturePlanAndReceipt(ctx, cc, snapshot, signaturePlanApplication{
+		File: file, Symbol: symbol,
+		Detail:                 "Replaced the selected constant expression with a parameter and updated every proven direct caller.",
+		NoOpDetail:             "The requested signature transformation is already present.",
+		ContextErrorPrefix:     "apply signature expansion",
+		PlannedPathErrorPrefix: "planned signature file",
+	}, plan)
 }
 
 func runIntroduceParameterObject(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {
@@ -186,7 +193,13 @@ func runIntroduceParameterObject(ctx context.Context, cc CallContext, raw map[st
 	if typeRevision == "" {
 		return structuralPlanResult{}, fmt.Errorf("planned parameter object output omits target file")
 	}
-	result, err := applySignatureExpansion(ctx, cc, snapshot, file, symbol, "Replaced all function parameters with a private object and updated every proven direct caller.", plan)
+	result, err := applySignaturePlanAndReceipt(ctx, cc, snapshot, signaturePlanApplication{
+		File: file, Symbol: symbol,
+		Detail:                 "Replaced all function parameters with a private object and updated every proven direct caller.",
+		NoOpDetail:             "The requested signature transformation is already present.",
+		ContextErrorPrefix:     "apply signature expansion",
+		PlannedPathErrorPrefix: "planned signature file",
+	}, plan)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
@@ -519,62 +532,6 @@ func decodeParameterObjectFields(value any) ([]astedit.ParameterObjectField, err
 		fields = append(fields, astedit.ParameterObjectField{SourceIndex: mapping.SourceIndex, Name: mapping.Field.Name, Type: mapping.Field.Type, Tag: tag})
 	}
 	return fields, nil
-}
-
-func applySignatureExpansion(ctx context.Context, cc CallContext, snapshot *structuralSnapshot, file, symbol, detail string, plan astedit.SignaturePlan) (structuralPlanResult, error) {
-	if ctx == nil {
-		ctx = snapshot.Ctx
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	if err := ctx.Err(); err != nil {
-		return structuralPlanResult{}, fmt.Errorf("apply signature expansion: %w", err)
-	}
-	if err := validateSignatureOverlay(snapshot, plan); err != nil {
-		return structuralPlanResult{}, err
-	}
-	readSet, err := signatureReadSet(cc.WorkDir, snapshot)
-	if err != nil {
-		return structuralPlanResult{}, err
-	}
-	finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
-	changed, diffs, applyErr := applySignaturePlan(snapshot, plan)
-	if applyErr != nil && !changed {
-		return structuralPlanResult{}, applyErr
-	}
-	delta, diagnosticStatus := finishDelta()
-	if !changed {
-		detail = "The requested signature transformation is already present."
-	}
-	if applyErr != nil {
-		detail = "Signature output publication did not complete: " + applyErr.Error()
-	}
-	edit := FileEditRes{File: snapshot.File, Display: displayWorkPath(cc.WorkDir, file), Symbol: symbol, Detail: detail, Diff: strings.Join(diffs, "\n"), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}
-	draft := EditReceiptDraft{Status: EditPersisted, ReadSet: readSet}
-	for _, planned := range plan.Files {
-		relative, err := filepath.Rel(cc.WorkDir, planned.File)
-		if err != nil || !filepath.IsLocal(relative) {
-			return structuralPlanResult{}, fmt.Errorf("planned signature file %q is outside workspace", planned.File)
-		}
-		draft.PlannedChanges = append(draft.PlannedChanges, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(planned.After)})
-	}
-	if !changed {
-		draft.Status = EditNoOp
-	} else if diagnosticStatus == "changed" {
-		draft.Status = EditPersistedWithDiagnostics
-	}
-	continuationRevision := structuralRevision(snapshot.Sources[snapshot.File])
-	for _, planned := range plan.Files {
-		if planned.File == snapshot.File {
-			continuationRevision = structuralRevision(planned.After)
-		}
-	}
-	draft.Continuations = []SymbolTarget{{File: edit.Display, Symbol: symbol, ExpectedRevision: &continuationRevision}}
-	resolver := func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
-		return resolveSignatureContinuation(resolveCtx, cc.WorkDir, candidate)
-	}
-	return structuralPlanResult{Edit: edit, Draft: draft, Resolve: resolver}, nil
 }
 
 func registerSignatureExpansionOps(registry *Registry) error {

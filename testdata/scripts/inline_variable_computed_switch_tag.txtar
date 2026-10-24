@@ -1,0 +1,93 @@
+# Inline a pure computed scalar into a complete adjacent expression-switch tag and refuse init/partial tag contexts.
+exec semedit refactor-inline-value --file switch.go --symbol code --in-function Classify
+cmp switch.go .scratch/want/switch.go
+! exec semedit refactor-inline-value --file switch.go --symbol code --in-function HasInit
+stderr 'expression switch with an init statement'
+cmp switch.go .scratch/want/switch.go
+! exec semedit refactor-inline-value --file switch.go --symbol code --in-function PartialTag
+stderr 'complete expression switch tag'
+cmp switch.go .scratch/want/switch.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedswitch
+
+go 1.23
+-- switch.go --
+package switchtag
+
+func Classify(input int) string {
+	code := input + 1
+	switch code {
+	case 2:
+		return "second"
+	default:
+		return "other"
+	}
+}
+
+func HasInit(input int) bool {
+	code := input + 1
+	switch input = 10; code {
+	case 2:
+		return true
+	default:
+		return false
+	}
+}
+
+func PartialTag(input int) bool {
+	code := input + 1
+	switch code + 1 {
+	case 2:
+		return true
+	default:
+		return false
+	}
+}
+-- .scratch/want/switch.go --
+package switchtag
+
+func Classify(input int) string {
+	switch input + 1 {
+	case 2:
+		return "second"
+	default:
+		return "other"
+	}
+}
+
+func HasInit(input int) bool {
+	code := input + 1
+	switch input = 10; code {
+	case 2:
+		return true
+	default:
+		return false
+	}
+}
+
+func PartialTag(input int) bool {
+	code := input + 1
+	switch code + 1 {
+	case 2:
+		return true
+	default:
+		return false
+	}
+}
+-- switch_test.go --
+package switchtag
+
+import "testing"
+
+func TestClassify(t *testing.T) {
+	for _, test := range []struct {
+		input int
+		want  string
+	}{{input: 1, want: "second"}, {input: 4, want: "other"}} {
+		if got := Classify(test.input); got != test.want {
+			t.Errorf("Classify(%d) = %q, want %q", test.input, got, test.want)
+		}
+	}
+}

@@ -1,0 +1,31 @@
+# Keep a declaration adjacent to the owner separate from the extracted helper.
+exec semedit refactor-extract-callable --file service.go --symbol helper --in-function Run --kind function --start-line 4 --end-line 4
+stdout 'symbol: helper'
+cmp service.go want/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractadjacent
+
+go 1.23
+-- service.go --
+package sample
+
+func Run() {
+	work()
+} // Keep this comment attached to Run.
+func Next() {}
+func work() {}
+-- want/service.go --
+package sample
+
+func Run() {
+	helper()
+} // Keep this comment attached to Run.
+
+func helper() {
+	work()
+}
+
+func Next() {}
+func work() {}

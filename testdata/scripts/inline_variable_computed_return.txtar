@@ -1,0 +1,97 @@
+# Preserve scalar values, interface dynamic types, short circuiting, and panic/defer behavior.
+exec go test ./...
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Arithmetic
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Named
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Ready
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Divide
+exec semedit refactor-inline-value --file calc.go --symbol value --in-function Constant
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinecomputedreturn
+
+go 1.23
+-- calc.go --
+package calc
+
+type Count int
+
+func Arithmetic(seed int) any {
+	base := seed + 1
+	value := -(base * 2) + 3
+	return value
+}
+
+func Named(seed Count) any {
+	value := seed + Bonus
+	return value
+}
+
+func Ready(active bool, divisor int) bool {
+	value := active || 10/divisor > 2
+	return value
+}
+
+func Divide(divisor int, trace *[]string) int {
+	defer func() { *trace = append(*trace, "deferred") }()
+	value := 10 / divisor
+	return value
+}
+
+func Constant() any {
+	value := 1E3 + 2
+	return value
+}
+
+const Bonus = 2
+-- .scratch/want/calc.go --
+package calc
+
+type Count int
+
+func Arithmetic(seed int) any {
+	base := seed + 1
+	return -(base * 2) + 3
+}
+
+func Named(seed Count) any {
+	return seed + Bonus
+}
+
+func Ready(active bool, divisor int) bool {
+	return active || 10/divisor > 2
+}
+
+func Divide(divisor int, trace *[]string) int {
+	defer func() { *trace = append(*trace, "deferred") }()
+	return 10 / divisor
+}
+
+func Constant() any {
+	return 1E3 + 2
+}
+
+const Bonus = 2
+-- calc_test.go --
+package calc
+
+import "testing"
+
+func TestValuesAndDynamicTypes(t *testing.T) {
+	if got, ok := Arithmetic(4).(int); !ok || got != -7 { t.Fatalf("Arithmetic = %#v (%T)", Arithmetic(4), Arithmetic(4)) }
+	if got, ok := Named(4).(Count); !ok || got != 6 { t.Fatalf("Named = %#v (%T)", Named(4), Named(4)) }
+	if got, ok := Constant().(float64); !ok || got != 1002 { t.Fatalf("Constant = %#v (%T)", Constant(), Constant()) }
+	if !Ready(true, 0) || !Ready(false, 2) || Ready(false, 10) { t.Fatal("short circuit or comparison changed") }
+	var trace []string
+	if got := Divide(2, &trace); got != 5 || len(trace) != 1 || trace[0] != "deferred" { t.Fatalf("Divide = %d, trace %v", got, trace) }
+}
+
+func TestPanicAndDeferOrder(t *testing.T) {
+	var trace []string
+	defer func() {
+		if recover() == nil { t.Error("expected divide by zero panic") }
+		if len(trace) != 1 || trace[0] != "deferred" { t.Errorf("trace = %v", trace) }
+	}()
+	Divide(0, &trace)
+}

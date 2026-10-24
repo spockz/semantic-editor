@@ -1,0 +1,21 @@
+# Keep Scala inline-value unavailable until the configured Metals runtime returns its action.
+! exec semedit refactor-inline-value --language scala --trust-workspace --file src/Thing.scala --symbol value --in-function run
+stderr 'operation is not supported for language'
+cmp src/Thing.scala original.scala
+
+-- src/Thing.scala --
+object Thing {
+  def run(): Unit = {
+    val value = 42
+    consume(value, value)
+  }
+  def consume(first: Int, second: Int): Unit = ()
+}
+-- original.scala --
+object Thing {
+  def run(): Unit = {
+    val value = 42
+    consume(value, value)
+  }
+  def consume(first: Int, second: Int): Unit = ()
+}

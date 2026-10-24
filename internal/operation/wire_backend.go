@@ -24,9 +24,9 @@ import (
 const wireCLIExpectedRevision = "expected-revision"
 
 var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: symbol identifier (e.g. 'NormalizeEvent', 'Server.Start', or '(*Client).Do'). Direct short names are resolved in-place; calling semantic_lookup first is not required.", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: symbol identifier (e.g. 'NormalizeEvent', 'Server.Start', or '(*Client).Do'). Direct short names are resolved in-place; calling semantic_lookup first is not required.", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractCallableReceiptSymbol, sourceExtractValueReceiptSymbol, sourceInlineValueReceiptSymbol), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: source file containing the declaration (e.g. 'pipeline/workflow.go'). Optional for Go if the symbol is unique across the workspace, but recommended to disambiguate common names. Required for Rust or Java.", Type: ParamString, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, "semantic_extract_variable.result.continuations[].file", "semantic_inline_variable.result.continuations[].file", sourceContractExtractFile, sourceContractImplementFile, sourceConcreteTargetFile, sourceGeneratedMethodFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: source file containing the declaration (e.g. 'pipeline/workflow.go'). Optional for Go if the symbol is unique across the workspace, but recommended to disambiguate common names. Required for Rust or Java.", Type: ParamString, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceExtractCallableReceiptFile, sourceExtractValueReceiptFile, sourceInlineValueReceiptFile, sourceContractExtractFile, sourceContractImplementFile, sourceConcreteTargetFile, sourceGeneratedMethodFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
@@ -65,11 +65,11 @@ const (
 	wireTargetGoFileDescription = "Target: Go file"
 
 	sourceLookupSymbol                 = "semantic_lookup.symbol"
-	sourceRenameSymbol                 = "semantic_rename.symbol"
-	sourceRenameExpectedRevision       = "semantic_rename.expected_revision"
+	sourceRenameSymbol                 = "refactor_rename.symbol"
+	sourceRenameExpectedRevision       = "refactor_rename.expected_revision"
 	sourceReplaceBodySymbol            = "semantic_replace_body.symbol"
 	sourceLookupFile                   = "semantic_lookup.file"
-	sourceRenameFile                   = "semantic_rename.file"
+	sourceRenameFile                   = "refactor_rename.file"
 	sourceReplaceBodyFile              = "semantic_replace_body.file"
 	sourceReplaceConstructFile         = "semantic_replace_construct.file"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
@@ -115,14 +115,14 @@ var sourceFileContinuations = []string{
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
 	sourceInsertConstructFile, sourceReplaceDeclFile, sourceOrganizeImportsFile, sourceScaffoldFile,
 	semanticMoveConstructToolName + ".file",
-	sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, sourceExtractVariableReceiptFile, sourceInlineVariableReceiptFile,
+	sourceExtractCallableReceiptFile, sourceExtractValueReceiptFile, sourceInlineValueReceiptFile,
 }
 
-var sourceReplaceDeclFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceDeclFile, sourceInsertDeclFile, sourceExtractConstantReceiptFile}
+var sourceReplaceDeclFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceDeclFile, sourceInsertDeclFile, sourceExtractValueReceiptFile}
 
-var sourceReplaceBodyFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceInsertFunctionFile, sourceExtractFunctionReceiptFile}
+var sourceReplaceBodyFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceInsertFunctionFile, sourceExtractCallableReceiptFile}
 
-var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, "semantic_move_construct.symbol"}
+var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, "refactor_move_declaration.symbol"}
 
 var sourceInFunctionContinuations = []string{
 	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertConstructInFunction,
@@ -130,6 +130,8 @@ var sourceInFunctionContinuations = []string{
 }
 
 const sourceInspectInFunction = "semantic_inspect_symbol.result.continuations[].in_function"
+const sourceInspectFile = "semantic_inspect_symbol.result.continuations[].file"
+const sourceInspectSymbol = "semantic_inspect_symbol.result.continuations[].symbol"
 const sourceInspectExpectedRevision = "semantic_inspect_symbol.result.continuations[].expected_revision"
 
 var sourceDiscriminatorContinuations = []string{
@@ -607,7 +609,8 @@ func lookupDef() Def[LookupReq, *LookupRes] {
 			backend.LanguageScala: lookupRun, backend.LanguageHaskell: lookupRun, backend.LanguageKotlin: lookupRun,
 			backend.LanguageBash: lookupRun, backend.LanguageMake: lookupRun,
 		},
-		Format: formatLookup,
+		Format:    formatLookup,
+		Batchable: true, BufferedBatch: true,
 		Output: &OperationOutputContract{ResultSchema: &schema, Continuations: []OutputContinuation{
 			outputContinuation("symbol", RoleTarget, symbolOutputConsumers), outputContinuation("file", RoleTarget, fileOutputConsumers),
 		}},
@@ -666,11 +669,11 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
 	output := renameOutputContract()
 	return Def[RenameReq, *backend.RenameResult]{
-		Key:           capability.OpRename,
+		Key:           canonicalRenameKey,
 		Summary:       "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
 		Params:        renameParams,
 		Level:         LevelSymbol,
-		CLIName:       "rename",
+		CLIName:       "refactor-rename",
 		MCPName:       contractRenameTool,
 		BufferedBatch: true, Batchable: true,
 		Parse: parseRename,
@@ -864,19 +867,20 @@ func projectRenameDiagnostics(delta backend.DiagnosticDelta) map[string]any {
 }
 
 var renameFileConsumers = []string{
+	canonicalMakeTypeExplicitKey,
 	semanticLookupToolName, semanticRenameToolName, "semantic_verify", semanticReplaceBodyToolName,
-	semanticAssertionModeToolName, semanticExtractConstantToolName,
+	semanticAssertionModeToolName,
 	semanticMoveConstructToolName, semanticRemoveConstructToolName, semanticReplaceConstructToolName, semanticInsertCaseToolName,
 	semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInsertDeclToolName,
 	semanticInsertDeclarationToolName, semanticInsertConstructToolName, semanticReplaceDeclToolName,
 	semanticExtractFunctionToolName, semanticExtractVariableToolName,
-	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticMigrateTypeToolName,
+	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticMigrateTypeToolName, canonicalMakeStaticKey,
 	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticInspectConstructToolName,
 }
 
 var renameSymbolConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, semanticReplaceBodyToolName, semanticMoveConstructToolName,
-	semanticReplaceDeclToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName,
+	semanticReplaceDeclToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, canonicalMakeStaticKey,
 	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticRemoveConstructToolName,
 }
 

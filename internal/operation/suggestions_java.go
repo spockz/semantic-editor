@@ -30,7 +30,7 @@ func suggestJavaFailedTarget(cc CallContext, entry Entry, raw map[string]any, ca
 	if err != nil || len(ranked) == 0 {
 		return cause
 	}
-	accepted := acceptJavaSuggestionCandidates(request, entry.Key, ranked, currentSelectors)
+	accepted := acceptJavaSuggestionCandidates(request, backendOperationKey(entry.Key), ranked, currentSelectors)
 	if len(accepted) == 0 {
 		return cause
 	}
@@ -43,7 +43,7 @@ func prepareJavaSuggestionRequest(cc CallContext, entry Entry, raw map[string]an
 	if !errors.Is(cause, javabackend.ErrJavaSymbolNotFound) && !errors.Is(cause, javabackend.ErrJavaSymbolAmbiguous) && !errors.Is(cause, backend.ErrAmbiguous) {
 		return nil, false
 	}
-	if !javaSuggestionOperation(entry.Key) {
+	if !javaSuggestionOperation(backendOperationKey(entry.Key)) {
 		return nil, false
 	}
 	request, ok := prepareOutlineSuggestionRequest(cc, entry, raw, backend.LanguageJava)

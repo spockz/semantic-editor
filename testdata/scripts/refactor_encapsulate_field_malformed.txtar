@@ -1,0 +1,18 @@
+# Missing accessor input is rejected before any source file changes.
+env GOCACHE=$WORK/user-cache/build
+env GOMODCACHE=$WORK/user-cache/mod
+exec cp config.go before-config.txt
+! exec semedit refactor-encapsulate-field --file config.go --symbol config.value --getter readValue
+stderr 'setter'
+cmp config.go before-config.txt
+
+-- go.mod --
+module example.com/encapsulatemalformed
+
+go 1.24
+-- config.go --
+package sample
+
+type config struct { value int }
+
+func (c *config) read() int { return c.value }

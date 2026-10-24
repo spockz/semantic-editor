@@ -1,10 +1,10 @@
 # A misspelled extraction owner is suggested without changing source; retry keeps the new helper name.
 env SEMEDIT_SUGGESTIONS=generic
 cp source.go original.txt
-! exec semedit extract-function --file source.go --symbol prepareValue --in-function Rennder --kind function --start-line 6 --end-line 7
+! exec semedit refactor-extract-callable --file source.go --symbol prepareValue --in-function Rennder --kind function --start-line 6 --end-line 7
 stderr 'Suggested target: Render'
 cmp source.go original.txt
-exec semedit extract-function --file source.go --symbol prepareValue --in-function Render --kind function --start-line 6 --end-line 7
+exec semedit refactor-extract-callable --file source.go --symbol prepareValue --in-function Render --kind function --start-line 6 --end-line 7
 stdout 'symbol: prepareValue'
 cmp source.go want/source.go
 

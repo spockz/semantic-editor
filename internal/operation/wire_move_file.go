@@ -123,7 +123,7 @@ func runMoveFile(ctx context.Context, cc CallContext, req MoveFileReq) (FileEdit
 
 func moveFileDef() Def[MoveFileReq, FileEditRes] {
 	return Def[MoveFileReq, FileEditRes]{
-		Key: "move_file", CLIName: "move-file", MCPName: "semantic_move_file", Level: LevelWorkspace,
+		Key: "refactor_move_file", CLIName: "refactor-move-file", MCPName: "refactor_move_file", Level: LevelWorkspace,
 		Summary: "Use this tool instead of sequential symbol moves to relocate a complete closed Go production-file declaration set to an explicit existing file in another package of the same module. Supports private helpers, constants, types and methods together, and dependency-closed matching tests by default. Leaves package-only source shells. Refuses package variables, init, outside dependencies, unsafe test helpers, fixtures, generated/build-constrained files and unsupported initialization effects before publication. Other backends are unsupported.",
 		Params:  moveFileParams, Parse: parseMoveFile, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveFileReq) (FileEditRes, error){backend.LanguageGo: handleMoveFile},
 		Format: formatMoveFile, ExampleRaw: map[string]any{"file": "old/value.go", moveFileDestinationField: "api/value.go", "move_matching_tests": true}, Batchable: true, BufferedBatch: true,

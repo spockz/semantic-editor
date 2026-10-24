@@ -565,7 +565,7 @@ func TestBatch_RenameDefersWorkspacePostProcess(t *testing.T) {
 	srv := mcptest.NewServer(t, "full", tmpDir, nil)
 	metrics := telemetry.NewMetrics()
 	resp, err := srv.ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
-		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"calc.go","symbol":"Add","to":"Sum","auto_organize_imports":true}`)},
+		{Tool: "refactor_rename", Params: json.RawMessage(`{"file":"calc.go","symbol":"Add","to":"Sum","auto_organize_imports":true}`)},
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"calc.go","symbol":"Sum","body":"return 2"}`)},
 	}, true)
 	if err != nil || resp.Status != "ok" {
@@ -766,9 +766,9 @@ func Local() int { return 1 }
 	}
 	metrics := telemetry.NewMetrics()
 	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
-		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"Normalize"}`)},
-		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Collapse"}`)},
-		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"source.go","symbol":"Local","placement":"file_start"}`)},
+		{Tool: "refactor_move_declaration", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"Normalize"}`)},
+		{Tool: "refactor_move_declaration", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Collapse"}`)},
+		{Tool: "refactor_move_declaration", Params: json.RawMessage(`{"file":"source.go","destination_file":"source.go","symbol":"Local","placement":"file_start"}`)},
 	}, true)
 	if err != nil || response.Status != "ok" {
 		t.Fatalf("move batch = %+v, err = %v", response, err)
@@ -835,8 +835,8 @@ func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
 		}
 	}
 	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{
-		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"MoveMe"}`)},
-		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Missing"}`)},
+		{Tool: "refactor_move_declaration", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"MoveMe"}`)},
+		{Tool: "refactor_move_declaration", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Missing"}`)},
 	}, false)
 	if err != nil || response.Status != "error" {
 		t.Fatalf("failed move batch = %+v, err = %v", response, err)
@@ -882,7 +882,7 @@ func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 		}
 	}
 	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-		Tool:   "semantic_move_construct",
+		Tool:   "refactor_move_declaration",
 		Params: json.RawMessage(`{"file":"source.go","destination_file":"other/dest.go","symbol":"MoveMe"}`),
 	}}, false)
 	if err != nil || response.Status != "error" || len(response.Results) != 1 {
@@ -1020,7 +1020,7 @@ func executeMoveSymlinkCase(root string, test moveSymlinkCase) (*mcp.BatchRespon
 		return nil, fmt.Errorf("encode symlink move test parameters: %w", err)
 	}
 	return mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-		Tool:   "semantic_move_construct",
+		Tool:   "refactor_move_declaration",
 		Params: params,
 	}}, false)
 }

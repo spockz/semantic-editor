@@ -1,0 +1,37 @@
+env SEMEDIT_TEST_RUST_INLINE_CALLABLE=1
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"status":"applied_with_diagnostics"'
+stdout 'no selected source has a configured verification backend'
+stdout '"operation":"refactor_inline_callable"'
+cmp src/lib.rs want-lib.rs
+
+-- Cargo.toml --
+[package]
+name = "rust-inline-callable-batch-fixture"
+version = "0.1.0"
+edition = "2021"
+build = false
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"auto_organize_imports":false,"edits":[{"tool":"refactor_rename","params":{"language":"rust","file":"src/lib.rs","symbol":"one","to":"single","trust_workspace":true}},{"tool":"refactor_inline_callable","params":{"language":"rust","file":"src/lib.rs","symbol":"single","call_site":{"file":"src/lib.rs","in_function":"run","discriminator":"single()"},"trust_workspace":true}}]}}}
+-- src/lib.rs --
+fn one() -> i32 { 7_i32 }
+
+fn run() -> i32 { one() }
+
+#[test]
+fn inlined_call_and_callee_keep_the_same_value() {
+    assert_eq!(run(), 7);
+    assert_eq!(one(), 7);
+}
+-- want-lib.rs --
+fn single() -> i32 { 7_i32 }
+
+fn run() -> i32 { 7_i32 }
+
+#[test]
+fn inlined_call_and_callee_keep_the_same_value() {
+    assert_eq!(run(), 7);
+    assert_eq!(single(), 7);
+}

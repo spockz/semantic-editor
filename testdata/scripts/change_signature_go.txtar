@@ -1,5 +1,5 @@
 # The CLI appends one typed parameter across source and test callers, preserves unrelated bytes, and refuses unsafe bindings without writes.
-exec semedit change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]'
+exec semedit refactor-change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]'
 stdout 'Updated the function signature and every proven direct caller.'
 cmp service.go .scratch/want/service.txt
 cmp callers.go .scratch/want/callers.txt
@@ -7,18 +7,18 @@ cmp other.go .scratch/want/other.txt
 cmp service_test.go .scratch/want/service_test.txt
 cmp odd.go .scratch/want/odd.txt
 exec go test ./...
-exec semedit change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"source_index":1,"parameter":{"name":"ctx","type":"*int"}}]'
+exec semedit refactor-change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"source_index":1,"parameter":{"name":"ctx","type":"*int"}}]'
 stdout 'already present'
 cmp service.go .scratch/want/service.txt
 cp service.go .scratch/transform.txt
-exec semedit change-signature --file service.go --symbol noop --parameters '[]'
+exec semedit refactor-change-signature --file service.go --symbol noop --parameters '[]'
 stdout 'already present'
 cmp service.go .scratch/transform.txt
-! exec semedit change-signature --file service.go --symbol indirect --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]'
+! exec semedit refactor-change-signature --file service.go --symbol indirect --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]'
 stderr 'function values and indirect callers are unsupported'
 cmp service.go .scratch/transform.txt
 cp callers.go .scratch/callers.txt
-! exec semedit change-signature --file service.go --symbol usesGlobal --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"globalValue","type":"int"},"argument":"0"}]'
+! exec semedit refactor-change-signature --file service.go --symbol usesGlobal --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"globalValue","type":"int"},"argument":"0"}]'
 stderr 'conflicts with an existing body binding'
 cmp callers.go .scratch/callers.txt
 -- go.mod --

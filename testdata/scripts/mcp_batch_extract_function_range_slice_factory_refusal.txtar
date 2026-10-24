@@ -1,0 +1,63 @@
+# Batch refusals for extra slice-owner uses and non-scalar owner inputs leave selected source bytes unchanged.
+stdin slice.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'cannot copy non-scalar owner input'
+cmp service.go original/service.go
+stdin payload.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'cannot copy non-scalar owner input'
+cmp service.go original/service.go
+exec go test ./...
+
+-- go.mod --
+module example.com/mcpbatchrangeslicefactoryrefusal
+
+go 1.23
+-- slice.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"sliceVariable","in_function":"SliceVariable","kind":"function","start_line":9,"end_line":12}}]}}}
+-- payload.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"refactor_extract_callable","params":{"file":"service.go","symbol":"nonScalar","in_function":"NonScalarInput","kind":"function","start_line":16,"end_line":18}}]}}}
+-- service.go --
+package sample
+
+type Payload struct{}
+
+func consume(int, int) {}
+func consumePayload(int, Payload) {}
+
+func SliceVariable(values []int) {
+	for index, value := range values {
+		_ = values
+		consume(index, value)
+	}
+}
+
+func NonScalarInput(source string, payload Payload) {
+	for index := range source {
+		consumePayload(index, payload)
+	}
+}
+-- original/service.go --
+package sample
+
+type Payload struct{}
+
+func consume(int, int) {}
+func consumePayload(int, Payload) {}
+
+func SliceVariable(values []int) {
+	for index, value := range values {
+		_ = values
+		consume(index, value)
+	}
+}
+
+func NonScalarInput(source string, payload Payload) {
+	for index := range source {
+		consumePayload(index, payload)
+	}
+}

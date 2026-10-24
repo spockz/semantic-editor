@@ -1,6 +1,6 @@
-# A typed keyed field use is not rewritten and causes a no-write refusal.
-! semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
-stderr 'non-selector use'
+# Selected keys separated by an unselected initializer refuse before any source changes.
+! semedit refactor-extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"},{"file":"cache.go","symbol":"cache.limit"}]' --field state
+stderr 'contiguous source-order run'
 cmp cache.go .scratch/want/cache.go
 
 -- go.mod --
@@ -12,14 +12,18 @@ package cache
 
 type cache struct {
 	entries map[string]int
+	limit int
+	tail int
 }
 
-var defaultCache = cache{entries: map[string]int{}}
+var defaultCache = cache{entries: map[string]int{}, tail: 3, limit: 2}
 -- .scratch/want/cache.go --
 package cache
 
 type cache struct {
 	entries map[string]int
+	limit int
+	tail int
 }
 
-var defaultCache = cache{entries: map[string]int{}}
+var defaultCache = cache{entries: map[string]int{}, tail: 3, limit: 2}

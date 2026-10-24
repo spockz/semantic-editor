@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"bytes"
 	"go/ast"
@@ -142,7 +143,7 @@ func loadStructuralPackageGraph(capture *structuralPackageCapture, root string, 
 	if err != nil {
 		return nil, fmt.Errorf("prepare structural Go package environment: %w", err)
 	}
-	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
+	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedEmbedFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
 	loaded, err := packages.Load(&packages.Config{
 		Context: capture.ctx, Dir: root, Env: environment, Mode: mode,
 		Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, ParseFile: capture.parse,
@@ -154,16 +155,86 @@ func loadStructuralPackageGraph(capture *structuralPackageCapture, root string, 
 }
 
 func captureLoadedStructuralInputs(capture *structuralPackageCapture, root string, loaded []*packages.Package, extra map[string][]byte) error {
-	for _, pkg := range loaded {
-		for _, files := range [][]string{pkg.GoFiles, pkg.CompiledGoFiles} {
-			for _, filename := range files {
-				if err := captureLoadedStructuralFile(capture, root, filename, extra); err != nil {
-					return err
-				}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolve structural module root %q: %w", root, err)
+	}
+	moduleRoots := map[string]bool{filepath.Clean(root): true}
+	var captureErr error
+	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		if captureErr != nil {
+			return false
+		}
+		moduleRoot, local, err := localStructuralModuleRoot(pkg)
+		if err != nil {
+			captureErr = err
+			return false
+		}
+		if !local {
+			return true
+		}
+		moduleRoots[moduleRoot] = true
+		captureErr = captureStructuralPackageInputs(capture, moduleRoot, pkg, extra)
+		return captureErr == nil
+	}, nil)
+	if captureErr != nil {
+		return captureErr
+	}
+	return captureStructuralModuleManifests(capture, moduleRoots)
+}
+
+func captureStructuralModuleManifests(capture *structuralPackageCapture, roots map[string]bool) error {
+	orderedRoots := make([]string, 0, len(roots))
+	for root := range roots {
+		orderedRoots = append(orderedRoots, root)
+	}
+	slices.Sort(orderedRoots)
+	for _, root := range orderedRoots {
+		for _, name := range []string{"go.mod", "go.sum"} {
+			path := filepath.Join(root, name)
+			content, err := sourcebuf.ReadFile(capture.ctx, path)
+			if errors.Is(err, os.ErrNotExist) && name == "go.sum" {
+				continue
+			}
+			if err != nil {
+				return fmt.Errorf("capture local structural manifest %q: %w", path, err)
+			}
+			if previous, exists := capture.sources[path]; exists && !bytes.Equal(previous, content) {
+				return fmt.Errorf("local structural manifest %q changed during analysis", path)
+			}
+			capture.sources[path] = bytes.Clone(content)
+		}
+	}
+	return nil
+}
+
+func captureStructuralPackageInputs(capture *structuralPackageCapture, root string, pkg *packages.Package, extra map[string][]byte) error {
+	for _, paths := range [][]string{pkg.GoFiles, pkg.CompiledGoFiles, pkg.OtherFiles, pkg.EmbedFiles} {
+		for _, filename := range paths {
+			if err := captureLoadedStructuralFile(capture, root, filename, extra); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
+}
+
+func localStructuralModuleRoot(pkg *packages.Package) (string, bool, error) {
+	if pkg.Module == nil {
+		return "", false, nil
+	}
+	module := pkg.Module
+	if module.Replace != nil {
+		module = module.Replace
+	}
+	if module.Dir == "" || module.Version != "" {
+		return "", false, nil
+	}
+	root, err := filepath.Abs(module.Dir)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve local module input root %q: %w", module.Dir, err)
+	}
+	return filepath.Clean(root), true, nil
 }
 
 func captureLoadedStructuralFile(capture *structuralPackageCapture, root, filename string, extra map[string][]byte) error {

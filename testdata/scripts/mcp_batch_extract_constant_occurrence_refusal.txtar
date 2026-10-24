@@ -1,0 +1,24 @@
+# A rejected occurrence selector preserves earlier successful batch work and does not partially rewrite the expression.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+! stdout '"isError":false'
+cmp retry.go .scratch/want/retry.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantoccurrencerefusal
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return 3 * 60 + 3 * 60 + 3 * 60"}},{"tool":"refactor_extract_value","params":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3*60","kind":"constant","occurrence_indices":[3],"expected_revision":"098f637d9009a90881617e32ab772e700229f733f19ad560e38409e5faf9cfaa"}}]}}}
+-- retry.go --
+package retry
+
+func Retry() int { return 1 }
+-- .scratch/want/retry.go --
+package retry
+
+func Retry() int {
+	return 3*60 + 3*60 + 3*60
+}

@@ -22,12 +22,16 @@ import (
 )
 
 const javaMoveResourceKind = "moveResource"
+const javaMakeStaticOperation backend.Operation = "make_static"
+const javaMakeStaticActionKind = backend.CodeActionInlineKind
+const javaMakeStaticActionTitle = "Make Static"
 
 type javaCodeAction struct {
-	Title   string          `json:"title"`
-	Kind    string          `json:"kind"`
-	Edit    json.RawMessage `json:"edit"`
-	Command *javaCommand    `json:"command"`
+	Title    string          `json:"title"`
+	Kind     string          `json:"kind"`
+	Edit     json.RawMessage `json:"edit"`
+	Disabled json.RawMessage `json:"disabled"`
+	Command  *javaCommand    `json:"command"`
 }
 
 type javaCommand struct {
@@ -48,6 +52,12 @@ type javaCodeActionRollback struct {
 }
 
 func validateJavaCodeActionRequest(request backend.CodeActionRequest) error {
+	if request.Operation == javaMakeTypeExplicitOperation {
+		if request.Kind != "refactor" || request.Symbol == "" || request.EnclosingSymbol == "" || request.ExpectedRevision == "" {
+			return fmt.Errorf("java make-type-explicit requires a local, owner, fresh revision, and refactor kind")
+		}
+		return javacst.ValidateJavaIdentifier(request.Symbol)
+	}
 	wantKind := map[backend.Operation]string{
 		backend.OperationExtractFunction:          "refactor.extract.function",
 		backend.OperationExtractVariable:          "refactor.extract.variable",
@@ -59,6 +69,7 @@ func validateJavaCodeActionRequest(request backend.CodeActionRequest) error {
 		backend.OperationIntroduceParameter:       "refactor.change.signature",
 		backend.OperationIntroduceParameterObject: "refactor.change.signature",
 		backend.OperationMoveConstruct:            "moveStaticMember",
+		javaMakeStaticOperation:                   javaMakeStaticActionKind,
 	}[request.Operation]
 	if !validJavaCodeActionKind(request, wantKind) || javaCodeActionNeedsName(request.Operation) && strings.TrimSpace(request.NewName) == "" {
 		return fmt.Errorf("unsupported Java code action request")
@@ -79,6 +90,8 @@ func javaCodeActionNeedsName(operation backend.Operation) bool {
 	switch operation {
 	case backend.OperationInlineVariable, backend.OperationInlineFunction, backend.OperationImplementContract,
 		backend.OperationChangeSignature, backend.OperationIntroduceParameter, backend.OperationIntroduceParameterObject, backend.OperationMoveConstruct:
+		return false
+	case javaMakeStaticOperation:
 		return false
 	default:
 		return true
@@ -125,12 +138,10 @@ func (b *JavaBackend) ApplyCodeAction(ctx context.Context, request backend.CodeA
 	if !request.Project.WorkspaceTrust.Allows(root) {
 		return nil, &backend.WorkspaceTrustError{Operation: request.Operation, Language: backend.LanguageJava, Workspace: root}
 	}
-	if request.ExpectedRevision != "" {
-		digest := sha256.Sum256(source)
-		if request.ExpectedRevision != hex.EncodeToString(digest[:]) {
-			return nil, fmt.Errorf("java code action source revision changed")
-		}
+	if preimageErr := validateJavaCodeActionPreimage(source, request); preimageErr != nil {
+		return nil, preimageErr
 	}
+
 	config := effectiveJavaConfig(request.Project)
 	fingerprint, err := javaImportFingerprint(root, config)
 	if err != nil {
@@ -170,6 +181,7 @@ func (b *JavaBackend) ApplyCodeAction(ctx context.Context, request backend.CodeA
 	if err != nil {
 		return nil, err
 	}
+	workspace.organizeImports = len(workspace.renames) == 0
 	workingBuffer, workingCtx, afterAction, ownedBuffer, err := b.stageJavaCodeAction(ctx, root, file, uri, source, buffer, session, &workspace, request, rollback)
 	if err != nil {
 		return nil, err
@@ -202,7 +214,7 @@ func (b *JavaBackend) finishJavaCodeAction(ctx, workingCtx context.Context, file
 		if fileEdit.file == file {
 			current = afterAction
 		}
-		verified, err := b.verifyJavaCodeActionFile(workingCtx, session, buffer, fileEdit, current)
+		verified, err := b.verifyJavaCodeActionFile(workingCtx, session, buffer, fileEdit, current, workspace.organizeImports)
 		if err != nil {
 			return nil, err
 		}
@@ -226,13 +238,16 @@ type javaCodeActionFileVerification struct {
 	diagnostics []backend.Diagnostic
 }
 
-func (b *JavaBackend) verifyJavaCodeActionFile(ctx context.Context, session JavaSession, buffer *sourcebuf.Buffer, fileEdit javaWorkspaceFileEdit, current []byte) (javaCodeActionFileVerification, error) {
+func (b *JavaBackend) verifyJavaCodeActionFile(ctx context.Context, session JavaSession, buffer *sourcebuf.Buffer, fileEdit javaWorkspaceFileEdit, current []byte, organizeImports bool) (javaCodeActionFileVerification, error) {
 	verified := javaVerifiedSource{content: bytes.Clone(current), version: b.documents[fileEdit.uri].version}
 	if err := applyJavaFormattingRequest(ctx, session, fileEdit.file, verified.content, &verified); err != nil {
 		return javaCodeActionFileVerification{}, fmt.Errorf("format Java refactoring result for %s: %w", fileEdit.file, err)
 	}
-	if err := b.applyJavaOrganizeRequest(ctx, session, fileEdit.file, current, &verified); err != nil {
-		return javaCodeActionFileVerification{}, fmt.Errorf("organize imports after Java refactoring for %s: %w", fileEdit.file, err)
+	// JDT LS still indexes the old package until the resource rename is published.
+	if organizeImports {
+		if err := b.applyJavaOrganizeRequest(ctx, session, fileEdit.file, current, &verified); err != nil {
+			return javaCodeActionFileVerification{}, fmt.Errorf("organize imports after Java refactoring for %s: %w", fileEdit.file, err)
+		}
 	}
 	version, err := b.publishJavaVerifyEdits(ctx, session, fileEdit.file, current, verified, buffer)
 	if err != nil {
@@ -343,6 +358,11 @@ func (b *JavaBackend) stageJavaCodeAction(ctx context.Context, root, file, uri s
 }
 
 func prepareJavaCodeActionWorkspace(ctx context.Context, root, file, uri string, source []byte, workspaceEdit json.RawMessage, resourceReferences []string, buffer *sourcebuf.Buffer, request backend.CodeActionRequest) (javaWorkspaceEdit, error) {
+	if request.Operation == javaMakeTypeExplicitOperation {
+		if err := validateJavaExplicitTypeEdit(source, uri, request, workspaceEdit); err != nil {
+			return javaWorkspaceEdit{}, err
+		}
+	}
 	moveResource := request.Operation == backend.OperationMoveConstruct && request.Kind == javaMoveResourceKind
 	workspace, err := prepareJavaWorkspaceEdits(ctx, root, file, source, workspaceEdit, "", "", moveResource && buffer == nil)
 	if err != nil {
@@ -525,6 +545,13 @@ func (b *JavaBackend) rewriteJavaParameterObjectFile(ctx context.Context, root, 
 			return nil, err
 		}
 	}
+	if request.Operation == backend.OperationIntroduceParameterObject {
+		restored, err := restoreJavaImportsFromPreimage(updated, fileEdit.before)
+		if err != nil {
+			return nil, fmt.Errorf("restore Java parameter-object imports in %s: %w", fileEdit.file, err)
+		}
+		updated = restored
+	}
 	return updated, nil
 }
 
@@ -678,7 +705,15 @@ func requestJavaRefactoringEdit(ctx context.Context, session JavaSession, params
 	if err != nil {
 		return nil, fmt.Errorf("request Java %s code action: %w", request.Kind, err)
 	}
-	action, err := selectJavaCodeAction(raw, request.Kind)
+	if request.Operation == javaMakeTypeExplicitOperation {
+		return selectJavaExplicitTypeEdit(raw, request)
+	}
+	var action javaCodeAction
+	if request.Operation == javaMakeStaticOperation {
+		action, err = selectJavaCodeActionTitle(raw, javaMakeStaticActionKind, javaMakeStaticActionTitle)
+	} else {
+		action, err = selectJavaCodeAction(raw, request.Kind)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -889,7 +924,7 @@ func updateJavaMoveReference(ctx context.Context, path string, workspace *javaWo
 	if err != nil {
 		return fmt.Errorf("read Java caller package in %q: %w", path, err)
 	}
-	if !javaFileReferencesMovedType(current, callerPackage, move) {
+	if !javaFileReferencesMovedType(current, callerPackage, move) && !javaFileReferencesMovedType(before, callerPackage, move) {
 		return nil
 	}
 	addImports, removeImports, err := javaMoveImportDelta(path, callerPackage, move)
@@ -934,102 +969,90 @@ func (b *JavaBackend) replaceJavaIntroducedParameterExpression(ctx context.Conte
 	if err := javacst.ValidateJavaIdentifier(request.ParameterName); err != nil {
 		return nil, fmt.Errorf("invalid Java parameter name: %w", err)
 	}
-	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Java method after signature change: %w", err)
-	}
-	readSymbols, err := mapJavaReadSymbols(symbols, nil, file)
+	methodRange, err := b.javaChangedMethodSourceRange(ctx, root, file, source, request.Symbol, len(request.Parameters), "", "resolve Java method after signature change", "java introduce_parameter resolves to %d changed method candidates", "java introduce_parameter method range is invalid")
 	if err != nil {
 		return nil, err
 	}
-	parts, _, _, err := parseJavaSymbolQuery(request.Symbol)
-	if err != nil {
-		return nil, err
-	}
-	baseQuery := strings.Join(parts, ".")
-	candidates, err := matchJavaReadSymbols(baseQuery, readSymbols)
-	if err != nil {
-		return nil, err
-	}
-	methodCount := 0
-	var target backend.ReadSymbol
-	for _, candidate := range candidates {
-		if candidate.Kind == "method" && javaSignatureParameterCount(candidate.Signature) == len(request.Parameters) {
-			methodCount++
-			target = candidate
-		}
-	}
-	if methodCount != 1 {
-		return nil, fmt.Errorf("java introduce_parameter resolves to %d changed method candidates", methodCount)
-	}
-	start, err := javacst.ByteOffsetFromPosition(source, target.Range.Start)
-	if err != nil {
-		return nil, err
-	}
-	end, err := javacst.ByteOffsetFromPosition(source, target.Range.End)
-	if err != nil || end <= start {
-		return nil, fmt.Errorf("java introduce_parameter method range is invalid")
-	}
-	methodSource := source[start:end]
+	methodSource := source[methodRange.start:methodRange.end]
 	candidate, _, err := javacst.ResolveExpression(methodSource, request.Expression, request.ExpressionPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Java expression to replace with the new parameter: %w", err)
 	}
 	result := bytes.Clone(source)
-	absoluteStart, absoluteEnd := start+int(candidate.StartByte), start+int(candidate.EndByte)
+	absoluteStart, absoluteEnd := methodRange.start+int(candidate.StartByte), methodRange.start+int(candidate.EndByte)
 	result = append(result[:absoluteStart], append([]byte(request.ParameterName), result[absoluteEnd:]...)...)
 	return result, nil
 }
 
 func (b *JavaBackend) replaceJavaParameterObjectReferences(ctx context.Context, root, file string, source []byte, request backend.CodeActionRequest) ([]byte, error) {
-	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
-	if err != nil {
-		return nil, fmt.Errorf("resolve Java method after parameter-object signature change: %w", err)
-	}
-	readSymbols, err := mapJavaReadSymbols(symbols, nil, file)
+	methodRange, err := b.javaChangedMethodSourceRange(ctx, root, file, source, request.Symbol, 1, request.ParameterObjectType, "resolve Java method after parameter-object signature change", "java introduce_parameter_object resolves to %d changed method candidates for parameter type %q", "java parameter-object method range is invalid")
 	if err != nil {
 		return nil, err
-	}
-	parts, _, _, err := parseJavaSymbolQuery(request.Symbol)
-	if err != nil {
-		return nil, err
-	}
-	candidates, err := matchJavaReadSymbols(strings.Join(parts, "."), readSymbols)
-	if err != nil {
-		return nil, err
-	}
-	var target backend.ReadSymbol
-	methodCount := 0
-	for _, candidate := range candidates {
-		if candidate.Kind == "method" && javaSignatureParameterCount(candidate.Signature) == 1 && javaSignatureHasParameterType(candidate.Signature, request.ParameterObjectType) {
-			target = candidate
-			methodCount++
-		}
-	}
-	if methodCount != 1 {
-		return nil, fmt.Errorf("java introduce_parameter_object resolves to %d changed method candidates for parameter type %q", methodCount, request.ParameterObjectType)
-	}
-	start, err := javacst.ByteOffsetFromPosition(source, target.Range.Start)
-	if err != nil {
-		return nil, err
-	}
-	end, err := javacst.ByteOffsetFromPosition(source, target.Range.End)
-	if err != nil || end <= start {
-		return nil, fmt.Errorf("java parameter-object method range is invalid")
 	}
 	fields := make([]javacst.JavaParameterField, 0, len(request.ParameterObjectFields))
 	for _, field := range request.ParameterObjectFields {
 		fields = append(fields, javacst.JavaParameterField{SourceIndex: field.SourceIndex, ParameterName: field.ParameterName, Name: field.Name, Type: field.Type})
 	}
-	updatedMethod, err := javacst.RewriteJavaParameterReferences(source[start:end], request.Parameters[0].Name, fields)
+	updatedMethod, err := javacst.RewriteJavaParameterReferences(source[methodRange.start:methodRange.end], request.Parameters[0].Name, fields)
 	if err != nil {
 		return nil, fmt.Errorf("rewrite Java parameter-object body references: %w", err)
 	}
-	updated := make([]byte, 0, len(source)-end+start+len(updatedMethod))
-	updated = append(updated, source[:start]...)
+	updated := make([]byte, 0, len(source)-methodRange.end+methodRange.start+len(updatedMethod))
+	updated = append(updated, source[:methodRange.start]...)
 	updated = append(updated, updatedMethod...)
-	updated = append(updated, source[end:]...)
+	updated = append(updated, source[methodRange.end:]...)
 	return updated, nil
+}
+
+type javaChangedMethodSourceRange struct{ start, end int }
+
+func (b *JavaBackend) javaChangedMethodSourceRange(ctx context.Context, root, file string, source []byte, query string, parameterCount int, parameterType, resolveContext, countError, rangeError string) (javaChangedMethodSourceRange, error) {
+	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
+	if err != nil {
+		return javaChangedMethodSourceRange{}, fmt.Errorf("%s: %w", resolveContext, err)
+	}
+	readSymbols, err := mapJavaReadSymbols(symbols, nil, file)
+	if err != nil {
+		return javaChangedMethodSourceRange{}, err
+	}
+	parts, _, _, err := parseJavaSymbolQuery(query)
+	if err != nil {
+		return javaChangedMethodSourceRange{}, err
+	}
+	candidates, err := matchJavaReadSymbols(strings.Join(parts, "."), readSymbols)
+	if err != nil {
+		return javaChangedMethodSourceRange{}, err
+	}
+	return selectJavaChangedMethodSourceRange(source, candidates, parameterCount, parameterType, countError, rangeError)
+}
+
+func selectJavaChangedMethodSourceRange(source []byte, candidates []backend.ReadSymbol, parameterCount int, parameterType, countError, rangeError string) (javaChangedMethodSourceRange, error) {
+	var target backend.ReadSymbol
+	count := 0
+	for _, candidate := range candidates {
+		if candidate.Kind != "method" || javaSignatureParameterCount(candidate.Signature) != parameterCount {
+			continue
+		}
+		if parameterType != "" && !javaSignatureHasParameterType(candidate.Signature, parameterType) {
+			continue
+		}
+		target, count = candidate, count+1
+	}
+	if count != 1 {
+		if strings.Contains(countError, "%q") {
+			return javaChangedMethodSourceRange{}, fmt.Errorf(countError, count, parameterType)
+		}
+		return javaChangedMethodSourceRange{}, fmt.Errorf(countError, count)
+	}
+	start, err := javacst.ByteOffsetFromPosition(source, target.Range.Start)
+	if err != nil {
+		return javaChangedMethodSourceRange{}, err
+	}
+	end, err := javacst.ByteOffsetFromPosition(source, target.Range.End)
+	if err != nil || end <= start {
+		return javaChangedMethodSourceRange{}, fmt.Errorf("%s", rangeError)
+	}
+	return javaChangedMethodSourceRange{start: start, end: end}, nil
 }
 
 func javaSignatureParameterCount(signature *string) int {
@@ -1117,40 +1140,107 @@ func selectJavaCodeAction(raw json.RawMessage, kind string) (javaCodeAction, err
 	if json.Unmarshal(raw, &actions) != nil {
 		return javaCodeAction{}, fmt.Errorf("malformed JDT LS code action response")
 	}
+	matches, disabledTitles := javaCodeActionMatches(actions, kind)
+	if selected, ok := preferredJavaCodeAction(matches); ok {
+		return selected, nil
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
+	}
+	if len(matches) == 0 && len(disabledTitles) > 0 {
+		return javaCodeAction{}, fmt.Errorf("JDT LS returned only disabled actions of kind %q: %s", kind, strings.Join(disabledTitles, ", "))
+	}
+	if len(actions) == 0 {
+		return javaCodeAction{}, fmt.Errorf("JDT LS returned no code actions")
+	}
+	if len(matches) == 0 {
+		return javaCodeAction{}, fmt.Errorf("JDT LS returned no enabled actions of kind %q; available actions: %s", kind, strings.Join(javaEnabledActionTitles(actions), ", "))
+	}
+	return javaCodeAction{}, fmt.Errorf("JDT LS returned %d enabled actions of kind %q: %s", len(matches), kind, strings.Join(javaActionTitles(matches), ", "))
+}
+
+func selectJavaCodeActionTitle(raw json.RawMessage, kind, title string) (javaCodeAction, error) {
+	var actions []javaCodeAction
+	if json.Unmarshal(raw, &actions) != nil {
+		return javaCodeAction{}, fmt.Errorf("malformed JDT LS code action response")
+	}
 	var matches []javaCodeAction
+	var disabled bool
 	for _, action := range actions {
-		if action.Kind == kind {
-			matches = append(matches, action)
+		if action.Title != title || action.Kind != kind {
+			continue
 		}
+		if javaCodeActionDisabled(action) {
+			disabled = true
+			continue
+		}
+		matches = append(matches, action)
+	}
+	if len(matches) == 1 {
+		return matches[0], nil
 	}
 	if len(matches) > 1 {
-		singleOccurrence := make([]javaCodeAction, 0, len(matches))
-		for _, action := range matches {
-			if !strings.Contains(strings.ToLower(action.Title), "replace all occurrences") {
-				singleOccurrence = append(singleOccurrence, action)
-			}
+		return javaCodeAction{}, fmt.Errorf("JDT LS returned %d enabled actions titled %q of kind %q", len(matches), title, kind)
+	}
+	if disabled {
+		return javaCodeAction{}, fmt.Errorf("JDT LS returned only disabled actions titled %q of kind %q", title, kind)
+	}
+	return javaCodeAction{}, fmt.Errorf("JDT LS returned no enabled action titled %q of kind %q", title, kind)
+}
+
+func javaCodeActionMatches(actions []javaCodeAction, kind string) ([]javaCodeAction, []string) {
+	var matches []javaCodeAction
+	var disabledTitles []string
+	for _, action := range actions {
+		if action.Kind != kind {
+			continue
 		}
-		if len(singleOccurrence) == 1 {
-			return singleOccurrence[0], nil
+		if javaCodeActionDisabled(action) {
+			disabledTitles = append(disabledTitles, action.Title)
+			continue
+		}
+		matches = append(matches, action)
+	}
+	return matches, disabledTitles
+}
+
+func preferredJavaCodeAction(matches []javaCodeAction) (javaCodeAction, bool) {
+	if len(matches) <= 1 {
+		return javaCodeAction{}, false
+	}
+	var selected javaCodeAction
+	count := 0
+	for _, action := range matches {
+		if strings.Contains(strings.ToLower(action.Title), "replace all occurrences") {
+			continue
+		}
+		selected = action
+		count++
+	}
+	return selected, count == 1
+}
+
+func javaCodeActionDisabled(action javaCodeAction) bool {
+	disabled := bytes.TrimSpace(action.Disabled)
+	return len(disabled) > 0 && !bytes.Equal(disabled, []byte("null"))
+}
+
+func javaActionTitles(actions []javaCodeAction) []string {
+	titles := make([]string, 0, len(actions))
+	for _, action := range actions {
+		titles = append(titles, fmt.Sprintf("%s (%s)", action.Title, action.Kind))
+	}
+	return titles
+}
+
+func javaEnabledActionTitles(actions []javaCodeAction) []string {
+	var enabled []javaCodeAction
+	for _, action := range actions {
+		if !javaCodeActionDisabled(action) {
+			enabled = append(enabled, action)
 		}
 	}
-	if len(matches) != 1 {
-		titles := make([]string, 0, len(matches))
-		for index, action := range matches {
-			titles[index] = fmt.Sprintf("%s (%s)", action.Title, action.Kind)
-		}
-		if len(actions) == 0 {
-			return javaCodeAction{}, fmt.Errorf("JDT LS returned no code actions")
-		}
-		if len(matches) == 0 {
-			for _, action := range actions {
-				titles = append(titles, fmt.Sprintf("%s (%s)", action.Title, action.Kind))
-			}
-			return javaCodeAction{}, fmt.Errorf("JDT LS returned no actions of kind %q; available actions: %s", kind, strings.Join(titles, ", "))
-		}
-		return javaCodeAction{}, fmt.Errorf("JDT LS returned %d actions of kind %q: %s", len(matches), kind, strings.Join(titles, ", "))
-	}
-	return matches[0], nil
+	return javaActionTitles(enabled)
 }
 
 type javaChangeSignatureInfo struct {
@@ -1264,5 +1354,23 @@ func validJavaCodeActionKind(request backend.CodeActionRequest, expected string)
 	if request.Operation == backend.OperationMoveConstruct {
 		return request.Kind == "moveStaticMember" || request.Kind == "moveResource"
 	}
+	if request.Operation == javaMakeStaticOperation {
+		return request.Kind == javaMakeStaticActionKind
+	}
 	return request.Kind == expected
+}
+
+func validateJavaCodeActionPreimage(source []byte, request backend.CodeActionRequest) error {
+	if request.ExpectedRevision != "" {
+		digest := sha256.Sum256(source)
+		if request.ExpectedRevision != hex.EncodeToString(digest[:]) {
+			return fmt.Errorf("java code action source revision changed")
+		}
+	}
+	if request.Operation == javaMakeTypeExplicitOperation {
+		if _, selectionErr := javacst.JavaInferredLocalAt(source, request.Symbol, request.Range); selectionErr != nil {
+			return fmt.Errorf("resolve Java inferred local before native action: %w", selectionErr)
+		}
+	}
+	return nil
 }

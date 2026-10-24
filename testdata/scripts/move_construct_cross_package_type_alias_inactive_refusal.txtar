@@ -1,0 +1,36 @@
+# Refuse a move when an inactive build variant contains a source reference outside the compiler package set.
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Count --placement file_end
+stderr 'refuses possible reference to "Count" in generated or build-constrained file'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/windows.go .scratch/_want/legacy/windows.go
+cmp api/api.go .scratch/_want/api/api.go
+
+-- go.mod --
+module example.com/typecrossaliasinactive
+
+go 1.23
+
+-- legacy/types.go --
+package legacy
+
+type Count = int
+-- legacy/windows.go --
+//go:build windows
+
+package legacy
+
+var windowsCount Count
+-- api/api.go --
+package api
+-- .scratch/_want/legacy/types.go --
+package legacy
+
+type Count = int
+-- .scratch/_want/legacy/windows.go --
+//go:build windows
+
+package legacy
+
+var windowsCount Count
+-- .scratch/_want/api/api.go --
+package api

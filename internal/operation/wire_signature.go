@@ -7,11 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/spockz/semantic-editor/internal/astedit"
-	"github.com/spockz/semantic-editor/internal/backend"
-	"github.com/spockz/semantic-editor/internal/sourcebuf"
-	"github.com/spockz/semantic-editor/internal/sourcefiles"
-	symbolresolver "github.com/spockz/semantic-editor/internal/symbol"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -19,20 +14,27 @@ import (
 	"io/fs"
 	"maps"
 	"path/filepath"
+	"slices"
 	"strings"
+
+	"github.com/spockz/semantic-editor/internal/astedit"
+	"github.com/spockz/semantic-editor/internal/backend"
+	"github.com/spockz/semantic-editor/internal/sourcebuf"
+	"github.com/spockz/semantic-editor/internal/sourcefiles"
+	symbolresolver "github.com/spockz/semantic-editor/internal/symbol"
 
 	"golang.org/x/tools/go/packages"
 )
 
-const signatureChangeConsumer = "semantic_change_signature"
+const signatureChangeConsumer = canonicalChangeSignatureKey
 
 const signatureReplaceBodyConsumer = "semantic_replace_body"
 
 const signatureEditReceiptField = editReceiptField
 
-const introduceParameterConsumer = "semantic_introduce_parameter"
+const introduceParameterConsumer = "refactor_introduce_parameter"
 
-const introduceParameterObjectConsumer = "semantic_introduce_parameter_object"
+const introduceParameterObjectConsumer = "refactor_introduce_parameter_object"
 
 func signatureTargetSourceFields(field string) []string {
 	return []string{
@@ -59,7 +61,7 @@ type signatureCallTarget struct {
 func signatureOutputContract() OperationOutputContract {
 	target := SymbolTargetSchema().Properties
 	inspectors := []string{"semantic_inspect_symbol"}
-	consumers := []string{signatureChangeConsumer, "semantic_introduce_parameter", "semantic_introduce_parameter_object", signatureReplaceBodyConsumer}
+	consumers := []string{signatureChangeConsumer, introduceParameterConsumer, introduceParameterObjectConsumer, signatureReplaceBodyConsumer}
 	functionTarget := ValueSchema{Kind: SchemaObject, Properties: target, Required: []string{"file", "symbol", wireExpectedRevision}}
 	result := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"result": {Kind: SchemaString}, "file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "diff": {Kind: SchemaString}, "function_target": functionTarget, signatureEditReceiptField: EditReceiptSchema(),
@@ -161,13 +163,13 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	params = append(params, []ParameterContract{
 		structuralStringParam("file", "Target source file: Go file in the active module or Java file in a trusted JDT LS workspace.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
 		structuralStringParam("symbol", "Target: exact private Go free-function identity or signature-qualified Java method; copy it from semantic_lookup or semantic_inspect_symbol.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
-		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping. Preserve Go's supported append-only proof. For Java, map existing parameters by source_index and give each added parameter a closed argument expression used at every existing call site.", Schema: &mappings},
+		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: ("Replacement: complete ordered parameter mapping. Go supports one appended parameter, an unchanged signature, a complete permutation of existing parameters, or removing exactly one unused scalar parameter from a private free function. Permutations require compiler-proven constant arguments at every direct call; removal requires a compiler-proven constant only for the discarded argument. Preserve surviving parameter names, types, exact argument source, and order, including effectful survivors. A removal that would leave an unused import refuses without edits. For Java, map existing parameters by source_index and give each added parameter a closed argument expression used at every existing call site."), Schema: &mappings},
 		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from semantic_inspect_symbol or the same finalized function_target record for this file and symbol; stale revisions are refused.", false, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].expected_revision"}, signatureTargetSourceFields(wireExpectedRevision)...)...),
 	}...)
 	params = append(params, readProjectParams[:5]...)
 	return Def[map[string]any, structuralPlanResult]{
-		Key: "change_signature", Summary: "Use this tool instead of manually changing a Java method signature and its resolved callers through JDT LS, or a supported private Go free-function signature and its proven direct callers. Supply the complete ordered parameter mapping. New Java parameters require a default argument expression used at every existing call site; Go keeps its stricter append-only proof. Standalone results expose a finalized function_target; receipt continuations remain available for inspection. Buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
-		Params: params, Level: LevelWorkspace, CLIName: "change-signature", MCPName: "semantic_change_signature", Batchable: true, BufferedBatch: true,
+		Key: canonicalChangeSignatureKey, Summary: ("Use this tool instead of manually changing a Java method signature and its resolved callers through JDT LS, or a supported private Go free-function signature and its proven direct callers. Supply the complete ordered parameter mapping. New Java parameters require a default argument expression used at every existing call site; Go supports append-one, unchanged mappings, complete existing-parameter permutations, and removal of exactly one unused scalar parameter. Permutations require compiler-proven constant arguments at every direct call; removal requires a compiler-proven constant only for the discarded argument. Surviving parameter names, types, argument source, and order are preserved, including effectful survivors. Go parameter renames, result changes, mixed removal/addition/permutation, and removals that leave unused imports are unsupported. Standalone results expose a finalized function_target; receipt continuations remain available for inspection. Buffered results report applied_working without claiming disk publication.") + automaticVerificationGuidance,
+		Params: params, Level: LevelWorkspace, CLIName: "refactor-change-signature", MCPName: canonicalChangeSignatureKey, Batchable: true, BufferedBatch: true,
 		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{
 			map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}},
 			map[string]any{"parameter": map[string]any{"name": "label", "type": "string"}, "argument": "\"ready\""},
@@ -227,7 +229,13 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
-	return applySignatureChange(cc, file, snapshot, intent, plan)
+	return applySignaturePlanAndReceipt(ctx, cc, snapshot, signaturePlanApplication{
+		File: file, Symbol: intent.Symbol,
+		Detail:                 "Updated the function signature and every proven direct caller.",
+		NoOpDetail:             "The requested signature is already present.",
+		Operation:              backendChangeSignatureOperation,
+		PlannedPathErrorPrefix: "planned file",
+	}, plan)
 }
 
 func parseSignatureChangeIntent(raw map[string]any, before []byte) (signatureChangeIntent, error) {
@@ -264,62 +272,26 @@ func planSignatureChange(snapshot *structuralSnapshot, intent signatureChangeInt
 	if err != nil {
 		return astedit.SignaturePlan{}, err
 	}
+	var parameterTypes []string
+	policy, projected, err := signatureProjectionSelection(snapshot, intent.Symbol, intent.Mappings)
+	if err != nil {
+		return astedit.SignaturePlan{}, err
+	}
+	if projected {
+		parameterTypes, err = collectSignatureProjectionEvidence(snapshot, intent.Symbol, &proof, policy)
+		if err != nil {
+			return astedit.SignaturePlan{}, err
+		}
+	}
 	request := astedit.SignatureChangeRequest{File: snapshot.File, Symbol: intent.Symbol, Parameters: intent.Mappings, ExpectedRevision: intent.ExpectedRevision}
 	plan, err := astedit.PlanChangeSignature(request, proof)
 	if err != nil {
 		return astedit.SignaturePlan{}, err
 	}
-	if err := validateSignatureOverlay(snapshot, plan); err != nil {
-		return astedit.SignaturePlan{}, err
+	if plan.Projection != nil {
+		plan.Projection.ParameterTypes = parameterTypes
 	}
 	return plan, nil
-}
-
-func applySignatureChange(cc CallContext, file string, snapshot *structuralSnapshot, intent signatureChangeIntent, plan astedit.SignaturePlan) (structuralPlanResult, error) {
-	before := snapshot.Sources[snapshot.File]
-	readSet, err := signatureReadSet(cc.WorkDir, snapshot)
-	if err != nil {
-		return structuralPlanResult{}, err
-	}
-	finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
-	changed, diffs, applyErr := applySignaturePlan(snapshot, plan)
-	if applyErr != nil && !changed {
-		return structuralPlanResult{}, applyErr
-	}
-	delta, diagnosticStatus := finishDelta()
-	edit := FileEditRes{File: snapshot.File, Display: displayWorkPath(cc.WorkDir, file), Symbol: intent.Symbol,
-		Detail: "Updated the function signature and every proven direct caller.", Diff: strings.Join(diffs, "\n"), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}
-	if !changed {
-		edit.Detail = "The requested signature is already present."
-	}
-	if applyErr != nil {
-		edit.Detail = "Signature output publication did not complete: " + applyErr.Error()
-	}
-	draft := EditReceiptDraft{Operation: "change_signature", Status: EditPersisted, ReadSet: readSet}
-	if !changed {
-		draft.Status = EditNoOp
-	} else if diagnosticStatus == "changed" {
-		draft.Status = EditPersistedWithDiagnostics
-	}
-	planned := make(map[string][]byte, len(plan.Files))
-	for _, item := range plan.Files {
-		planned[item.File] = item.After
-		relative, err := filepath.Rel(cc.WorkDir, item.File)
-		if err != nil || !filepath.IsLocal(relative) {
-			return structuralPlanResult{}, fmt.Errorf("planned file %q is outside workspace", item.File)
-		}
-		draft.PlannedChanges = append(draft.PlannedChanges, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(item.After)})
-	}
-	finalSource := before
-	if changedSource, ok := planned[snapshot.File]; ok {
-		finalSource = changedSource
-	}
-	continuationRevision := structuralRevision(finalSource)
-	draft.Continuations = []SymbolTarget{{File: edit.Display, Symbol: intent.Symbol, ExpectedRevision: &continuationRevision}}
-	resolve := func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
-		return resolveSignatureContinuation(resolveCtx, cc.WorkDir, candidate)
-	}
-	return structuralPlanResult{Edit: edit, Draft: draft, Resolve: resolve}, nil
 }
 
 func decodeSignatureMappings(value any) ([]astedit.SignatureParameterMapping, error) {
@@ -393,7 +365,7 @@ func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol strin
 		return err
 	}
 	packageDir := filepath.Dir(snapshot.File)
-	return filepath.WalkDir(packageDir, func(path string, entry fs.DirEntry, walkErr error) error {
+	if err := filepath.WalkDir(packageDir, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return fmt.Errorf("scan signature package variant %q: %w", path, walkErr)
 		}
@@ -414,7 +386,27 @@ func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol strin
 			return nil
 		}
 		return checkSignatureVariantFile(snapshot, absolute, symbol)
-	})
+	}); err != nil {
+		return err
+	}
+	overlay := sourcebuf.Overlay(snapshot.Ctx, ".go")
+	for _, path := range slices.Sorted(maps.Keys(overlay)) {
+		if overlay[path] == nil {
+			continue
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("resolve staged signature variant path %q: %w", path, err)
+		}
+		absolute = filepath.Clean(absolute)
+		if filepath.Dir(absolute) != packageDir || compiled[absolute] {
+			continue
+		}
+		if err := checkSignatureVariantFile(snapshot, absolute, symbol); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validateSignatureOverlay(snapshot *structuralSnapshot, plan astedit.SignaturePlan) error {
@@ -438,7 +430,7 @@ func validateSignatureOverlay(snapshot *structuralSnapshot, plan astedit.Signatu
 			return fmt.Errorf("signature output fails Go type analysis in %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
 		}
 	}
-	return nil
+	return validateSignatureProjectionCandidate(snapshot, plan, loaded)
 }
 
 func applySignaturePlan(snapshot *structuralSnapshot, plan astedit.SignaturePlan) (bool, []string, error) {
@@ -588,7 +580,7 @@ func signatureTargetInPackage(snapshot *structuralSnapshot, pkg *packages.Packag
 	}
 	var result signatureTargetSearch
 	for _, file := range pkg.Syntax {
-		absolute, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+		absolute, err := filepath.Abs(pkg.Fset.PositionFor(file.Pos(), false).Filename)
 		if err != nil {
 			return signatureTargetSearch{}, fmt.Errorf("resolve analyzed Go file: %w", err)
 		}
@@ -630,8 +622,8 @@ func signatureTargetInFile(pkg *packages.Package, file *ast.File, symbol, newPar
 }
 
 func signatureTargetForFunction(pkg *packages.Package, function *ast.FuncDecl, symbol, newParameterName string) (signatureTargetSearch, error) {
-	if token.IsExported(symbol) || function.Type.TypeParams != nil && len(function.Type.TypeParams.List) != 0 {
-		return signatureTargetSearch{}, fmt.Errorf("change signature supports only private non-generic free functions")
+	if token.IsExported(symbol) || function.Type.TypeParams != nil && len(function.Type.TypeParams.List) != 0 || function.Body == nil {
+		return signatureTargetSearch{}, fmt.Errorf("change signature supports only source-owned private non-generic free functions with bodies")
 	}
 	object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func)
 	if !ok || object == nil || object.Pkg() == nil {
@@ -644,7 +636,7 @@ func signatureTargetForFunction(pkg *packages.Package, function *ast.FuncDecl, s
 	if !ok || signature.Variadic() {
 		return signatureTargetSearch{}, fmt.Errorf("variadic or unresolved target signatures are unsupported")
 	}
-	position := pkg.Fset.Position(object.Pos())
+	position := pkg.Fset.PositionFor(object.Pos(), false)
 	target := signatureCallTarget{packagePath: pkg.PkgPath, file: filepath.Clean(position.Filename), offset: position.Offset}
 	return signatureTargetSearch{Target: target, Found: true}, nil
 }
@@ -653,7 +645,7 @@ func signatureObjectMatches(pkg *packages.Package, object types.Object, target s
 	if object == nil || object.Pkg() == nil || object.Pkg().Path() != target.packagePath || object.Name() != symbol {
 		return false
 	}
-	position := pkg.Fset.Position(object.Pos())
+	position := pkg.Fset.PositionFor(object.Pos(), false)
 	absolute, err := filepath.Abs(position.Filename)
 	return err == nil && filepath.Clean(absolute) == target.file && position.Offset == target.offset
 }
@@ -721,9 +713,9 @@ func directSignatureCall(pkg *packages.Package, identifier *ast.Ident, parents [
 	}
 	call, direct := parent.(*ast.CallExpr)
 	if !direct || call.Fun != identifier {
-		return nil, fmt.Errorf("function %q has a non-direct use at %s; function values and indirect callers are unsupported", symbol, pkg.Fset.Position(identifier.Pos()))
+		return nil, fmt.Errorf("function %q has a non-direct use at %s; function values and indirect callers are unsupported", symbol, pkg.Fset.PositionFor(identifier.Pos(), false))
 	}
-	start, end := pkg.Fset.Position(call.Pos()), pkg.Fset.Position(call.End())
+	start, end := pkg.Fset.PositionFor(call.Pos(), false), pkg.Fset.PositionFor(call.End(), false)
 	path, err := filepath.Abs(start.Filename)
 	if err != nil {
 		return nil, fmt.Errorf("resolve caller path: %w", err)
@@ -765,4 +757,74 @@ func signatureReadSet(workDir string, snapshot *structuralSnapshot) ([]FileRevis
 		readSet = append(readSet, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(snapshot.Sources[path])})
 	}
 	return readSet, nil
+}
+
+type signaturePlanApplication struct {
+	File                   string
+	Symbol                 string
+	Detail                 string
+	NoOpDetail             string
+	Operation              string
+	ContextErrorPrefix     string
+	PlannedPathErrorPrefix string
+}
+
+func applySignaturePlanAndReceipt(ctx context.Context, cc CallContext, snapshot *structuralSnapshot, application signaturePlanApplication, plan astedit.SignaturePlan) (structuralPlanResult, error) {
+	if ctx == nil {
+		ctx = snapshot.Ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		if application.ContextErrorPrefix != "" {
+			return structuralPlanResult{}, fmt.Errorf("%s: %w", application.ContextErrorPrefix, err)
+		}
+		return structuralPlanResult{}, err
+	}
+	if err := validateSignatureOverlay(snapshot, plan); err != nil {
+		return structuralPlanResult{}, err
+	}
+	readSet, err := signatureReadSet(cc.WorkDir, snapshot)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
+	changed, diffs, applyErr := applySignaturePlan(snapshot, plan)
+	if applyErr != nil && !changed {
+		return structuralPlanResult{}, applyErr
+	}
+	delta, diagnosticStatus := finishDelta()
+	edit := FileEditRes{
+		File: snapshot.File, Display: displayWorkPath(cc.WorkDir, application.File), Symbol: application.Symbol,
+		Detail: application.Detail, Diff: strings.Join(diffs, "\n"), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true,
+	}
+	if !changed {
+		edit.Detail = application.NoOpDetail
+	}
+	if applyErr != nil {
+		edit.Detail = "Signature output publication did not complete: " + applyErr.Error()
+	}
+	draft := EditReceiptDraft{Operation: application.Operation, Status: EditPersisted, ReadSet: readSet}
+	if !changed {
+		draft.Status = EditNoOp
+	} else if diagnosticStatus == "changed" {
+		draft.Status = EditPersistedWithDiagnostics
+	}
+	continuationRevision := structuralRevision(snapshot.Sources[snapshot.File])
+	for _, planned := range plan.Files {
+		relative, err := filepath.Rel(cc.WorkDir, planned.File)
+		if err != nil || !filepath.IsLocal(relative) {
+			return structuralPlanResult{}, fmt.Errorf("%s %q is outside workspace", application.PlannedPathErrorPrefix, planned.File)
+		}
+		draft.PlannedChanges = append(draft.PlannedChanges, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(planned.After)})
+		if planned.File == snapshot.File {
+			continuationRevision = structuralRevision(planned.After)
+		}
+	}
+	draft.Continuations = []SymbolTarget{{File: edit.Display, Symbol: application.Symbol, ExpectedRevision: &continuationRevision}}
+	resolve := func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
+		return resolveSignatureContinuation(resolveCtx, cc.WorkDir, candidate)
+	}
+	return structuralPlanResult{Edit: edit, Draft: draft, Resolve: resolve}, nil
 }

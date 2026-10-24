@@ -1,0 +1,59 @@
+# The second native action reads the first action's staged source and revision before one batch publication.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled SEMEDIT_TEST_JAVA_EXPLICIT_TYPE=1 SEMEDIT_JAVA_ORGANIZE=1
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"applied_working"'
+stdout '"revision":"4de418017a9a8027aef31e4bfddc68e00bcb896a2dd78dee04214a2b568a862e"'
+cmp src/Service.java .scratch/want/Service.java
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"auto_organize_imports":false,"edits":[{"tool":"refactor_make_type_explicit","params":{"file":"src/Service.java","symbol":"total","in_function":"Service.count()","expected_revision":"db4cc2885f4aabbb5e5781eb37d9047053ec98653303f9104376aa3547776006","language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls"}},{"tool":"refactor_make_type_explicit","params":{"file":"src/Service.java","symbol":"items","in_function":"Service.reference()","expected_revision":"1b4f7f758e27183325172ccf6b66bfa09e542a5932948fcb5a616b29a1e33fe9","language":"java","trust_workspace":true,"java_bin":"java","jdtls_home":"tools/jdtls"}}]}}}
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_linux/.keep --
+placeholder
+-- tools/jdtls/config_win/.keep --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Service.java --
+import java.util.ArrayList;
+import java.util.List;
+class Service {
+  static String choose(int value) { return "int:" + value; }
+  static String choose(long value) { return "long:" + value; }
+  static String choose(ArrayList<String> value) { return "array:" + value.size(); }
+  static String choose(List<String> value) { return "list:" + value.size(); }
+  static String count() {
+    var total = 1 + 2;
+    return choose(total);
+  }
+  static String count(int seed) { return "other"; }
+  static String reference() {
+    var items = new ArrayList<String>();
+    items.add("item");
+    return choose(items);
+  }
+  public static void main(String[] args) { System.out.println(count() + "/" + reference()); }
+}
+-- .scratch/want/Service.java --
+import java.util.ArrayList;
+import java.util.List;
+class Service {
+  static String choose(int value) { return "int:" + value; }
+  static String choose(long value) { return "long:" + value; }
+  static String choose(ArrayList<String> value) { return "array:" + value.size(); }
+  static String choose(List<String> value) { return "list:" + value.size(); }
+  static String count() {
+    int total = 1 + 2;
+    return choose(total);
+  }
+  static String count(int seed) { return "other"; }
+  static String reference() {
+    ArrayList<String> items = new ArrayList<String>();
+    items.add("item");
+    return choose(items);
+  }
+  public static void main(String[] args) { System.out.println(count() + "/" + reference()); }
+}

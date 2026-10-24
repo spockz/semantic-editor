@@ -1,0 +1,114 @@
+# Unsupported type shapes and methods outside the selected production file refuse before any candidate file changes.
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Generic --placement file_end
+stderr 'refuses generic types'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/split_methods.go .scratch/_want/legacy/split_methods.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Embedded --placement file_end
+stderr 'refuses embedded fields'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/split_methods.go .scratch/_want/legacy/split_methods.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Split --placement file_end
+stderr 'outside the selected source file'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/split_methods.go .scratch/_want/legacy/split_methods.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Dependent --placement file_end
+stderr 'source-package dependency "helper"'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/split_methods.go .scratch/_want/legacy/split_methods.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+
+! exec semedit refactor-move-declaration --file legacy/types.go --destination-file api/api.go --symbol Cycle --placement file_end
+stderr 'import cycle'
+cmp legacy/types.go .scratch/_want/legacy/types.go
+cmp legacy/split_methods.go .scratch/_want/legacy/split_methods.go
+cmp api/api.go .scratch/_want/api/api.go
+cmp caller/use.go .scratch/_want/caller/use.go
+
+-- go.mod --
+module example.com/typecrossselectionrefusals
+
+go 1.23
+
+-- legacy/types.go --
+package legacy
+
+type Generic[T any] struct{}
+type Dependency struct{}
+type Embedded struct{ Dependency }
+type Split struct{}
+type Dependent struct{}
+func (Dependent) CallsHelper() { helper() }
+func helper() {}
+type Cycle struct{}
+func (Cycle) Ping() {}
+func LocalCycle() Cycle { return Cycle{} }
+func Keep() {}
+
+-- legacy/split_methods.go --
+package legacy
+
+func (Split) InOtherFile() {}
+
+-- api/api.go --
+package api
+
+import "example.com/typecrossselectionrefusals/legacy"
+
+func Existing() { legacy.Keep() }
+
+-- caller/use.go --
+package caller
+
+import "example.com/typecrossselectionrefusals/legacy"
+
+func UseGeneric(v legacy.Generic[int]) legacy.Generic[int] { return v }
+func UseEmbedded(v legacy.Embedded) legacy.Split { return legacy.Split{} }
+func UseDependent() legacy.Dependent { return legacy.Dependent{} }
+func UseCycle() legacy.Cycle { return legacy.Cycle{} }
+-- .scratch/_want/legacy/types.go --
+package legacy
+
+type Generic[T any] struct{}
+type Dependency struct{}
+type Embedded struct{ Dependency }
+type Split struct{}
+type Dependent struct{}
+func (Dependent) CallsHelper() { helper() }
+func helper() {}
+type Cycle struct{}
+func (Cycle) Ping() {}
+func LocalCycle() Cycle { return Cycle{} }
+func Keep() {}
+
+-- .scratch/_want/legacy/split_methods.go --
+package legacy
+
+func (Split) InOtherFile() {}
+
+-- .scratch/_want/api/api.go --
+package api
+
+import "example.com/typecrossselectionrefusals/legacy"
+
+func Existing() { legacy.Keep() }
+
+-- .scratch/_want/caller/use.go --
+package caller
+
+import "example.com/typecrossselectionrefusals/legacy"
+
+func UseGeneric(v legacy.Generic[int]) legacy.Generic[int] { return v }
+func UseEmbedded(v legacy.Embedded) legacy.Split { return legacy.Split{} }
+func UseDependent() legacy.Dependent { return legacy.Dependent{} }
+func UseCycle() legacy.Cycle { return legacy.Cycle{} }

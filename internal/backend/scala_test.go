@@ -57,11 +57,16 @@ func trustedScalaProject(root, file string) backend.ProjectContext {
 
 func TestScalaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	root, file := scalaFixture(t, "package p;\nclass 😀Thing {\n  int field;\n  void run() {}\n}\n")
+	project := trustedScalaProject(root, file)
+	project.Scala = backend.ScalaConfig{MetalsBin: "configured-metals", JavaBin: "configured-java", JavaVersion: "25"}
 	session := &fakeScalaSession{symbols: json.RawMessage(`[{"name":"p","kind":4,"range":{"start":{"line":0,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":0,"character":8},"end":{"line":0,"character":9}},"children":[{"name":"😀Thing","kind":5,"range":{"start":{"line":1,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":14}},"children":[{"name":"field","kind":8,"range":{"start":{"line":2,"character":2},"end":{"line":2,"character":12}},"selectionRange":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}}}]}]}]`)}
-	underTest := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+	underTest := scalabackend.NewScalaBackendWithFactory(func(_ context.Context, _ string, config backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		if config != project.Scala {
+			t.Fatalf("factory config = %#v, want %#v", config, project.Scala)
+		}
 		return session, nil
 	})
-	result, err := underTest.Lookup(context.Background(), trustedScalaProject(root, file), "p.😀Thing.field")
+	result, err := underTest.Lookup(context.Background(), project, "p.😀Thing.field")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
@@ -79,6 +84,9 @@ func TestScalaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	documentSymbol := caps["textDocument"].(map[string]any)["documentSymbol"].(map[string]any)
 	if documentSymbol["hierarchicalDocumentSymbolSupport"] != true {
 		t.Fatalf("missing hierarchy capability: %#v", documentSymbol)
+	}
+	if workspace := caps["workspace"].(map[string]any); workspace["applyEdit"] != nil {
+		t.Fatalf("persistent session advertises server edits: %#v", workspace)
 	}
 }
 
