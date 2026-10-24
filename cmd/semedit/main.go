@@ -52,6 +52,7 @@ func newRootCmd(workDir string) *cobra.Command {
 func newMCPCmd(workDir string) *cobra.Command {
 	var profile string
 	var toolProfile string
+	var batchingEnabled bool
 	var exposeToolVariants []string
 	var liveReload bool
 	var instructions string
@@ -67,7 +68,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithToolProfile(toolProfile), mcp.WithToolVariants(exposeToolVariants), mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithGoModuleCache(goModuleCache), mcp.WithGoModuleCacheSeed(goModuleCacheSeed), mcp.WithExpectedRoot(expectedRoot), mcp.WithEnabledLanguages(enabledLanguages), mcp.WithMetricsFile(metricsFile))
+			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithToolProfile(toolProfile), mcp.WithBatchingEnabled(batchingEnabled), mcp.WithToolVariants(exposeToolVariants), mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithGoModuleCache(goModuleCache), mcp.WithGoModuleCacheSeed(goModuleCacheSeed), mcp.WithExpectedRoot(expectedRoot), mcp.WithEnabledLanguages(enabledLanguages), mcp.WithMetricsFile(metricsFile))
 			if err := srv.Serve(cmd.Context(), os.Stdin); err != nil {
 				fmt.Fprintf(os.Stderr, "mcp server error: %v\\n", err)
 				return cli.ErrCommandFailed
@@ -77,6 +78,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&profile, "profile", "full", "MCP server profile (full, mutations-only)")
 	cmd.Flags().StringVar(&toolProfile, "tool-profile", "base", "MCP tool catalog profile (base or full)")
+	cmd.Flags().BoolVar(&batchingEnabled, "enable-batching", false, "Expose semantic_batch and batch guidance in the MCP tool catalog (default false)")
 	cmd.Flags().StringArrayVar(&exposeToolVariants, "expose-tool-variant", nil, "Expose specialized MCP tool variants by verb:kind; repeat or use comma-separated patterns")
 	cmd.Flags().BoolVar(&liveReload, "live-reload", false, "Enable in-place live-reload and dynamic tool schema discovery")
 	cmd.Flags().StringVar(&instructions, "instructions", mcp.PrescriptiveInstructions, "Server-wide MCP instructions returned during initialization; empty disables guidance")

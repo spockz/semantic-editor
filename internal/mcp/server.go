@@ -23,6 +23,7 @@ import (
 	"github.com/spockz/semantic-editor/internal/backend"
 	"github.com/spockz/semantic-editor/internal/backend/pathutil"
 	"github.com/spockz/semantic-editor/internal/backends"
+	"github.com/spockz/semantic-editor/internal/capability"
 	"github.com/spockz/semantic-editor/internal/gocache"
 	"github.com/spockz/semantic-editor/internal/godiagnostics"
 	"github.com/spockz/semantic-editor/internal/operation"
@@ -36,6 +37,7 @@ import (
 type Server struct {
 	profile               string
 	toolProfile           string
+	batchingEnabled       bool
 	toolVariantKeys       map[string]struct{}
 	toolVariantPatterns   []string
 	toolVariantErr        error
@@ -80,6 +82,7 @@ type Server struct {
 type serverConfiguration struct {
 	profile               string
 	toolProfile           string
+	batchingEnabled       bool
 	toolVariantKeys       map[string]struct{}
 	toolVariantPatterns   []string
 	toolVariantErr        error
@@ -155,6 +158,11 @@ func WithMetricsFile(path string) Option {
 // while full exposes every registered operation.
 func WithToolProfile(profile string) Option {
 	return func(s *Server) { s.toolProfile = profile }
+}
+
+// WithBatchingEnabled controls whether semantic_batch is exposed by the MCP catalog.
+func WithBatchingEnabled(enabled bool) Option {
+	return func(s *Server) { s.batchingEnabled = enabled }
 }
 
 // WithToolVariants enables specialized verb-kind variants in the MCP catalog.
@@ -635,23 +643,30 @@ func (s *Server) buildToolCatalog(root string) ([]map[string]any, error) {
 		if !entrySupportsAny(entry, activeLanguages) {
 			continue
 		}
-		tool, err := toolSchemaForLanguages(entry, activeBackends)
+		schemaEntry := entry
+		if !s.batchingEnabled {
+			schemaEntry = withoutBatchVariants(entry)
+		}
+		tool, err := toolSchemaForLanguages(schemaEntry, activeBackends)
 		if err != nil {
 			if errors.Is(err, errNoRegisteredParameterChoices) {
 				continue
 			}
 			return nil, fmt.Errorf("build schema for %q: %w", entry.MCPName, err)
 		}
-		addWorkspaceRootInput(tool[toolFieldInputSchema].(map[string]any))
-		if entry.Batchable {
+		inputSchema := tool[toolFieldInputSchema].(map[string]any)
+		addWorkspaceRootInput(inputSchema)
+		if s.batchingEnabled && entry.Batchable {
 			batchable = append(batchable, entry)
+			tool[toolFieldDescription] = appendToolDescription(tool[toolFieldDescription].(string), "This operation can also run as an ordered step in semantic_batch.")
+			inputSchema[schemaDescriptionKey] = appendToolDescription(inputSchemaDescription(inputSchema), "The same arguments are accepted when this operation runs as a semantic_batch step.")
 		}
 		if !s.exposesEntry(entry) {
 			continue
 		}
 		tools = append(tools, tool)
 	}
-	if len(batchable) > 0 {
+	if s.batchingEnabled && len(batchable) > 0 {
 		verificationOutput := operation.NativeVerifyOutputSchema()
 		batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends, verificationOutput)
 		if err != nil {
@@ -823,6 +838,23 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) (
 	return tool, nil
 }
 
+func withoutBatchVariants(entry operation.Entry) operation.Entry {
+	if len(entry.LanguageContracts) == 0 {
+		return entry
+	}
+	contracts := make(map[backend.LanguageID]capability.OperationContract, len(entry.LanguageContracts))
+	for language, contract := range entry.LanguageContracts {
+		filtered := contract
+		filtered.Variants = slices.Clone(contract.Variants)
+		filtered.Variants = slices.DeleteFunc(filtered.Variants, func(variant capability.ContractVariant) bool {
+			return variant.When.Has(capability.VariantBatch)
+		})
+		contracts[language] = filtered
+	}
+	entry.LanguageContracts = contracts
+	return entry
+}
+
 func toolSchema(entry operation.Entry) (map[string]any, error) {
 	toolOutput, err := toolOutputAndContinuations(entry)
 	if err != nil {
@@ -889,6 +921,19 @@ func toolSchemaDescription(entry operation.Entry, _ map[string]any) string {
 		return description
 	}
 	return description + " Structured results may include resolved continuations; copy fields from the same record into follow-up calls. Missing continuation fields indicate no target."
+}
+
+func appendToolDescription(current, addition string) string {
+	current = strings.TrimSpace(current)
+	if current == "" {
+		return addition
+	}
+	return current + " " + addition
+}
+
+func inputSchemaDescription(schema map[string]any) string {
+	description, _ := schema[schemaDescriptionKey].(string)
+	return description
 }
 
 // ValidateSourceFields verifies every parameter continuation references an advertised top-level output field.
@@ -1632,6 +1677,10 @@ func (s *Server) handleSpecialToolCall(ctx context.Context, id json.RawMessage, 
 	case "report_feedback":
 		s.handleFeedbackReport(ctx, id, params.Arguments)
 	case "semantic_batch":
+		if !s.batchingEnabled {
+			s.sendError(id, -32601, "Unknown tool: semantic_batch")
+			return true
+		}
 		s.handleBatch(ctx, id, params.Arguments)
 	case "semantic_diagnostics":
 		s.handleDiagnosticsCall(id, params.Arguments)
@@ -2342,6 +2391,7 @@ func (s *Server) configurationSnapshot() serverConfiguration {
 	return serverConfiguration{
 		profile:               s.profile,
 		toolProfile:           s.toolProfile,
+		batchingEnabled:       s.batchingEnabled,
 		toolVariantKeys:       maps.Clone(s.toolVariantKeys),
 		toolVariantPatterns:   slices.Clone(s.toolVariantPatterns),
 		toolVariantErr:        s.toolVariantErr,
@@ -2441,6 +2491,7 @@ func requestViewFromConfiguration(configuration serverConfiguration, root string
 	return &Server{
 		profile:               configuration.profile,
 		toolProfile:           configuration.toolProfile,
+		batchingEnabled:       configuration.batchingEnabled,
 		toolVariantKeys:       maps.Clone(configuration.toolVariantKeys),
 		toolVariantPatterns:   slices.Clone(configuration.toolVariantPatterns),
 		toolVariantErr:        configuration.toolVariantErr,

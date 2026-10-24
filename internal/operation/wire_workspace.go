@@ -73,7 +73,7 @@ func runSnapshot(ctx context.Context, cc CallContext, req SnapshotReq) (Snapshot
 func snapshotDef() Def[SnapshotReq, SnapshotRes] {
 	return Def[SnapshotReq, SnapshotRes]{
 		Key:     "snapshot",
-		Summary: "Use this tool instead of git stash or manual backup copies when a later semantic_undo may be needed for a bounded edit; capture a pre-edit transactional snapshot, creating an immutable journal under .scratch/snapshots/<id>/ for conflict-checked rollback. Do not use it for routine one-way edits, batches, or verification.",
+		Summary: "Use this tool instead of git stash or manual backup copies when a later semantic_undo may be needed for a bounded edit; capture a pre-edit transactional snapshot, creating an immutable journal under .scratch/snapshots/<id>/ for conflict-checked rollback. Do not use it for routine one-way edits or verification.",
 		Params:  snapshotParams,
 		Level:   LevelWorkspace,
 		CLIName: "snapshot",

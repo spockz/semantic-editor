@@ -1,13 +1,11 @@
-# Reject misspelled batch arguments with indexed suggestions before any workspace operation.
+# Reject misspelled batch arguments and report missing required parameters before workspace operations.
 stdin input.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout 'isError":true'
 stdout 'edit 0 params'
 stdout 'semantic_rename'
 stdout 'unknown parameter'
 stdout 'symobl'
-stdout 'Did you mean'
-stdout 'symbol'
 stdout 'Required parameters'
 grep 'func Old' file.go
 ! grep 'func New' file.go

@@ -49,16 +49,18 @@ func (s *Server) Serve(ctx context.Context, input io.Reader) error {
 // NewServer creates an MCP test server that validates structured results against advertised schemas.
 func NewServer(t testing.TB, profile, root string, output io.Writer, options ...mcp.Option) *Server {
 	t.Helper()
+	// Batch behavior tests opt in by default; tests of production defaults construct mcp.NewServer directly.
+	testOptions := append([]mcp.Option{mcp.WithBatchingEnabled(true)}, options...)
 	validator := &responseValidator{
 		testName: t.Name(), report: func(message string) { t.Errorf("%s", message) },
-		dst: output, profile: profile, options: slices.Clone(options),
+		dst: output, profile: profile, options: slices.Clone(testOptions),
 		requests:    make(map[string]requestInfo),
 		advertised:  make(map[string]*jsonschema.Schema),
 		full:        make(map[string]*jsonschema.Schema),
 		catalogRoot: root,
 	}
 	server := &Server{validator: validator}
-	server.Server = mcp.NewServer(profile, root, validator, options...)
+	server.Server = mcp.NewServer(profile, root, validator, testOptions...)
 	return server
 }
 

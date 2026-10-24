@@ -3,13 +3,14 @@ stdin base.json
 exec semedit mcp
 stdout '"name":\s*"semantic_insert_construct"'
 stdout '"name":\s*"semantic_replace_construct"'
-stdout '"name":\s*"semantic_batch"'
+! stdout '"name":\s*"semantic_batch"'
 ! stdout '"name":\s*"semantic_insert_function"'
 
 stdin full.json
-exec semedit mcp --tool-profile full
+exec semedit mcp --tool-profile full --enable-batching
 stdout '"name":\s*"semantic_insert_function"'
 stdout '"name":\s*"semantic_replace_body"'
+stdout '"name":\s*"semantic_batch"'
 
 stdin filtered.json
 exec semedit mcp --expose-tool-variant 'insert:function,insert:type'

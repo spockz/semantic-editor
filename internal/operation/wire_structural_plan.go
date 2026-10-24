@@ -210,7 +210,7 @@ func setDocCommentStructuralDef() Def[map[string]any, structuralPlanResult] {
 	output := structuralOutputContract(true)
 	return structuralPlanDef(structuralPlanSpec{
 		Key: "set_doc_comment", CLIName: "set-doc-comment", MCPName: "semantic_set_doc_comment",
-		Summary:     "Use this tool instead of editing source text to set or remove one owned Go top-level or Java declaration documentation comment. Scope is declaration only. Missing and null comment values are invalid; an explicit empty string removes the comment. Existing Go directives, grouped declarations, detached ownership, and ambiguous targets are refused. Standalone results include a live declaration continuation; batch receipts report applied_working without live continuations.",
+		Summary:     "Use this tool instead of editing source text to set or remove one owned Go top-level or Java declaration documentation comment. Scope is declaration only. Missing and null comment values are invalid; an explicit empty string removes the comment. Existing Go directives, grouped declarations, detached ownership, and ambiguous targets are refused. Standalone results include a live declaration continuation.",
 		Params:      params,
 		Output:      &output,
 		JavaHandler: runJavaSetDocCommentStructural,

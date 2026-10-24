@@ -322,7 +322,7 @@ func fixtureAssertsFullCatalogTool(fixtures []publicFixture, tool string) bool {
 	assertion := regexp.MustCompile(`(?m)^stdout .*` + regexp.QuoteMeta(tool) + `.*$`)
 	for _, candidate := range fixtures {
 		input, hasInput := candidate.files["input.json"]
-		if hasInput && strings.Contains(input, `"method":"tools/list"`) && strings.Contains(candidate.comment, "exec semedit mcp --tool-profile full --live-reload") && assertion.MatchString(candidate.comment) {
+		if hasInput && strings.Contains(input, `"method":"tools/list"`) && strings.Contains(candidate.comment, "exec semedit mcp --tool-profile full --live-reload --enable-batching") && assertion.MatchString(candidate.comment) {
 			return true
 		}
 	}
@@ -405,6 +405,23 @@ func TestMCPLiveReloadFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Errorf("expected --live-reload default value 'false', got %q", flag.DefValue)
+	}
+}
+
+func TestMCPBatchingFlagDefaultsDisabled(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCmd(".")
+	mcpCmd, _, err := cmd.Find([]string{"mcp"})
+	if err != nil {
+		t.Fatalf("failed to find mcp command: %v", err)
+	}
+	flag := mcpCmd.Flags().Lookup("enable-batching")
+	if flag == nil {
+		t.Fatal("expected --enable-batching flag on mcp command")
+	}
+	if flag.DefValue != "false" {
+		t.Errorf("expected --enable-batching default value 'false', got %q", flag.DefValue)
 	}
 }
 

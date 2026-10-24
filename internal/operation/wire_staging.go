@@ -191,7 +191,7 @@ func registerStageOps(r *Registry) error {
 		{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Type: ParamBoolean, Description: "Trust configured verification hooks for the active workspace during final verification.", Default: false},
 		{Name: wireSkipHooks, CLIName: "skip-hooks", JSONName: wireSkipHooks, Type: ParamBoolean, Description: "Skip configured verification hooks after publication; formatting and diagnostic synchronization still run.", Default: false},
 	}
-	return Register(r, Def[stageCommitReq, StageCommitResult]{Key: "stage_commit", Summary: ("Use this tool instead of semantic_batch when publishing an existing retained Go or Java staging session. It normalizes the staged edits and reports zero, partial, or full publication and the final verification outcome."), Level: LevelWorkspace, CLIName: "commit", MCPName: "semantic_commit", Params: commitParams, Parse: func(raw map[string]any) (stageCommitReq, error) {
+	return Register(r, Def[stageCommitReq, StageCommitResult]{Key: "stage_commit", Summary: ("Use this tool instead of manually publishing staged files to publish an existing retained Go or Java staging session. It normalizes staged edits and reports zero, partial, or full publication with the final verification outcome."), Level: LevelWorkspace, CLIName: "commit", MCPName: "semantic_commit", Params: commitParams, Parse: func(raw map[string]any) (stageCommitReq, error) {
 		if e := CheckParams(raw, commitParams); e != nil {
 			return stageCommitReq{}, e
 		}

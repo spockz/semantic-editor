@@ -94,7 +94,8 @@ separate package/module records; inspection still returns source and revisions.
 | Add a Go module or Java Maven dependency | `semantic_add_build_dependency`; Go updates `go.mod`/`go.sum`; Java updates a trusted reactor using `dependencyManagement` | Direct manifest edits or shell package-manager commands |
 | Add a Go switch case | `semantic_insert_case` | Built-in switch text replacement |
 | Convert Go test assertions (t.Fatal/t.Error) between failure modes | `semantic_assertion_mode`; writes require `trust_workspace: true`, while `dry_run: true` previews without trust or writes | Built-in text replacement of `t.Fatal`/`t.Error` calls |
-| Apply several registered semantic edits in order | `semantic_batch`; successful earlier edits remain written if a later edit fails | Several built-in text patches |
+| Apply several registered semantic edits in order | `semantic_batch` when exposed by the server's startup configuration; successful earlier edits remain written if a later edit fails | Several built-in text patches |
+
 | Explicitly format or check Go or trusted Java sources | `semantic_verify`; Go verification runs formatting before diagnostics and can write files, and Java accepts a file or directory scope for JDT LS formatting/import organization. There is no dry-run | Shell formatters or ad hoc diagnostics; avoid a redundant call after an edit that already verifies |
 | Read diagnostics from a completed operation | `semantic_diagnostics` with `diagnostic_report.arguments`; choose `category`, `contains`, `limit`, and `offset`, then follow `next_offset` | Rerunning verification just to read or page an existing report |
 | Compile tests for a trusted Java root POM | `semantic_maven_compile`; set `trust_workspace: true`, runs offline unless `allow_network: true`, and writes build outputs plus temporary Maven data under `.scratch` | Shell Maven invocation |
@@ -102,6 +103,10 @@ separate package/module records; inspection still returns source and revisions.
 | Save a pre-edit rollback point for a bounded edit | `semantic_snapshot` | `git stash` or manual backup copies |
 | Restore edits from a semedit snapshot | `semantic_undo` | `git reset` or manual file restoration |
 | Reload a promoted MCP binary when live reload is enabled | `semantic_reload` | Restarting the client or server manually |
+
+`semantic_batch` is disabled by default. Use it only when the server was started
+with `--enable-batching` and it appears in the current tool inventory; direct
+operations and retained staging remain available when it is absent.
 | Prepare a privacy-reviewed semedit tool-friction draft | `report_feedback` | Manually drafting a tool issue; keep local friction logs required by this repository |
 
 Examples:

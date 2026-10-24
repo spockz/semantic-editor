@@ -1,12 +1,12 @@
 # Batch formatting follows the final changed paths, including an explicitly empty change set.
 stdin no-op.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 ! stdout '"isError":true'
 stdout '"final_diff":""'
 cmp noop.go want-noop.txt
 cmp path_value.go want-unrelated.txt
 stdin imports.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 ! stdout '"isError":true'
 cmp config.go want-imports-config.txt
 cmp read.go want-imports-read.txt
@@ -14,7 +14,7 @@ cmp client/read.go want-imports-client-read.txt
 cmp config_test.go want-imports-config_test.txt
 cmp path_value.go want-unrelated.txt
 stdin plain.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 ! stdout '"isError":true'
 cmp config.go want-plain-config.txt
 cmp read.go want-plain-read.txt

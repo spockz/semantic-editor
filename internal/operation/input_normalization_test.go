@@ -7,6 +7,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spockz/semantic-editor/internal/backend"
@@ -103,6 +104,39 @@ func TestInsertConstructElementParserContract(t *testing.T) {
 		"in_declaration": "routes", "discriminator": `map[string]int{"health": 1}`,
 	}
 	assertInsertElementParserContracts(t, entry, base)
+}
+
+func TestDirectOperationUnknownParameterErrorIsActionable(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_replace_body")
+	if !ok {
+		t.Fatal("semantic_replace_body is not registered")
+	}
+	_, err := entry.Parse(map[string]any{"flie": "value.go", "symbol": "Value", "body": "return 2"})
+	if err == nil {
+		t.Fatal("unknown parameter was accepted")
+	}
+	for _, part := range []string{`unknown parameter "flie"`, "supported keys", "Required parameters"} {
+		if !strings.Contains(err.Error(), part) {
+			t.Errorf("parse error %q does not include %q", err, part)
+		}
+	}
+}
+
+func TestRenameUnknownNewNameParameterDoesNotSuggestTo(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	if !ok {
+		t.Fatal("semantic_rename is not registered")
+	}
+	_, err := entry.Parse(map[string]any{"symbol": "Value", "new_name": "RenamedValue"})
+	if err == nil {
+		t.Fatal("unknown new_name parameter was accepted")
+	}
+	if !strings.Contains(err.Error(), `unknown parameter "new_name"`) {
+		t.Fatalf("parse error = %q, want unknown new_name parameter", err)
+	}
+	if !strings.Contains(err.Error(), `Required parameters: [to]`) {
+		t.Fatalf("parse error = %q, want the missing canonical parameter to be reported", err)
+	}
 }
 
 func TestJavaInsertConstructElementParserContract(t *testing.T) {

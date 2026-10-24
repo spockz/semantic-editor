@@ -1,6 +1,6 @@
 # Public MCP failures preserve preceding moves and explicitly refuse invalid destinations.
 stdin partial.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout '"destination_file":"missing.go"'
 stdout 'no such file or directory'
@@ -11,7 +11,7 @@ cmp dest.go .scratch/want/dest.go
 
 cp .scratch/malformed.txt malformed.go
 stdin malformed.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout 'parse destination file'
 stdout '"final_diff":""'
@@ -21,7 +21,7 @@ rm malformed.go
 
 cp .scratch/wrong.txt wrong.go
 stdin wrong.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout 'same Go package'
 stdout '"final_diff":""'
@@ -30,7 +30,7 @@ cmp wrong.go .scratch/wrong.txt
 rm wrong.go
 
 stdin cross.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout 'source-package dependency'
 stdout '"final_diff":""'
@@ -38,7 +38,7 @@ cmp source.go .scratch/want/source.go
 cmp other/dest.go .scratch/want/other.go
 
 stdin non-go.json
-exec semedit mcp
+exec semedit mcp --enable-batching
 stdout '"isError":true'
 stdout 'regular Go source file'
 stdout '"final_diff":""'

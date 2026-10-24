@@ -32,8 +32,7 @@ func rawLookup(raw map[string]any, jsonName, cliName string) (any, bool) {
 // CheckParams validates required presence and enum membership for every contract.
 // Empty strings count as absent so optional enum parameters accept the zero value.
 func CheckParams(raw map[string]any, params []ParameterContract) error {
-	allowed := parameterKeys(params)
-	if err := rejectUnknownParams(raw, allowed); err != nil {
+	if err := rejectUnknownParams(raw, params); err != nil {
 		return err
 	}
 	for _, param := range params {
@@ -57,7 +56,8 @@ func parameterKeys(params []ParameterContract) map[string]struct{} {
 	return allowed
 }
 
-func rejectUnknownParams(raw map[string]any, allowed map[string]struct{}) error {
+func rejectUnknownParams(raw map[string]any, params []ParameterContract) error {
+	allowed := parameterKeys(params)
 	unknown := make([]string, 0)
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
@@ -73,9 +73,21 @@ func rejectUnknownParams(raw map[string]any, allowed map[string]struct{}) error 
 		supported = append(supported, key)
 	}
 	slices.Sort(supported)
-	return fmt.Errorf("unknown param %q; supported keys are [%s]: %w", unknown[0], strings.Join(supported, ", "), ErrInvalidParams)
-}
 
+	message := fmt.Sprintf("unknown parameter %q; supported keys are [%s]", unknown[0], strings.Join(supported, ", "))
+	required := make([]string, 0, len(params))
+	for _, param := range params {
+		value, present := rawLookup(raw, param.JSONName, param.CLIName)
+		if param.Required && param.JSONName != "" && (!present || value == nil || !nonEmptyInputValue(value)) {
+			required = append(required, param.JSONName)
+		}
+	}
+	slices.Sort(required)
+	if len(required) > 0 {
+		message += fmt.Sprintf(". Required parameters: [%s]", strings.Join(required, ", "))
+	}
+	return fmt.Errorf("%s: %w", message, ErrInvalidParams)
+}
 func validateParameter(raw map[string]any, param ParameterContract) error {
 	value, present := rawLookup(raw, param.JSONName, param.CLIName)
 	if param.Schema != nil {
