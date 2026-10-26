@@ -2,6 +2,22 @@
 
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-25 semantic verification hook required workspace trust
+
+* Tool: `semantic_verify`.
+* Target: Go package scope `cmd/docgen`.
+* Failure: package diagnostics ran, but verification stopped because the configured `golangci-lint` hook requires workspace trust.
+* Workaround: run the repository's `make check`, which completed successfully.
+* Root cause: semantic verification does not run configured hooks without explicit workspace trust.
+
+## 2026-10-25 semantic lookup could not resolve a guessed docgen loader
+
+* Tool: `semantic_lookup`.
+* Target: Go symbol `loadBenchmarkRuns` in `cmd/docgen/benchmark_load.go`.
+* Failure: workspace lookup returned `symbol not found`; no source changes were made.
+* Workaround: inspect `benchmark_load.go` directly and use its declared loader, `loadBenchmarkDocumentationRuns`.
+* Root cause: the inferred helper name differs from the declaration in the current source.
+
 ## 2026-10-19: Semantic field insertion was blocked by an incomplete CLI refactor
 
 * Tool: `semantic_insert_construct` adding a usage field to `analysisCodexChatRecord` in `tools/benchmark-harness/analysis_extract.go`.

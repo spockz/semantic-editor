@@ -1283,3 +1283,32 @@ func assertBenchmarkAggregateUsageTotalsAndPage(t *testing.T, groups []benchmark
 		t.Errorf("aggregate overview should contain totals and links without detailed metric values: %s", overview)
 	}
 }
+
+func TestLoadBenchmarkDocumentationSkipsUnparseableSets(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	writeBenchmarkDocumentationReport(t, rootDir, "run-good", &BenchComparisonSummary{
+		TaskID:        "task-good",
+		SmallBaseline: benchmarkDocumentationRunResult(true, time.Second, 100),
+	})
+	writeBenchmarkDocumentationReport(t, rootDir, "run-bad", &BenchComparisonSummary{
+		TaskID:        "task-partial",
+		SmallBaseline: benchmarkDocumentationRunResult(true, time.Second, 100),
+	})
+	badReport := filepath.Join(rootDir, "data", "benchmarks", "results", "run-bad", "unparseable.json")
+	if err := os.WriteFile(badReport, []byte("[]"), 0o600); err != nil {
+		t.Fatalf("write unparseable benchmark report: %v", err)
+	}
+
+	runs, err := loadBenchmarkDocumentationRuns(rootDir)
+	if err != nil {
+		t.Fatalf("load benchmark documentation runs: %v", err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("loaded %d runs, want only the parseable run", len(runs))
+	}
+	if runs[0].ID != "run-good" {
+		t.Fatalf("loaded run %q, want run-good", runs[0].ID)
+	}
+}

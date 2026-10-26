@@ -154,6 +154,7 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 	}
 	var sources []benchmarkSource
 	var failures []error
+	skippedRunIDs := make(map[string][]error)
 	walkErr := filepath.WalkDir(resultsDir, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			failures = append(failures, fmt.Errorf("walk benchmark path %s: %w", path, walkErr))
@@ -174,10 +175,19 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 		}
 		source, loadErr := loadBenchmarkSource(resultsDir, path, resultsRoot)
 		if loadErr != nil {
-			failures = append(failures, loadErr)
-		} else {
-			sources = append(sources, source)
+			if !errors.Is(loadErr, errUnparseableBenchmarkReport) {
+				failures = append(failures, loadErr)
+				return nil
+			}
+			runID, runErr := benchmarkRunID(resultsDir, path)
+			if runErr != nil {
+				failures = append(failures, runErr)
+				return nil
+			}
+			skippedRunIDs[runID] = append(skippedRunIDs[runID], loadErr)
+			return nil
 		}
+		sources = append(sources, source)
 		return nil
 	})
 	if walkErr != nil {
@@ -186,6 +196,19 @@ func loadBenchmarkSources(resultsDir string) ([]benchmarkSource, error) {
 	if closeErr := resultsRoot.Close(); closeErr != nil {
 		failures = append(failures, fmt.Errorf("close benchmark results directory: %w", closeErr))
 	}
+	skippedRunIDsList := make([]string, 0, len(skippedRunIDs))
+	for runID := range skippedRunIDs {
+		skippedRunIDsList = append(skippedRunIDsList, runID)
+	}
+	slices.Sort(skippedRunIDsList)
+	for _, runID := range skippedRunIDsList {
+		parseFailures := skippedRunIDs[runID]
+		fmt.Fprintf(os.Stderr, "skipping benchmark set %s: %d unparseable report(s); first error: %v\n", runID, len(parseFailures), parseFailures[0])
+	}
+	sources = slices.DeleteFunc(sources, func(source benchmarkSource) bool {
+		_, skip := skippedRunIDs[source.RunID]
+		return skip
+	})
 	return sources, errors.Join(failures...)
 }
 
@@ -240,7 +263,7 @@ func loadBenchmarkSource(resultsDir, path string, resultsRoot *os.Root) (benchma
 	}
 	var source benchmarkSource
 	if decodeErr := unmarshalBenchmarkReport(data, &source.Report); decodeErr != nil {
-		return benchmarkSource{}, fmt.Errorf("decode benchmark report %s: %w", path, decodeErr)
+		return benchmarkSource{}, fmt.Errorf("%w: decode benchmark report %s: %w", errUnparseableBenchmarkReport, path, decodeErr)
 	}
 	source.RunID, err = benchmarkRunID(resultsDir, path)
 	if err != nil {
@@ -248,7 +271,9 @@ func loadBenchmarkSource(resultsDir, path string, resultsRoot *os.Root) (benchma
 	}
 	source.Rows, err = loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
 	if err != nil {
-		return benchmarkSource{}, fmt.Errorf("load benchmark browser report: %w", err)
+		return benchmarkSource{}, fmt.Errorf("%w: load benchmark browser report %s: %w", errUnparseableBenchmarkReport, path, err)
 	}
 	return source, nil
 }
+
+var errUnparseableBenchmarkReport = errors.New("unparseable benchmark report")

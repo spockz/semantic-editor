@@ -91,22 +91,23 @@ func prepareErrorCollectionOutput(t *testing.T, blocked bool) string {
 
 func assertErrorCollectionDiagnostics(t *testing.T, err error, blocked bool) {
 	t.Helper()
-	if err == nil {
-		t.Fatal("expected collected failures")
-	}
-	previous := -1
-	for _, path := range []string{"bad-browser/report.json", "bad-json/report.json", "bad-version/report.json"} {
-		index := strings.Index(err.Error(), path)
-		if index <= previous {
-			t.Errorf("missing or unordered failure %s: %v", path, err)
+	if !blocked {
+		if err != nil {
+			t.Fatalf("unparseable benchmark sets should be skipped: %v", err)
 		}
-		previous = index
+		return
 	}
-	if blocked {
-		for _, phase := range []string{"writing Markdown output", "writing Hugo configuration"} {
-			if !strings.Contains(err.Error(), phase) {
-				t.Errorf("error missing %s: %v", phase, err)
-			}
+	if err == nil {
+		t.Fatal("expected independent output failures")
+	}
+	for _, path := range []string{"bad-browser/report.json", "bad-json/report.json", "bad-version/report.json"} {
+		if strings.Contains(err.Error(), path) {
+			t.Errorf("unparseable benchmark set should not abort generation: %v", err)
+		}
+	}
+	for _, phase := range []string{"writing Markdown output", "writing Hugo configuration"} {
+		if !strings.Contains(err.Error(), phase) {
+			t.Errorf("error missing %s: %v", phase, err)
 		}
 	}
 }
@@ -211,10 +212,7 @@ func TestGenerateDocumentationIgnoresBenchmarkOperationalArtifacts(t *testing.T)
 	}
 	afterOutput := prepareErrorCollectionOutput(t, false)
 	afterErr := generateDocumentation(rootDir, afterOutput, false)
-	if afterErr == nil || afterErr.Error() != beforeErr.Error() {
-		t.Fatalf("operational artifacts changed report failures: before %v; after %v", beforeErr, afterErr)
-	}
-	assertErrorCollectionArtifacts(t, afterOutput, true)
+	assertErrorCollectionDiagnostics(t, afterErr, false)
 	afterRows, err := os.ReadFile(filepath.Join(afterOutput, "static", "data", "benchmarks.json"))
 	if err != nil {
 		t.Fatal(err)
